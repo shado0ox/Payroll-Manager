@@ -26,6 +26,15 @@ export interface User {
   employeeId?: string; // If role is EMPLOYEE
 }
 
+export interface DepartmentInfo {
+  id: string;
+  code: string;
+  nameAr: string;
+  nameEn?: string;
+  headName?: string;
+  description?: string;
+}
+
 export interface Company {
   id: string;
   companyCode: string; // e.g. '101', '102'
@@ -45,6 +54,7 @@ export interface Company {
   payrollPaymentDay: number; // e.g. 27th or last day of month
   workDaysPerMonth: number; // standard 30 days
   dailyWorkHours: number; // 8 hours
+  departments?: DepartmentInfo[];
   costCenters: CostCenter[];
   calculationRules: CompanyCalculationRules;
   chartOfAccounts: ChartOfAccountsMap;
@@ -311,6 +321,7 @@ export interface JournalBatch {
 
 export type NavigationTab = 
   | 'dashboard' 
+  | 'company_profile'
   | 'employees' 
   | 'payroll_runs' 
   | 'attendance' 
@@ -348,3 +359,32 @@ export interface QoyodApiConfig {
   lastTestStatus?: 'SUCCESS' | 'FAILED';
   lastTestMessage?: string;
 }
+
+export interface QoyodAmountItem {
+  account_id: number | string;
+  amount: number | string;
+  comment?: string;
+  contact_id?: number | string;
+  entry_id?: number;
+  all_comments?: string[];
+}
+
+export interface QoyodJournalEntryPayload {
+  journal_entry: {
+    description: string;
+    date: string;
+    debit_amounts: QoyodAmountItem[];
+    credit_amounts: QoyodAmountItem[];
+  };
+}
+
+export interface QoyodJournalEntryResponse {
+  id: number | string;
+  date: string;
+  description: string;
+  total_debit: string | number;
+  total_credit: string | number;
+  debit_amounts: QoyodAmountItem[];
+  credit_amounts: QoyodAmountItem[];
+}
+

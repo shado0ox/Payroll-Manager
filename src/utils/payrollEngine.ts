@@ -17,8 +17,26 @@ export interface EmployeeCalculationInput {
 }
 
 export function calculateEmployeePayrollItem(input: EmployeeCalculationInput): PayrollRunItem {
-  const { employee, company, attendanceRecords, activeLoans, penalties } = input;
-  const rules = company.calculationRules;
+  const { employee, company } = input;
+  const attendanceRecords = input.attendanceRecords || [];
+  const activeLoans = input.activeLoans || [];
+  const penalties = input.penalties || [];
+  const rules = company.calculationRules || {
+    dailyRateFormula: 'BASE_PLUS_HOUSING',
+    hourlyRateDivisor: 8,
+    workDaysDivisor: 30,
+    delayGracePeriodMinutes: 15,
+    delayDeductionMultiplier: 1.0,
+    absenceDayMultiplier: 1.0,
+    unpaidLeaveMultiplier: 1.0,
+    overtimeStandardRate: 1.5,
+    overtimeWeekendRate: 2.0,
+    saudiGosiEmployeeRate: 0.0975,
+    saudiGosiEmployerRate: 0.1175,
+    nonSaudiGosiEmployerHazardRate: 0.02,
+    saudiGosiMaxCap: 45000,
+    roundingDecimals: 2,
+  };
 
   const isSuspended = employee.status === 'SUSPENDED';
   const isTerminated = employee.status === 'TERMINATED';

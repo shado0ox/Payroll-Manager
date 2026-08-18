@@ -147,8 +147,15 @@ export const EmployeeStatementModal: React.FC<EmployeeStatementModalProps> = ({
 
             <div>
               <span className="text-slate-500 block mb-0.5">رقم الآيبان (IBAN):</span>
-              <span className="font-mono font-bold text-slate-900 text-[11px]">{employee.bankIban}</span>
+              <span className="font-mono font-bold text-slate-900 text-[11px] dir-ltr inline-block">{employee.bankIban}</span>
             </div>
+
+            {employee.bankSwiftCode && (
+              <div>
+                <span className="text-slate-500 block mb-0.5">رمز السويفت (SWIFT/BIC):</span>
+                <span className="font-mono font-bold text-emerald-700 text-[11px] dir-ltr inline-block">{employee.bankSwiftCode}</span>
+              </div>
+            )}
           </div>
 
           {/* Current Month Itemized Breakdown: Earnings vs Deductions */}

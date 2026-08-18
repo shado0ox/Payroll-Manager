@@ -19,6 +19,12 @@ export const INITIAL_COMPANIES: Company[] = [
     payrollPaymentDay: 27,
     workDaysPerMonth: 30,
     dailyWorkHours: 8,
+    departments: [
+      { id: 'dept-it', code: 'DEP-IT', nameAr: 'تقنية المعلومات', nameEn: 'Information Technology', headName: 'سارة خالد المنصور', description: 'تطوير البرمجيات والبنية التحتية والأنظمة' },
+      { id: 'dept-hr', code: 'DEP-HR', nameAr: 'الموارد البشرية', nameEn: 'Human Resources', headName: 'فيصل عبد العزيز السعيد', description: 'استقطاب الكفاءات وشؤون الموظفين' },
+      { id: 'dept-fin', code: 'DEP-FIN', nameAr: 'المالية والمحاسبة', nameEn: 'Finance & Accounting', headName: 'محمد أحمد القحطاني', description: 'إدارة الحسابات والرواتب والميزانيات' },
+      { id: 'dept-sales', code: 'DEP-MKT', nameAr: 'التسويق والمبيعات', nameEn: 'Sales & Marketing', headName: 'ريم ناصر العتيبي', description: 'تطوير الأعمال والتسويق الرقمي' },
+    ],
     costCenters: [
       { id: 'cc-it', code: 'CC-100', nameAr: 'تقنية المعلومات والتطوير', nameEn: 'IT & Software Dev' },
       { id: 'cc-sales', code: 'CC-200', nameAr: 'المبيعات والتسويق', nameEn: 'Sales & Marketing' },
@@ -73,6 +79,11 @@ export const INITIAL_COMPANIES: Company[] = [
     payrollPaymentDay: 28,
     workDaysPerMonth: 30,
     dailyWorkHours: 8,
+    departments: [
+      { id: 'dept-log-ops', code: 'DEP-OPS', nameAr: 'العمليات اللوجستية', nameEn: 'Logistics Operations', headName: 'ماجد عبد الله الشهراني', description: 'إدارة أسطول الشحن والتوصيل' },
+      { id: 'dept-log-wh', code: 'DEP-WH', nameAr: 'المستودعات وسلاسل الإمداد', nameEn: 'Warehousing & Supply Chain', headName: 'طارق زياد العمري', description: 'إدارة المخزون والتخزين والتوزيع' },
+      { id: 'dept-log-hr', code: 'DEP-HR', nameAr: 'الموارد البشرية والإدارية', nameEn: 'HR & Administration', headName: 'نورة سليمان الدوسري', description: 'شؤون السائقين والموظفين والمكتب' },
+    ],
     costCenters: [
       { id: 'cc-log-fleet', code: 'CC-FLT', nameAr: 'إدارة النقل والأسطول', nameEn: 'Fleet Management' },
       { id: 'cc-log-wh', code: 'CC-WH', nameAr: 'المستودعات والتخزين', nameEn: 'Warehousing' },
@@ -112,7 +123,7 @@ export const INITIAL_COMPANIES: Company[] = [
 
 export const INITIAL_QOYOD_CONFIG: QoyodApiConfig = {
   apiKey: '',
-  baseUrl: 'https://api.qoyod.com/api/2.0',
+  baseUrl: 'https://api.qoyod.com/2.0',
   organizationId: '',
   autoSyncOnApprove: false,
   lastTestStatus: undefined,

@@ -52,6 +52,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
       icon: LayoutDashboard,
     },
     {
+      id: 'company_profile',
+      labelAr: 'ملف المنشأة',
+      icon: Building2,
+    },
+    {
       id: 'payroll_runs',
       labelAr: 'مسيرات الرواتب',
       icon: Banknote,
@@ -90,12 +95,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
     {
       id: 'settings',
       labelAr: 'إدارة الشركات والمنشآت',
-      icon: Building2,
+      icon: Settings,
+      adminOnly: true,
     },
     {
       id: 'audit_logs',
       labelAr: 'سجل التدقيق والأمان',
       icon: ShieldAlert,
+      adminOnly: true,
     },
   ];
 

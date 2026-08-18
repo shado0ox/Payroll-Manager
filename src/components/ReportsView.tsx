@@ -47,10 +47,10 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
 
   // Department cost breakdown
   const deptCostBreakdown = useMemo(() => {
-    if (!currentRun) return [];
+    if (!currentRun || !currentRun.items) return [];
     const map = new Map<string, { count: number; totalGross: number; totalNet: number; totalBurden: number }>();
 
-    currentRun.items.forEach(item => {
+    (currentRun.items || []).forEach(item => {
       const existing = map.get(item.department) || { count: 0, totalGross: 0, totalNet: 0, totalBurden: 0 };
       existing.count += 1;
       existing.totalGross += item.totalGrossSalary;
@@ -67,11 +67,11 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
 
   // GOSI Breakdown
   const gosiMetrics = useMemo(() => {
-    if (!currentRun) return { saudiCount: 0, nonSaudiCount: 0, employeeTotal: 0, employerTotal: 0, gosiTotal: 0 };
+    if (!currentRun || !currentRun.items) return { saudiCount: 0, nonSaudiCount: 0, employeeTotal: 0, employerTotal: 0, gosiTotal: 0 };
     let saudiCount = 0;
     let nonSaudiCount = 0;
 
-    currentRun.items.forEach(i => {
+    (currentRun.items || []).forEach(i => {
       if (i.nationality === 'SAUDI') saudiCount++;
       else nonSaudiCount++;
     });
@@ -79,9 +79,9 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
     return {
       saudiCount,
       nonSaudiCount,
-      employeeTotal: currentRun.totalGosiEmployee,
-      employerTotal: currentRun.totalGosiEmployer,
-      gosiTotal: currentRun.totalGosiEmployee + currentRun.totalGosiEmployer,
+      employeeTotal: currentRun.totalGosiEmployee || 0,
+      employerTotal: currentRun.totalGosiEmployer || 0,
+      gosiTotal: (currentRun.totalGosiEmployee || 0) + (currentRun.totalGosiEmployer || 0),
     };
   }, [currentRun]);
 

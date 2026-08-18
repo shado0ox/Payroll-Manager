@@ -86,14 +86,6 @@ export const Navbar: React.FC<NavbarProps> = ({
           </button>
         )}
 
-        <button
-          onClick={onOpenQoyodModal}
-          className="inline-flex items-center gap-1.5 px-3.5 py-2 border border-slate-300 rounded-lg text-slate-700 text-sm font-medium bg-white hover:bg-slate-50 shadow-xs transition-colors cursor-pointer"
-        >
-          <Layers className="w-3.5 h-3.5 text-slate-600" />
-          <span>تصدير إلى قيود</span>
-        </button>
-
         {/* Real Logged In User Pill */}
         {currentUser && (
           <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-50 rounded-xl border border-slate-200">

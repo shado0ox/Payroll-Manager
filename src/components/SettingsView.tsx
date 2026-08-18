@@ -31,6 +31,13 @@ import {
 } from 'lucide-react';
 import { Company, Employee, UserRole, UserAccount, CostCenter } from '../types';
 import { formatSAR } from '../utils/payrollEngine';
+import { 
+  validateSaudiIBAN, 
+  validateSwiftCode, 
+  detectBankFromIBAN, 
+  getSwiftCodeFromBankName, 
+  SAUDI_BANKS 
+} from '../utils/security';
 
 interface SettingsViewProps {
   companies: Company[];
@@ -311,6 +318,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         gosiEstablishmentNo: companyForm.gosiEstablishmentNo || '',
         bankName: companyForm.bankName || 'مصرف الراجحي',
         bankIban: companyForm.bankIban || '',
+        bankSwiftCode: companyForm.bankSwiftCode || '',
         currency: 'SAR',
         timezone: 'Asia/Riyadh',
         fiscalYearStartMonth: 1,
@@ -556,10 +564,18 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   </div>
                 </div>
 
-                {/* IBAN */}
-                <div className="mt-2 text-xs bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-100 flex items-center justify-between">
-                  <span className="text-slate-400 text-[11px]">الآيبان البنكي:</span>
-                  <span className="font-mono font-bold text-slate-700 text-[11px] dir-ltr">{comp.bankIban}</span>
+                {/* IBAN & SWIFT */}
+                <div className="mt-2 text-xs bg-slate-50 px-3 py-2 rounded-xl border border-slate-100 space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-400 text-[11px]">الآيبان البنكي:</span>
+                    <span className="font-mono font-bold text-slate-700 text-[11px] dir-ltr">{comp.bankIban}</span>
+                  </div>
+                  {comp.bankSwiftCode && (
+                    <div className="flex items-center justify-between pt-1 border-t border-slate-200/60">
+                      <span className="text-slate-400 text-[10px]">رمز السويفت SWIFT/BIC:</span>
+                      <span className="font-mono font-bold text-emerald-700 text-[11px] dir-ltr">{comp.bankSwiftCode}</span>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -736,27 +752,121 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 </div>
 
                 <div>
-                  <label className="block font-bold text-slate-700 mb-1">بنك صرف الرواتب (حماية الأجور)</label>
-                  <input
-                    type="text"
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block font-bold text-slate-700">بنك صرف الرواتب (حماية الأجور)</label>
+                    <span className="text-[10px] text-slate-400">البنوك السعودية المعتمدة</span>
+                  </div>
+                  <select
                     value={companyForm.bankName || ''}
-                    onChange={(e) => setCompanyForm({ ...companyForm, bankName: e.target.value })}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl"
-                    placeholder="مصرف الراجحي / البنك الأهلي"
-                  />
+                    onChange={(e) => {
+                      const newBank = e.target.value;
+                      const swift = getSwiftCodeFromBankName(newBank);
+                      setCompanyForm({ 
+                        ...companyForm, 
+                        bankName: newBank,
+                        bankSwiftCode: swift || companyForm.bankSwiftCode || ''
+                      });
+                    }}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-medium focus:bg-white"
+                  >
+                    <option value="">-- اختر البنك --</option>
+                    {Object.values(SAUDI_BANKS).map(b => (
+                      <option key={b.code} value={b.nameAr}>
+                        {b.nameAr} ({b.swiftCode})
+                      </option>
+                    ))}
+                  </select>
                 </div>
 
                 <div>
-                  <label className="block font-bold text-slate-700 mb-1">رقم الآيبان البنكي للمنشأة (IBAN) *</label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block font-bold text-slate-700">رقم الآيبان البنكي للمنشأة (IBAN) *</label>
+                    {companyForm.bankIban && (
+                      validateSaudiIBAN(companyForm.bankIban) ? (
+                        <span className="text-[10px] text-emerald-600 font-bold flex items-center gap-0.5">
+                          <CheckCircle2 className="w-3 h-3" /> آيبان صحيح
+                        </span>
+                      ) : (
+                        <span className="text-[10px] text-amber-600 font-semibold flex items-center gap-0.5">
+                          <AlertCircle className="w-3 h-3" /> آيبان غير مكتمل
+                        </span>
+                      )
+                    )}
+                  </div>
                   <input
                     type="text"
                     required
                     value={companyForm.bankIban || ''}
-                    onChange={(e) => setCompanyForm({ ...companyForm, bankIban: e.target.value })}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-mono"
+                    onChange={(e) => {
+                      const cleanIban = e.target.value.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+                      const detected = detectBankFromIBAN(cleanIban);
+                      setCompanyForm({ 
+                        ...companyForm, 
+                        bankIban: cleanIban,
+                        bankName: detected ? detected.nameAr : companyForm.bankName,
+                        bankSwiftCode: detected ? detected.swiftCode : companyForm.bankSwiftCode
+                      });
+                    }}
+                    className={`w-full px-3 py-2 bg-slate-50 border rounded-xl font-mono ${
+                      companyForm.bankIban && validateSaudiIBAN(companyForm.bankIban)
+                        ? 'border-emerald-300 focus:border-emerald-500'
+                        : 'border-slate-200 focus:border-blue-500'
+                    }`}
                     placeholder="SAXXXXXXXXXXXXXXXXXXXXXXXX"
                     dir="ltr"
                   />
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block font-bold text-slate-700">رمز السويفت (SWIFT / BIC)</label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        let code = '';
+                        if (companyForm.bankIban) {
+                          const det = detectBankFromIBAN(companyForm.bankIban);
+                          if (det) code = det.swiftCode;
+                        }
+                        if (!code && companyForm.bankName) {
+                          code = getSwiftCodeFromBankName(companyForm.bankName);
+                        }
+                        if (code) {
+                          setCompanyForm({ ...companyForm, bankSwiftCode: code });
+                        }
+                      }}
+                      className="text-[10px] text-emerald-700 hover:text-emerald-800 font-bold flex items-center gap-0.5"
+                    >
+                      <Sparkles className="w-2.5 h-2.5" />
+                      <span>توليد تلقائي</span>
+                    </button>
+                  </div>
+                  <input
+                    type="text"
+                    value={companyForm.bankSwiftCode || ''}
+                    onChange={(e) => setCompanyForm({ ...companyForm, bankSwiftCode: e.target.value.replace(/[^a-zA-Z0-9]/g, '').toUpperCase() })}
+                    className={`w-full px-3 py-2 bg-slate-50 border rounded-xl font-mono uppercase ${
+                      companyForm.bankSwiftCode && validateSwiftCode(companyForm.bankSwiftCode)
+                        ? 'border-emerald-300 focus:border-emerald-500 text-emerald-900'
+                        : 'border-slate-200 focus:border-emerald-500'
+                    }`}
+                    placeholder="مثال: RJHISARI"
+                    dir="ltr"
+                    maxLength={11}
+                  />
+                  {companyForm.bankSwiftCode && (
+                    <div className="mt-1 text-[10px]">
+                      {validateSwiftCode(companyForm.bankSwiftCode) ? (
+                        <span className="text-emerald-700 font-semibold flex items-center gap-1">
+                          <CheckCircle2 className="w-2.5 h-2.5" /> معتمد قياسياً (ISO 9362)
+                        </span>
+                      ) : (
+                        <span className="text-amber-600 font-semibold flex items-center gap-1">
+                          <AlertCircle className="w-2.5 h-2.5" /> التنسيق القياسي: 8 إلى 11 حرفاً ورقم
+                        </span>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
 

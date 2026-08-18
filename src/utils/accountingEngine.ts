@@ -2,8 +2,9 @@ import { Company, PayrollRun, JournalBatch, JournalLine } from '../types';
 import { roundAmount } from './payrollEngine';
 
 export function generatePayrollJournalBatch(company: Company, payrollRun: PayrollRun): JournalBatch {
-  const accounts = company.chartOfAccounts;
+  const accounts = company?.chartOfAccounts || {};
   const lines: JournalLine[] = [];
+  const costCenters = company?.costCenters || [];
 
   // Group items by Cost Center for detailed tracking
   const costCenterMap = new Map<string, {
@@ -16,7 +17,7 @@ export function generatePayrollJournalBatch(company: Company, payrollRun: Payrol
   }>();
 
   // Initialize cost centers
-  company.costCenters.forEach(cc => {
+  costCenters.forEach(cc => {
     costCenterMap.set(cc.id, {
       baseSalary: 0,
       housing: 0,
@@ -28,7 +29,7 @@ export function generatePayrollJournalBatch(company: Company, payrollRun: Payrol
   });
 
   // Default fallback if cost center not matched
-  const defaultCCId = company.costCenters[0]?.id || 'CC-DEFAULT';
+  const defaultCCId = costCenters[0]?.id || 'CC-DEFAULT';
   if (!costCenterMap.has(defaultCCId)) {
     costCenterMap.set(defaultCCId, {
       baseSalary: 0,
@@ -40,20 +41,21 @@ export function generatePayrollJournalBatch(company: Company, payrollRun: Payrol
     });
   }
 
-  payrollRun.items.forEach(item => {
+  const items = payrollRun?.items || (payrollRun as any)?.records || [];
+  items.forEach((item: any) => {
     const ccId = costCenterMap.has(item.costCenterId) ? item.costCenterId : defaultCCId;
     const bucket = costCenterMap.get(ccId)!;
-    bucket.baseSalary += item.baseSalary;
-    bucket.housing += item.housingAllowance;
-    bucket.transport += item.transportAllowance;
-    bucket.overtime += item.overtimeAmount;
-    bucket.otherAllowances += item.otherAllowances + item.bonuses;
-    bucket.gosiEmployer += item.gosiEmployerShare;
+    bucket.baseSalary += Number(item.baseSalary || 0);
+    bucket.housing += Number(item.housingAllowance || 0);
+    bucket.transport += Number(item.transportAllowance || 0);
+    bucket.overtime += Number(item.overtimeAmount || 0);
+    bucket.otherAllowances += Number((item.otherAllowances || 0) + (item.bonuses || 0));
+    bucket.gosiEmployer += Number(item.gosiEmployerShare || 0);
   });
 
   // 1. DEBITS: Expenses per Cost Center
   costCenterMap.forEach((data, ccId) => {
-    const cc = company.costCenters.find(c => c.id === ccId) || {
+    const cc = costCenters.find(c => c.id === ccId) || {
       code: 'CC-GEN',
       nameAr: 'المركز العام'
     };

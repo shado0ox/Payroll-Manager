@@ -21,6 +21,13 @@ import {
 import { Company, Employee, EmploymentStatus, NationalityType, UserRole } from '../types';
 import { formatSAR, roundAmount } from '../utils/payrollEngine';
 import { downloadCsvFile } from '../utils/exportUtils';
+import { 
+  validateSaudiIBAN, 
+  validateSwiftCode, 
+  detectBankFromIBAN, 
+  getSwiftCodeFromBankName, 
+  SAUDI_BANKS 
+} from '../utils/security';
 
 interface EmployeesViewProps {
   company: Company;
@@ -87,6 +94,7 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
     status: 'ACTIVE',
     bankName: 'مصرف الراجحي',
     bankIban: 'SA',
+    bankSwiftCode: 'RJHISARI',
     salaryPackage: {
       baseSalary: 6000,
       housingAllowance: 1500,
@@ -109,6 +117,8 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
         `${emp.firstNameAr} ${emp.lastNameAr}`.includes(searchTerm) ||
         emp.nationalIdOrIqama.includes(searchTerm) ||
         emp.bankIban.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (emp.bankSwiftCode && emp.bankSwiftCode.toLowerCase().includes(searchTerm.toLowerCase())) ||
+        (emp.bankName && emp.bankName.toLowerCase().includes(searchTerm.toLowerCase())) ||
         emp.jobTitle.includes(searchTerm);
 
       const matchesDept = selectedDept === 'ALL' || emp.department === selectedDept;
@@ -148,6 +158,7 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
       status: 'ACTIVE',
       bankName: 'مصرف الراجحي',
       bankIban: 'SA4480000' + Math.floor(100000000000 + Math.random() * 900000000000),
+      bankSwiftCode: 'RJHISARI',
       salaryPackage: {
         baseSalary: 7000,
         housingAllowance: 1750,
@@ -162,7 +173,17 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
 
   const handleOpenEdit = (emp: Employee) => {
     setEditingEmployee(emp);
-    setFormData(JSON.parse(JSON.stringify(emp)));
+    const empCopy = JSON.parse(JSON.stringify(emp));
+    // Auto-detect swift code if not present
+    if (!empCopy.bankSwiftCode && empCopy.bankIban) {
+      const detected = detectBankFromIBAN(empCopy.bankIban);
+      if (detected) {
+        empCopy.bankSwiftCode = detected.swiftCode;
+      } else if (empCopy.bankName) {
+        empCopy.bankSwiftCode = getSwiftCodeFromBankName(empCopy.bankName);
+      }
+    }
+    setFormData(empCopy);
     setIsModalOpen(true);
   };
 
@@ -173,13 +194,19 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
       return;
     }
 
+    // Standardize SWIFT code uppercase
+    const processedForm = {
+      ...formData,
+      bankSwiftCode: formData.bankSwiftCode ? formData.bankSwiftCode.trim().toUpperCase() : ''
+    };
+
     if (editingEmployee) {
-      const updated = formData as Employee;
+      const updated = processedForm as Employee;
       if (onSaveEmployee) onSaveEmployee(updated);
       else if (onUpdateEmployee) onUpdateEmployee(updated);
     } else {
       const newEmp: Employee = {
-        ...formData as Employee,
+        ...processedForm as Employee,
         id: `emp-${company.id}-${Date.now()}`,
       };
       if (onSaveEmployee) onSaveEmployee(newEmp);
@@ -190,7 +217,7 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
 
   // Export to CSV
   const handleExportCsv = () => {
-    const headers = ['الرقم الوظيفي', 'الاسم بالعربي', 'الهوية/الإقامة', 'الجنسية', 'القسم', 'المسمى الوظيفي', 'تاريخ التعيين', 'الحالة', 'البنك', 'الآيبان IBAN', 'الراتب الأساسي', 'بدل سكن', 'بدل نقل', 'إجمالي الراتب'];
+    const headers = ['الرقم الوظيفي', 'الاسم بالعربي', 'الهوية/الإقامة', 'الجنسية', 'القسم', 'المسمى الوظيفي', 'تاريخ التعيين', 'الحالة', 'البنك', 'الآيبان IBAN', 'رمز السويفت SWIFT/BIC', 'الراتب الأساسي', 'بدل سكن', 'بدل نقل', 'إجمالي الراتب'];
     const rows = filteredEmployees.map(e => [
       `"${e.employeeNo}"`,
       `"${e.firstNameAr} ${e.lastNameAr}"`,
@@ -202,6 +229,7 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
       `"${e.status}"`,
       `"${e.bankName}"`,
       `"${e.bankIban}"`,
+      `"${e.bankSwiftCode || ''}"`,
       e.salaryPackage.baseSalary.toFixed(2),
       e.salaryPackage.housingAllowance.toFixed(2),
       e.salaryPackage.transportAllowance.toFixed(2),
@@ -378,12 +406,21 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                       )}
                     </td>
 
-                    {/* Bank & IBAN */}
+                    {/* Bank & IBAN & SWIFT */}
                     <td className="py-3 px-2 truncate">
                       <div className="text-slate-800 font-medium truncate">{emp.bankName}</div>
-                      <div className="text-[10px] text-slate-400 font-mono truncate" title={emp.bankIban}>
+                      <div className="text-[10px] text-slate-500 font-mono truncate" title={emp.bankIban}>
                         {emp.bankIban.slice(0, 6)}...{emp.bankIban.slice(-4)}
                       </div>
+                      {emp.bankSwiftCode ? (
+                        <div className="text-[9px] text-emerald-700 font-mono font-semibold truncate" title={`رمز السويفت: ${emp.bankSwiftCode}`}>
+                          SWIFT: {emp.bankSwiftCode}
+                        </div>
+                      ) : (
+                        <div className="text-[9px] text-slate-400 font-mono">
+                          SWIFT: —
+                        </div>
+                      )}
                     </td>
 
                     {/* Salary Breakdown */}
@@ -670,34 +707,161 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                 )}
               </div>
 
-              {/* Section 3: Bank & IBAN */}
+              {/* Section 3: Bank, IBAN & SWIFT Code */}
               <div className="pt-3 border-t border-slate-100">
-                <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider mb-3 flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                  <span>الحساب البنكي وحماية الأجور (WPS)</span>
-                </h4>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                    <span>الحساب البنكي وحماية الأجور (WPS) وبيانات السويفت (SWIFT/BIC)</span>
+                  </h4>
+                  <span className="text-[10px] text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md font-semibold">
+                    مطابق لمعايير البنك المركزي السعودي (SAMA)
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+                  
+                  {/* Bank Name */}
                   <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">اسم البنك</label>
-                    <input
-                      type="text"
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block text-xs font-semibold text-slate-700">اسم البنك *</label>
+                      <span className="text-[10px] text-slate-400">البنوك المعتمدة</span>
+                    </div>
+                    <select
                       value={formData.bankName || ''}
-                      onChange={(e) => setFormData({ ...formData, bankName: e.target.value })}
-                      className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white"
-                    />
+                      onChange={(e) => {
+                        const newBank = e.target.value;
+                        const detectedSwift = getSwiftCodeFromBankName(newBank);
+                        setFormData({ 
+                          ...formData, 
+                          bankName: newBank,
+                          bankSwiftCode: detectedSwift || formData.bankSwiftCode || ''
+                        });
+                      }}
+                      className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 font-medium"
+                    >
+                      <option value="">-- اختر البنك --</option>
+                      {Object.values(SAUDI_BANKS).map(b => (
+                        <option key={b.code} value={b.nameAr}>
+                          {b.nameAr} ({b.swiftCode})
+                        </option>
+                      ))}
+                    </select>
                   </div>
 
+                  {/* IBAN */}
                   <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">رقم الآيبان (IBAN) *</label>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block text-xs font-semibold text-slate-700">رقم الآيبان (IBAN) *</label>
+                      {formData.bankIban && (
+                        validateSaudiIBAN(formData.bankIban) ? (
+                          <span className="text-[10px] text-emerald-600 font-bold flex items-center gap-0.5">
+                            <CheckCircle className="w-3 h-3" /> آيبان صحيح
+                          </span>
+                        ) : (
+                          <span className="text-[10px] text-amber-600 font-semibold flex items-center gap-0.5">
+                            <AlertCircle className="w-3 h-3" /> آيبان غير مكتمل
+                          </span>
+                        )
+                      )}
+                    </div>
                     <input
                       type="text"
                       required
-                      placeholder="SA..."
+                      placeholder="SAXXXXXXXXXXXXXXXXXXXXXXXX"
                       value={formData.bankIban || ''}
-                      onChange={(e) => setFormData({ ...formData, bankIban: e.target.value.toUpperCase() })}
-                      className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white font-mono"
+                      onChange={(e) => {
+                        const cleanIban = e.target.value.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+                        const detected = detectBankFromIBAN(cleanIban);
+                        setFormData({ 
+                          ...formData, 
+                          bankIban: cleanIban,
+                          bankName: detected ? detected.nameAr : formData.bankName,
+                          bankSwiftCode: detected ? detected.swiftCode : formData.bankSwiftCode
+                        });
+                      }}
+                      className={`w-full px-3 py-2 text-xs bg-slate-50 border rounded-xl focus:bg-white font-mono tracking-wider transition-all ${
+                        formData.bankIban && validateSaudiIBAN(formData.bankIban)
+                          ? 'border-emerald-300 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20'
+                          : 'border-slate-200 focus:border-blue-500'
+                      }`}
+                      dir="ltr"
                     />
                   </div>
+
+                  {/* SWIFT / BIC Code */}
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block text-xs font-semibold text-slate-700">رمز السويفت (SWIFT / BIC)</label>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          let code = '';
+                          if (formData.bankIban) {
+                            const det = detectBankFromIBAN(formData.bankIban);
+                            if (det) code = det.swiftCode;
+                          }
+                          if (!code && formData.bankName) {
+                            code = getSwiftCodeFromBankName(formData.bankName);
+                          }
+                          if (code) {
+                            setFormData({ ...formData, bankSwiftCode: code });
+                          } else {
+                            alert('يرجى تحديد اسم البنك أو إدخال رقم آيبان سعودي صالح ليتم التوليد التلقائي لرمز السويفت');
+                          }
+                        }}
+                        className="text-[10px] text-emerald-700 hover:text-emerald-800 font-bold flex items-center gap-0.5 cursor-pointer"
+                        title="توليد وتحديث رمز السويفت تلقائياً بناءً على البنك أو الآيبان"
+                      >
+                        <Sparkles className="w-2.5 h-2.5" />
+                        <span>توليد تلقائي</span>
+                      </button>
+                    </div>
+
+                    <div className="relative">
+                      <input
+                        type="text"
+                        placeholder="مثال: RJHISARI أو NCBKSARI"
+                        value={formData.bankSwiftCode || ''}
+                        onChange={(e) => {
+                          const swiftVal = e.target.value.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+                          setFormData({ ...formData, bankSwiftCode: swiftVal });
+                        }}
+                        className={`w-full px-3 py-2 text-xs bg-slate-50 border rounded-xl focus:bg-white font-mono tracking-wider transition-all uppercase ${
+                          formData.bankSwiftCode && validateSwiftCode(formData.bankSwiftCode)
+                            ? 'border-emerald-400 bg-emerald-50/20 text-emerald-900 focus:ring-2 focus:ring-emerald-500/20'
+                            : formData.bankSwiftCode
+                            ? 'border-amber-300 bg-amber-50/20 text-amber-900 focus:ring-2 focus:ring-amber-500/20'
+                            : 'border-slate-200 focus:border-emerald-500'
+                        }`}
+                        dir="ltr"
+                        maxLength={11}
+                      />
+                    </div>
+
+                    {/* SWIFT Validation Badge / Help text */}
+                    <div className="mt-1 flex items-center justify-between text-[10px]">
+                      {formData.bankSwiftCode ? (
+                        validateSwiftCode(formData.bankSwiftCode) ? (
+                          <span className="text-emerald-700 font-semibold flex items-center gap-1">
+                            <CheckCircle className="w-2.5 h-2.5" /> رمز سويفت قياسي معتمد (ISO 9362)
+                          </span>
+                        ) : (
+                          <span className="text-amber-600 font-semibold flex items-center gap-1">
+                            <AlertCircle className="w-2.5 h-2.5" /> الصيغة القياسية: 8 أو 11 حرفاً ورقم
+                          </span>
+                        )
+                      ) : (
+                        <span className="text-slate-400">
+                          يتولد تلقائياً من رقم الآيبان والبنك
+                        </span>
+                      )}
+                      <span className="text-slate-400 font-mono">
+                        {(formData.bankSwiftCode || '').length}/11
+                      </span>
+                    </div>
+                  </div>
+
                 </div>
               </div>
 

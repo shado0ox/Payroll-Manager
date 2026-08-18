@@ -46,6 +46,18 @@ export function validateCRNumber(cr: string): boolean {
 }
 
 /**
+ * Validates SWIFT / BIC Code format according to ISO 9362 standard
+ * Standard format: 4 letters (Bank code) + 2 letters (Country code) + 2 alphanumeric (Location) + optional 3 alphanumeric (Branch)
+ * Total length: 8 or 11 characters (e.g., RJHISARI, NCBKSARI, RJHISARIXXX)
+ */
+export function validateSwiftCode(swiftCode: string): boolean {
+  if (!swiftCode) return false;
+  const clean = swiftCode.trim().toUpperCase();
+  const swiftRegex = /^[A-Z]{4}[A-Z]{2}[A-Z0-9]{2}([A-Z0-9]{3})?$/;
+  return swiftRegex.test(clean);
+}
+
+/**
  * Saudi Central Bank (SAMA) Standard Bank Identifiers & SWIFT Codes
  */
 export interface SaudiBankInfo {
@@ -105,6 +117,24 @@ export function getSwiftCodeFromBankName(bankName: string): string {
     b.nameEn.toLowerCase().includes(cleanName)
   );
   return found ? found.swiftCode : '';
+}
+
+/**
+ * Validates Saudi Commercial Registration Number (10 numeric digits)
+ */
+export function validateSaudiCR(cr: string): boolean {
+  if (!cr) return false;
+  const clean = cr.trim().replace(/[^0-9]/g, '');
+  return clean.length === 10;
+}
+
+/**
+ * Validates Saudi VAT / Tax Number (15 numeric digits, starts and ends with 3)
+ */
+export function validateSaudiTaxNumber(taxNo: string): boolean {
+  if (!taxNo) return false;
+  const clean = taxNo.trim().replace(/[^0-9]/g, '');
+  return clean.length === 15 && clean.startsWith('3') && clean.endsWith('3');
 }
 
 /**

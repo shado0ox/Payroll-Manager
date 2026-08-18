@@ -116,15 +116,25 @@ export const AccountingJournalsView: React.FC<AccountingJournalsViewProps> = ({
             <span>خريطة الحسابات (قيود)</span>
           </button>
 
-          {/* Qoyod Direct CSV Export */}
+          {/* Qoyod Direct API & CSV Export */}
           {activeBatch && (
-            <button
-              onClick={() => exportQoyodJournalCsv(activeBatch, company)}
-              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
-            >
-              <FileSpreadsheet className="w-4 h-4" />
-              <span>تصدير قيد قيود CSV</span>
-            </button>
+            <>
+              <button
+                onClick={onOpenQoyodModal}
+                className="px-3.5 py-2 bg-sky-600 hover:bg-sky-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
+              >
+                <Sparkles className="w-4 h-4" />
+                <span>ترحيل لقيود (API 2.0)</span>
+              </button>
+
+              <button
+                onClick={() => exportQoyodJournalCsv(activeBatch, company)}
+                className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
+              >
+                <FileSpreadsheet className="w-4 h-4" />
+                <span>تصدير CSV لقيود</span>
+              </button>
+            </>
           )}
         </div>
       </div>

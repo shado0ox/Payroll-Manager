@@ -57,6 +57,7 @@ import { LoansPenaltiesView } from './components/LoansPenaltiesView';
 import { AccountingJournalsView } from './components/AccountingJournalsView';
 import { ReportsView } from './components/ReportsView';
 import { SettingsView } from './components/SettingsView';
+import { CompanyProfileView } from './components/CompanyProfileView';
 import { AuditLogsView } from './components/AuditLogsView';
 import { EmployeeStatementModal } from './components/EmployeeStatementModal';
 import { QoyodIntegrationModal } from './components/QoyodIntegrationModal';
@@ -503,6 +504,24 @@ export const App: React.FC = () => {
                 onNavigate={setActiveTab}
                 onViewEmployeeStatement={setStatementEmployee}
                 onOpenQoyodModal={() => setIsQoyodModalOpen(true)}
+              />
+            )}
+
+            {activeTab === 'company_profile' && (
+              <CompanyProfileView
+                company={activeCompany}
+                allCompanies={state.companies}
+                employees={state.employees}
+                users={state.users}
+                activeRole={state.activeRole}
+                currentUser={state.currentUser}
+                qoyodConfig={state.qoyodConfig}
+                onSaveQoyodConfig={handleSaveQoyodConfig}
+                onOpenQoyodModal={() => setIsQoyodModalOpen(true)}
+                onUpdateCompany={handleUpdateCompany}
+                onSelectCompany={handleSelectCompany}
+                onSaveUser={handleSaveUser}
+                onDeleteUser={handleDeleteUser}
               />
             )}
 
