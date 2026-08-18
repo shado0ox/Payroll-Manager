@@ -48,6 +48,10 @@ const qualityOverrides: Record<string, string> = {
   'النوع غير مدعوم. استخدم XLSX أو CSV أو TSV': 'Unsupported type. Use XLSX, CSV, or TSV',
   'الملف يتجاوز الحد الأقصى وهو 2500 صف': 'The file exceeds the 2,500-row limit',
   'تعذر اكتشاف صف العناوين. تأكد من وجود الرقم الوظيفي والاسم والإقامة': 'Could not detect the header row. Make sure employee number, name, and Iqama columns exist',
+  'ابحث بالاسم أو الرقم الوظيفي أو الإقامة...': 'Search by name, employee number, or Iqama...',
+  'اختر موظفًا': 'Select an employee', 'بدون اختيار': 'No selection',
+  'بدون ربط (حساب إداري مستقل)': 'No link (independent admin account)',
+  'لا يوجد موظف مطابق للبحث': 'No employee matches your search',
 };
 const translationCatalog: Record<string, string> = { ...generatedTranslations, ...qualityOverrides };
 // Only the compact, reviewed glossary is used for partial/dynamic replacements.

@@ -24,6 +24,7 @@ import {
   Briefcase
 } from 'lucide-react';
 import { UserAccount, UserRole, Employee, Company } from '../types';
+import { SearchableEmployeeSelect } from './SearchableEmployeeSelect';
 
 interface UserManagementViewProps {
   users: UserAccount[];
@@ -520,18 +521,13 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
                 <label className="block text-xs font-bold text-slate-700 mb-1">
                   ربط بحساب موظف حالي (اختياري)
                 </label>
-                <select
+                <SearchableEmployeeSelect
+                  employees={employees}
                   value={formData.employeeId}
-                  onChange={(e) => handleEmployeeSelect(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:bg-white focus:outline-none focus:border-emerald-500 cursor-pointer"
-                >
-                  <option value="">-- بدون ربط (حساب إداري مستقل) --</option>
-                  {employees.map((emp, idx) => (
-                    <option key={`${emp.id || 'emp'}-${idx}`} value={emp.id}>
-                      {emp.firstNameAr} {emp.lastNameAr} - {emp.employeeNo} ({emp.jobTitle})
-                    </option>
-                  ))}
-                </select>
+                  onChange={handleEmployeeSelect}
+                  allowEmpty
+                  emptyLabel="بدون ربط (حساب إداري مستقل)"
+                />
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

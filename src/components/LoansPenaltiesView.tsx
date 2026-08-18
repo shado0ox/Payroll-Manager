@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { Company, Employee, LoanSchedule, PenaltyRecord, UserRole } from '../types';
 import { formatSAR } from '../utils/payrollEngine';
+import { SearchableEmployeeSelect } from './SearchableEmployeeSelect';
 
 interface LoansPenaltiesViewProps {
   company: Company;
@@ -333,16 +334,12 @@ export const LoansPenaltiesView: React.FC<LoansPenaltiesViewProps> = ({
             <form onSubmit={handleSaveLoan} className="space-y-3.5 text-xs">
               <div>
                 <label className="block font-semibold text-slate-700 mb-1">الموظف المستفيد *</label>
-                <select
+                <SearchableEmployeeSelect
                   required
+                  employees={companyEmployees}
                   value={loanForm.employeeId}
-                  onChange={(e) => setLoanForm({ ...loanForm, employeeId: e.target.value })}
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl"
-                >
-                  {companyEmployees.map((e, idx) => (
-                    <option key={`${e.id || 'emp'}-${idx}`} value={e.id}>{e.employeeNo} - {e.firstNameAr} {e.lastNameAr} ({e.department})</option>
-                  ))}
-                </select>
+                  onChange={(employeeId) => setLoanForm({ ...loanForm, employeeId })}
+                />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
@@ -431,16 +428,12 @@ export const LoansPenaltiesView: React.FC<LoansPenaltiesViewProps> = ({
             <form onSubmit={handleSavePenalty} className="space-y-3.5 text-xs">
               <div>
                 <label className="block font-semibold text-slate-700 mb-1">الموظف *</label>
-                <select
+                <SearchableEmployeeSelect
                   required
+                  employees={companyEmployees}
                   value={penaltyForm.employeeId}
-                  onChange={(e) => setPenaltyForm({ ...penaltyForm, employeeId: e.target.value })}
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl"
-                >
-                  {companyEmployees.map((e, idx) => (
-                    <option key={`${e.id || 'emp'}-${idx}`} value={e.id}>{e.employeeNo} - {e.firstNameAr} {e.lastNameAr}</option>
-                  ))}
-                </select>
+                  onChange={(employeeId) => setPenaltyForm({ ...penaltyForm, employeeId })}
+                />
               </div>
 
               <div className="grid grid-cols-2 gap-3">

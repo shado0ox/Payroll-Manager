@@ -13,6 +13,7 @@ import {
   FileSpreadsheet
 } from 'lucide-react';
 import { Company, Employee, AttendanceRecord, LeaveRequest, UserRole } from '../types';
+import { SearchableEmployeeSelect } from './SearchableEmployeeSelect';
 
 interface AttendanceLeavesViewProps {
   company: Company;
@@ -413,16 +414,12 @@ export const AttendanceLeavesView: React.FC<AttendanceLeavesViewProps> = ({
             <form onSubmit={handleSaveAttendance} className="space-y-3.5 text-xs">
               <div>
                 <label className="block font-semibold text-slate-700 mb-1">الموظف *</label>
-                <select
+                <SearchableEmployeeSelect
                   required
+                  employees={companyEmployees}
                   value={newAttendance.employeeId}
-                  onChange={(e) => setNewAttendance({ ...newAttendance, employeeId: e.target.value })}
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl"
-                >
-                  {companyEmployees.map((e, idx) => (
-                    <option key={`${e.id || 'emp'}-${idx}`} value={e.id}>{e.employeeNo} - {e.firstNameAr} {e.lastNameAr} ({e.department})</option>
-                  ))}
-                </select>
+                  onChange={(employeeId) => setNewAttendance({ ...newAttendance, employeeId })}
+                />
               </div>
 
               {/* Date Range: From / To */}
