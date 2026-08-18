@@ -1,4 +1,4 @@
-import { Company, PayrollRun, JournalBatch, JournalLine } from '../types';
+import { Company, PayrollRun, JournalBatch, JournalLine, PayrollPaymentBatch } from '../types';
 import { roundAmount } from './payrollEngine';
 
 export function generatePayrollJournalBatch(company: Company, payrollRun: PayrollRun): JournalBatch {
@@ -226,17 +226,25 @@ export function generatePayrollJournalBatch(company: Company, payrollRun: Payrol
   };
 }
 
-export function generatePaymentJournalBatch(company: Company, payrollRun: PayrollRun): JournalBatch {
+export function generatePaymentJournalBatch(company: Company, payrollRun: PayrollRun, paymentBatch?: PayrollPaymentBatch): JournalBatch {
   const accounts = company.chartOfAccounts;
   const lines: JournalLine[] = [];
+  const paidBatches = payrollRun.paymentBatches?.filter(batch => batch.status === 'PAID') || [];
+  const paymentAmount = roundAmount(paymentBatch
+    ? paymentBatch.totalAmount
+    : payrollRun.paymentBatches?.length
+      ? paidBatches.reduce((sum, batch) => sum + batch.totalAmount, 0)
+      : payrollRun.totalNetSalaries);
+  const reference = paymentBatch?.batchNumber || `مسير ${payrollRun.periodMonth}`;
+  const journalDate = paymentBatch?.paymentDate || paymentBatch?.scheduledDate || new Date().toISOString().split('T')[0];
 
   // Debit: Salaries Payable
   lines.push({
     id: `line-pay-debit-payable`,
     accountCode: accounts.salariesPayableAccount || '2101',
     accountNameAr: 'مستحقات الرواتب والأجور',
-    descriptionAr: `صرف رواتب شهر ${payrollRun.periodMonth} عبر مسير البنك`,
-    debit: roundAmount(payrollRun.totalNetSalaries),
+    descriptionAr: `صرف رواتب شهر ${payrollRun.periodMonth} - دفعة ${reference}`,
+    debit: paymentAmount,
     credit: 0,
   });
 
@@ -245,21 +253,21 @@ export function generatePaymentJournalBatch(company: Company, payrollRun: Payrol
     id: `line-pay-cred-bank`,
     accountCode: accounts.bankAccount || '1010',
     accountNameAr: 'حساب البنك الجاري',
-    descriptionAr: `تحويل رواتب شهر ${payrollRun.periodMonth} بحوالة سريعة/نظام حماية الأجور WPS`,
+    descriptionAr: `تحويل رواتب شهر ${payrollRun.periodMonth} - دفعة ${reference}`,
     debit: 0,
-    credit: roundAmount(payrollRun.totalNetSalaries),
+    credit: paymentAmount,
   });
 
   return {
-    id: `batch-payment-${payrollRun.id}`,
+    id: `batch-payment-${paymentBatch?.id || payrollRun.id}`,
     companyId: company.id,
     payrollRunId: payrollRun.id,
     periodMonth: payrollRun.periodMonth,
-    batchNumber: `PV-${payrollRun.periodMonth.replace('-', '')}-${company.crNumber.slice(-4) || '001'}`,
-    date: new Date().toISOString().split('T')[0],
-    description: `قيد صرف وتحويل رواتب شهر ${payrollRun.periodMonth} عبر البنك`,
-    totalDebit: roundAmount(payrollRun.totalNetSalaries),
-    totalCredit: roundAmount(payrollRun.totalNetSalaries),
+    batchNumber: `PV-${paymentBatch?.batchNumber || `${payrollRun.periodMonth.replace('-', '')}-${company.crNumber.slice(-4) || '001'}`}`,
+    date: journalDate,
+    description: `قيد صرف وتحويل رواتب شهر ${payrollRun.periodMonth} - دفعة ${reference}`,
+    totalDebit: paymentAmount,
+    totalCredit: paymentAmount,
     status: 'DRAFT',
     lines,
   };

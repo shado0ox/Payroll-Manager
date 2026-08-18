@@ -134,7 +134,7 @@ export function exportPayrollSheetCsv(payrollRun: PayrollRun, company: Company):
 /**
  * Generates Wages Protection System (WPS / Mudad / SAMA standard) Bank File format.
  */
-export function exportWpsBankCsv(payrollRun: PayrollRun, company: Company): void {
+export function exportWpsBankCsv(payrollRun: PayrollRun, company: Company, employeeIds?: string[], batchReference?: string): void {
   const headers = [
     'نوع السجل (Record Type)',
     'رقم الهوية / الإقامة',
@@ -149,8 +149,12 @@ export function exportWpsBankCsv(payrollRun: PayrollRun, company: Company): void
     'الرقم المرجعي للمنشأة'
   ];
 
-  const rows = payrollRun.items
-    .filter(i => !i.isSuspended && i.netSalary > 0)
+  const selectedIds = employeeIds ? new Set(employeeIds) : null;
+  const selectedItems = payrollRun.items
+    .filter(i => !selectedIds || selectedIds.has(i.employeeId))
+    .filter(i => !i.isSuspended && i.netSalary > 0);
+  const selectedTotal = selectedItems.reduce((sum, item) => sum + item.netSalary, 0);
+  const rows = selectedItems
     .map(item => [
       'ED', // Employee Detail
       `"${item.employeeId.slice(0, 10)}"`,
@@ -171,16 +175,17 @@ export function exportWpsBankCsv(payrollRun: PayrollRun, company: Company): void
     `"${company.nameAr}"`,
     `"${payrollRun.endDate}"`,
     `"${payrollRun.periodMonth}"`,
-    `"${payrollRun.items.filter(i => !i.isSuspended).length}"`,
-    payrollRun.totalNetSalaries.toFixed(2),
+    `"${selectedItems.length}"`,
+    selectedTotal.toFixed(2),
     'SAR',
-    `"WPS-${payrollRun.periodMonth}"`,
+    `"${batchReference || `WPS-${payrollRun.periodMonth}`}"`,
     '""',
     '""'
   ];
 
   const csvContent = [headers.join(','), headerSummary.join(','), ...rows.map(r => r.join(','))].join('\r\n');
-  const filename = `WPS_Mudad_File_${payrollRun.periodMonth}_${company.crNumber}.csv`;
+  const safeReference = (batchReference || 'FULL').replace(/[^a-zA-Z0-9_-]/g, '_');
+  const filename = `WPS_Mudad_File_${payrollRun.periodMonth}_${safeReference}_${company.crNumber}.csv`;
   downloadCsvFile(filename, csvContent);
 }
 

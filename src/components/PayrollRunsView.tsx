@@ -19,7 +19,10 @@ import {
   Send,
   Lock,
   Sparkles,
-  Zap
+  Zap,
+  WalletCards,
+  X,
+  CircleDollarSign
 } from 'lucide-react';
 import { 
   Company, 
@@ -30,7 +33,10 @@ import {
   AttendanceRecord, 
   LoanSchedule, 
   PenaltyRecord, 
-  UserRole 
+  UserRole,
+  PayrollPaymentBatch,
+  PaymentMethod,
+  PaymentBatchStatus,
 } from '../types';
 import { 
   calculateEmployeePayrollItem, 
@@ -44,7 +50,7 @@ import {
   exportWpsBankCsv, 
   exportGosiReportCsv 
 } from '../utils/exportUtils';
-import { generatePayrollJournalBatch } from '../utils/accountingEngine';
+import { generatePayrollJournalBatch, generatePaymentJournalBatch } from '../utils/accountingEngine';
 
 interface PayrollRunsViewProps {
   company: Company;
@@ -64,6 +70,19 @@ const STATUS_CONFIG: Record<PayrollRunStatus, { label: string; bg: string; text:
   UNDER_REVIEW: { label: 'قيد المراجعة والتدقيق', bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200' },
   APPROVED: { label: 'معتمد من الإدارة (Approved)', bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200' },
   POSTED: { label: 'مرحل ومقفل محاسبياً (Posted)', bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-200' },
+};
+
+const PAYMENT_STATUS_CONFIG: Record<PaymentBatchStatus, { label: string; classes: string }> = {
+  SCHEDULED: { label: 'مجدولة للتحويل', classes: 'bg-blue-50 text-blue-700 border-blue-200' },
+  PAID: { label: 'تم التحويل', classes: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+  FAILED: { label: 'فشل التحويل', classes: 'bg-rose-50 text-rose-700 border-rose-200' },
+  CANCELLED: { label: 'ملغاة', classes: 'bg-slate-100 text-slate-600 border-slate-200' },
+};
+
+const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
+  WPS: 'حماية الأجور WPS',
+  BANK_TRANSFER: 'تحويل بنكي',
+  CASH: 'دفع نقدي',
 };
 
 export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
@@ -91,6 +110,14 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
   const [filterDept, setFilterDept] = useState('ALL');
   const [isCalculating, setIsCalculating] = useState(false);
   const [calcSpeedMs, setCalcSpeedMs] = useState<number | null>(null);
+  const [selectedPaymentEmployeeIds, setSelectedPaymentEmployeeIds] = useState<string[]>([]);
+  const [isPaymentBatchModalOpen, setIsPaymentBatchModalOpen] = useState(false);
+  const [paymentBatchForm, setPaymentBatchForm] = useState({
+    method: 'WPS' as PaymentMethod,
+    scheduledDate: new Date().toISOString().slice(0, 10),
+    reference: '',
+    notes: '',
+  });
 
   // Active selected run
   const currentRun = useMemo(() => {
@@ -123,8 +150,85 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
     });
   }, [currentRun, searchTerm, filterWarningOnly, filterDept]);
 
+  const paymentBatches = currentRun?.paymentBatches || [];
+  const committedPaymentBatches = paymentBatches.filter(batch => ['SCHEDULED', 'PAID'].includes(batch.status));
+  const committedEmployeeIds = useMemo(
+    () => new Set(committedPaymentBatches.flatMap(batch => batch.employeeIds)),
+    [currentRun?.paymentBatches]
+  );
+  const paidAmount = paymentBatches.filter(batch => batch.status === 'PAID').reduce((sum, batch) => sum + batch.totalAmount, 0);
+  const scheduledAmount = paymentBatches.filter(batch => batch.status === 'SCHEDULED').reduce((sum, batch) => sum + batch.totalAmount, 0);
+  const remainingToSchedule = Math.max(0, (currentRun?.totalNetSalaries || 0) - paidAmount - scheduledAmount);
+  const unpaidAmount = Math.max(0, (currentRun?.totalNetSalaries || 0) - paidAmount);
+
+  const getEmployeePaymentBatch = (employeeId: string) => {
+    return [...paymentBatches].reverse().find(batch => batch.employeeIds.includes(employeeId) && batch.status !== 'CANCELLED');
+  };
+
+  const eligibleFilteredItems = filteredItems.filter(item =>
+    !item.isSuspended && item.netSalary > 0 && !committedEmployeeIds.has(item.employeeId)
+  );
+  const selectedPaymentItems = currentRun?.items.filter(item => selectedPaymentEmployeeIds.includes(item.employeeId)) || [];
+  const selectedPaymentTotal = selectedPaymentItems.reduce((sum, item) => sum + item.netSalary, 0);
+
+  const togglePaymentEmployee = (employeeId: string) => {
+    setSelectedPaymentEmployeeIds(current => current.includes(employeeId)
+      ? current.filter(id => id !== employeeId)
+      : [...current, employeeId]);
+  };
+
+  const toggleAllEligibleEmployees = () => {
+    const eligibleIds = eligibleFilteredItems.map(item => item.employeeId);
+    const allSelected = eligibleIds.length > 0 && eligibleIds.every(id => selectedPaymentEmployeeIds.includes(id));
+    setSelectedPaymentEmployeeIds(current => allSelected
+      ? current.filter(id => !eligibleIds.includes(id))
+      : Array.from(new Set([...current, ...eligibleIds])));
+  };
+
+  const handleCreatePaymentBatch = () => {
+    if (!currentRun || !selectedPaymentItems.length || !['APPROVED', 'POSTED'].includes(currentRun.status)) return;
+    const stillEligible = selectedPaymentItems.filter(item => !item.isSuspended && item.netSalary > 0 && !committedEmployeeIds.has(item.employeeId));
+    if (!stillEligible.length) return;
+    const sequence = (currentRun.paymentBatches?.length || 0) + 1;
+    const batchNumber = `PAY-${currentRun.periodMonth.replace('-', '')}-${String(sequence).padStart(3, '0')}`;
+    const batch: PayrollPaymentBatch = {
+      id: `payment-${currentRun.id}-${Date.now()}`,
+      batchNumber,
+      payrollRunId: currentRun.id,
+      companyId: company.id,
+      periodMonth: currentRun.periodMonth,
+      employeeIds: stillEligible.map(item => item.employeeId),
+      employeesCount: stillEligible.length,
+      totalAmount: roundAmount(stillEligible.reduce((sum, item) => sum + item.netSalary, 0)),
+      method: paymentBatchForm.method,
+      status: 'SCHEDULED',
+      scheduledDate: paymentBatchForm.scheduledDate,
+      reference: paymentBatchForm.reference.trim() || batchNumber,
+      notes: paymentBatchForm.notes.trim(),
+      createdAt: new Date().toISOString(),
+    };
+    onSavePayrollRun({ ...currentRun, paymentBatches: [...(currentRun.paymentBatches || []), batch] });
+    setSelectedPaymentEmployeeIds([]);
+    setIsPaymentBatchModalOpen(false);
+    setPaymentBatchForm({ method: 'WPS', scheduledDate: new Date().toISOString().slice(0, 10), reference: '', notes: '' });
+  };
+
+  const handlePaymentBatchStatus = (batchId: string, status: PaymentBatchStatus) => {
+    if (!currentRun) return;
+    const paymentBatches = (currentRun.paymentBatches || []).map(batch => batch.id === batchId ? {
+      ...batch,
+      status,
+      paymentDate: status === 'PAID' ? new Date().toISOString().slice(0, 10) : batch.paymentDate,
+    } : batch);
+    onSavePayrollRun({ ...currentRun, paymentBatches });
+  };
+
   // Execute full payroll calculation engine
   const handleRecalculate = () => {
+    if (currentRun?.paymentBatches?.some(batch => batch.status === 'PAID')) {
+      alert('لا يمكن إعادة احتساب المسير بعد تسجيل دفعة محولة. ألغِ حالة التحويل أو أنشئ تسوية مستقلة.');
+      return;
+    }
     setIsCalculating(true);
     const startTime = performance.now();
 
@@ -184,7 +288,8 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
         totalNetSalaries,
         totalCompanyCost,
         items: runItems,
-        journalBatchId: `batch-${runId}`
+        journalBatchId: `batch-${runId}`,
+        paymentBatches: currentRun?.paymentBatches || [],
       };
 
       runItems.forEach(i => i.payrollRunId = runId);
@@ -243,7 +348,7 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
             <Calendar className="w-4 h-4 text-slate-500" />
             <select
               value={selectedPeriod}
-              onChange={(e) => setSelectedPeriod(e.target.value)}
+              onChange={(e) => { setSelectedPeriod(e.target.value); setSelectedPaymentEmployeeIds([]); }}
               className="bg-transparent text-xs font-bold text-slate-800 border-none focus:ring-0 cursor-pointer"
             >
               <option value="2026-08">أغسطس 2026 (الشهر الحالي)</option>
@@ -419,6 +524,83 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
         </div>
       )}
 
+      {/* Partial salary payment batches */}
+      {currentRun && (
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+          <div className="p-4 border-b border-slate-100 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
+                <WalletCards className="w-5 h-5 text-emerald-600" /> دفعات تحويل الرواتب
+              </h3>
+              <p className="text-xs text-slate-500 mt-1">حوّل لمجموعة أو لموظف واحد مع إبقاء مسير الشهر موحدًا.</p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={toggleAllEligibleEmployees}
+                disabled={!eligibleFilteredItems.length}
+                className="px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-slate-700 text-xs font-bold cursor-pointer disabled:opacity-40"
+              >
+                تحديد المتاح ({eligibleFilteredItems.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsPaymentBatchModalOpen(true)}
+                disabled={!selectedPaymentEmployeeIds.length || !['APPROVED', 'POSTED'].includes(currentRun.status)}
+                className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-2 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <Send className="w-4 h-4" /> إنشاء دفعة للمحددين ({selectedPaymentEmployeeIds.length})
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 p-4 bg-slate-50/70">
+            <div className="p-3 rounded-xl bg-white border border-slate-200"><div className="text-[10px] text-slate-500">إجمالي المسير</div><div className="font-black text-slate-900">{formatSAR(currentRun.totalNetSalaries)}</div></div>
+            <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200"><div className="text-[10px] text-emerald-700">تم تحويله</div><div className="font-black text-emerald-800">{formatSAR(paidAmount)}</div></div>
+            <div className="p-3 rounded-xl bg-blue-50 border border-blue-200"><div className="text-[10px] text-blue-700">مجدول للتحويل</div><div className="font-black text-blue-800">{formatSAR(scheduledAmount)}</div></div>
+            <div className="p-3 rounded-xl bg-amber-50 border border-amber-200"><div className="text-[10px] text-amber-700">غير محوّل</div><div className="font-black text-amber-800">{formatSAR(unpaidAmount)}</div></div>
+            <div className="p-3 rounded-xl bg-white border border-slate-200"><div className="text-[10px] text-slate-500">متاح لدفعة جديدة</div><div className="font-black text-slate-900">{formatSAR(remainingToSchedule)}</div></div>
+          </div>
+
+          {paymentBatches.length > 0 && (
+            <div className="overflow-x-auto border-t border-slate-100">
+              <table className="w-full text-xs text-right">
+                <thead className="bg-slate-50 text-slate-600"><tr>
+                  <th className="p-3">رقم الدفعة</th><th className="p-3">الموظفون</th><th className="p-3">المبلغ</th><th className="p-3">الطريقة والتاريخ</th><th className="p-3">الحالة</th><th className="p-3 text-center">الإجراءات</th>
+                </tr></thead>
+                <tbody className="divide-y divide-slate-100">
+                  {[...paymentBatches].reverse().map(batch => (
+                    <tr key={batch.id} className="hover:bg-slate-50/70">
+                      <td className="p-3"><div className="font-black font-mono text-slate-900">{batch.batchNumber}</div><div className="text-[10px] text-slate-400">{batch.reference}</div></td>
+                      <td className="p-3 font-bold">{batch.employeesCount} موظف</td>
+                      <td className="p-3 font-black text-emerald-800">{formatSAR(batch.totalAmount)}</td>
+                      <td className="p-3"><div className="font-semibold">{PAYMENT_METHOD_LABELS[batch.method]}</div><div className="text-[10px] text-slate-400">{batch.paymentDate || batch.scheduledDate}</div></td>
+                      <td className="p-3"><span className={`px-2 py-1 rounded-lg border text-[10px] font-bold ${PAYMENT_STATUS_CONFIG[batch.status].classes}`}>{PAYMENT_STATUS_CONFIG[batch.status].label}</span></td>
+                      <td className="p-3"><div className="flex flex-wrap justify-center gap-1.5">
+                        <button type="button" onClick={() => exportWpsBankCsv(currentRun, company, batch.employeeIds, batch.reference || batch.batchNumber)} className="px-2 py-1 rounded-lg bg-indigo-50 text-indigo-700 border border-indigo-200 font-bold">WPS</button>
+                        {batch.status === 'SCHEDULED' && <>
+                          <button type="button" onClick={() => handlePaymentBatchStatus(batch.id, 'PAID')} className="px-2 py-1 rounded-lg bg-emerald-600 text-white font-bold">تم التحويل</button>
+                          <button type="button" onClick={() => handlePaymentBatchStatus(batch.id, 'FAILED')} className="px-2 py-1 rounded-lg bg-rose-50 text-rose-700 border border-rose-200 font-bold">فشل</button>
+                          <button type="button" onClick={() => handlePaymentBatchStatus(batch.id, 'CANCELLED')} className="px-2 py-1 rounded-lg bg-slate-100 text-slate-600 font-bold">إلغاء</button>
+                        </>}
+                        {batch.status === 'PAID' && (
+                          <button type="button" onClick={() => exportQoyodJournalCsv(generatePaymentJournalBatch(company, currentRun, batch), company)} className="px-2 py-1 rounded-lg bg-sky-50 text-sky-700 border border-sky-200 font-bold">قيد السداد</button>
+                        )}
+                        {['FAILED', 'CANCELLED'].includes(batch.status) && <span className="text-[10px] text-slate-400 self-center">الموظفون متاحون لدفعة جديدة</span>}
+                      </div></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {!['APPROVED', 'POSTED'].includes(currentRun.status) && (
+            <div className="px-4 py-3 border-t border-amber-200 bg-amber-50 text-xs text-amber-800 font-semibold">يجب اعتماد المسير أولًا قبل إنشاء دفعات التحويل.</div>
+          )}
+        </div>
+      )}
+
       {/* Filter and Search Bar for Table */}
       <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-xs flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3 flex-1 min-w-[240px] max-w-md">
@@ -467,7 +649,12 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
         <table className="w-full text-right text-xs table-fixed divide-y divide-slate-100">
           <thead>
             <tr className="bg-slate-800 text-white font-bold border-b border-slate-700 text-[11px]">
-              <th className="py-2.5 px-2 w-[15%] text-right font-bold">الموظف والرقم</th>
+              <th className="py-2.5 px-2 w-[15%] text-right font-bold">
+                <div className="flex items-center gap-2">
+                  <input type="checkbox" checked={eligibleFilteredItems.length > 0 && eligibleFilteredItems.every(item => selectedPaymentEmployeeIds.includes(item.employeeId))} onChange={toggleAllEligibleEmployees} className="accent-emerald-500" />
+                  <span>الموظف والرقم</span>
+                </div>
+              </th>
               <th className="py-2.5 px-1.5 w-[8%] text-right font-bold">القسم</th>
               <th className="py-2.5 px-1.5 w-[7%] text-right font-bold">الأساسي</th>
               <th className="py-2.5 px-1.5 w-[8%] text-right font-bold">البدلات</th>
@@ -493,6 +680,8 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
               filteredItems.map((item, idx) => {
                 const emp = employees.find(e => e.id === item.employeeId);
                 const hasWarning = item.warningFlags.length > 0;
+                const paymentBatch = getEmployeePaymentBatch(item.employeeId);
+                const canSelectForPayment = !item.isSuspended && item.netSalary > 0 && !committedEmployeeIds.has(item.employeeId);
 
                 return (
                   <tr 
@@ -503,14 +692,29 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
                   >
                     {/* Name & Flags */}
                     <td className="py-2.5 px-2 truncate">
-                      <div className="font-bold text-slate-900 flex items-center gap-1 truncate">
-                        <span className="truncate">{item.employeeName}</span>
-                        {item.nationality === 'SAUDI' && (
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" title="سعودي (GOSI)" />
-                        )}
-                      </div>
-                      <div className="text-[10px] text-slate-400 font-mono">
-                        {item.employeeNo}
+                      <div className="flex items-start gap-2">
+                        <input
+                          type="checkbox"
+                          disabled={!canSelectForPayment}
+                          checked={selectedPaymentEmployeeIds.includes(item.employeeId)}
+                          onChange={() => togglePaymentEmployee(item.employeeId)}
+                          className="mt-0.5 accent-emerald-600 disabled:opacity-30"
+                          title={canSelectForPayment ? 'تحديد لدفعة تحويل' : 'الموظف مرتبط بدفعة أو غير قابل للتحويل'}
+                        />
+                        <div className="min-w-0 grow">
+                          <div className="font-bold text-slate-900 flex items-center gap-1 truncate">
+                            <span className="truncate">{item.employeeName}</span>
+                            {item.nationality === 'SAUDI' && (
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" title="سعودي (GOSI)" />
+                            )}
+                          </div>
+                          <div className="text-[10px] text-slate-400 font-mono">{item.employeeNo}</div>
+                          {paymentBatch ? (
+                            <div className={`inline-flex mt-0.5 px-1.5 py-0.5 rounded border text-[9px] font-bold ${PAYMENT_STATUS_CONFIG[paymentBatch.status].classes}`} title={paymentBatch.batchNumber}>
+                              {PAYMENT_STATUS_CONFIG[paymentBatch.status].label} • {paymentBatch.batchNumber}
+                            </div>
+                          ) : <div className="text-[9px] text-amber-600 font-semibold mt-0.5">بانتظار إدراجه في دفعة</div>}
+                        </div>
                       </div>
                       {hasWarning && (
                         <div className="text-[9px] text-amber-700 font-semibold truncate mt-0.5" title={item.warningFlags.join(' • ')}>
@@ -613,6 +817,35 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
           </tbody>
         </table>
       </div>
+
+      {isPaymentBatchModalOpen && currentRun && (
+        <div className="fixed inset-0 z-[100] bg-slate-950/65 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-lg w-full shadow-2xl border border-slate-200 overflow-hidden">
+            <div className="bg-slate-900 text-white p-5 flex items-center justify-between">
+              <div className="flex items-center gap-3"><CircleDollarSign className="w-6 h-6 text-emerald-400" /><div><h3 className="font-black">إنشاء دفعة تحويل رواتب</h3><p className="text-xs text-slate-400">{selectedPaymentItems.length} موظف • {formatSAR(selectedPaymentTotal)}</p></div></div>
+              <button type="button" onClick={() => setIsPaymentBatchModalOpen(false)} className="p-1.5 hover:bg-white/10 rounded-lg"><X className="w-5 h-5" /></button>
+            </div>
+            <div className="p-6 space-y-4 text-xs">
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">طريقة التحويل *</label>
+                <select value={paymentBatchForm.method} onChange={event => setPaymentBatchForm({ ...paymentBatchForm, method: event.target.value as PaymentMethod })} className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold">
+                  <option value="WPS">حماية الأجور WPS</option><option value="BANK_TRANSFER">تحويل بنكي</option><option value="CASH">دفع نقدي</option>
+                </select>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div><label className="block font-bold text-slate-700 mb-1">تاريخ التحويل المجدول *</label><input type="date" required value={paymentBatchForm.scheduledDate} onChange={event => setPaymentBatchForm({ ...paymentBatchForm, scheduledDate: event.target.value })} className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl" /></div>
+                <div><label className="block font-bold text-slate-700 mb-1">مرجع التحويل</label><input value={paymentBatchForm.reference} onChange={event => setPaymentBatchForm({ ...paymentBatchForm, reference: event.target.value })} className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl" placeholder="رقم ملف البنك أو الحوالة" /></div>
+              </div>
+              <div><label className="block font-bold text-slate-700 mb-1">ملاحظات</label><textarea rows={2} value={paymentBatchForm.notes} onChange={event => setPaymentBatchForm({ ...paymentBatchForm, notes: event.target.value })} className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl resize-none" placeholder="مثال: الدفعة الأولى من رواتب الشهر" /></div>
+              <div className="rounded-xl bg-emerald-50 border border-emerald-200 p-3 flex items-center justify-between"><span className="font-bold text-emerald-900">إجمالي الدفعة</span><span className="font-black text-emerald-800 text-base">{formatSAR(selectedPaymentTotal)}</span></div>
+            </div>
+            <div className="p-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-2">
+              <button type="button" onClick={() => setIsPaymentBatchModalOpen(false)} className="px-4 py-2 bg-white border border-slate-200 rounded-xl font-bold">إلغاء</button>
+              <button type="button" onClick={handleCreatePaymentBatch} disabled={!paymentBatchForm.scheduledDate || !selectedPaymentItems.length} className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-black disabled:opacity-40">إنشاء وجدولة الدفعة</button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

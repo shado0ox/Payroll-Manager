@@ -65,6 +65,21 @@ const qualityOverrides: Record<string, string> = {
   'حذف نهائي': 'Delete permanently', 'هذه العملية لا يمكن التراجع عنها من داخل النظام': 'This action cannot be undone from within the system',
   'اكتب «حذف جميع الموظفين» للتأكيد:': 'Type “DELETE ALL EMPLOYEES” to confirm:',
   'العمليات في هذا القسم نهائية وتؤثر على بيانات المنشأة الحالية فقط.': 'Actions in this section are permanent and affect the current company only.',
+  'دفعات تحويل الرواتب': 'Salary transfer batches', 'تم تحويله': 'Transferred',
+  'مجدول للتحويل': 'Scheduled for transfer', 'غير محوّل': 'Not transferred',
+  'متاح لدفعة جديدة': 'Available for a new batch', 'تحديد المتاح': 'Select available',
+  'إنشاء دفعة للمحددين': 'Create batch for selected', 'إنشاء دفعة تحويل رواتب': 'Create salary transfer batch',
+  'حوّل لمجموعة أو لموظف واحد مع إبقاء مسير الشهر موحدًا.': 'Transfer to a group or one employee while keeping a single monthly payroll run.',
+  'رقم الدفعة': 'Batch number', 'المبلغ': 'Amount', 'الطريقة والتاريخ': 'Method and date',
+  'حماية الأجور WPS': 'WPS', 'تحويل بنكي': 'Bank transfer', 'دفع نقدي': 'Cash payment',
+  'تم التحويل': 'Transferred', 'فشل التحويل': 'Transfer failed', 'ملغاة': 'Cancelled',
+  'الموظفون متاحون لدفعة جديدة': 'Employees are available for a new batch',
+  'يجب اعتماد المسير أولًا قبل إنشاء دفعات التحويل.': 'The payroll run must be approved before creating transfer batches.',
+  'بانتظار إدراجه في دفعة': 'Waiting to be added to a batch', 'تحديد لدفعة تحويل': 'Select for transfer batch',
+  'طريقة التحويل': 'Transfer method', 'تاريخ التحويل المجدول': 'Scheduled transfer date',
+  'مرجع التحويل': 'Transfer reference', 'رقم ملف البنك أو الحوالة': 'Bank file or transfer reference',
+  'إجمالي الدفعة': 'Batch total', 'إنشاء وجدولة الدفعة': 'Create and schedule batch',
+  'قيد السداد': 'Payment journal', 'مجدولة للتحويل': 'Scheduled for transfer',
 };
 const translationCatalog: Record<string, string> = { ...generatedTranslations, ...qualityOverrides };
 // Only the compact, reviewed glossary is used for partial/dynamic replacements.

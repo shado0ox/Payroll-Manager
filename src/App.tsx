@@ -336,22 +336,42 @@ export const App: React.FC = () => {
 
   const handleSavePayrollRun = (run: PayrollRun) => {
     setState(prev => {
-      const exists = prev.payrollRuns.some(r => r.id === run.id);
+      const previousRun = prev.payrollRuns.find(r => r.id === run.id);
+      const exists = Boolean(previousRun);
       const updated = exists
         ? prev.payrollRuns.map(r => r.id === run.id ? run : r)
         : [run, ...prev.payrollRuns];
 
       savePayrollRuns(updated);
 
+      const previousBatches = previousRun?.paymentBatches || [];
+      const currentBatches = run.paymentBatches || [];
+      const createdBatch = currentBatches.find(batch => !previousBatches.some(previous => previous.id === batch.id));
+      const changedBatch = currentBatches.find(batch => {
+        const previous = previousBatches.find(candidate => candidate.id === batch.id);
+        return previous && previous.status !== batch.status;
+      });
+
+      let auditAction = `تحديث مسير الرواتب (${run.status})`;
+      let auditDetails = `مسير فترة ${run.periodMonth} - إجمالي الصافي: ${run.totalNetSalaries.toLocaleString()} SAR`;
+
+      if (createdBatch) {
+        auditAction = 'إنشاء دفعة تحويل رواتب';
+        auditDetails = `${createdBatch.batchNumber} - ${createdBatch.employeesCount} موظف - ${createdBatch.totalAmount.toLocaleString()} SAR - الحالة: ${createdBatch.status}`;
+      } else if (changedBatch) {
+        auditAction = 'تحديث حالة دفعة تحويل رواتب';
+        auditDetails = `${changedBatch.batchNumber} - الحالة الجديدة: ${changedBatch.status} - ${changedBatch.totalAmount.toLocaleString()} SAR`;
+      }
+
       const log: AuditLog = {
         id: `log-${Date.now()}`,
         timestamp: new Date().toISOString(),
         userName: prev.currentUser?.name || 'مسؤول الرواتب',
         userRole: prev.activeRole,
-        action: `تحديث مسير الرواتب (${run.status})`,
+        action: auditAction,
         entityType: 'PAYROLL_RUN',
         entityId: run.id,
-        details: `مسير فترة ${run.periodMonth} - إجمالي الصافي: ${run.totalNetSalaries.toLocaleString()} SAR`,
+        details: auditDetails,
       };
       const updatedLogs = [log, ...prev.auditLogs];
       saveAuditLogs(updatedLogs);

@@ -257,6 +257,28 @@ export interface PayrollRunItem {
   warningFlags: string[];
 }
 
+export type PaymentBatchStatus = 'SCHEDULED' | 'PAID' | 'FAILED' | 'CANCELLED';
+export type PaymentMethod = 'WPS' | 'BANK_TRANSFER' | 'CASH';
+
+export interface PayrollPaymentBatch {
+  id: string;
+  batchNumber: string;
+  payrollRunId: string;
+  companyId: string;
+  periodMonth: string;
+  employeeIds: string[];
+  employeesCount: number;
+  totalAmount: number;
+  method: PaymentMethod;
+  status: PaymentBatchStatus;
+  scheduledDate: string;
+  paymentDate?: string;
+  reference?: string;
+  notes?: string;
+  createdAt: string;
+  createdBy?: string;
+}
+
 export interface PayrollRun {
   id: string;
   companyId: string;
@@ -289,6 +311,7 @@ export interface PayrollRun {
 
   items: PayrollRunItem[];
   journalBatchId?: string;
+  paymentBatches?: PayrollPaymentBatch[];
 }
 
 export interface JournalLine {
