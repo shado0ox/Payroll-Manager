@@ -292,6 +292,48 @@ export const App: React.FC = () => {
     });
   };
 
+  const handleDeleteAllCompanyEmployees = (companyId: string) => {
+    setStatementEmployee(null);
+    setState(prev => {
+      const deletedEmployees = prev.employees.filter(employee => employee.companyId === companyId);
+      const employeeIds = new Set(deletedEmployees.map(employee => employee.id));
+      if (!employeeIds.size) return prev;
+
+      const employees = prev.employees.filter(employee => !employeeIds.has(employee.id));
+      const attendance = prev.attendance.filter(record => !employeeIds.has(record.employeeId));
+      const leaves = prev.leaves.filter(record => !employeeIds.has(record.employeeId));
+      const loans = prev.loans.filter(record => !employeeIds.has(record.employeeId));
+      const penalties = prev.penalties.filter(record => !employeeIds.has(record.employeeId));
+      const payrollRuns = prev.payrollRuns.filter(run => run.companyId !== companyId);
+      const journals = prev.journals.filter(journal => journal.companyId !== companyId);
+      const users = prev.users.map(user => employeeIds.has(user.employeeId || '') ? { ...user, employeeId: undefined } : user);
+
+      saveEmployees(employees);
+      saveAttendance(attendance);
+      saveLeaves(leaves);
+      saveLoans(loans);
+      savePenalties(penalties);
+      savePayrollRuns(payrollRuns);
+      saveJournals(journals);
+      saveUsers(users);
+
+      const log: AuditLog = {
+        id: `log-${Date.now()}`,
+        timestamp: new Date().toISOString(),
+        userName: prev.currentUser?.name || 'مسؤول النظام',
+        userRole: prev.activeRole,
+        action: 'مسح جميع موظفي المنشأة',
+        entityType: 'COMPANY',
+        entityId: companyId,
+        details: `تم حذف ${deletedEmployees.length} موظفًا وجميع بيانات الحضور والإجازات والسلف والجزاءات والمسيرات والقيود المرتبطة بهم`,
+      };
+      const auditLogs = [log, ...prev.auditLogs];
+      saveAuditLogs(auditLogs);
+
+      return { ...prev, employees, attendance, leaves, loans, penalties, payrollRuns, journals, users, auditLogs };
+    });
+  };
+
   const handleSavePayrollRun = (run: PayrollRun) => {
     setState(prev => {
       const exists = prev.payrollRuns.some(r => r.id === run.id);
@@ -599,6 +641,7 @@ export const App: React.FC = () => {
                 onSelectCompany={handleSelectCompany}
                 onSaveUser={handleSaveUser}
                 onDeleteUser={handleDeleteUser}
+                onDeleteAllCompanyEmployees={handleDeleteAllCompanyEmployees}
               />
             )}
 

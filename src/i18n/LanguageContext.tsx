@@ -59,6 +59,12 @@ const qualityOverrides: Record<string, string> = {
   'IBAN غير مكتمل': 'IBAN incomplete', 'بيانات بنكية غير مكتملة': 'Incomplete bank details',
   'رقم الإقامة غير مكتمل': 'Iqama number incomplete', 'بيانات IBAN غير مكتملة': 'IBAN details incomplete',
   'رقم IBAN يحتاج مراجعة': 'IBAN needs review', 'الرقم الوظيفي غير محدد': 'Employee number is missing',
+  'إدارة البيانات الحساسة': 'Sensitive data management', 'منطقة الخطر وإدارة البيانات الحساسة': 'Danger zone and sensitive data management',
+  'مسح جميع موظفي المنشأة': 'Delete all company employees', 'مسح جميع الموظفين': 'Delete all employees',
+  'تأكيد مسح جميع الموظفين': 'Confirm deleting all employees', 'حذف جميع الموظفين': 'DELETE ALL EMPLOYEES',
+  'حذف نهائي': 'Delete permanently', 'هذه العملية لا يمكن التراجع عنها من داخل النظام': 'This action cannot be undone from within the system',
+  'اكتب «حذف جميع الموظفين» للتأكيد:': 'Type “DELETE ALL EMPLOYEES” to confirm:',
+  'العمليات في هذا القسم نهائية وتؤثر على بيانات المنشأة الحالية فقط.': 'Actions in this section are permanent and affect the current company only.',
 };
 const translationCatalog: Record<string, string> = { ...generatedTranslations, ...qualityOverrides };
 // Only the compact, reviewed glossary is used for partial/dynamic replacements.

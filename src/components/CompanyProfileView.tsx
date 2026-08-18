@@ -79,9 +79,10 @@ interface CompanyProfileViewProps {
   onSelectCompany?: (companyId: string) => void;
   onSaveUser?: (user: UserAccount) => void;
   onDeleteUser?: (userId: string) => void;
+  onDeleteAllCompanyEmployees?: (companyId: string) => void;
 }
 
-type ProfileSubTab = 'details' | 'banking' | 'qoyod' | 'users' | 'departments' | 'cost_centers' | 'policies' | 'accounts';
+type ProfileSubTab = 'details' | 'banking' | 'qoyod' | 'users' | 'departments' | 'cost_centers' | 'policies' | 'accounts' | 'danger';
 
 const ROLE_INFO: Record<UserRole, { labelAr: string; descAr: string; color: string; badgeBg: string }> = {
   ADMIN: { 
@@ -136,9 +137,12 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
   onSelectCompany,
   onSaveUser,
   onDeleteUser,
+  onDeleteAllCompanyEmployees,
 }) => {
   const [activeSubTab, setActiveSubTab] = useState<ProfileSubTab>('details');
   const [saveSuccessMessage, setSaveSuccessMessage] = useState<string | null>(null);
+  const [isDeleteEmployeesModalOpen, setIsDeleteEmployeesModalOpen] = useState(false);
+  const [deleteEmployeesConfirmation, setDeleteEmployeesConfirmation] = useState('');
 
   // Local editable company state
   const [formData, setFormData] = useState<Company>(() => JSON.parse(JSON.stringify(company)));
@@ -177,6 +181,8 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
   const companyEmployees = useMemo(() => {
     return employees.filter(e => e.companyId === formData.id);
   }, [employees, formData.id]);
+  const deleteEmployeesConfirmationValid = ['حذف جميع الموظفين', 'DELETE ALL EMPLOYEES']
+    .includes(deleteEmployeesConfirmation.trim().toUpperCase());
 
   const companyUsers = useMemo(() => {
     return users.filter(u => u.companyIds.includes(formData.id) || u.role === 'ADMIN');
@@ -668,6 +674,20 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
             <Settings2 className="w-4 h-4" />
             <span>شجرة الحسابات</span>
           </button>
+
+          {activeRole === 'ADMIN' && (
+            <button
+              onClick={() => setActiveSubTab('danger')}
+              className={`px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap flex items-center gap-2 transition-all cursor-pointer ${
+                activeSubTab === 'danger'
+                  ? 'bg-rose-700 text-white shadow-sm'
+                  : 'text-rose-700 hover:bg-rose-50'
+              }`}
+            >
+              <AlertCircle className="w-4 h-4" />
+              <span>إدارة البيانات الحساسة</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -2091,6 +2111,90 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
               <Save className="w-4 h-4" />
               <span>حفظ دليل الحسابات</span>
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* SUB-TAB 8: Sensitive Data Management */}
+      {activeSubTab === 'danger' && activeRole === 'ADMIN' && (
+        <div className="bg-white rounded-2xl p-6 border border-rose-200 shadow-sm space-y-5">
+          <div className="flex items-start gap-3 border-b border-rose-100 pb-4">
+            <div className="w-10 h-10 rounded-xl bg-rose-100 text-rose-700 flex items-center justify-center shrink-0">
+              <AlertCircle className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-rose-900">منطقة الخطر وإدارة البيانات الحساسة</h3>
+              <p className="text-xs text-rose-700 mt-1">العمليات في هذا القسم نهائية وتؤثر على بيانات المنشأة الحالية فقط.</p>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-rose-200 bg-rose-50/60 p-5 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+            <div>
+              <h4 className="text-sm font-black text-slate-900">مسح جميع موظفي المنشأة</h4>
+              <p className="text-xs text-slate-600 mt-1 max-w-3xl leading-6">
+                سيتم حذف {companyEmployees.length} موظفًا من منشأة {formData.nameAr}، مع سجلات الحضور والإجازات والسلف والجزاءات ومسيرات الرواتب والقيود المرتبطة بهم. لن تُحذف المنشأة أو إعداداتها أو حساب المدير.
+              </p>
+            </div>
+            <button
+              type="button"
+              disabled={!companyEmployees.length || !onDeleteAllCompanyEmployees}
+              onClick={() => { setDeleteEmployeesConfirmation(''); setIsDeleteEmployeesModalOpen(true); }}
+              className="px-5 py-2.5 bg-rose-700 hover:bg-rose-800 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
+            >
+              <Trash2 className="w-4 h-4" />
+              مسح جميع الموظفين ({companyEmployees.length})
+            </button>
+          </div>
+        </div>
+      )}
+
+      {isDeleteEmployeesModalOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm">
+          <div className="bg-white rounded-3xl max-w-lg w-full shadow-2xl border border-rose-200 overflow-hidden">
+            <div className="bg-rose-700 text-white p-5 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <AlertCircle className="w-6 h-6" />
+                <div>
+                  <h3 className="font-black">تأكيد مسح جميع الموظفين</h3>
+                  <p className="text-xs text-rose-100">هذه العملية لا يمكن التراجع عنها من داخل النظام</p>
+                </div>
+              </div>
+              <button type="button" onClick={() => setIsDeleteEmployeesModalOpen(false)} className="p-1.5 hover:bg-white/10 rounded-lg cursor-pointer"><X className="w-5 h-5" /></button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <div className="rounded-xl bg-rose-50 border border-rose-200 p-4 text-xs text-rose-900 leading-6">
+                سيتم حذف <b>{companyEmployees.length} موظفًا</b> وكل معاملاتهم المرتبطة من منشأة <b>{formData.nameAr}</b>. تأكد من وجود نسخة احتياطية إذا كانت هناك بيانات مهمة.
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">اكتب «حذف جميع الموظفين» للتأكيد:</label>
+                <input
+                  autoFocus
+                  value={deleteEmployeesConfirmation}
+                  onChange={event => setDeleteEmployeesConfirmation(event.target.value)}
+                  className="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl text-sm font-bold focus:outline-none focus:border-rose-500 focus:ring-2 focus:ring-rose-500/15"
+                  placeholder="حذف جميع الموظفين"
+                />
+              </div>
+            </div>
+
+            <div className="p-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-2">
+              <button type="button" onClick={() => setIsDeleteEmployeesModalOpen(false)} className="px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold cursor-pointer">إلغاء</button>
+              <button
+                type="button"
+                disabled={!deleteEmployeesConfirmationValid}
+                onClick={() => {
+                  if (!deleteEmployeesConfirmationValid) return;
+                  onDeleteAllCompanyEmployees?.(formData.id);
+                  setIsDeleteEmployeesModalOpen(false);
+                  setDeleteEmployeesConfirmation('');
+                  setSaveSuccessMessage(`تم مسح جميع موظفي المنشأة (${companyEmployees.length}) والبيانات المرتبطة بهم`);
+                }}
+                className="px-5 py-2 bg-rose-700 hover:bg-rose-800 text-white rounded-xl text-xs font-black cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                حذف نهائي
+              </button>
+            </div>
           </div>
         </div>
       )}
