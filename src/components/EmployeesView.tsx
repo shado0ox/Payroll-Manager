@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import { 
   Users, 
   Search, 
@@ -16,7 +16,9 @@ import {
   X,
   CreditCard,
   Briefcase,
-  UserPlus
+  UserPlus,
+  Upload,
+  FileSpreadsheet
 } from 'lucide-react';
 import { Company, Employee, EmploymentStatus, NationalityType, UserRole } from '../types';
 import { formatSAR, roundAmount } from '../utils/payrollEngine';
@@ -28,6 +30,12 @@ import {
   getSwiftCodeFromBankName, 
   SAUDI_BANKS 
 } from '../utils/security';
+import {
+  EmployeeImportField,
+  ParsedEmployeeSheet,
+  parseEmployeeSheet,
+  parseMoney,
+} from '../utils/employeeImport';
 
 interface EmployeesViewProps {
   company: Company;
@@ -35,6 +43,7 @@ interface EmployeesViewProps {
   loans?: any[];
   activeRole: UserRole;
   onSaveEmployee?: (emp: Employee) => void;
+  onBulkImportEmployees?: (employees: Employee[]) => void;
   onViewStatement?: (emp: Employee) => void;
   onAddEmployee?: (emp: Employee) => void;
   onUpdateEmployee?: (emp: Employee) => void;
@@ -48,6 +57,7 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
   loans = [],
   activeRole,
   onSaveEmployee,
+  onBulkImportEmployees,
   onViewStatement,
   onAddEmployee,
   onUpdateEmployee,
@@ -72,6 +82,11 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
+  const importInputRef = useRef<HTMLInputElement>(null);
+  const [importSheet, setImportSheet] = useState<ParsedEmployeeSheet | null>(null);
+  const [importMapping, setImportMapping] = useState<Record<number, EmployeeImportField | ''>>({});
+  const [importError, setImportError] = useState('');
+  const [isParsingImport, setIsParsingImport] = useState(false);
 
   // Form Fields
   const [formData, setFormData] = useState<Partial<Employee>>({
@@ -240,6 +255,131 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
     downloadCsvFile(`Employees_List_${company.nameEn || 'Company'}.csv`, csvContent);
   };
 
+  const importFieldLabels: Record<EmployeeImportField, string> = {
+    employeeNo: 'الرقم الوظيفي', fullName: 'اسم الموظف', nationalIdOrIqama: 'الهوية / الإقامة',
+    country: 'الدولة / الجنسية', bankIban: 'IBAN', bankName: 'اسم البنك',
+    bankSwiftCode: 'SWIFT / BIC', baseSalary: 'الراتب الأساسي', allowances: 'إضافات ثابتة',
+    deductions: 'استقطاعات ثابتة', status: 'الحالة', notes: 'ملاحظات',
+  };
+
+  const getImportValue = (row: string[], field: EmployeeImportField): string => {
+    const column = Object.entries(importMapping).find(([, mapped]) => mapped === field)?.[0];
+    return column === undefined ? '' : (row[Number(column)] || '').trim();
+  };
+
+  const importPreview = useMemo(() => {
+    if (!importSheet) return { valid: [] as Employee[], errors: [] as string[], duplicates: 0 };
+    const existingNumbers = new Set(companyEmployees.map(emp => emp.employeeNo.trim().toLowerCase()));
+    const existingIqamas = new Set(companyEmployees.map(emp => emp.nationalIdOrIqama.trim()).filter(Boolean));
+    const existingIbans = new Set(companyEmployees.map(emp => emp.bankIban.replace(/\s/g, '').toUpperCase()).filter(Boolean));
+    const seenNumbers = new Set<string>();
+    const valid: Employee[] = [];
+    const errors: string[] = [];
+    let duplicates = 0;
+    const today = new Date().toISOString().slice(0, 10);
+
+    importSheet.rows.forEach((row, index) => {
+      const rowNo = importSheet.headerRow + index + 1;
+      const employeeNo = getImportValue(row, 'employeeNo');
+      const fullName = getImportValue(row, 'fullName').replace(/\s+/g, ' ').trim();
+      const iqama = getImportValue(row, 'nationalIdOrIqama').replace(/\s/g, '');
+      const iban = getImportValue(row, 'bankIban').replace(/\s/g, '').toUpperCase();
+      const salary = parseMoney(getImportValue(row, 'baseSalary'));
+      const importedDeduction = Math.max(0, parseMoney(getImportValue(row, 'deductions')));
+      if (!employeeNo || !fullName || !iqama || !iban || salary <= 0) {
+        errors.push(`الصف ${rowNo}: بيانات إلزامية ناقصة`);
+        return;
+      }
+      const employeeKey = employeeNo.toLowerCase();
+      if (existingNumbers.has(employeeKey) || existingIqamas.has(iqama) || existingIbans.has(iban) || seenNumbers.has(employeeKey)) {
+        duplicates += 1;
+        return;
+      }
+      if (!validateSaudiIBAN(iban)) {
+        errors.push(`الصف ${rowNo}: رقم IBAN غير صالح`);
+        return;
+      }
+      seenNumbers.add(employeeKey);
+      const nameParts = fullName.split(' ');
+      const firstName = nameParts.shift() || fullName;
+      const lastName = nameParts.join(' ') || '-';
+      const bankNameFromSheet = getImportValue(row, 'bankName');
+      const detectedBank = detectBankFromIBAN(iban);
+      const bankName = bankNameFromSheet || detectedBank?.nameAr || 'غير محدد';
+      const swift = (getImportValue(row, 'bankSwiftCode') || detectedBank?.swiftCode || getSwiftCodeFromBankName(bankName) || '').toUpperCase();
+      const country = getImportValue(row, 'country') || 'غير محدد';
+      const rawStatus = getImportValue(row, 'status').toLowerCase();
+      const status: EmploymentStatus = ['suspended', 'موقوف', 'معلق'].includes(rawStatus) ? 'SUSPENDED'
+        : ['terminated', 'منتهي'].includes(rawStatus) ? 'TERMINATED'
+        : ['leave', 'اجازة', 'إجازة'].includes(rawStatus) ? 'ON_LEAVE' : 'ACTIVE';
+      valid.push({
+        id: `emp-${company.id}-${Date.now()}-${index}`,
+        companyId: company.id,
+        employeeNo,
+        firstNameAr: firstName,
+        lastNameAr: lastName,
+        firstNameEn: firstName,
+        lastNameEn: lastName,
+        nationalIdOrIqama: iqama,
+        nationality: 'NON_SAUDI',
+        country,
+        email: '',
+        phone: '',
+        department: 'العمالة المنزلية',
+        jobTitle: 'عاملة منزلية',
+        costCenterId: company.costCenters[0]?.id || '',
+        hireDate: today,
+        salaryStartDate: today,
+        status,
+        bankName,
+        bankIban: iban,
+        bankSwiftCode: swift,
+        salaryPackage: {
+          baseSalary: salary,
+          housingAllowance: 0,
+          transportAllowance: 0,
+          otherFixedAllowances: Math.max(0, parseMoney(getImportValue(row, 'allowances'))),
+          customAllowances: [],
+          customDeductions: importedDeduction > 0
+            ? [{ componentId: 'imported-deduction', name: 'استقطاع مستورد', amount: importedDeduction }]
+            : [],
+        },
+      });
+    });
+    return { valid, errors, duplicates };
+  }, [importSheet, importMapping, companyEmployees, company.id, company.costCenters]);
+
+  const handleImportFile = async (file?: File) => {
+    if (!file) return;
+    setIsParsingImport(true);
+    setImportError('');
+    try {
+      const parsed = await parseEmployeeSheet(file);
+      setImportSheet(parsed);
+      setImportMapping(Object.fromEntries(parsed.columns.map(column => [column.index, column.suggestedField])));
+    } catch (error) {
+      const code = error instanceof Error ? error.message : '';
+      const messages: Record<string, string> = {
+        FILE_TOO_LARGE: 'حجم الملف يتجاوز 5 ميجابايت',
+        UNSUPPORTED_FILE: 'النوع غير مدعوم. استخدم XLSX أو CSV أو TSV',
+        TOO_MANY_ROWS: 'الملف يتجاوز الحد الأقصى وهو 2500 صف',
+        HEADER_NOT_FOUND: 'تعذر اكتشاف صف العناوين. تأكد من وجود الرقم الوظيفي والاسم والإقامة',
+      };
+      setImportError(messages[code] || 'تعذر قراءة الملف');
+    } finally {
+      setIsParsingImport(false);
+      if (importInputRef.current) importInputRef.current.value = '';
+    }
+  };
+
+  const confirmEmployeeImport = () => {
+    if (!importPreview.valid.length) return;
+    if (onBulkImportEmployees) onBulkImportEmployees(importPreview.valid);
+    else importPreview.valid.forEach(handleSave);
+    setImportSheet(null);
+    setImportMapping({});
+  };
+
   return (
     <div className="space-y-6">
       
@@ -259,6 +399,22 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          <input
+            ref={importInputRef}
+            type="file"
+            accept=".xlsx,.csv,.tsv"
+            className="hidden"
+            onChange={(event) => handleImportFile(event.target.files?.[0])}
+          />
+          <button
+            onClick={() => importInputRef.current?.click()}
+            disabled={isParsingImport}
+            className="px-3.5 py-2 bg-white text-emerald-700 hover:bg-emerald-50 border border-emerald-200 rounded-xl text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+          >
+            <Upload className="w-4 h-4" />
+            <span>{isParsingImport ? 'جاري قراءة الملف...' : 'استيراد موظفين'}</span>
+          </button>
+
           <button
             onClick={handleExportCsv}
             className="px-3.5 py-2 bg-white text-slate-700 hover:bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer"
@@ -276,6 +432,12 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
           </button>
         </div>
       </div>
+
+      {importError && (
+        <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs font-semibold text-rose-700 flex items-center gap-2">
+          <AlertCircle className="w-4 h-4" /> {importError}
+        </div>
+      )}
 
       {/* Filter and Search Bar */}
       <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
@@ -499,6 +661,83 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
         </table>
       </div>
 
+      {/* Spreadsheet Import Preview */}
+      {importSheet && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white rounded-3xl max-w-6xl w-full max-h-[92vh] shadow-2xl border border-slate-200 overflow-hidden flex flex-col">
+            <div className="bg-slate-900 text-white p-5 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-emerald-500/20 text-emerald-400 rounded-xl"><FileSpreadsheet className="w-5 h-5" /></div>
+                <div>
+                  <h3 className="font-bold">معاينة استيراد الموظفين</h3>
+                  <p className="text-xs text-slate-400">{importSheet.fileName} — صف العناوين {importSheet.headerRow}</p>
+                </div>
+              </div>
+              <button onClick={() => setImportSheet(null)} className="p-2 hover:bg-white/10 rounded-xl cursor-pointer"><X className="w-5 h-5" /></button>
+            </div>
+
+            <div className="p-5 overflow-y-auto space-y-5">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="rounded-xl bg-emerald-50 border border-emerald-200 p-3 text-emerald-800"><b>{importPreview.valid.length}</b> صف صالح للاستيراد</div>
+                <div className="rounded-xl bg-amber-50 border border-amber-200 p-3 text-amber-800"><b>{importPreview.duplicates}</b> صف مكرر سيتم تجاهله</div>
+                <div className="rounded-xl bg-rose-50 border border-rose-200 p-3 text-rose-800"><b>{importPreview.errors.length}</b> صف به أخطاء</div>
+              </div>
+
+              <div>
+                <h4 className="font-bold text-sm text-slate-900 mb-2">مطابقة أعمدة الشيت</h4>
+                <p className="text-xs text-slate-500 mb-3">راجع المطابقة التلقائية. في نموذجك يتم اقتراح cards كاسم البنك وCASH كرمز SWIFT.</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                  {importSheet.columns.map(column => (
+                    <label key={column.index} className="rounded-xl border border-slate-200 p-2 bg-slate-50">
+                      <span className="block text-[11px] font-semibold text-slate-600 truncate mb-1" title={column.header}>{column.header}</span>
+                      <select
+                        value={importMapping[column.index] || ''}
+                        onChange={(event) => setImportMapping(prev => ({ ...prev, [column.index]: event.target.value as EmployeeImportField | '' }))}
+                        className="w-full bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-xs"
+                      >
+                        <option value="">تجاهل العمود</option>
+                        {Object.entries(importFieldLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                      </select>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              <div className="overflow-x-auto border border-slate-200 rounded-xl">
+                <table className="min-w-full text-xs text-right">
+                  <thead className="bg-slate-100 text-slate-600"><tr>
+                    <th className="p-2">#</th>
+                    {importSheet.columns.map(column => <th key={column.index} className="p-2 whitespace-nowrap">{column.header}</th>)}
+                  </tr></thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {importSheet.rows.slice(0, 8).map((row, rowIndex) => <tr key={rowIndex}>
+                      <td className="p-2 text-slate-400">{importSheet.headerRow + rowIndex + 1}</td>
+                      {importSheet.columns.map(column => <td key={column.index} className="p-2 whitespace-nowrap max-w-48 truncate" title={row[column.index]}>{row[column.index] || '—'}</td>)}
+                    </tr>)}
+                  </tbody>
+                </table>
+              </div>
+
+              {importPreview.errors.length > 0 && (
+                <div className="rounded-xl bg-rose-50 border border-rose-200 p-3 text-xs text-rose-700">
+                  <b>أول الأخطاء:</b> {importPreview.errors.slice(0, 5).join(' • ')}
+                </div>
+              )}
+            </div>
+
+            <div className="p-4 border-t border-slate-200 bg-slate-50 flex items-center justify-end gap-2">
+              <button onClick={() => setImportSheet(null)} className="px-4 py-2 rounded-xl border border-slate-200 bg-white text-xs font-bold cursor-pointer">إلغاء</button>
+              <button
+                onClick={confirmEmployeeImport}
+                disabled={!importPreview.valid.length}
+                className="px-4 py-2 rounded-xl bg-emerald-600 text-white text-xs font-bold cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                استيراد {importPreview.valid.length} موظف
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Add / Edit Employee Modal */}
       {isModalOpen && (

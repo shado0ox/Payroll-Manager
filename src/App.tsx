@@ -270,6 +270,28 @@ export const App: React.FC = () => {
     });
   };
 
+  const handleBulkImportEmployees = (importedEmployees: Employee[]) => {
+    if (!importedEmployees.length) return;
+    setState(prev => {
+      const importedIds = new Set(importedEmployees.map(employee => employee.id));
+      const updated = [...importedEmployees, ...prev.employees.filter(employee => !importedIds.has(employee.id))];
+      saveEmployees(updated);
+      const log: AuditLog = {
+        id: `log-${Date.now()}`,
+        timestamp: new Date().toISOString(),
+        userName: prev.currentUser?.name || 'المدير العام',
+        userRole: prev.activeRole,
+        action: 'استيراد موظفين من ملف',
+        entityType: 'EMPLOYEE',
+        entityId: importedEmployees[0].companyId,
+        details: `تم استيراد ${importedEmployees.length} موظف من Excel/CSV`,
+      };
+      const updatedLogs = [log, ...prev.auditLogs];
+      saveAuditLogs(updatedLogs);
+      return { ...prev, employees: updated, auditLogs: updatedLogs };
+    });
+  };
+
   const handleSavePayrollRun = (run: PayrollRun) => {
     setState(prev => {
       const exists = prev.payrollRuns.some(r => r.id === run.id);
@@ -587,6 +609,7 @@ export const App: React.FC = () => {
                 loans={state.loans}
                 activeRole={state.activeRole}
                 onSaveEmployee={handleSaveEmployee}
+                onBulkImportEmployees={handleBulkImportEmployees}
                 onViewStatement={setStatementEmployee}
               />
             )}

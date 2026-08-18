@@ -35,6 +35,19 @@ const qualityOverrides: Record<string, string> = {
   'الرقم الوظيفي': 'Employee number', 'تاريخ التعيين': 'Hire date', 'تاريخ الاستحقاق': 'Accrual date',
   'اسم المنشأة': 'Company name', 'رمز المنشأة': 'Company code', 'السجل التجاري': 'Commercial registration',
   'الرقم الضريبي': 'VAT number', 'العملة': 'Currency', 'الإعدادات': 'Settings', 'الصلاحيات': 'Permissions',
+  'استيراد موظفين': 'Import employees', 'جاري قراءة الملف...': 'Reading file...',
+  'معاينة استيراد الموظفين': 'Employee import preview', 'مطابقة أعمدة الشيت': 'Map spreadsheet columns',
+  'تجاهل العمود': 'Ignore column', 'اسم الموظف': 'Employee name', 'الدولة / الجنسية': 'Country / nationality',
+  'اسم البنك': 'Bank name', 'إضافات ثابتة': 'Fixed additions', 'استقطاعات ثابتة': 'Fixed deductions',
+  'ملاحظات': 'Notes', 'صف صالح للاستيراد': 'valid row(s) to import',
+  'صف مكرر سيتم تجاهله': 'duplicate row(s) will be skipped', 'صف به أخطاء': 'row(s) with errors',
+  'راجع المطابقة التلقائية. في نموذجك يتم اقتراح cards كاسم البنك وCASH كرمز SWIFT.': 'Review the automatic mapping. For your template, cards is suggested as bank name and CASH as SWIFT code.',
+  'أول الأخطاء:': 'First errors:', 'صف العناوين': 'Header row', 'بيانات إلزامية ناقصة': 'Required data is missing',
+  'رقم IBAN غير صالح': 'Invalid IBAN', 'تعذر قراءة الملف': 'Could not read the file',
+  'حجم الملف يتجاوز 5 ميجابايت': 'File size exceeds 5 MB',
+  'النوع غير مدعوم. استخدم XLSX أو CSV أو TSV': 'Unsupported type. Use XLSX, CSV, or TSV',
+  'الملف يتجاوز الحد الأقصى وهو 2500 صف': 'The file exceeds the 2,500-row limit',
+  'تعذر اكتشاف صف العناوين. تأكد من وجود الرقم الوظيفي والاسم والإقامة': 'Could not detect the header row. Make sure employee number, name, and Iqama columns exist',
 };
 const translationCatalog: Record<string, string> = { ...generatedTranslations, ...qualityOverrides };
 // Only the compact, reviewed glossary is used for partial/dynamic replacements.
