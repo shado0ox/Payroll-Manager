@@ -63,6 +63,7 @@ import { EmployeeStatementModal } from './components/EmployeeStatementModal';
 import { QoyodIntegrationModal } from './components/QoyodIntegrationModal';
 import { DatabaseStatusModal } from './components/DatabaseStatusModal';
 import { DatabaseStatus, persistFullStateToDatabase, calculateStorageSize } from './utils/databaseService';
+import { api } from './utils/api';
 import { WifiOff, Database, CheckCircle2, X } from 'lucide-react';
 
 export const App: React.FC = () => {
@@ -98,17 +99,19 @@ export const App: React.FC = () => {
     lastError: null,
   }));
 
-  // Auto-sync full state to database whenever state changes
+  // Debounced central PostgreSQL persistence for authenticated sessions.
   useEffect(() => {
-    let isMounted = true;
-    persistFullStateToDatabase(state).then((status) => {
-      if (isMounted) {
-        setDbStatus(status);
+    if (!state.currentUser) return;
+    const timer = window.setTimeout(async () => {
+      try {
+        await api.saveState(state);
+        const status = await persistFullStateToDatabase(state);
+        setDbStatus({ ...status, isCloudConnected: true, cloudEndpoint: '/api/state', lastError: null });
+      } catch (error: any) {
+        setDbStatus(prev => ({ ...prev, isCloudConnected: false, lastError: error?.message || 'تعذر الحفظ المركزي' }));
       }
-    });
-    return () => {
-      isMounted = false;
-    };
+    }, 750);
+    return () => window.clearTimeout(timer);
   }, [state]);
 
   // Active Company
@@ -117,48 +120,22 @@ export const App: React.FC = () => {
   }, [state.companies, state.activeCompanyId]);
 
   // Auth handlers
-  const handleLogin = (user: UserAccount, selectedCompanyId: string) => {
-    const updatedUser = {
-      ...user,
-      lastLogin: new Date().toISOString(),
-    };
-
-    const targetCompanyId = selectedCompanyId || (user.companyIds.length > 0 ? user.companyIds[0] : state.companies[0].id);
-    
+  const handleLogin = async (companyCode: string, username: string, password: string) => {
+    const { user, companyId } = await api.login(companyCode, username, password);
+    const remote = await api.getState();
     setState(prev => {
-      const updatedUsers = prev.users.map(u => u.id === user.id ? updatedUser : u);
-      saveUsers(updatedUsers);
-      saveCurrentUser(updatedUser);
+      const base = remote.state ? { ...prev, ...remote.state } : prev;
+      const users = [...(base.users || []).filter(u => u.id !== user.id), user];
+      const next = { ...base, currentUser: user, users, activeCompanyId: companyId, activeRole: user.role } as typeof prev;
+      saveCurrentUser(user);
       saveActiveRole(user.role);
-      saveActiveCompanyId(targetCompanyId);
-
-      const targetCompany = prev.companies.find(c => c.id === targetCompanyId);
-
-      const log: AuditLog = {
-        id: `log-${Date.now()}`,
-        timestamp: new Date().toISOString(),
-        userName: user.name,
-        userRole: user.role,
-        action: 'تسجيل الدخول للنظام',
-        entityType: 'AUTH',
-        entityId: user.id,
-        details: `تم تسجيل الدخول بنجاح للمستخدم ${user.username} إلى المنشأة: ${targetCompany?.nameAr || targetCompanyId}`,
-      };
-      const updatedLogs = [log, ...prev.auditLogs];
-      saveAuditLogs(updatedLogs);
-
-      return {
-        ...prev,
-        currentUser: updatedUser,
-        users: updatedUsers,
-        activeCompanyId: targetCompanyId,
-        activeRole: user.role,
-        auditLogs: updatedLogs,
-      };
+      saveActiveCompanyId(companyId);
+      return next;
     });
   };
 
   const handleLogout = () => {
+    api.logout().catch(() => undefined);
     setState(prev => {
       if (prev.currentUser) {
         const log: AuditLog = {
@@ -186,7 +163,9 @@ export const App: React.FC = () => {
   };
 
   // User Management handlers
-  const handleSaveUser = (user: UserAccount) => {
+  const handleSaveUser = async (user: UserAccount) => {
+    const savedUser = await api.saveUser(user);
+    user = savedUser;
     setState(prev => {
       const exists = prev.users.some(u => u.id === user.id);
       const updated = exists
@@ -224,7 +203,8 @@ export const App: React.FC = () => {
     });
   };
 
-  const handleDeleteUser = (userId: string) => {
+  const handleDeleteUser = async (userId: string) => {
+    await api.deleteUser(userId);
     setState(prev => {
       const targetUser = prev.users.find(u => u.id === userId);
       const updated = prev.users.filter(u => u.id !== userId);
@@ -504,7 +484,7 @@ export const App: React.FC = () => {
 
   // If not logged in, show real Login View
   if (!state.currentUser) {
-    return <LoginView users={state.users} companies={state.companies} onLogin={handleLogin} />;
+    return <LoginView defaultCompanyCode={state.companies[0]?.companyCode || '101'} onLogin={handleLogin} />;
   }
 
   return (
@@ -743,4 +723,3 @@ export const App: React.FC = () => {
 };
 
 export default App;
-

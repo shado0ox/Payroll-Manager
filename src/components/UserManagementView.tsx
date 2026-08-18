@@ -172,8 +172,8 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
       return;
     }
 
-    if (!formData.password || formData.password.length < 3) {
-      setFormError('كلمة المرور يجب أن لا تقل عن 3 خانات');
+    if (!editingUser && (!formData.password || formData.password.length < 12)) {
+      setFormError('كلمة المرور للحساب الجديد يجب ألا تقل عن 12 حرفًا');
       return;
     }
 

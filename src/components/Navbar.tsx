@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { Company, UserAccount, NavigationTab, UserRole } from '../types';
 import { DatabaseStatus } from '../utils/databaseService';
+import { useLanguage } from '../i18n/LanguageContext';
 
 interface NavbarProps {
   companies: Company[];
@@ -49,6 +50,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onNavigate,
   onResetData,
 }) => {
+  const { language, toggleLanguage, t } = useLanguage();
   const roleInfo = currentUser ? ROLE_LABELS[currentUser.role] : ROLE_LABELS.ADMIN;
 
   return (
@@ -57,7 +59,7 @@ export const Navbar: React.FC<NavbarProps> = ({
       {/* Left: Summary Title & Company Badge */}
       <div className="flex items-center space-x-4 space-x-reverse min-w-0">
         <h2 className="text-base sm:text-lg font-semibold text-slate-800 truncate">
-          ملخص الرواتب - مسار
+          {t('payrollSummary')}
         </h2>
 
         {/* Company Info Badge (Fixed per Login) */}
@@ -72,10 +74,10 @@ export const Navbar: React.FC<NavbarProps> = ({
             <Building2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
           )}
           <span className="truncate max-w-[150px] sm:max-w-[220px] font-bold text-slate-900">
-            {activeCompany.nameAr}
+            {language === 'en' ? activeCompany.nameEn || activeCompany.nameAr : activeCompany.nameAr}
           </span>
           <span className="px-1.5 py-0.5 rounded-md bg-emerald-100 text-emerald-800 font-mono text-[10px] font-bold shrink-0">
-            كود: {activeCompany.companyCode || '101'}
+            {t('companyCode')}: {activeCompany.companyCode || '101'}
           </span>
         </div>
 
@@ -96,7 +98,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               <WifiOff className="w-3.5 h-3.5 text-amber-600" />
             )}
             <span className="text-[11px]">
-              {dbStatus?.isCloudConnected ? 'قاعدة البيانات: متصلة سحابياً' : 'قاعدة البيانات: غير متصلة بالسحابة (محفوظة محلياً)'}
+              {dbStatus?.isCloudConnected ? t('dbConnected') : t('dbDisconnected')}
             </span>
           </button>
         )}
@@ -104,6 +106,9 @@ export const Navbar: React.FC<NavbarProps> = ({
 
       {/* Right: Actions & Logged-in User Profile */}
       <div className="flex items-center gap-2.5 sm:gap-3 shrink-0">
+        <button onClick={toggleLanguage} className="px-3 py-2 rounded-lg border border-slate-200 bg-white text-slate-700 text-xs font-bold hover:bg-slate-50">
+          {t('language')}
+        </button>
         
         {/* Database Icon for small screens */}
         {onOpenDbModal && (
@@ -123,7 +128,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             className="hidden md:inline-flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg shadow-xs text-sm font-medium transition-colors cursor-pointer"
           >
             <Zap className="w-3.5 h-3.5" />
-            <span>تشغيل مسير جديد</span>
+            <span>{t('newPayroll')}</span>
           </button>
         )}
 
@@ -151,7 +156,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           className="flex items-center gap-1 px-3 py-2 text-rose-600 hover:text-rose-700 hover:bg-rose-50 rounded-lg border border-rose-200 text-xs font-bold transition-colors cursor-pointer"
         >
           <LogOut className="w-3.5 h-3.5" />
-          <span className="hidden sm:inline">تسجيل الخروج</span>
+          <span className="hidden sm:inline">{t('logout')}</span>
         </button>
 
         {/* Reset Data Button */}
@@ -168,5 +173,4 @@ export const Navbar: React.FC<NavbarProps> = ({
     </header>
   );
 };
-
 

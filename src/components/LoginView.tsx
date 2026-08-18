@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useLanguage } from '../i18n/LanguageContext';
 import { 
   Lock, 
   User as UserIcon, 
@@ -10,12 +11,9 @@ import {
   Hash,
   ArrowLeft
 } from 'lucide-react';
-import { UserAccount, Company } from '../types';
-
 interface LoginViewProps {
-  users: UserAccount[];
-  companies: Company[];
-  onLogin: (user: UserAccount, selectedCompanyId: string) => void;
+  defaultCompanyCode?: string;
+  onLogin: (companyCode: string, username: string, password: string) => Promise<void>;
 }
 
 // Convert Eastern Arabic numerals (٠-٩) to standard Latin digits (0-9)
@@ -27,8 +25,9 @@ const normalizeArabicNumbers = (val: string): string => {
     .toLowerCase();
 };
 
-export const LoginView: React.FC<LoginViewProps> = ({ users, companies, onLogin }) => {
-  const defaultCode = companies[0]?.companyCode || '101';
+export const LoginView: React.FC<LoginViewProps> = ({ defaultCompanyCode = '101', onLogin }) => {
+  const { language, toggleLanguage, t } = useLanguage();
+  const defaultCode = defaultCompanyCode;
   const [companyInput, setCompanyInput] = useState(defaultCode);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -36,66 +35,22 @@ export const LoginView: React.FC<LoginViewProps> = ({ users, companies, onLogin 
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setIsLoading(true);
 
-    setTimeout(() => {
-      const cleanInput = normalizeArabicNumbers(companyInput);
-      
-      const targetCompany = companies.find((c) => {
-        const codeNorm = normalizeArabicNumbers(c.companyCode || '');
-        const idNorm = (c.id || '').toLowerCase();
-        const crNorm = normalizeArabicNumbers(c.crNumber || '');
-        const nameAr = (c.nameAr || '').toLowerCase();
-        const nameEn = (c.nameEn || '').toLowerCase();
-
-        return (
-          (codeNorm && codeNorm === cleanInput) ||
-          (idNorm && idNorm === cleanInput) ||
-          (crNorm && crNorm === cleanInput) ||
-          (cleanInput.length >= 3 && nameAr.includes(cleanInput)) ||
-          (cleanInput.length >= 3 && nameEn.includes(cleanInput))
-        );
-      });
-
-      if (!targetCompany) {
-        setError(`رمز المنشأة (${companyInput}) غير مسجل. يرجى التأكد من كتابة رمز المنشأة أو اختيارها من القائمة.`);
-        setIsLoading(false);
-        return;
-      }
-
-      const cleanUsername = username.trim().toLowerCase();
-      const user = users.find(
-        (u) => u.username.toLowerCase() === cleanUsername && u.password === password
-      );
-
-      if (!user) {
-        setError('اسم المستخدم أو كلمة المرور غير صحيحة. يرجى التحقق وإعادة المحاولة.');
-        setIsLoading(false);
-        return;
-      }
-
-      if (!user.isActive) {
-        setError('هذا الحساب معطل حالياً من قِبل مسؤول النظام. يرجى مراجعة الإدارة.');
-        setIsLoading(false);
-        return;
-      }
-
-      // Check access permission (Admins can access all companies)
-      if (user.role !== 'ADMIN' && user.companyIds && user.companyIds.length > 0 && !user.companyIds.includes(targetCompany.id)) {
-        setError(`المستخدم (${user.name}) ليس لديه صلاحية الدخول لشركة "${targetCompany.nameAr}". يرجى مراجعة مسؤول النظام.`);
-        setIsLoading(false);
-        return;
-      }
-
-      onLogin(user, targetCompany.id);
-    }, 200);
+    try {
+      await onLogin(normalizeArabicNumbers(companyInput), username.trim().toLowerCase(), password);
+    } catch {
+      setError(t('invalidLogin'));
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
-    <div className="min-h-screen w-full bg-slate-900 flex flex-col items-center justify-center p-4 sm:p-6 text-slate-100 relative overflow-hidden" dir="rtl">
+    <div className="min-h-screen w-full bg-slate-900 flex flex-col items-center justify-center p-4 sm:p-6 text-slate-100 relative overflow-hidden" dir={language === 'ar' ? 'rtl' : 'ltr'}>
       
       {/* Background Decorative Elements */}
       <div className="absolute -top-40 -right-40 w-96 h-96 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
@@ -109,7 +64,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ users, companies, onLogin 
             <Building2 className="w-8 h-8" />
           </div>
           <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-white">
-            نظام مسار <span className="text-emerald-400">للرواتب</span>
+            {t('payrollSystem')}
           </h1>
           <p className="text-xs sm:text-sm text-slate-400 mt-1 font-medium">
             منظومة إدارة مسيرات الأجور والامتثال المالي
@@ -121,8 +76,8 @@ export const LoginView: React.FC<LoginViewProps> = ({ users, companies, onLogin 
           
           <div className="flex items-center justify-between border-b border-slate-700/80 pb-3.5 mb-5">
             <div>
-              <h2 className="text-base sm:text-lg font-bold text-white">تسجيل الدخول للنظام</h2>
-              <p className="text-[11px] text-slate-400">أدخل رمز المنشأة وبيانات الاعتماد للدخول المباشر</p>
+              <h2 className="text-base sm:text-lg font-bold text-white">{t('loginTitle')}</h2>
+              <p className="text-[11px] text-slate-400">{t('loginHint')}</p>
             </div>
             <div className="p-2 bg-emerald-500/10 text-emerald-400 rounded-xl border border-emerald-500/20">
               <KeyRound className="w-4 h-4" />
@@ -161,14 +116,14 @@ export const LoginView: React.FC<LoginViewProps> = ({ users, companies, onLogin 
             {/* Username */}
             <div>
               <label className="block text-xs font-bold text-slate-300 mb-1.5">
-                اسم المستخدم
+                {t('username')}
               </label>
               <div className="relative">
                 <input
                   type="text"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
-                  placeholder="أدخل اسم المستخدم"
+                  placeholder={t('username')}
                   required
                   className="w-full pl-3 pr-10 py-2.5 bg-slate-900/80 border border-slate-700 rounded-xl text-white text-sm focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 transition-all font-mono"
                   dir="ltr"
@@ -181,7 +136,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ users, companies, onLogin 
             <div>
               <div className="flex items-center justify-between mb-1.5">
                 <label className="block text-xs font-bold text-slate-300">
-                  كلمة المرور
+                  {t('password')}
                 </label>
               </div>
               <div className="relative">
@@ -189,7 +144,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ users, companies, onLogin 
                   type={showPassword ? 'text' : 'password'}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="أدخل كلمة المرور"
+                  placeholder={t('password')}
                   required
                   className="w-full pl-10 pr-10 py-2.5 bg-slate-900/80 border border-slate-700 rounded-xl text-white text-sm focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 transition-all font-mono"
                   dir="ltr"
@@ -216,7 +171,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ users, companies, onLogin 
                 <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
               ) : (
                 <>
-                  <span>تسجيل الدخول للمنشأة</span>
+                  <span>{t('signIn')}</span>
                   <ArrowLeft className="w-4 h-4" />
                 </>
               )}
@@ -225,6 +180,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ users, companies, onLogin 
 
         </div>
 
+        <button type="button" onClick={toggleLanguage} className="mx-auto mt-4 block px-4 py-2 rounded-xl border border-slate-700 text-sm font-bold text-slate-300 hover:bg-slate-800">{t('language')}</button>
         {/* Designer Attribution & System Info Footer */}
         <div className="text-center mt-6 space-y-1.5">
           <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-800/80 border border-slate-700 text-slate-300 text-xs font-semibold shadow-xs">

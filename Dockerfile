@@ -4,49 +4,26 @@
 # ====================================================================
 
 # Stage 1: Build Frontend App
-FROM node:20-alpine AS builder
-
+FROM node:20.19-alpine AS deps
 WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev
 
-# Copy dependency specifications
-COPY package.json package-lock.json* ./
-
-# Install packages
-RUN npm install
-
-# Copy source code and config
+FROM node:20.19-alpine AS builder
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci
 COPY . .
+RUN npm run lint && npm run build
 
-# Build production bundle into /app/dist
-RUN npm run build
-
-# ====================================================================
-# Stage 2: Clean Production Node.js Server Runner (Without Nginx)
-# ====================================================================
-FROM node:20-alpine AS runner
-
+FROM node:20.19-alpine AS runner
+ENV NODE_ENV=production PORT=3000
 WORKDIR /app
-
-ENV NODE_ENV=production
-ENV PORT=3000
-
-# Install serve or run lightweight static server
-RUN npm install -g serve
-
-# Create non-root unprivileged secure user
-RUN addgroup -g 1001 -S masargroup && \
-    adduser -S masaruser -u 1001 -G masargroup
-
-# Copy built application from builder stage
-COPY --from=builder --chown=masaruser:masargroup /app/dist /app/dist
-
-USER masaruser
-
+RUN addgroup -S -g 10001 masar && adduser -S -u 10001 -G masar masar
+COPY --from=deps --chown=masar:masar /app/node_modules ./node_modules
+COPY --from=builder --chown=masar:masar /app/dist ./dist
+COPY --chown=masar:masar server ./server
+COPY --chown=masar:masar package.json ./package.json
+USER 10001:10001
 EXPOSE 3000
-
-# Container Healthcheck directly via Node / wget without Nginx
-HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
-  CMD wget --quiet --tries=1 --spider http://localhost:3000/ || exit 1
-
-# Start Single Page Application directly on port 3000
-CMD ["serve", "-s", "dist", "-l", "3000"]
+CMD ["node", "server/index.mjs"]

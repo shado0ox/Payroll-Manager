@@ -1,57 +1,37 @@
-version: '3.8'
-
 services:
-  # ==========================================
-  # 1. PostgreSQL Database Container
-  # ==========================================
-  postgres-db:
-    image: postgres:16-alpine
-    container_name: masar_payroll_postgres
-    restart: unless-stopped
-    environment:
-      POSTGRES_DB: masar_payroll_db
-      POSTGRES_USER: masar_admin
-      POSTGRES_PASSWORD: MasarSecurePassword2026!
-      PGDATA: /var/lib/postgresql/data/pgdata
-    volumes:
-      - masar_pg_data:/var/lib/postgresql/data
-      - ./init.sql:/docker-entrypoint-initdb.d/init.sql:ro
-    ports:
-      - "5432:5432"
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U masar_admin -d masar_payroll_db"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 10s
-    networks:
-      - masar-network
-
-  # ==========================================
-  # 2. Masar Payroll Application Container (No Nginx)
-  # ==========================================
   masar-app:
     build:
       context: .
       dockerfile: Dockerfile
     container_name: masar_payroll_app
+    image: masar-payroll:local
     restart: unless-stopped
-    depends_on:
-      postgres-db:
-        condition: service_healthy
+    init: true
+    env_file: [.env]
     ports:
-      - "3000:3000"
-    environment:
-      - NODE_ENV=production
-      - PORT=3000
-      - DATABASE_URL=postgresql://masar_admin:MasarSecurePassword2026!@postgres-db:5432/masar_payroll_db
+      - "127.0.0.1:${APP_PORT:-3000}:3000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    read_only: true
+    tmpfs: [/tmp:size=64m,noexec,nosuid,nodev]
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "1.00"
     networks:
-      - masar-network
-
-volumes:
-  masar_pg_data:
-    driver: local
+      - payroll_internal
+      - shared_postgres
 
 networks:
-  masar-network:
-    driver: bridge
+  payroll_internal:
+    internal: true
+  shared_postgres:
+    external: true
+    name: ${POSTGRES_DOCKER_NETWORK}

@@ -34,60 +34,7 @@ const STORAGE_KEYS = {
   QOYOD_CONFIG: 'payroll_qoyod_config_v1',
 };
 
-export const DEFAULT_USERS: UserAccount[] = [
-  {
-    id: 'user-admin',
-    username: 'admin',
-    password: 'admin',
-    name: 'مسؤول النظام (Admin)',
-    email: 'admin@masar.sa',
-    phone: '0500000001',
-    role: 'ADMIN',
-    avatar: 'م',
-    companyIds: ['comp-1', 'comp-2'],
-    isActive: true,
-    createdAt: '2024-01-01T08:00:00Z',
-  },
-  {
-    id: 'user-hr',
-    username: 'hr',
-    password: '123',
-    name: 'سارة المنصور',
-    email: 'sara@masar.sa',
-    phone: '0500000002',
-    role: 'HR_MANAGER',
-    avatar: 'س',
-    companyIds: ['comp-1'],
-    isActive: true,
-    createdAt: '2024-01-05T08:00:00Z',
-  },
-  {
-    id: 'user-accountant',
-    username: 'accountant',
-    password: '123',
-    name: 'فهد العتيبي',
-    email: 'fahad@masar.sa',
-    phone: '0500000003',
-    role: 'PAYROLL_SPECIALIST',
-    avatar: 'ف',
-    companyIds: ['comp-1'],
-    isActive: true,
-    createdAt: '2024-01-10T08:00:00Z',
-  },
-  {
-    id: 'user-auditor',
-    username: 'auditor',
-    password: '123',
-    name: 'خالد السعيد',
-    email: 'khaled@masar.sa',
-    phone: '0500000004',
-    role: 'AUDITOR',
-    avatar: 'خ',
-    companyIds: ['comp-1'],
-    isActive: true,
-    createdAt: '2024-01-15T08:00:00Z',
-  },
-];
+export const DEFAULT_USERS: UserAccount[] = [];
 
 export interface AppState {
   companies: Company[];
@@ -116,22 +63,8 @@ export function loadInitialState(): AppState {
       const rawUsers = localStorage.getItem(STORAGE_KEYS.USERS);
       let users: UserAccount[] = rawUsers ? JSON.parse(rawUsers) : DEFAULT_USERS;
       
-      // Ensure admin exists with admin/admin
-      if (!users.some(u => u.username === 'admin')) {
-        users = [DEFAULT_USERS[0], ...users];
-      }
-
-      const rawCurrentUser = localStorage.getItem(STORAGE_KEYS.CURRENT_USER);
-      let currentUser: UserAccount | null = rawCurrentUser ? JSON.parse(rawCurrentUser) : null;
-      if (currentUser) {
-        // verify currentUser still exists and active
-        const matched = users.find(u => u.id === currentUser?.id || u.username === currentUser?.username);
-        if (matched && matched.isActive) {
-          currentUser = matched;
-        } else {
-          currentUser = null;
-        }
-      }
+      // localStorage is never trusted as proof of authentication.
+      const currentUser: UserAccount | null = null;
 
       const activeRole: UserRole = currentUser?.role || (localStorage.getItem(STORAGE_KEYS.ACTIVE_ROLE) as UserRole) || 'ADMIN';
       const rawEmployees: Employee[] = JSON.parse(localStorage.getItem(STORAGE_KEYS.EMPLOYEES) || '[]');

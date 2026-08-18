@@ -14,6 +14,7 @@ import {
   LogOut
 } from 'lucide-react';
 import { NavigationTab, UserRole, UserAccount, Company } from '../types';
+import { useLanguage } from '../i18n/LanguageContext';
 
 interface SidebarProps {
   activeTab: NavigationTab;
@@ -43,64 +44,65 @@ export const Sidebar: React.FC<SidebarProps> = ({
   company,
   onLogout,
 }) => {
+  const { language, t } = useLanguage();
   const isAdmin = activeRole === 'ADMIN';
 
-  const navItems: { id: NavigationTab; labelAr: string; icon: React.ComponentType<{ className?: string }>; adminOnly?: boolean }[] = [
+  const navItems: { id: NavigationTab; label: string; icon: React.ComponentType<{ className?: string }>; adminOnly?: boolean }[] = [
     {
       id: 'dashboard',
-      labelAr: 'لوحة التحكم',
+      label: t('dashboard'),
       icon: LayoutDashboard,
     },
     {
       id: 'company_profile',
-      labelAr: 'ملف المنشأة',
+      label: t('companyProfile'),
       icon: Building2,
     },
     {
       id: 'payroll_runs',
-      labelAr: 'مسيرات الرواتب',
+      label: t('payrollRuns'),
       icon: Banknote,
     },
     {
       id: 'employees',
-      labelAr: `الموظفين (${employeesCount})`,
+      label: `${t('employees')} (${employeesCount})`,
       icon: Users,
     },
     {
       id: 'attendance',
-      labelAr: 'الحضور والإجازات',
+      label: t('attendance'),
       icon: Clock,
     },
     {
       id: 'loans_penalties',
-      labelAr: 'السلف والخصومات',
+      label: t('loans'),
       icon: Receipt,
     },
     {
       id: 'journals',
-      labelAr: 'القيود وتكامل قيود',
+      label: t('journals'),
       icon: Layers,
     },
     {
       id: 'reports',
-      labelAr: 'التقارير والإحصائيات',
+      label: t('reports'),
       icon: BarChart3,
     },
     {
       id: 'users',
-      labelAr: 'المستخدمين والصلاحيات',
+      label: t('users'),
       icon: UserCheck,
       adminOnly: true,
     },
     {
       id: 'settings',
-      labelAr: 'إدارة الشركات والمنشآت',
+      label: t('settings'),
       icon: Settings,
       adminOnly: true,
     },
     {
       id: 'audit_logs',
-      labelAr: 'سجل التدقيق والأمان',
+      label: t('audit'),
       icon: ShieldAlert,
       adminOnly: true,
     },
@@ -131,10 +133,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
           )}
           <div className="min-w-0">
             <h1 className="text-base font-bold tracking-tight text-white truncate">
-              نظام مسار <span className="text-emerald-400">للرواتب</span>
+              {t('payrollSystem')}
             </h1>
             <p className="text-[11px] text-slate-400 truncate font-medium">
-              {company ? company.nameAr : 'إدارة الأجور والامتثال'}
+              {company ? (language === 'en' ? company.nameEn || company.nameAr : company.nameAr) : t('wageCompliance')}
             </p>
           </div>
         </div>
@@ -162,7 +164,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     isActive ? 'bg-white' : 'bg-slate-500'
                   }`} 
                 />
-                <span className="truncate">{item.labelAr}</span>
+                <span className="truncate">{item.label}</span>
               </div>
             </button>
           );
@@ -202,4 +204,3 @@ export const Sidebar: React.FC<SidebarProps> = ({
     </aside>
   );
 };
-

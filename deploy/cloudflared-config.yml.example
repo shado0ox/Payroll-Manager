@@ -1,0 +1,9 @@
+# Merge this ingress entry into the existing Cloudflare Tunnel configuration.
+# Keep the tunnel credentials file outside the repository.
+ingress:
+  - hostname: payroll.example.com
+    service: http://localhost:3000
+    originRequest:
+      connectTimeout: 10s
+      noTLSVerify: false
+  - service: http_status:404

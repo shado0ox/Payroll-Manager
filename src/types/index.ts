@@ -3,7 +3,7 @@ export type UserRole = 'ADMIN' | 'HR_MANAGER' | 'PAYROLL_SPECIALIST' | 'AUDITOR'
 export interface UserAccount {
   id: string;
   username: string; // e.g. 'admin'
-  password: string; // e.g. 'admin'
+  password?: string; // write-only; never returned by the server
   name: string;
   email: string;
   phone?: string;
@@ -54,6 +54,7 @@ export interface Company {
   payrollPaymentDay: number; // e.g. 27th or last day of month
   workDaysPerMonth: number; // standard 30 days
   dailyWorkHours: number; // 8 hours
+  workHoursPerDay?: number;
   departments?: DepartmentInfo[];
   costCenters: CostCenter[];
   calculationRules: CompanyCalculationRules;
@@ -68,10 +69,12 @@ export interface CostCenter {
 }
 
 export interface CompanyCalculationRules {
-  dailyRateFormula: 'BASE_ONLY' | 'BASE_PLUS_FIXED'; // تقسيم على 30
+  dailyRateFormula: 'BASE_ONLY' | 'BASE_PLUS_FIXED' | 'BASE_PLUS_HOUSING';
   hourlyRateDivisor: number; // 8 hours standard
+  workDaysDivisor?: number;
   delayGracePeriodMinutes: number; // e.g. 15 minutes
   delayCalculationMethod: 'EXACT_MINUTES' | 'BRACKET_TIERS'; // بالدقيقة أو شرائح
+  delayDeductionMultiplier?: number;
   absenceDayMultiplier: number; // 1.0 = day for day, 1.5, etc.
   unpaidLeaveMultiplier: number; // 1.0
   // GOSI Saudi rates
@@ -387,4 +390,3 @@ export interface QoyodJournalEntryResponse {
   debit_amounts: QoyodAmountItem[];
   credit_amounts: QoyodAmountItem[];
 }
-

@@ -48,6 +48,7 @@ import {
   UserRole, 
   CostCenter, 
   DepartmentInfo,
+  PayrollRun,
   QoyodApiConfig,
   JournalBatch
 } from '../types';

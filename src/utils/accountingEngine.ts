@@ -2,7 +2,7 @@ import { Company, PayrollRun, JournalBatch, JournalLine } from '../types';
 import { roundAmount } from './payrollEngine';
 
 export function generatePayrollJournalBatch(company: Company, payrollRun: PayrollRun): JournalBatch {
-  const accounts = company?.chartOfAccounts || {};
+  const accounts = company.chartOfAccounts;
   const lines: JournalLine[] = [];
   const costCenters = company?.costCenters || [];
 
