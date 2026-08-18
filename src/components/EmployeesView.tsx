@@ -360,7 +360,7 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                 </td>
               </tr>
             ) : (
-              filteredEmployees.map((emp) => {
+              filteredEmployees.map((emp, idx) => {
                 const gross = 
                   emp.salaryPackage.baseSalary + 
                   emp.salaryPackage.housingAllowance + 
@@ -370,7 +370,7 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                 const isSuspended = emp.status === 'SUSPENDED';
 
                 return (
-                  <tr key={emp.id} className="hover:bg-slate-50/80 transition-colors text-[11px]">
+                  <tr key={`${emp.id || 'emp'}-${idx}`} className="hover:bg-slate-50/80 transition-colors text-[11px]">
                     
                     {/* Name & Emp No */}
                     <td className="py-3 px-2.5 truncate">
@@ -624,11 +624,31 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                     <label className="block text-xs font-semibold text-slate-700 mb-1">القسم *</label>
                     <input
                       type="text"
+                      list="company-departments-list"
                       required
+                      placeholder="اختر أو اكتب اسم القسم..."
                       value={formData.department || ''}
                       onChange={(e) => setFormData({ ...formData, department: e.target.value })}
                       className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white"
                     />
+                    <datalist id="company-departments-list">
+                      {(company.departments || []).map((d, idx) => (
+                        <option key={`${d.id || 'd'}-${idx}`} value={d.nameAr}>
+                          {d.nameAr} ({d.code})
+                        </option>
+                      ))}
+                      {/* Standard fallbacks if none defined yet */}
+                      {(!company.departments || company.departments.length === 0) && (
+                        <>
+                          <option value="الإدارة العامة" />
+                          <option value="تقنية المعلومات" />
+                          <option value="المالية والمحاسبة" />
+                          <option value="المبيعات والتسويق" />
+                          <option value="الموارد البشرية" />
+                          <option value="العمليات والتشغيل" />
+                        </>
+                      )}
+                    </datalist>
                   </div>
 
                   <div>

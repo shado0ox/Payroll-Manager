@@ -144,19 +144,20 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
         });
       });
 
-      const totalBaseSalaries = roundAmount(runItems.reduce((s, i) => s + i.baseSalary, 0));
-      const totalAllowances = roundAmount(runItems.reduce((s, i) => s + i.housingAllowance + i.transportAllowance + i.otherAllowances, 0));
-      const totalOvertime = roundAmount(runItems.reduce((s, i) => s + i.overtimeAmount, 0));
-      const totalGrossSalaries = roundAmount(runItems.reduce((s, i) => s + i.totalGrossSalary, 0));
-      const totalAbsenceDeductions = roundAmount(runItems.reduce((s, i) => s + i.absenceDeduction + i.unpaidLeaveDeduction, 0));
-      const totalDelayDeductions = roundAmount(runItems.reduce((s, i) => s + i.delayDeduction, 0));
-      const totalGosiEmployee = roundAmount(runItems.reduce((s, i) => s + i.gosiEmployeeShare, 0));
-      const totalGosiEmployer = roundAmount(runItems.reduce((s, i) => s + i.gosiEmployerShare, 0));
-      const totalLoanDeductions = roundAmount(runItems.reduce((s, i) => s + i.loanDeduction, 0));
-      const totalPenalties = roundAmount(runItems.reduce((s, i) => s + i.penaltiesDeduction + i.otherDeductions, 0));
-      const totalDeductions = roundAmount(runItems.reduce((s, i) => s + i.totalDeductions, 0));
-      const totalNetSalaries = roundAmount(runItems.reduce((s, i) => s + i.netSalary, 0));
-      const totalCompanyCost = roundAmount(runItems.reduce((s, i) => s + i.totalCompanyBurden, 0));
+      const decimals = company.calculationRules?.roundingDecimals ?? 2;
+      const totalBaseSalaries = roundAmount(runItems.reduce((s, i) => s + i.baseSalary, 0), decimals);
+      const totalAllowances = roundAmount(runItems.reduce((s, i) => s + i.housingAllowance + i.transportAllowance + i.otherAllowances, 0), decimals);
+      const totalOvertime = roundAmount(runItems.reduce((s, i) => s + i.overtimeAmount, 0), decimals);
+      const totalGrossSalaries = roundAmount(runItems.reduce((s, i) => s + i.totalGrossSalary, 0), decimals);
+      const totalAbsenceDeductions = roundAmount(runItems.reduce((s, i) => s + i.absenceDeduction + i.unpaidLeaveDeduction, 0), decimals);
+      const totalDelayDeductions = roundAmount(runItems.reduce((s, i) => s + i.delayDeduction, 0), decimals);
+      const totalGosiEmployee = roundAmount(runItems.reduce((s, i) => s + i.gosiEmployeeShare, 0), decimals);
+      const totalGosiEmployer = roundAmount(runItems.reduce((s, i) => s + i.gosiEmployerShare, 0), decimals);
+      const totalLoanDeductions = roundAmount(runItems.reduce((s, i) => s + i.loanDeduction, 0), decimals);
+      const totalPenalties = roundAmount(runItems.reduce((s, i) => s + i.penaltiesDeduction + i.otherDeductions, 0), decimals);
+      const totalDeductions = roundAmount(runItems.reduce((s, i) => s + i.totalDeductions, 0), decimals);
+      const totalNetSalaries = roundAmount(runItems.reduce((s, i) => s + i.netSalary, 0), decimals);
+      const totalCompanyCost = roundAmount(runItems.reduce((s, i) => s + i.totalCompanyBurden, 0), decimals);
 
       const runId = currentRun?.id || `run-${company.id}-${selectedPeriod}`;
       const updatedRun: PayrollRun = {
@@ -489,13 +490,13 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
                 </td>
               </tr>
             ) : (
-              filteredItems.map((item) => {
+              filteredItems.map((item, idx) => {
                 const emp = employees.find(e => e.id === item.employeeId);
                 const hasWarning = item.warningFlags.length > 0;
 
                 return (
                   <tr 
-                    key={item.id} 
+                    key={`${item.id || 'item'}-${idx}`} 
                     className={`hover:bg-slate-50 transition-colors text-[11px] ${
                       item.isSuspended ? 'bg-amber-50/40' : (hasWarning ? 'bg-amber-50/20' : '')
                     }`}

@@ -419,8 +419,8 @@ export const AttendanceLeavesView: React.FC<AttendanceLeavesViewProps> = ({
                   onChange={(e) => setNewAttendance({ ...newAttendance, employeeId: e.target.value })}
                   className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl"
                 >
-                  {companyEmployees.map(e => (
-                    <option key={e.id} value={e.id}>{e.employeeNo} - {e.firstNameAr} {e.lastNameAr} ({e.department})</option>
+                  {companyEmployees.map((e, idx) => (
+                    <option key={`${e.id || 'emp'}-${idx}`} value={e.id}>{e.employeeNo} - {e.firstNameAr} {e.lastNameAr} ({e.department})</option>
                   ))}
                 </select>
               </div>

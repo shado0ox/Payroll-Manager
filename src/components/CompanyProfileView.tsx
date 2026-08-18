@@ -161,8 +161,10 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
 
   // Sync state if active company changes from outside
   React.useEffect(() => {
-    setFormData(JSON.parse(JSON.stringify(company)));
-  }, [company.id]);
+    if (company) {
+      setFormData(JSON.parse(JSON.stringify(company)));
+    }
+  }, [company]);
 
   React.useEffect(() => {
     if (qoyodConfig) {
@@ -235,19 +237,20 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
   });
 
   // Handle Save All Company Info
-  const handleSaveCompany = (e?: React.FormEvent) => {
+  const handleSaveCompany = (customData?: Company, e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if (!formData.nameAr.trim()) {
+    const dataToSave = customData || formData;
+    if (!dataToSave.nameAr?.trim()) {
       alert('يرجى إدخال اسم المنشأة بالعربية');
       return;
     }
-    if (!formData.crNumber.trim()) {
+    if (!dataToSave.crNumber?.trim()) {
       alert('يرجى إدخال رقم السجل التجاري');
       return;
     }
 
-    onUpdateCompany(formData);
-    setSaveSuccessMessage('تم حفظ وتحديث ملف وبيانات المنشأة بنجاح');
+    onUpdateCompany(dataToSave);
+    setSaveSuccessMessage('تم تطبيق وحفظ كافة الإعدادات والسياسات للمنشأة بنجاح');
     setTimeout(() => {
       setSaveSuccessMessage(null);
     }, 4000);
@@ -540,26 +543,8 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
             </div>
           </div>
 
-          {/* Quick Actions & Company Selector */}
+          {/* Quick Actions */}
           <div className="flex items-center gap-3 shrink-0 flex-wrap">
-            {activeRole === 'ADMIN' && allCompanies.length > 1 && onSelectCompany && (
-              <div className="flex items-center gap-2 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200">
-                <ArrowRightLeft className="w-3.5 h-3.5 text-slate-500" />
-                <span className="text-xs text-slate-600 font-bold">تبديل المنشأة (مطور/Admin):</span>
-                <select
-                  value={formData.id}
-                  onChange={(e) => onSelectCompany(e.target.value)}
-                  className="bg-transparent text-xs font-bold text-slate-800 focus:outline-none cursor-pointer"
-                >
-                  {allCompanies.map(c => (
-                    <option key={c.id} value={c.id}>
-                      {c.nameAr} ({c.companyCode})
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
-
             <button
               type="button"
               onClick={() => handleSaveCompany()}
@@ -1788,8 +1773,149 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
                 className="w-full px-3.5 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white font-semibold text-slate-900"
               >
                 <option value="BASE_PLUS_FIXED">الراتب الأساسي + البدلات الثابتة (شائع في نظام العمل)</option>
+                <option value="BASE_PLUS_HOUSING">الراتب الأساسي + بدل السكن فقط</option>
                 <option value="BASE_ONLY">الراتب الأساسي فقط (Base Salary Only)</option>
               </select>
+            </div>
+
+            {/* Monthly Working Days */}
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">أيام العمل الشهرية المعتمدة للحساب</label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  step="1"
+                  min="20"
+                  max="31"
+                  value={formData.workDaysPerMonth || 30}
+                  onChange={(e) => setFormData({
+                    ...formData,
+                    workDaysPerMonth: parseInt(e.target.value) || 30,
+                    calculationRules: {
+                      ...formData.calculationRules!,
+                      workDaysDivisor: parseInt(e.target.value) || 30
+                    }
+                  })}
+                  className="w-full px-3.5 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white font-mono font-bold text-slate-900"
+                />
+                <span className="text-xs font-bold text-slate-600">يوم / شهر</span>
+              </div>
+            </div>
+
+            {/* Daily Working Hours */}
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">ساعات العمل اليومية الرسمية</label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  step="0.5"
+                  min="4"
+                  max="12"
+                  value={formData.workHoursPerDay || 8}
+                  onChange={(e) => setFormData({
+                    ...formData,
+                    workHoursPerDay: parseFloat(e.target.value) || 8,
+                    calculationRules: {
+                      ...formData.calculationRules!,
+                      hourlyRateDivisor: parseFloat(e.target.value) || 8
+                    }
+                  })}
+                  className="w-full px-3.5 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white font-mono font-bold text-slate-900"
+                />
+                <span className="text-xs font-bold text-slate-600">ساعة / يوم</span>
+              </div>
+            </div>
+
+            {/* Delay Grace Period */}
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">فترة السماح للتأخير قبل بدء الخصم</label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  step="1"
+                  min="0"
+                  max="60"
+                  value={formData.calculationRules?.delayGracePeriodMinutes ?? 15}
+                  onChange={(e) => setFormData({
+                    ...formData,
+                    calculationRules: {
+                      ...formData.calculationRules!,
+                      delayGracePeriodMinutes: parseInt(e.target.value) || 0
+                    }
+                  })}
+                  className="w-full px-3.5 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white font-mono font-bold text-slate-900"
+                />
+                <span className="text-xs font-bold text-slate-600">دقيقة</span>
+              </div>
+            </div>
+
+            {/* Absence Day Multiplier */}
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">مضاعف خصم يوم الغياب بدون إذن</label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  step="0.25"
+                  min="1"
+                  max="3"
+                  value={formData.calculationRules?.absenceDayMultiplier || 1.0}
+                  onChange={(e) => setFormData({
+                    ...formData,
+                    calculationRules: {
+                      ...formData.calculationRules!,
+                      absenceDayMultiplier: parseFloat(e.target.value) || 1.0
+                    }
+                  })}
+                  className="w-full px-3.5 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white font-mono font-bold text-slate-900"
+                />
+                <span className="text-xs font-bold text-slate-600">يوم (1x أو 2x)</span>
+              </div>
+            </div>
+
+            {/* Standard Overtime Rate */}
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">مضاعف العمل الإضافي بالأيام العادية</label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  step="0.1"
+                  min="1"
+                  max="3"
+                  value={formData.calculationRules?.overtimeStandardRate || 1.5}
+                  onChange={(e) => setFormData({
+                    ...formData,
+                    calculationRules: {
+                      ...formData.calculationRules!,
+                      overtimeStandardRate: parseFloat(e.target.value) || 1.5
+                    }
+                  })}
+                  className="w-full px-3.5 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white font-mono font-bold text-slate-900"
+                />
+                <span className="text-xs font-bold text-slate-600">ضعف (1.5x)</span>
+              </div>
+            </div>
+
+            {/* Weekend Overtime Rate */}
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">مضاعف العمل الإضافي في العطلات والأعياد</label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  step="0.1"
+                  min="1"
+                  max="3"
+                  value={formData.calculationRules?.overtimeWeekendRate || 2.0}
+                  onChange={(e) => setFormData({
+                    ...formData,
+                    calculationRules: {
+                      ...formData.calculationRules!,
+                      overtimeWeekendRate: parseFloat(e.target.value) || 2.0
+                    }
+                  })}
+                  className="w-full px-3.5 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white font-mono font-bold text-slate-900"
+                />
+                <span className="text-xs font-bold text-slate-600">ضعف (2.0x)</span>
+              </div>
             </div>
 
             {/* Saudi Employee GOSI */}
@@ -1799,7 +1925,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
                 <input
                   type="number"
                   step="0.0025"
-                  value={(formData.calculationRules?.saudiGosiEmployeeRate || 0.0975) * 100}
+                  value={Number(((formData.calculationRules?.saudiGosiEmployeeRate || 0.0975) * 100).toFixed(3))}
                   onChange={(e) => setFormData({
                     ...formData,
                     calculationRules: {
@@ -1820,7 +1946,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
                 <input
                   type="number"
                   step="0.0025"
-                  value={(formData.calculationRules?.saudiGosiEmployerRate || 0.1175) * 100}
+                  value={Number(((formData.calculationRules?.saudiGosiEmployerRate || 0.1175) * 100).toFixed(3))}
                   onChange={(e) => setFormData({
                     ...formData,
                     calculationRules: {
@@ -1862,7 +1988,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
                 <input
                   type="number"
                   step="0.005"
-                  value={(formData.calculationRules?.nonSaudiGosiEmployerHazardRate || 0.02) * 100}
+                  value={Number(((formData.calculationRules?.nonSaudiGosiEmployerHazardRate || 0.02) * 100).toFixed(2))}
                   onChange={(e) => setFormData({
                     ...formData,
                     calculationRules: {
@@ -1876,25 +2002,24 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
               </div>
             </div>
 
-            {/* Overtime multiplier */}
+            {/* Rounding Decimals */}
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">مضاعف احتساب ساعات العمل الإضافي العادية</label>
-              <div className="flex items-center gap-2">
-                <input
-                  type="number"
-                  step="0.1"
-                  value={formData.calculationRules?.overtimeStandardRate || 1.5}
-                  onChange={(e) => setFormData({
-                    ...formData,
-                    calculationRules: {
-                      ...formData.calculationRules!,
-                      overtimeStandardRate: parseFloat(e.target.value) || 1.5
-                    }
-                  })}
-                  className="w-full px-3.5 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white font-mono font-bold text-slate-900"
-                />
-                <span className="text-xs font-bold text-slate-600">ضعف (1.5x)</span>
-              </div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">دقة التقريب العشري للمبالغ المالية</label>
+              <select
+                value={formData.calculationRules?.roundingDecimals ?? 2}
+                onChange={(e) => setFormData({
+                  ...formData,
+                  calculationRules: {
+                    ...formData.calculationRules!,
+                    roundingDecimals: parseInt(e.target.value) || 2
+                  }
+                })}
+                className="w-full px-3.5 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white font-semibold text-slate-900"
+              >
+                <option value="2">منزلتين عشريتين (هللات - 0.00)</option>
+                <option value="0">أقرب ريال صحيح (بدون كسور)</option>
+                <option value="3">ثلاث منازل عشرية (0.000)</option>
+              </select>
             </div>
           </div>
 

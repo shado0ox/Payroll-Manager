@@ -339,8 +339,8 @@ export const LoansPenaltiesView: React.FC<LoansPenaltiesViewProps> = ({
                   onChange={(e) => setLoanForm({ ...loanForm, employeeId: e.target.value })}
                   className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl"
                 >
-                  {companyEmployees.map(e => (
-                    <option key={e.id} value={e.id}>{e.employeeNo} - {e.firstNameAr} {e.lastNameAr} ({e.department})</option>
+                  {companyEmployees.map((e, idx) => (
+                    <option key={`${e.id || 'emp'}-${idx}`} value={e.id}>{e.employeeNo} - {e.firstNameAr} {e.lastNameAr} ({e.department})</option>
                   ))}
                 </select>
               </div>
@@ -437,8 +437,8 @@ export const LoansPenaltiesView: React.FC<LoansPenaltiesViewProps> = ({
                   onChange={(e) => setPenaltyForm({ ...penaltyForm, employeeId: e.target.value })}
                   className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl"
                 >
-                  {companyEmployees.map(e => (
-                    <option key={e.id} value={e.id}>{e.employeeNo} - {e.firstNameAr} {e.lastNameAr}</option>
+                  {companyEmployees.map((e, idx) => (
+                    <option key={`${e.id || 'emp'}-${idx}`} value={e.id}>{e.employeeNo} - {e.firstNameAr} {e.lastNameAr}</option>
                   ))}
                 </select>
               </div>

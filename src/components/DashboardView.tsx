@@ -512,7 +512,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   const isUnderReview = item.status === 'UNDER_REVIEW';
 
                   return (
-                    <tr key={item.employeeId || idx} className="hover:bg-slate-50/80 transition-colors">
+                    <tr key={`${item.employeeId || 'row'}-${idx}`} className="hover:bg-slate-50/80 transition-colors">
                       <td className="p-4 font-medium text-slate-800">
                         <div>{item.employeeNameAr}</div>
                         <span className="text-[10px] text-slate-400">

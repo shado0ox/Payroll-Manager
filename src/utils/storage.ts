@@ -134,7 +134,21 @@ export function loadInitialState(): AppState {
       }
 
       const activeRole: UserRole = currentUser?.role || (localStorage.getItem(STORAGE_KEYS.ACTIVE_ROLE) as UserRole) || 'ADMIN';
-      const employees: Employee[] = JSON.parse(localStorage.getItem(STORAGE_KEYS.EMPLOYEES) || '[]');
+      const rawEmployees: Employee[] = JSON.parse(localStorage.getItem(STORAGE_KEYS.EMPLOYEES) || '[]');
+      
+      // Deduplicate employees by ID to guarantee unique React keys
+      const seenEmpIds = new Set<string>();
+      const employees: Employee[] = [];
+      rawEmployees.forEach(emp => {
+        if (emp && emp.id && !seenEmpIds.has(emp.id)) {
+          seenEmpIds.add(emp.id);
+          employees.push(emp);
+        } else if (emp && emp.id) {
+          // If duplicate key encountered in existing stored state, give it a unique suffix
+          const uniqueId = `${emp.id}-dup-${Math.random().toString(36).substring(2, 7)}`;
+          employees.push({ ...emp, id: uniqueId });
+        }
+      });
       const attendance: AttendanceRecord[] = JSON.parse(localStorage.getItem(STORAGE_KEYS.ATTENDANCE) || '[]');
       const loans: LoanSchedule[] = JSON.parse(localStorage.getItem(STORAGE_KEYS.LOANS) || '[]');
       const penalties: PenaltyRecord[] = JSON.parse(localStorage.getItem(STORAGE_KEYS.PENALTIES) || '[]');
@@ -259,7 +273,23 @@ export function saveCompanies(companies: Company[]): void {
 }
 
 export function saveEmployees(employees: Employee[]): void {
-  try { localStorage.setItem(STORAGE_KEYS.EMPLOYEES, JSON.stringify(employees)); } catch (e) {}
+  try {
+    const seen = new Set<string>();
+    const deduplicated: Employee[] = [];
+    employees.forEach((emp, index) => {
+      if (!emp) return;
+      const safeId = emp.id || `emp-${Date.now()}-${index}`;
+      if (!seen.has(safeId)) {
+        seen.add(safeId);
+        deduplicated.push({ ...emp, id: safeId });
+      } else {
+        const uniqueId = `${safeId}-dup-${index}-${Math.random().toString(36).substring(2, 6)}`;
+        seen.add(uniqueId);
+        deduplicated.push({ ...emp, id: uniqueId });
+      }
+    });
+    localStorage.setItem(STORAGE_KEYS.EMPLOYEES, JSON.stringify(deduplicated));
+  } catch (e) {}
 }
 
 export function savePayrollRuns(runs: PayrollRun[]): void {

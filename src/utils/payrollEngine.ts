@@ -57,9 +57,13 @@ export function calculateEmployeePayrollItem(input: EmployeeCalculationInput): P
   let dailyBaseAmount = baseSalary;
   if (rules.dailyRateFormula === 'BASE_PLUS_FIXED') {
     dailyBaseAmount = baseSalary + housingAllowance + transportAllowance + otherFixedAllowances;
+  } else if (rules.dailyRateFormula === 'BASE_PLUS_HOUSING') {
+    dailyBaseAmount = baseSalary + housingAllowance;
+  } else {
+    dailyBaseAmount = baseSalary;
   }
-  const dailyRate = dailyBaseAmount / (company.workDaysPerMonth || 30);
-  const hourlyRate = dailyRate / (rules.hourlyRateDivisor || 8);
+  const dailyRate = dailyBaseAmount / (company.workDaysPerMonth || rules.workDaysDivisor || 30);
+  const hourlyRate = dailyRate / (company.workHoursPerDay || rules.hourlyRateDivisor || 8);
   const minuteRate = hourlyRate / 60;
 
   // Attendance Aggregation
@@ -97,7 +101,7 @@ export function calculateEmployeePayrollItem(input: EmployeeCalculationInput): P
   const totalOvertimeHours = standardOvertimeHours + weekendOvertimeHours;
 
   // Deductions from Attendance
-  const delayDeduction = roundAmount(totalDelayMinutes * minuteRate, rules.roundingDecimals);
+  const delayDeduction = roundAmount(totalDelayMinutes * minuteRate * (rules.delayDeductionMultiplier || 1.0), rules.roundingDecimals);
   const absenceDeduction = roundAmount(totalAbsenceDays * dailyRate * (rules.absenceDayMultiplier || 1.0), rules.roundingDecimals);
   const unpaidLeaveDeduction = roundAmount(totalUnpaidLeaveDays * dailyRate * (rules.unpaidLeaveMultiplier || 1.0), rules.roundingDecimals);
 

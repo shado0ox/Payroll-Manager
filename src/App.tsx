@@ -61,6 +61,9 @@ import { CompanyProfileView } from './components/CompanyProfileView';
 import { AuditLogsView } from './components/AuditLogsView';
 import { EmployeeStatementModal } from './components/EmployeeStatementModal';
 import { QoyodIntegrationModal } from './components/QoyodIntegrationModal';
+import { DatabaseStatusModal } from './components/DatabaseStatusModal';
+import { DatabaseStatus, persistFullStateToDatabase, calculateStorageSize } from './utils/databaseService';
+import { WifiOff, Database, CheckCircle2, X } from 'lucide-react';
 
 export const App: React.FC = () => {
   // Initialize full application state
@@ -69,6 +72,44 @@ export const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<NavigationTab>('dashboard');
   const [statementEmployee, setStatementEmployee] = useState<Employee | null>(null);
   const [isQoyodModalOpen, setIsQoyodModalOpen] = useState(false);
+  const [isDbModalOpen, setIsDbModalOpen] = useState(false);
+  const [showDbWarningBanner, setShowDbWarningBanner] = useState(true);
+
+  // Database Connection Status State
+  const [dbStatus, setDbStatus] = useState<DatabaseStatus>(() => ({
+    isLocalConnected: true,
+    isCloudConnected: false, // Disconnected from cloud
+    lastSavedAt: new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' }),
+    saveCount: 1,
+    engine: window.indexedDB ? 'INDEXED_DB' : 'LOCAL_STORAGE',
+    storageSizeKb: calculateStorageSize(),
+    recordSummary: {
+      companies: state.companies.length,
+      employees: state.employees.length,
+      payrollRuns: state.payrollRuns.length,
+      attendance: state.attendance.length,
+      loans: state.loans.length,
+      penalties: state.penalties.length,
+      leaves: state.leaves.length,
+      journals: state.journals.length,
+      auditLogs: state.auditLogs.length,
+      users: state.users.length,
+    },
+    lastError: null,
+  }));
+
+  // Auto-sync full state to database whenever state changes
+  useEffect(() => {
+    let isMounted = true;
+    persistFullStateToDatabase(state).then((status) => {
+      if (isMounted) {
+        setDbStatus(status);
+      }
+    });
+    return () => {
+      isMounted = false;
+    };
+  }, [state]);
 
   // Active Company
   const activeCompany = useMemo(() => {
@@ -457,6 +498,10 @@ export const App: React.FC = () => {
     return state.payrollRuns.find(r => r.companyId === activeCompany?.id);
   }, [state.payrollRuns, activeCompany]);
 
+  const handleRestoreState = (restoredState: typeof state) => {
+    setState(restoredState);
+  };
+
   // If not logged in, show real Login View
   if (!state.currentUser) {
     return <LoginView users={state.users} companies={state.companies} onLogin={handleLogin} />;
@@ -484,12 +529,42 @@ export const App: React.FC = () => {
           companies={state.companies}
           activeCompany={activeCompany}
           currentUser={state.currentUser}
+          dbStatus={dbStatus}
+          onOpenDbModal={() => setIsDbModalOpen(true)}
           onSelectCompany={handleSelectCompany}
           onLogout={handleLogout}
           onOpenQoyodModal={() => setIsQoyodModalOpen(true)}
           onNavigate={setActiveTab}
           onResetData={handleResetData}
         />
+
+        {/* Database Status Notification Banner (Shows when cloud DB is disconnected) */}
+        {!dbStatus.isCloudConnected && showDbWarningBanner && (
+          <div className="bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-transparent border-b border-amber-200/80 px-6 py-2 flex items-center justify-between gap-3 text-xs text-amber-900 shrink-0">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0 animate-pulse"></span>
+              <span className="font-bold shrink-0">إشعار قاعدة البيانات:</span>
+              <span className="text-slate-700 truncate font-medium">
+                قاعدة البيانات السحابية غير متصلة — يتم الحفظ والتخزين محلياً بأمان على جهازك (IndexedDB / Local Storage).
+              </span>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                onClick={() => setIsDbModalOpen(true)}
+                className="px-2.5 py-1 bg-amber-100 hover:bg-amber-200 text-amber-900 rounded-lg text-[11px] font-bold transition-colors cursor-pointer"
+              >
+                فحص الاتصال والنسخ الاحتياطي
+              </button>
+              <button
+                onClick={() => setShowDbWarningBanner(false)}
+                title="إخفاء التنبيه"
+                className="p-1 text-slate-400 hover:text-slate-700 rounded-md cursor-pointer transition-colors"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Scrollable Workspace Content */}
         <div className="flex-1 overflow-y-auto p-6 sm:p-8">
@@ -653,6 +728,15 @@ export const App: React.FC = () => {
           onClose={() => setIsQoyodModalOpen(false)}
         />
       )}
+
+      {/* Database Management & Diagnostics Modal */}
+      <DatabaseStatusModal
+        isOpen={isDbModalOpen}
+        onClose={() => setIsDbModalOpen(false)}
+        state={state}
+        dbStatus={dbStatus}
+        onRestoreState={handleRestoreState}
+      />
 
     </div>
   );
