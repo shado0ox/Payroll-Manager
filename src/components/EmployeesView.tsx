@@ -268,44 +268,74 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
   };
 
   const importPreview = useMemo(() => {
-    if (!importSheet) return { valid: [] as Employee[], errors: [] as string[], duplicates: 0 };
+    if (!importSheet) return { valid: [] as Employee[], errors: [] as string[], duplicates: 0, adjusted: 0, ignored: 0, incomplete: 0 };
     const existingNumbers = new Set(companyEmployees.map(emp => emp.employeeNo.trim().toLowerCase()));
     const existingIqamas = new Set(companyEmployees.map(emp => emp.nationalIdOrIqama.trim()).filter(Boolean));
     const existingIbans = new Set(companyEmployees.map(emp => emp.bankIban.replace(/\s/g, '').toUpperCase()).filter(Boolean));
-    const seenNumbers = new Set<string>();
+    const usedNumbers = new Set(existingNumbers);
+    const seenIqamas = new Set(existingIqamas);
+    const seenIbans = new Set(existingIbans);
     const valid: Employee[] = [];
     const errors: string[] = [];
     let duplicates = 0;
+    let adjusted = 0;
+    let ignored = 0;
+    let incomplete = 0;
     const today = new Date().toISOString().slice(0, 10);
 
     importSheet.rows.forEach((row, index) => {
       const rowNo = importSheet.headerRow + index + 1;
-      const employeeNo = getImportValue(row, 'employeeNo');
+      const sourceEmployeeNo = getImportValue(row, 'employeeNo');
       const fullName = getImportValue(row, 'fullName').replace(/\s+/g, ' ').trim();
       const iqama = getImportValue(row, 'nationalIdOrIqama').replace(/\s/g, '');
       const iban = getImportValue(row, 'bankIban').replace(/\s/g, '').toUpperCase();
       const salary = parseMoney(getImportValue(row, 'baseSalary'));
       const importedDeduction = Math.max(0, parseMoney(getImportValue(row, 'deductions')));
-      if (!employeeNo || !fullName || !iqama || !iban || salary <= 0) {
-        errors.push(`الصف ${rowNo}: بيانات إلزامية ناقصة`);
+      // Totals, empty lines, and bank/SWIFT reference tables aren't employees.
+      if (!fullName || salary <= 0) {
+        ignored += 1;
         return;
       }
-      const employeeKey = employeeNo.toLowerCase();
-      if (existingNumbers.has(employeeKey) || existingIqamas.has(iqama) || existingIbans.has(iban) || seenNumbers.has(employeeKey)) {
+      if (!sourceEmployeeNo) {
+        errors.push(`الصف ${rowNo}: الرقم الوظيفي غير محدد`);
+        return;
+      }
+      // A matching Iqama/IBAN is the same employee; skip it on a repeated upload.
+      if ((iqama && seenIqamas.has(iqama)) || (iban && seenIbans.has(iban))) {
         duplicates += 1;
         return;
       }
-      if (!validateSaudiIBAN(iban)) {
-        errors.push(`الصف ${rowNo}: رقم IBAN غير صالح`);
-        return;
+      const rowWarnings: string[] = [];
+      const hasIncompleteData = !iqama || !iban || (iban ? !validateSaudiIBAN(iban) : false);
+      if (!iqama) rowWarnings.push('رقم الإقامة غير مكتمل');
+      if (!iban) rowWarnings.push('بيانات IBAN غير مكتملة');
+      else if (!validateSaudiIBAN(iban)) rowWarnings.push('رقم IBAN يحتاج مراجعة');
+
+      let employeeNo = sourceEmployeeNo;
+      let employeeKey = employeeNo.toLowerCase();
+      if (usedNumbers.has(employeeKey)) {
+        const suffix = iqama || iban.slice(-8) || String(rowNo);
+        const baseCandidate = `${sourceEmployeeNo}-${suffix}`;
+        employeeNo = baseCandidate;
+        let counter = 2;
+        while (usedNumbers.has(employeeNo.toLowerCase())) {
+          employeeNo = `${baseCandidate}-${counter}`;
+          counter += 1;
+        }
+        employeeKey = employeeNo.toLowerCase();
+        adjusted += 1;
+        rowWarnings.push(`تم تعديل الرقم الوظيفي المكرر من ${sourceEmployeeNo} إلى ${employeeNo}`);
       }
-      seenNumbers.add(employeeKey);
+      usedNumbers.add(employeeKey);
+      if (iqama) seenIqamas.add(iqama);
+      if (iban) seenIbans.add(iban);
+      if (hasIncompleteData) incomplete += 1;
       const nameParts = fullName.split(' ');
       const firstName = nameParts.shift() || fullName;
       const lastName = nameParts.join(' ') || '-';
       const bankNameFromSheet = getImportValue(row, 'bankName');
-      const detectedBank = detectBankFromIBAN(iban);
-      const bankName = bankNameFromSheet || detectedBank?.nameAr || 'غير محدد';
+      const detectedBank = iban && validateSaudiIBAN(iban) ? detectBankFromIBAN(iban) : null;
+      const bankName = bankNameFromSheet || detectedBank?.nameAr || (iban ? 'غير محدد' : 'بيانات بنكية غير مكتملة');
       const swift = (getImportValue(row, 'bankSwiftCode') || detectedBank?.swiftCode || getSwiftCodeFromBankName(bankName) || '').toUpperCase();
       const country = getImportValue(row, 'country') || 'غير محدد';
       const rawStatus = getImportValue(row, 'status').toLowerCase();
@@ -334,6 +364,7 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
         bankName,
         bankIban: iban,
         bankSwiftCode: swift,
+        dataWarnings: rowWarnings,
         salaryPackage: {
           baseSalary: salary,
           housingAllowance: 0,
@@ -346,7 +377,7 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
         },
       });
     });
-    return { valid, errors, duplicates };
+    return { valid, errors, duplicates, adjusted, ignored, incomplete };
   }, [importSheet, importMapping, companyEmployees, company.id, company.costCenters]);
 
   const handleImportFile = async (file?: File) => {
@@ -542,11 +573,16 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                       <div className="text-[10px] text-slate-400 font-mono">
                         {emp.employeeNo}
                       </div>
+                      {!!emp.dataWarnings?.length && (
+                        <div className="text-[9px] text-amber-700 font-semibold flex items-center gap-1 mt-0.5" title={emp.dataWarnings.join(' • ')}>
+                          <AlertCircle className="w-3 h-3" /> بيانات تحتاج استكمال
+                        </div>
+                      )}
                     </td>
 
                     {/* National ID / Iqama */}
                     <td className="py-3 px-2 font-mono text-slate-600 truncate">
-                      {emp.nationalIdOrIqama}
+                      {emp.nationalIdOrIqama || <span className="text-amber-600 font-sans">غير مكتملة</span>}
                     </td>
 
                     {/* Dept & Job */}
@@ -571,9 +607,11 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                     {/* Bank & IBAN & SWIFT */}
                     <td className="py-3 px-2 truncate">
                       <div className="text-slate-800 font-medium truncate">{emp.bankName}</div>
-                      <div className="text-[10px] text-slate-500 font-mono truncate" title={emp.bankIban}>
-                        {emp.bankIban.slice(0, 6)}...{emp.bankIban.slice(-4)}
-                      </div>
+                      {emp.bankIban ? (
+                        <div className="text-[10px] text-slate-500 font-mono truncate" title={emp.bankIban}>
+                          {emp.bankIban.slice(0, 6)}...{emp.bankIban.slice(-4)}
+                        </div>
+                      ) : <div className="text-[9px] text-amber-600 font-semibold">IBAN غير مكتمل</div>}
                       {emp.bankSwiftCode ? (
                         <div className="text-[9px] text-emerald-700 font-mono font-semibold truncate" title={`رمز السويفت: ${emp.bankSwiftCode}`}>
                           SWIFT: {emp.bankSwiftCode}
@@ -677,11 +715,19 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
             </div>
 
             <div className="p-5 overflow-y-auto space-y-5">
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
                 <div className="rounded-xl bg-emerald-50 border border-emerald-200 p-3 text-emerald-800"><b>{importPreview.valid.length}</b> صف صالح للاستيراد</div>
-                <div className="rounded-xl bg-amber-50 border border-amber-200 p-3 text-amber-800"><b>{importPreview.duplicates}</b> صف مكرر سيتم تجاهله</div>
+                <div className="rounded-xl bg-sky-50 border border-sky-200 p-3 text-sky-800"><b>{importPreview.adjusted}</b> رقم مكرر تم تصحيحه</div>
+                <div className="rounded-xl bg-amber-50 border border-amber-200 p-3 text-amber-800"><b>{importPreview.incomplete}</b> موظف يحتاج استكمال بيانات</div>
+                <div className="rounded-xl bg-slate-50 border border-slate-200 p-3 text-slate-700"><b>{importPreview.ignored}</b> صف غير موظف تم تجاهله</div>
                 <div className="rounded-xl bg-rose-50 border border-rose-200 p-3 text-rose-800"><b>{importPreview.errors.length}</b> صف به أخطاء</div>
               </div>
+
+              {importPreview.duplicates > 0 && (
+                <div className="rounded-xl bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
+                  تم تجاهل {importPreview.duplicates} موظف موجود مسبقًا بنفس الإقامة أو IBAN.
+                </div>
+              )}
 
               <div>
                 <h4 className="font-bold text-sm text-slate-900 mb-2">مطابقة أعمدة الشيت</h4>

@@ -52,6 +52,13 @@ const qualityOverrides: Record<string, string> = {
   'اختر موظفًا': 'Select an employee', 'بدون اختيار': 'No selection',
   'بدون ربط (حساب إداري مستقل)': 'No link (independent admin account)',
   'لا يوجد موظف مطابق للبحث': 'No employee matches your search',
+  'رقم مكرر تم تصحيحه': 'duplicate number(s) corrected',
+  'موظف يحتاج استكمال بيانات': 'employee(s) need data completion',
+  'صف غير موظف تم تجاهله': 'non-employee row(s) ignored',
+  'بيانات تحتاج استكمال': 'Data needs completion', 'غير مكتملة': 'Incomplete',
+  'IBAN غير مكتمل': 'IBAN incomplete', 'بيانات بنكية غير مكتملة': 'Incomplete bank details',
+  'رقم الإقامة غير مكتمل': 'Iqama number incomplete', 'بيانات IBAN غير مكتملة': 'IBAN details incomplete',
+  'رقم IBAN يحتاج مراجعة': 'IBAN needs review', 'الرقم الوظيفي غير محدد': 'Employee number is missing',
 };
 const translationCatalog: Record<string, string> = { ...generatedTranslations, ...qualityOverrides };
 // Only the compact, reviewed glossary is used for partial/dynamic replacements.

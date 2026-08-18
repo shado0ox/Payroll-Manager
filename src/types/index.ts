@@ -154,6 +154,7 @@ export interface Employee {
   bankName: string;
   bankIban: string;
   bankSwiftCode?: string;
+  dataWarnings?: string[];
   salaryPackage: EmployeeSalaryPackage;
 }
 
