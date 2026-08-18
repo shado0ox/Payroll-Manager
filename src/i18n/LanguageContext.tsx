@@ -37,7 +37,10 @@ const qualityOverrides: Record<string, string> = {
   'الرقم الضريبي': 'VAT number', 'العملة': 'Currency', 'الإعدادات': 'Settings', 'الصلاحيات': 'Permissions',
 };
 const translationCatalog: Record<string, string> = { ...generatedTranslations, ...qualityOverrides };
-const translationKeys = Object.keys(translationCatalog).sort((a, b) => b.length - a.length);
+// Only the compact, reviewed glossary is used for partial/dynamic replacements.
+// All 1,116 generated phrases still use O(1) exact lookup. Iterating the entire
+// catalog for every DOM node made the first English render unnecessarily costly.
+const dynamicTranslationKeys = Object.keys(qualityOverrides).sort((a, b) => b.length - a.length);
 const originalTextNodes = new WeakMap<Text, string>();
 const originalElementAttributes = new WeakMap<Element, Map<string, string>>();
 function polishTranslation(source: string, value: string): string {
@@ -60,7 +63,7 @@ export function translateUiText(value: string): string {
   const exact = translationCatalog[value.trim()];
   if (exact) return value.replace(value.trim(), polishTranslation(value.trim(), exact));
   let result = value;
-  for (const key of translationKeys) {
+  for (const key of dynamicTranslationKeys) {
     if (result.includes(key)) result = result.split(key).join(polishTranslation(key, translationCatalog[key]));
   }
   return result;
@@ -76,7 +79,7 @@ const DomLocalizer: React.FC<{ language: AppLanguage }> = ({ language }) => {
       while (walker.nextNode()) nodes.push(walker.currentNode as Text);
       for (const node of nodes) {
         const parent = node.parentElement;
-        if (!parent || ['SCRIPT', 'STYLE', 'TEXTAREA'].includes(parent.tagName)) continue;
+        if (!parent || parent.closest('[data-no-translate]') || ['SCRIPT', 'STYLE', 'TEXTAREA'].includes(parent.tagName)) continue;
         const current = node.nodeValue || '';
         if (language === 'en' && /[\u0600-\u06ff٠-٩]/.test(current)) {
           originalTextNodes.set(node, current);
@@ -88,6 +91,7 @@ const DomLocalizer: React.FC<{ language: AppLanguage }> = ({ language }) => {
       }
       const elements: Element[] = root.nodeType === Node.ELEMENT_NODE ? [root as Element, ...(root as Element).querySelectorAll('*')] : [];
       for (const element of elements) {
+        if (element.closest('[data-no-translate]')) continue;
         for (const attribute of attributes) {
           const current = element.getAttribute(attribute);
           if (!current) continue;
@@ -106,11 +110,10 @@ const DomLocalizer: React.FC<{ language: AppLanguage }> = ({ language }) => {
     processElement(document.body);
     const observer = new MutationObserver(mutations => {
       for (const mutation of mutations) {
-        if (mutation.type === 'characterData') processElement(mutation.target);
         for (const node of mutation.addedNodes) processElement(node);
       }
     });
-    observer.observe(document.body, { subtree: true, childList: true, characterData: true });
+    observer.observe(document.body, { subtree: true, childList: true });
     return () => observer.disconnect();
   }, [language]);
   return null;

@@ -180,7 +180,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ defaultCompanyCode = '101'
 
         </div>
 
-        <button type="button" onClick={toggleLanguage} className="mx-auto mt-4 block px-4 py-2 rounded-xl border border-slate-700 text-sm font-bold text-slate-300 hover:bg-slate-800">{t('language')}</button>
+        <button type="button" data-no-translate onClick={toggleLanguage} className="mx-auto mt-4 block px-4 py-2 rounded-xl border border-slate-700 text-sm font-bold text-slate-300 hover:bg-slate-800">{t('language')}</button>
         {/* Designer Attribution & System Info Footer */}
         <div className="text-center mt-6 space-y-1.5">
           <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-800/80 border border-slate-700 text-slate-300 text-xs font-semibold shadow-xs">

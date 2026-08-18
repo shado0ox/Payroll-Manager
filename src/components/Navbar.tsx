@@ -106,7 +106,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
       {/* Right: Actions & Logged-in User Profile */}
       <div className="flex items-center gap-2.5 sm:gap-3 shrink-0">
-        <button onClick={toggleLanguage} className="px-3 py-2 rounded-lg border border-slate-200 bg-white text-slate-700 text-xs font-bold hover:bg-slate-50">
+        <button data-no-translate onClick={toggleLanguage} className="px-3 py-2 rounded-lg border border-slate-200 bg-white text-slate-700 text-xs font-bold hover:bg-slate-50">
           {t('language')}
         </button>
         
@@ -173,4 +173,3 @@ export const Navbar: React.FC<NavbarProps> = ({
     </header>
   );
 };
-
