@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import { generatedTranslations } from './generatedTranslations';
 export type AppLanguage = 'ar' | 'en';
 const translations = {
   payrollSystem: { ar: 'نظام مسار للرواتب', en: 'Masar Payroll System' }, payrollSummary: { ar: 'ملخص الرواتب - مسار', en: 'Payroll Summary - Masar' },
@@ -16,10 +17,108 @@ const translations = {
 type TranslationKey = keyof typeof translations;
 type ContextValue = { language: AppLanguage; toggleLanguage: () => void; t: (key: TranslationKey) => string };
 const LanguageContext = createContext<ContextValue | null>(null);
+
+const qualityOverrides: Record<string, string> = {
+  'حفظ': 'Save', 'إلغاء': 'Cancel', 'حذف': 'Delete', 'تعديل': 'Edit', 'إضافة': 'Add', 'بحث': 'Search',
+  'تصدير': 'Export', 'طباعة': 'Print', 'إغلاق': 'Close', 'تأكيد': 'Confirm', 'رجوع': 'Back', 'التالي': 'Next',
+  'نشط': 'Active', 'غير نشط': 'Inactive', 'معطل': 'Disabled', 'مسودة': 'Draft', 'تحت المراجعة': 'Under review',
+  'معتمد': 'Approved', 'مرحل': 'Posted', 'مكتمل': 'Completed', 'معلق': 'Paused', 'مرفوض': 'Rejected',
+  'سعودي': 'Saudi', 'غير سعودي': 'Non-Saudi', 'حاضر': 'Present', 'غائب': 'Absent', 'إجازة': 'Leave',
+  'الموظف': 'Employee', 'الموظفين': 'Employees', 'القسم': 'Department', 'المسمى الوظيفي': 'Job title',
+  'الراتب الأساسي': 'Basic salary', 'بدل السكن': 'Housing allowance', 'بدل النقل': 'Transport allowance',
+  'إجمالي الراتب': 'Gross salary', 'صافي الراتب': 'Net salary', 'إجمالي الاستحقاقات': 'Total earnings',
+  'إجمالي الاستقطاعات': 'Total deductions', 'السلف': 'Employee loans', 'الجزاءات': 'Penalties',
+  'التأمينات الاجتماعية': 'GOSI', 'رقم الهوية / الإقامة': 'National ID / Iqama number', 'رقم الإقامة': 'Iqama number',
+  'مركز التكلفة': 'Cost center', 'قيد محاسبي': 'Journal entry', 'القيود المحاسبية': 'Accounting journal entries',
+  'مسير الرواتب': 'Payroll run', 'مسيرات الرواتب': 'Payroll runs', 'حماية الأجور': 'Wage Protection System',
+  'الحضور والانصراف': 'Attendance & time tracking', 'الحضور والإجازات': 'Attendance & leave',
+  'الرقم الوظيفي': 'Employee number', 'تاريخ التعيين': 'Hire date', 'تاريخ الاستحقاق': 'Accrual date',
+  'اسم المنشأة': 'Company name', 'رمز المنشأة': 'Company code', 'السجل التجاري': 'Commercial registration',
+  'الرقم الضريبي': 'VAT number', 'العملة': 'Currency', 'الإعدادات': 'Settings', 'الصلاحيات': 'Permissions',
+};
+const translationCatalog: Record<string, string> = { ...generatedTranslations, ...qualityOverrides };
+const translationKeys = Object.keys(translationCatalog).sort((a, b) => b.length - a.length);
+const originalTextNodes = new WeakMap<Text, string>();
+const originalElementAttributes = new WeakMap<Element, Map<string, string>>();
+function polishTranslation(source: string, value: string): string {
+  let result = value.replaceAll('&apos;', "'");
+  if (source.includes('مسير')) result = result.replace(/salary marches?|pay marches?|salary routes?|pay routes?|salary courses?|pay courses?|salary passes?/gi, match => match.toLowerCase().endsWith('s') ? 'payroll runs' : 'payroll run');
+  if (source.includes('مُدد') || source.includes('مدد')) result = result.replace(/extended platform|extended/gi, 'Mudad');
+  if (source.includes('آيبان') || source.includes('الآيبان')) result = result.replace(/iphone|ipan|iPan/gi, 'IBAN');
+  if (source.includes('السويفت')) result = result.replace(/suft|soft|asteroid/gi, 'SWIFT');
+  if (source.includes('منشأة') || source.includes('المنشأة')) result = result.replace(/plant|facility|enterprise|establishment/gi, 'company');
+  if (source.includes('خصم') || source.includes('خصومات')) result = result.replace(/liabilit(y|ies)|discounts?/gi, match => match.toLowerCase().endsWith('ies') ? 'deductions' : 'deduction');
+  if (source.includes('استحقاقات')) result = result.replace(/benefits/gi, 'earnings');
+  if (/برنامج قيود|نظام قيود|خادم قيود|Qoyod|API/.test(source)) result = result.replace(/restricted programme|restraint system|constraint system|chain server|restriction server/gi, 'Qoyod');
+  if (source.includes('قيود محاسبية') || source.includes('القيود المحاسبية')) result = result.replace(/accounting restrictions|accounting constraints/gi, 'accounting journal entries');
+  return result;
+}
+export function translateUiText(value: string): string {
+  if (!value) return value;
+  value = value.replace(/[٠-٩]/g, digit => String('٠١٢٣٤٥٦٧٨٩'.indexOf(digit)));
+  if (!/[\u0600-\u06ff]/.test(value)) return value;
+  const exact = translationCatalog[value.trim()];
+  if (exact) return value.replace(value.trim(), polishTranslation(value.trim(), exact));
+  let result = value;
+  for (const key of translationKeys) {
+    if (result.includes(key)) result = result.split(key).join(polishTranslation(key, translationCatalog[key]));
+  }
+  return result;
+}
+
+const DomLocalizer: React.FC<{ language: AppLanguage }> = ({ language }) => {
+  useEffect(() => {
+    const attributes = ['placeholder', 'title', 'aria-label', 'alt'];
+    const processElement = (root: Node) => {
+      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+      const nodes: Text[] = [];
+      if (root.nodeType === Node.TEXT_NODE) nodes.push(root as Text);
+      while (walker.nextNode()) nodes.push(walker.currentNode as Text);
+      for (const node of nodes) {
+        const parent = node.parentElement;
+        if (!parent || ['SCRIPT', 'STYLE', 'TEXTAREA'].includes(parent.tagName)) continue;
+        const current = node.nodeValue || '';
+        if (language === 'en' && /[\u0600-\u06ff٠-٩]/.test(current)) {
+          originalTextNodes.set(node, current);
+          node.nodeValue = translateUiText(current);
+        } else if (language === 'ar' && originalTextNodes.has(node)) {
+          const saved = originalTextNodes.get(node)!;
+          if (current !== saved) node.nodeValue = saved;
+        }
+      }
+      const elements: Element[] = root.nodeType === Node.ELEMENT_NODE ? [root as Element, ...(root as Element).querySelectorAll('*')] : [];
+      for (const element of elements) {
+        for (const attribute of attributes) {
+          const current = element.getAttribute(attribute);
+          if (!current) continue;
+          if (language === 'en' && /[\u0600-\u06ff٠-٩]/.test(current)) {
+            const saved = originalElementAttributes.get(element) || new Map<string, string>();
+            saved.set(attribute, current);
+            originalElementAttributes.set(element, saved);
+            element.setAttribute(attribute, translateUiText(current));
+          } else if (language === 'ar') {
+            const saved = originalElementAttributes.get(element)?.get(attribute);
+            if (saved && current !== saved) element.setAttribute(attribute, saved);
+          }
+        }
+      }
+    };
+    processElement(document.body);
+    const observer = new MutationObserver(mutations => {
+      for (const mutation of mutations) {
+        if (mutation.type === 'characterData') processElement(mutation.target);
+        for (const node of mutation.addedNodes) processElement(node);
+      }
+    });
+    observer.observe(document.body, { subtree: true, childList: true, characterData: true });
+    return () => observer.disconnect();
+  }, [language]);
+  return null;
+};
 export const LanguageProvider: React.FC<React.PropsWithChildren> = ({ children }) => {
   const [language, setLanguage] = useState<AppLanguage>(() => localStorage.getItem('masar_language') === 'en' ? 'en' : 'ar');
   useEffect(() => { localStorage.setItem('masar_language', language); document.documentElement.lang = language; document.documentElement.dir = language === 'ar' ? 'rtl' : 'ltr'; }, [language]);
   const value = useMemo<ContextValue>(() => ({ language, toggleLanguage: () => setLanguage(v => v === 'ar' ? 'en' : 'ar'), t: key => translations[key][language] }), [language]);
-  return <LanguageContext.Provider value={value}>{children}</LanguageContext.Provider>;
+  return <LanguageContext.Provider value={value}><DomLocalizer language={language} />{children}</LanguageContext.Provider>;
 };
 export const useLanguage = () => { const value = useContext(LanguageContext); if (!value) throw new Error('LanguageProvider is missing'); return value; };

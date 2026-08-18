@@ -1,9 +1,11 @@
 import { Company, PayrollRun, JournalBatch, Employee, PayrollRunItem } from '../types';
+import { translateUiText } from '../i18n/LanguageContext';
 
 /**
  * Downloads a string content as a UTF-8 file with BOM for perfect Arabic Excel rendering.
  */
 export function downloadCsvFile(filename: string, csvContent: string): void {
+  if (localStorage.getItem('masar_language') === 'en') csvContent = translateUiText(csvContent);
   // UTF-8 BOM ensures Excel displays Arabic text properly
   const bom = '\uFEFF';
   const blob = new Blob([bom + csvContent], { type: 'text/csv;charset=utf-8;' });

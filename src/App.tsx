@@ -488,7 +488,7 @@ export const App: React.FC = () => {
   }
 
   return (
-    <div className="flex h-screen w-full overflow-hidden bg-[#f8fafc] font-sans antialiased text-slate-900 selection:bg-emerald-500 selection:text-white" dir="rtl">
+    <div className="flex h-screen w-full overflow-hidden bg-[#f8fafc] font-sans antialiased text-slate-900 selection:bg-emerald-500 selection:text-white">
       
       {/* Dark Sidebar */}
       <Sidebar

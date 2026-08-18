@@ -1,1 +1,9 @@
 @import "tailwindcss";
+
+html[dir="ltr"] .space-x-reverse {
+  --tw-space-x-reverse: 0;
+}
+
+html[dir="ltr"] .text-right {
+  text-align: left;
+}
