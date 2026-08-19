@@ -221,9 +221,11 @@ export function exportGosiReportCsv(payrollRun: PayrollRun, company: Company): v
       item.baseSalary.toFixed(2),
       item.housingAllowance.toFixed(2),
       gosiBase.toFixed(2),
-      isSaudi ? `${((company.calculationRules.saudiGosiEmployeeRate || 0.0975) * 100).toFixed(2)}%` : '0%',
+      isSaudi && item.saudiGosiPaymentMode !== 'COMPANY_FULL' ? `${((company.calculationRules.saudiGosiEmployeeRate || 0.0975) * 100).toFixed(2)}%` : '0%',
       item.gosiEmployeeShare.toFixed(2),
-      isSaudi ? `${((company.calculationRules.saudiGosiEmployerRate || 0.1175) * 100).toFixed(2)}%` : `${((company.calculationRules.nonSaudiGosiEmployerHazardRate || 0.02) * 100).toFixed(2)}% (مخاطر)`,
+      isSaudi
+        ? `${(((company.calculationRules.saudiGosiEmployerRate || 0.1175) + (item.saudiGosiPaymentMode === 'COMPANY_FULL' ? (company.calculationRules.saudiGosiEmployeeRate || 0.0975) : 0)) * 100).toFixed(2)}%`
+        : `${((company.calculationRules.nonSaudiGosiEmployerHazardRate || 0.02) * 100).toFixed(2)}% (مخاطر)`,
       item.gosiEmployerShare.toFixed(2),
       totalGosi.toFixed(2)
     ];

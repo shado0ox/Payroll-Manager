@@ -46,6 +46,7 @@ export function calculateEmployeePayrollItem(input: EmployeeCalculationInput): P
   const housingAllowance = employee.salaryPackage.housingAllowance || 0;
   const transportAllowance = employee.salaryPackage.transportAllowance || 0;
   const otherFixedAllowances = employee.salaryPackage.otherFixedAllowances || 0;
+  const nonGosiOtherAllowances = employee.salaryPackage.nonGosiOtherAllowances || 0;
   
   const customAllowancesSum = (employee.salaryPackage.customAllowances || [])
     .reduce((sum, item) => sum + (item.amount || 0), 0);
@@ -130,8 +131,15 @@ export function calculateEmployeePayrollItem(input: EmployeeCalculationInput): P
   const gosiSubjectAmount = Math.min(gosiBaseRaw, rules.saudiGosiMaxCap || 45000);
 
   if (employee.nationality === 'SAUDI') {
-    gosiEmployeeShare = roundAmount(gosiSubjectAmount * (rules.saudiGosiEmployeeRate || 0.0975), rules.roundingDecimals);
-    gosiEmployerShare = roundAmount(gosiSubjectAmount * (rules.saudiGosiEmployerRate || 0.1175), rules.roundingDecimals);
+    const employeeSubscription = roundAmount(gosiSubjectAmount * (rules.saudiGosiEmployeeRate || 0.0975), rules.roundingDecimals);
+    const employerSubscription = roundAmount(gosiSubjectAmount * (rules.saudiGosiEmployerRate || 0.1175), rules.roundingDecimals);
+    if (employee.saudiGosiPaymentMode === 'COMPANY_FULL') {
+      gosiEmployeeShare = 0;
+      gosiEmployerShare = roundAmount(employeeSubscription + employerSubscription, rules.roundingDecimals);
+    } else {
+      gosiEmployeeShare = employeeSubscription;
+      gosiEmployerShare = employerSubscription;
+    }
   } else {
     // Non-Saudi: No employee share, 2% employer occupational hazard share
     gosiEmployeeShare = 0;
@@ -143,6 +151,7 @@ export function calculateEmployeePayrollItem(input: EmployeeCalculationInput): P
   let effectiveHousing = housingAllowance;
   let effectiveTransport = transportAllowance;
   let effectiveOtherFixed = otherFixedAllowances;
+  let effectiveNonGosiOther = nonGosiOtherAllowances;
 
   if (isSuspended) {
     // Suspension: 0 base payout unless specific allowance rule
@@ -150,9 +159,10 @@ export function calculateEmployeePayrollItem(input: EmployeeCalculationInput): P
     effectiveHousing = 0;
     effectiveTransport = 0;
     effectiveOtherFixed = 0;
+    effectiveNonGosiOther = 0;
   }
 
-  const totalOtherAllowances = effectiveOtherFixed + customAllowancesSum;
+  const totalOtherAllowances = effectiveOtherFixed + effectiveNonGosiOther + customAllowancesSum;
   const bonuses = 0;
 
   const totalGrossSalary = roundAmount(
@@ -193,16 +203,20 @@ export function calculateEmployeePayrollItem(input: EmployeeCalculationInput): P
     employeeId: employee.id,
     employeeNo: employee.employeeNo,
     employeeName: `${employee.firstNameAr} ${employee.lastNameAr}`,
+    employeeNameEn: `${employee.firstNameEn || ''} ${employee.lastNameEn || ''}`.trim(),
+    nationalIdOrIqama: employee.nationalIdOrIqama,
     department: employee.department,
     costCenterId: employee.costCenterId,
     nationality: employee.nationality,
     bankIban: employee.bankIban,
     bankName: employee.bankName,
+    bankSwiftCode: employee.bankSwiftCode,
     
     baseSalary: effectiveBaseSalary,
     housingAllowance: effectiveHousing,
     transportAllowance: effectiveTransport,
     otherAllowances: totalOtherAllowances,
+    nonGosiAllowances: effectiveNonGosiOther,
     overtimeAmount: totalOvertimeAmount,
     overtimeHours: totalOvertimeHours,
     bonuses,
@@ -223,6 +237,9 @@ export function calculateEmployeePayrollItem(input: EmployeeCalculationInput): P
     netSalary,
     gosiEmployerShare,
     totalCompanyBurden,
+    saudiGosiPaymentMode: employee.saudiGosiPaymentMode || 'SHARED',
+    manualAddition: 0,
+    manualDeduction: 0,
 
     isSuspended,
     warningFlags,

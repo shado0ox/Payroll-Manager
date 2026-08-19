@@ -22,7 +22,9 @@ import {
   Zap,
   WalletCards,
   X,
-  CircleDollarSign
+  CircleDollarSign,
+  RotateCcw,
+  PencilLine
 } from 'lucide-react';
 import { 
   Company, 
@@ -51,6 +53,7 @@ import {
   exportGosiReportCsv 
 } from '../utils/exportUtils';
 import { generatePayrollJournalBatch, generatePaymentJournalBatch } from '../utils/accountingEngine';
+import { exportBankPayrollXlsx } from '../utils/bankExcelExport';
 
 interface PayrollRunsViewProps {
   company: Company;
@@ -112,6 +115,8 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
   const [calcSpeedMs, setCalcSpeedMs] = useState<number | null>(null);
   const [selectedPaymentEmployeeIds, setSelectedPaymentEmployeeIds] = useState<string[]>([]);
   const [isPaymentBatchModalOpen, setIsPaymentBatchModalOpen] = useState(false);
+  const [adjustmentItem, setAdjustmentItem] = useState<PayrollRunItem | null>(null);
+  const [adjustmentForm, setAdjustmentForm] = useState({ addition: 0, deduction: 0, notes: '' });
   const [paymentBatchForm, setPaymentBatchForm] = useState({
     method: 'WPS' as PaymentMethod,
     scheduledDate: new Date().toISOString().slice(0, 10),
@@ -207,7 +212,9 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
       notes: paymentBatchForm.notes.trim(),
       createdAt: new Date().toISOString(),
     };
-    onSavePayrollRun({ ...currentRun, paymentBatches: [...(currentRun.paymentBatches || []), batch] });
+    const updatedRun = { ...currentRun, paymentBatches: [...(currentRun.paymentBatches || []), batch] };
+    onSavePayrollRun(updatedRun);
+    if (batch.method !== 'CASH') exportBankPayrollXlsx(updatedRun, company, batch, employees);
     setSelectedPaymentEmployeeIds([]);
     setIsPaymentBatchModalOpen(false);
     setPaymentBatchForm({ method: 'WPS', scheduledDate: new Date().toISOString().slice(0, 10), reference: '', notes: '' });
@@ -221,6 +228,67 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
       paymentDate: status === 'PAID' ? new Date().toISOString().slice(0, 10) : batch.paymentDate,
     } : batch);
     onSavePayrollRun({ ...currentRun, paymentBatches });
+  };
+
+  const openAdjustmentModal = (item: PayrollRunItem) => {
+    setAdjustmentItem(item);
+    setAdjustmentForm({
+      addition: item.manualAddition || 0,
+      deduction: item.manualDeduction || 0,
+      notes: item.adjustmentNotes || '',
+    });
+  };
+
+  const savePayrollAdjustment = () => {
+    if (!currentRun || !adjustmentItem || !['UNDER_REVIEW', 'APPROVED'].includes(currentRun.status)) return;
+    if (currentRun.paymentBatches?.some(batch => ['SCHEDULED', 'PAID'].includes(batch.status))) {
+      alert('لا يمكن تعديل مبالغ المسير بعد إنشاء دفعة تحويل نشطة. ألغِ الدفعة أولًا.');
+      return;
+    }
+    const previousAddition = adjustmentItem.manualAddition || 0;
+    const previousDeduction = adjustmentItem.manualDeduction || 0;
+    const bonuses = roundAmount(adjustmentItem.bonuses - previousAddition + adjustmentForm.addition);
+    const otherDeductions = roundAmount(adjustmentItem.otherDeductions - previousDeduction + adjustmentForm.deduction);
+    const totalGrossSalary = roundAmount(
+      adjustmentItem.baseSalary + adjustmentItem.housingAllowance + adjustmentItem.transportAllowance +
+      adjustmentItem.otherAllowances + adjustmentItem.overtimeAmount + bonuses
+    );
+    const totalDeductions = roundAmount(
+      adjustmentItem.delayDeduction + adjustmentItem.absenceDeduction + adjustmentItem.unpaidLeaveDeduction +
+      adjustmentItem.gosiEmployeeShare + adjustmentItem.loanDeduction + adjustmentItem.penaltiesDeduction + otherDeductions
+    );
+    const updatedItem: PayrollRunItem = {
+      ...adjustmentItem,
+      bonuses,
+      otherDeductions,
+      manualAddition: roundAmount(adjustmentForm.addition),
+      manualDeduction: roundAmount(adjustmentForm.deduction),
+      adjustmentNotes: adjustmentForm.notes.trim(),
+      totalGrossSalary,
+      totalDeductions,
+      netSalary: roundAmount(Math.max(0, totalGrossSalary - totalDeductions)),
+      totalCompanyBurden: roundAmount(totalGrossSalary + adjustmentItem.gosiEmployerShare),
+    };
+    const items = currentRun.items.map(item => item.id === updatedItem.id ? updatedItem : item);
+    const sum = (selector: (item: PayrollRunItem) => number) => roundAmount(items.reduce((total, item) => total + selector(item), 0));
+    onSavePayrollRun({
+      ...currentRun,
+      items,
+      totalBaseSalaries: sum(item => item.baseSalary),
+      totalAllowances: sum(item => item.housingAllowance + item.transportAllowance + item.otherAllowances),
+      totalOvertime: sum(item => item.overtimeAmount),
+      totalGrossSalaries: sum(item => item.totalGrossSalary),
+      totalAbsenceDeductions: sum(item => item.absenceDeduction),
+      totalDelayDeductions: sum(item => item.delayDeduction),
+      totalGosiEmployee: sum(item => item.gosiEmployeeShare),
+      totalGosiEmployer: sum(item => item.gosiEmployerShare),
+      totalLoanDeductions: sum(item => item.loanDeduction),
+      totalPenalties: sum(item => item.penaltiesDeduction),
+      totalDeductions: sum(item => item.totalDeductions),
+      totalNetSalaries: sum(item => item.netSalary),
+      totalCompanyCost: sum(item => item.totalCompanyBurden),
+    });
+    setAdjustmentItem(null);
   };
 
   // Execute full payroll calculation engine
@@ -313,6 +381,17 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
       postedBy: newStatus === 'POSTED' ? 'عبدالله الغامدي (المدير المالي)' : currentRun.postedBy,
     };
     onSavePayrollRun(updated);
+  };
+
+  const canReversePosting = activeRole === 'ADMIN' || activeRole === 'COMPANY_MANAGER';
+  const handleReversePosting = () => {
+    if (!currentRun || currentRun.status !== 'POSTED' || !canReversePosting) return;
+    if (currentRun.paymentBatches?.some(batch => batch.status === 'PAID')) {
+      alert('لا يمكن التراجع عن الترحيل بعد تسجيل دفعة محولة. يجب عمل تسوية أو إلغاء إثبات السداد أولًا.');
+      return;
+    }
+    if (!window.confirm('هل تريد التراجع عن ترحيل المسير وإعادته إلى حالة معتمد؟ سيتم فتحه للمراجعة من جديد.')) return;
+    onSavePayrollRun({ ...currentRun, status: 'APPROVED', postedAt: undefined, postedBy: undefined });
   };
 
   // Warning metrics
@@ -472,10 +551,17 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
             )}
 
             {currentRun.status === 'POSTED' && (
-              <div className="flex items-center gap-2 text-xs font-bold text-purple-800 bg-purple-50 px-3 py-1.5 rounded-xl border border-purple-200">
-                <CheckCircle2 className="w-4 h-4 text-purple-600" />
-                <span>تم إقفال وترحيل مسير هذا الشهر بنجاح</span>
-              </div>
+              <>
+                <div className="flex items-center gap-2 text-xs font-bold text-purple-800 bg-purple-50 px-3 py-1.5 rounded-xl border border-purple-200">
+                  <CheckCircle2 className="w-4 h-4 text-purple-600" />
+                  <span>تم إقفال وترحيل مسير هذا الشهر بنجاح</span>
+                </div>
+                {canReversePosting && (
+                  <button type="button" onClick={handleReversePosting} className="px-3 py-1.5 rounded-xl bg-amber-50 text-amber-800 border border-amber-200 text-xs font-bold flex items-center gap-1.5">
+                    <RotateCcw className="w-3.5 h-3.5" /> التراجع عن الترحيل
+                  </button>
+                )}
+              </>
             )}
           </div>
 
@@ -578,6 +664,9 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
                       <td className="p-3"><span className={`px-2 py-1 rounded-lg border text-[10px] font-bold ${PAYMENT_STATUS_CONFIG[batch.status].classes}`}>{PAYMENT_STATUS_CONFIG[batch.status].label}</span></td>
                       <td className="p-3"><div className="flex flex-wrap justify-center gap-1.5">
                         <button type="button" onClick={() => exportWpsBankCsv(currentRun, company, batch.employeeIds, batch.reference || batch.batchNumber)} className="px-2 py-1 rounded-lg bg-indigo-50 text-indigo-700 border border-indigo-200 font-bold">WPS</button>
+                        {['SCHEDULED', 'PAID'].includes(batch.status) && (
+                          <button type="button" onClick={() => exportBankPayrollXlsx(currentRun, company, batch, employees)} className="px-2 py-1 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold">ملف البنك Excel</button>
+                        )}
                         {batch.status === 'SCHEDULED' && <>
                           <button type="button" onClick={() => handlePaymentBatchStatus(batch.id, 'PAID')} className="px-2 py-1 rounded-lg bg-emerald-600 text-white font-bold">تم التحويل</button>
                           <button type="button" onClick={() => handlePaymentBatchStatus(batch.id, 'FAILED')} className="px-2 py-1 rounded-lg bg-rose-50 text-rose-700 border border-rose-200 font-bold">فشل</button>
@@ -714,6 +803,11 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
                               {PAYMENT_STATUS_CONFIG[paymentBatch.status].label} • {paymentBatch.batchNumber}
                             </div>
                           ) : <div className="text-[9px] text-amber-600 font-semibold mt-0.5">بانتظار إدراجه في دفعة</div>}
+                          {['UNDER_REVIEW', 'APPROVED'].includes(currentRun.status) && (
+                            <button type="button" onClick={() => openAdjustmentModal(item)} className="mt-1 text-[9px] font-bold text-blue-700 hover:text-blue-900 inline-flex items-center gap-1">
+                              <PencilLine className="w-3 h-3" /> تعديل إضافة أو خصم
+                            </button>
+                          )}
                         </div>
                       </div>
                       {hasWarning && (
@@ -843,6 +937,26 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
               <button type="button" onClick={() => setIsPaymentBatchModalOpen(false)} className="px-4 py-2 bg-white border border-slate-200 rounded-xl font-bold">إلغاء</button>
               <button type="button" onClick={handleCreatePaymentBatch} disabled={!paymentBatchForm.scheduledDate || !selectedPaymentItems.length} className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-black disabled:opacity-40">إنشاء وجدولة الدفعة</button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {adjustmentItem && currentRun && (
+        <div className="fixed inset-0 z-[110] bg-slate-950/65 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-lg w-full shadow-2xl border border-slate-200 overflow-hidden">
+            <div className="bg-slate-900 text-white p-5 flex items-center justify-between">
+              <div><h3 className="font-black">تعديل إضافات وخصومات المسير</h3><p className="text-xs text-slate-400 mt-1">{adjustmentItem.employeeName} • {adjustmentItem.employeeNo}</p></div>
+              <button type="button" onClick={() => setAdjustmentItem(null)} className="p-1.5 hover:bg-white/10 rounded-lg"><X className="w-5 h-5" /></button>
+            </div>
+            <div className="p-6 space-y-4 text-xs">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div><label className="block font-bold text-emerald-800 mb-1">إضافة على الراتب</label><input type="number" min="0" step="0.01" value={adjustmentForm.addition} onChange={event => setAdjustmentForm({ ...adjustmentForm, addition: Math.max(0, Number(event.target.value) || 0) })} className="w-full px-3 py-2.5 bg-emerald-50 border border-emerald-200 rounded-xl font-mono" /></div>
+                <div><label className="block font-bold text-rose-800 mb-1">خصم إضافي</label><input type="number" min="0" step="0.01" value={adjustmentForm.deduction} onChange={event => setAdjustmentForm({ ...adjustmentForm, deduction: Math.max(0, Number(event.target.value) || 0) })} className="w-full px-3 py-2.5 bg-rose-50 border border-rose-200 rounded-xl font-mono" /></div>
+              </div>
+              <div><label className="block font-bold text-slate-700 mb-1">سبب التعديل / المرجع</label><textarea rows={3} value={adjustmentForm.notes} onChange={event => setAdjustmentForm({ ...adjustmentForm, notes: event.target.value })} className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl resize-none" placeholder="مثال: مكافأة أداء أو خصم عهدة بموافقة الإدارة" /></div>
+              <div className="rounded-xl bg-blue-50 border border-blue-200 p-3 text-blue-900">سيُعاد احتساب إجمالي المستحق والخصومات والصافي وإجماليات المسير تلقائيًا.</div>
+            </div>
+            <div className="p-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-2"><button type="button" onClick={() => setAdjustmentItem(null)} className="px-4 py-2 bg-white border border-slate-200 rounded-xl font-bold">إلغاء</button><button type="button" onClick={savePayrollAdjustment} className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-black">حفظ وإعادة الاحتساب</button></div>
           </div>
         </div>
       )}

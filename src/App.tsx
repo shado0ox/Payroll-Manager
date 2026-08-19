@@ -351,11 +351,25 @@ export const App: React.FC = () => {
         const previous = previousBatches.find(candidate => candidate.id === batch.id);
         return previous && previous.status !== batch.status;
       });
+      const adjustedItem = run.items.find(item => {
+        const previous = previousRun?.items.find(candidate => candidate.id === item.id);
+        return previous && (
+          (previous.manualAddition || 0) !== (item.manualAddition || 0) ||
+          (previous.manualDeduction || 0) !== (item.manualDeduction || 0) ||
+          (previous.adjustmentNotes || '') !== (item.adjustmentNotes || '')
+        );
+      });
 
       let auditAction = `تحديث مسير الرواتب (${run.status})`;
       let auditDetails = `مسير فترة ${run.periodMonth} - إجمالي الصافي: ${run.totalNetSalaries.toLocaleString()} SAR`;
 
-      if (createdBatch) {
+      if (previousRun?.status === 'POSTED' && run.status === 'APPROVED') {
+        auditAction = 'التراجع عن ترحيل مسير الرواتب';
+        auditDetails = `إعادة مسير ${run.periodMonth} من مرحل إلى معتمد للمراجعة - الصافي ${run.totalNetSalaries.toLocaleString()} SAR`;
+      } else if (adjustedItem) {
+        auditAction = 'تعديل إضافات وخصومات موظف في المسير';
+        auditDetails = `${adjustedItem.employeeName} (${adjustedItem.employeeNo}) - إضافة ${(adjustedItem.manualAddition || 0).toLocaleString()} - خصم ${(adjustedItem.manualDeduction || 0).toLocaleString()} SAR - ${adjustedItem.adjustmentNotes || 'بدون ملاحظات'}`;
+      } else if (createdBatch) {
         auditAction = 'إنشاء دفعة تحويل رواتب';
         auditDetails = `${createdBatch.batchNumber} - ${createdBatch.employeesCount} موظف - ${createdBatch.totalAmount.toLocaleString()} SAR - الحالة: ${createdBatch.status}`;
       } else if (changedBatch) {

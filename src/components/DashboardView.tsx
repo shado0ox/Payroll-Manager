@@ -131,7 +131,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       const base = Number(emp.salaryPackage?.baseSalary || emp.basicSalary) || 0;
       const allw = (Number(emp.salaryPackage?.housingAllowance || emp.housingAllowance) || 0) + 
                    (Number(emp.salaryPackage?.transportAllowance || emp.transportationAllowance) || 0) + 
-                   (Number(emp.salaryPackage?.otherAllowances || emp.otherAllowances) || 0);
+                   (Number(emp.salaryPackage?.otherFixedAllowances || emp.otherAllowances) || 0) +
+                   (Number(emp.salaryPackage?.nonGosiOtherAllowances) || 0);
       deptMap[deptName].basic += base;
       deptMap[deptName].allowances += allw;
       deptMap[deptName].count += 1;
@@ -156,7 +157,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       totalBasic += Number(emp.salaryPackage?.baseSalary || emp.basicSalary) || 0;
       totalHousing += Number(emp.salaryPackage?.housingAllowance || emp.housingAllowance) || 0;
       totalTransport += Number(emp.salaryPackage?.transportAllowance || emp.transportationAllowance) || 0;
-      totalOther += Number(emp.salaryPackage?.otherAllowances || emp.otherAllowances) || 0;
+      totalOther += (Number(emp.salaryPackage?.otherFixedAllowances || emp.otherAllowances) || 0) +
+                    (Number(emp.salaryPackage?.nonGosiOtherAllowances) || 0);
     });
 
     const grandTotal = totalBasic + totalHousing + totalTransport + totalOther;
@@ -182,7 +184,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const totalEmployeesCount = companyEmployees.length;
   const calculatedGross = companyEmployees.reduce((acc, e) => {
     const pkg = e.salaryPackage || {};
-    return acc + (pkg.baseSalary || e.basicSalary || 0) + (pkg.housingAllowance || e.housingAllowance || 0) + (pkg.transportAllowance || e.transportationAllowance || 0) + (pkg.otherAllowances || e.otherAllowances || 0);
+    return acc + (pkg.baseSalary || e.basicSalary || 0) + (pkg.housingAllowance || e.housingAllowance || 0) + (pkg.transportAllowance || e.transportationAllowance || 0) + (pkg.otherFixedAllowances || e.otherAllowances || 0) + (pkg.nonGosiOtherAllowances || 0);
   }, 0);
   
   const totalGross = latestRun ? latestRun.totalGrossSalaries : calculatedGross;
@@ -203,8 +205,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       const basic = emp.salaryPackage?.baseSalary || emp.basicSalary || 0;
       const allw = (emp.salaryPackage?.housingAllowance || emp.housingAllowance || 0) + 
                    (emp.salaryPackage?.transportAllowance || emp.transportationAllowance || 0) + 
-                   (emp.salaryPackage?.otherAllowances || emp.otherAllowances || 0);
-      const deductions = emp.nationality === 'SAUDI' ? Math.round(basic * 0.0975) : 0;
+                   (emp.salaryPackage?.otherFixedAllowances || emp.otherAllowances || 0) +
+                   (emp.salaryPackage?.nonGosiOtherAllowances || 0);
+      const deductions = emp.nationality === 'SAUDI' && emp.saudiGosiPaymentMode !== 'COMPANY_FULL' ? Math.round(basic * 0.0975) : 0;
       return {
         employeeId: emp.id,
         employeeNo: emp.employeeNo,

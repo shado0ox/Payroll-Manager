@@ -110,11 +110,13 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
     bankName: 'مصرف الراجحي',
     bankIban: 'SA',
     bankSwiftCode: 'RJHISARI',
+    saudiGosiPaymentMode: 'SHARED',
     salaryPackage: {
       baseSalary: 6000,
       housingAllowance: 1500,
       transportAllowance: 600,
       otherFixedAllowances: 0,
+      nonGosiOtherAllowances: 0,
       customAllowances: [],
       customDeductions: [],
     }
@@ -174,11 +176,13 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
       bankName: 'مصرف الراجحي',
       bankIban: 'SA4480000' + Math.floor(100000000000 + Math.random() * 900000000000),
       bankSwiftCode: 'RJHISARI',
+      saudiGosiPaymentMode: 'SHARED',
       salaryPackage: {
         baseSalary: 7000,
         housingAllowance: 1750,
         transportAllowance: 700,
         otherFixedAllowances: 0,
+        nonGosiOtherAllowances: 0,
         customAllowances: [],
         customDeductions: [],
       }
@@ -232,12 +236,13 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
 
   // Export to CSV
   const handleExportCsv = () => {
-    const headers = ['الرقم الوظيفي', 'الاسم بالعربي', 'الهوية/الإقامة', 'الجنسية', 'القسم', 'المسمى الوظيفي', 'تاريخ التعيين', 'الحالة', 'البنك', 'الآيبان IBAN', 'رمز السويفت SWIFT/BIC', 'الراتب الأساسي', 'بدل سكن', 'بدل نقل', 'إجمالي الراتب'];
+    const headers = ['الرقم الوظيفي', 'الاسم بالعربي', 'الهوية/الإقامة', 'الجنسية', 'تحمل GOSI', 'القسم', 'المسمى الوظيفي', 'تاريخ التعيين', 'الحالة', 'البنك', 'الآيبان IBAN', 'رمز السويفت SWIFT/BIC', 'الراتب الأساسي', 'بدل سكن', 'بدل نقل', 'بدلات أخرى', 'بدلات أخرى غير خاضعة لـ GOSI', 'إجمالي الراتب'];
     const rows = filteredEmployees.map(e => [
       `"${e.employeeNo}"`,
       `"${e.firstNameAr} ${e.lastNameAr}"`,
       `"${e.nationalIdOrIqama}"`,
       e.nationality === 'SAUDI' ? 'سعودي' : 'غير سعودي',
+      e.nationality === 'SAUDI' ? (e.saudiGosiPaymentMode === 'COMPANY_FULL' ? 'الشركة كاملًا' : 'مشترك') : 'غير مطبق',
       `"${e.department}"`,
       `"${e.jobTitle}"`,
       `"${e.hireDate}"`,
@@ -248,7 +253,9 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
       e.salaryPackage.baseSalary.toFixed(2),
       e.salaryPackage.housingAllowance.toFixed(2),
       e.salaryPackage.transportAllowance.toFixed(2),
-      (e.salaryPackage.baseSalary + e.salaryPackage.housingAllowance + e.salaryPackage.transportAllowance).toFixed(2),
+      (e.salaryPackage.otherFixedAllowances || 0).toFixed(2),
+      (e.salaryPackage.nonGosiOtherAllowances || 0).toFixed(2),
+      (e.salaryPackage.baseSalary + e.salaryPackage.housingAllowance + e.salaryPackage.transportAllowance + (e.salaryPackage.otherFixedAllowances || 0) + (e.salaryPackage.nonGosiOtherAllowances || 0)).toFixed(2),
     ]);
 
     const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\r\n');
@@ -370,6 +377,7 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
           housingAllowance: 0,
           transportAllowance: 0,
           otherFixedAllowances: Math.max(0, parseMoney(getImportValue(row, 'allowances'))),
+          nonGosiOtherAllowances: 0,
           customAllowances: [],
           customDeductions: importedDeduction > 0
             ? [{ componentId: 'imported-deduction', name: 'استقطاع مستورد', amount: importedDeduction }]
@@ -886,6 +894,20 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                     </select>
                   </div>
 
+                  {formData.nationality === 'SAUDI' && (
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">طريقة تحمل اشتراك GOSI</label>
+                      <select
+                        value={formData.saudiGosiPaymentMode || 'SHARED'}
+                        onChange={(e) => setFormData({ ...formData, saudiGosiPaymentMode: e.target.value as 'SHARED' | 'COMPANY_FULL' })}
+                        className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white"
+                      >
+                        <option value="SHARED">عادي: حصة على الموظف وحصة على الشركة</option>
+                        <option value="COMPANY_FULL">الشركة تتحمل الاشتراك كاملًا دون خصم الموظف</option>
+                      </select>
+                    </div>
+                  )}
+
                   <div>
                     <label className="block text-xs font-semibold text-slate-700 mb-1">الدولة</label>
                     <input
@@ -1176,7 +1198,7 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                   <span className="w-2 h-2 rounded-full bg-indigo-500" />
                   <span>سلم الرواتب والبدلات الثابتة (بالريال السعودي)</span>
                 </h4>
-                <div className="grid grid-cols-1 sm:grid-cols-4 gap-3.5">
+                <div className="grid grid-cols-1 sm:grid-cols-5 gap-3.5">
                   <div>
                     <label className="block text-xs font-semibold text-slate-700 mb-1">الراتب الأساسي *</label>
                     <input
@@ -1249,6 +1271,24 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                       className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white"
                     />
                   </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">بدلات أخرى غير خاضعة لـ GOSI</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="50"
+                      value={formData.salaryPackage?.nonGosiOtherAllowances ?? 0}
+                      onChange={(e) => setFormData({
+                        ...formData,
+                        salaryPackage: {
+                          ...formData.salaryPackage!,
+                          nonGosiOtherAllowances: parseFloat(e.target.value) || 0
+                        }
+                      })}
+                      className="w-full px-3 py-2 text-xs bg-amber-50 border border-amber-200 rounded-xl focus:bg-white"
+                    />
+                  </div>
                 </div>
 
                 {/* Total Gross Display */}
@@ -1259,7 +1299,8 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                       (formData.salaryPackage?.baseSalary || 0) +
                       (formData.salaryPackage?.housingAllowance || 0) +
                       (formData.salaryPackage?.transportAllowance || 0) +
-                      (formData.salaryPackage?.otherFixedAllowances || 0)
+                      (formData.salaryPackage?.otherFixedAllowances || 0) +
+                      (formData.salaryPackage?.nonGosiOtherAllowances || 0)
                     )}
                   </span>
                 </div>

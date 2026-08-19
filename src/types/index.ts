@@ -46,6 +46,13 @@ export interface Company {
   bankName?: string;
   bankIban?: string;
   bankSwiftCode?: string;
+  bankCustomerCode?: string;
+  bankAgreementCode?: string;
+  bankFundingAccount?: string;
+  bankBranchCode?: string;
+  laborOfficeEstablishmentNo?: string;
+  chamberOfCommerceNo?: string;
+  bankPayrollCode?: string;
   logo?: string;
   currency: string;
   timezone: string;
@@ -124,6 +131,7 @@ export interface EmployeeSalaryPackage {
   housingAllowance: number;
   transportAllowance: number;
   otherFixedAllowances: number;
+  nonGosiOtherAllowances?: number;
   customAllowances: { componentId: string; name: string; amount: number }[];
   customDeductions: { componentId: string; name: string; amount: number }[];
 }
@@ -154,6 +162,7 @@ export interface Employee {
   bankName: string;
   bankIban: string;
   bankSwiftCode?: string;
+  saudiGosiPaymentMode?: 'SHARED' | 'COMPANY_FULL';
   dataWarnings?: string[];
   salaryPackage: EmployeeSalaryPackage;
 }
@@ -218,17 +227,21 @@ export interface PayrollRunItem {
   employeeId: string;
   employeeNo: string;
   employeeName: string;
+  employeeNameEn?: string;
+  nationalIdOrIqama?: string;
   department: string;
   costCenterId: string;
   nationality: NationalityType;
   bankIban: string;
   bankName: string;
+  bankSwiftCode?: string;
   
   // Salary Earnings
   baseSalary: number;
   housingAllowance: number;
   transportAllowance: number;
   otherAllowances: number;
+  nonGosiAllowances?: number;
   overtimeAmount: number;
   overtimeHours: number;
   bonuses: number;
@@ -251,6 +264,10 @@ export interface PayrollRunItem {
   netSalary: number;
   gosiEmployerShare: number;
   totalCompanyBurden: number; // Net + GOSI Employer + all costs
+  saudiGosiPaymentMode?: 'SHARED' | 'COMPANY_FULL';
+  manualAddition?: number;
+  manualDeduction?: number;
+  adjustmentNotes?: string;
 
   // Flags & Warnings
   isSuspended: boolean;

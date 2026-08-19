@@ -80,6 +80,21 @@ const qualityOverrides: Record<string, string> = {
   'مرجع التحويل': 'Transfer reference', 'رقم ملف البنك أو الحوالة': 'Bank file or transfer reference',
   'إجمالي الدفعة': 'Batch total', 'إنشاء وجدولة الدفعة': 'Create and schedule batch',
   'قيد السداد': 'Payment journal', 'مجدولة للتحويل': 'Scheduled for transfer',
+  'طريقة تحمل اشتراك GOSI': 'GOSI contribution payment method',
+  'عادي: حصة على الموظف وحصة على الشركة': 'Standard: employee and company shares',
+  'الشركة تتحمل الاشتراك كاملًا دون خصم الموظف': 'Company pays the full contribution with no employee deduction',
+  'بدلات أخرى غير خاضعة لـ GOSI': 'Other allowances not subject to GOSI',
+  'التراجع عن الترحيل': 'Reverse posting', 'ملف البنك Excel': 'Bank Excel file',
+  'تعديل إضافة أو خصم': 'Edit addition or deduction',
+  'تعديل إضافات وخصومات المسير': 'Edit payroll additions and deductions',
+  'إضافة على الراتب': 'Payroll addition', 'خصم إضافي': 'Additional deduction',
+  'سبب التعديل / المرجع': 'Adjustment reason / reference',
+  'حفظ وإعادة الاحتساب': 'Save and recalculate',
+  'اسم العميل / كود العميل لدى البنك': 'Bank customer name / code',
+  'رمز اتفاقية الرواتب': 'Payroll agreement code', 'حساب التمويل': 'Funding account',
+  'رقم فرع البنك': 'Bank branch number', 'رقم المنشأة في مكتب العمل': 'Labor Office establishment number',
+  'رقم المنشأة في الغرفة التجارية': 'Chamber of Commerce establishment number',
+  'رمز البنك المختصر في ملف الرواتب': 'Payroll file bank code',
 };
 const translationCatalog: Record<string, string> = { ...generatedTranslations, ...qualityOverrides };
 // Only the compact, reviewed glossary is used for partial/dynamic replacements.

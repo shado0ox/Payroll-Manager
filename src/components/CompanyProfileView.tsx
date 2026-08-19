@@ -1035,6 +1035,28 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
               </div>
             </div>
 
+            {[
+              ['bankCustomerCode', 'اسم العميل / كود العميل لدى البنك', 'مثال: P0030694'],
+              ['bankAgreementCode', 'رمز اتفاقية الرواتب', 'مثال: P0030694'],
+              ['bankFundingAccount', 'حساب التمويل', 'رقم حساب تمويل الرواتب'],
+              ['bankBranchCode', 'رقم فرع البنك', 'مثال: 326'],
+              ['laborOfficeEstablishmentNo', 'رقم المنشأة في مكتب العمل', 'مثال: 4-2005115'],
+              ['chamberOfCommerceNo', 'رقم المنشأة في الغرفة التجارية', 'رقم العضوية/المنشأة'],
+              ['bankPayrollCode', 'رمز البنك المختصر في ملف الرواتب', 'مثال: RIBL'],
+            ].map(([field, label, placeholder]) => (
+              <div key={field}>
+                <label className="block text-xs font-bold text-slate-700 mb-1">{label}</label>
+                <input
+                  type="text"
+                  value={(formData[field as keyof Company] as string) || ''}
+                  onChange={(e) => setFormData({ ...formData, [field]: e.target.value })}
+                  className="w-full px-3.5 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white font-mono"
+                  placeholder={placeholder}
+                  dir="ltr"
+                />
+              </div>
+            ))}
+
             {/* Payroll Cut-off Day */}
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">يوم إقفال مسير الرواتب الشهري (Cut-off Day)</label>
