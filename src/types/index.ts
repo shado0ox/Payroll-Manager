@@ -53,6 +53,7 @@ export interface Company {
   laborOfficeEstablishmentNo?: string;
   chamberOfCommerceNo?: string;
   bankPayrollCode?: string;
+  bankDefinitions?: CompanyBankDefinition[];
   logo?: string;
   currency: string;
   timezone: string;
@@ -66,6 +67,14 @@ export interface Company {
   costCenters: CostCenter[];
   calculationRules: CompanyCalculationRules;
   chartOfAccounts: ChartOfAccountsMap;
+}
+
+export interface CompanyBankDefinition {
+  ibanBankCode: string;
+  nameAr: string;
+  nameEn: string;
+  swiftCode: string;
+  isActive: boolean;
 }
 
 export interface CostCenter {

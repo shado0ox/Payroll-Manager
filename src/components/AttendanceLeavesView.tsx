@@ -2,7 +2,6 @@ import React, { useState, useMemo } from 'react';
 import { 
   Clock, 
   Calendar, 
-  UploadCloud, 
   Plus, 
   Search, 
   Filter, 
@@ -10,7 +9,7 @@ import {
   XCircle, 
   AlertCircle, 
   Sparkles,
-  FileSpreadsheet
+  Trash2
 } from 'lucide-react';
 import { Company, Employee, AttendanceRecord, LeaveRequest, UserRole } from '../types';
 import { SearchableEmployeeSelect } from './SearchableEmployeeSelect';
@@ -23,6 +22,7 @@ interface AttendanceLeavesViewProps {
   activeRole: UserRole;
   onAddAttendance: (record: AttendanceRecord) => void;
   onBulkImportAttendance: (records: AttendanceRecord[]) => void;
+  onDeleteAttendance: (recordId: string) => void;
   onUpdateLeaveStatus: (leaveId: string, status: 'APPROVED' | 'REJECTED') => void;
   onAddLeave: (leave: LeaveRequest) => void;
 }
@@ -35,6 +35,7 @@ export const AttendanceLeavesView: React.FC<AttendanceLeavesViewProps> = ({
   activeRole,
   onAddAttendance,
   onBulkImportAttendance,
+  onDeleteAttendance,
   onUpdateLeaveStatus,
   onAddLeave,
 }) => {
@@ -119,46 +120,6 @@ export const AttendanceLeavesView: React.FC<AttendanceLeavesViewProps> = ({
     setIsAttendanceModalOpen(false);
   };
 
-  // Simulate Biometric Fingerprint / CSV attendance importer
-  const handleSimulateBiometricImport = () => {
-    const records: AttendanceRecord[] = [];
-    companyEmployees.forEach((emp, idx) => {
-      if (idx % 3 === 0) {
-        records.push({
-          id: `att-import-${emp.id}-${Date.now()}-1`,
-          companyId: company.id,
-          employeeId: emp.id,
-          periodMonth: selectedPeriod,
-          date: `${selectedPeriod}-10`,
-          delayMinutes: 25 + (idx * 5) % 40,
-          absence: false,
-          unpaidLeave: false,
-          overtimeHours: 0,
-          overtimeType: 'STANDARD',
-          notes: 'استيراد تلقائي من جهاز البصمة ZKTeco',
-        });
-      }
-      if (idx % 7 === 0) {
-        records.push({
-          id: `att-import-${emp.id}-${Date.now()}-2`,
-          companyId: company.id,
-          employeeId: emp.id,
-          periodMonth: selectedPeriod,
-          date: `${selectedPeriod}-18`,
-          delayMinutes: 0,
-          absence: false,
-          unpaidLeave: false,
-          overtimeHours: 3.5,
-          overtimeType: 'STANDARD',
-          notes: 'عمل إضافي معتمد',
-        });
-      }
-    });
-
-    onBulkImportAttendance(records);
-    alert(`تم استيراد ${records.length} حركة حضور وانصراف وساعات إضافية بنجاح من سجل البصمة!`);
-  };
-
   return (
     <div className="space-y-6">
       
@@ -187,14 +148,6 @@ export const AttendanceLeavesView: React.FC<AttendanceLeavesViewProps> = ({
               <option value="2026-07">يوليو 2026</option>
             </select>
           </div>
-
-          <button
-            onClick={handleSimulateBiometricImport}
-            className="px-3.5 py-2 bg-sky-50 text-sky-700 hover:bg-sky-100 border border-sky-200 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
-          >
-            <UploadCloud className="w-4 h-4 text-sky-600" />
-            <span>استيراد ملف البصمة (ZKTeco/CSV)</span>
-          </button>
 
           <button
             onClick={() => setIsAttendanceModalOpen(true)}
@@ -243,13 +196,14 @@ export const AttendanceLeavesView: React.FC<AttendanceLeavesViewProps> = ({
                 <th className="py-3 px-2 w-[12%] text-center font-bold">الغياب</th>
                 <th className="py-3 px-2 w-[13%] text-center font-bold">إجازة بدون راتب</th>
                 <th className="py-3 px-2 w-[13%] text-center font-bold">العمل الإضافي</th>
-                <th className="py-3 px-3 w-[13%] text-right font-bold">ملاحظات</th>
+                <th className="py-3 px-3 w-[10%] text-right font-bold">ملاحظات</th>
+                <th className="py-3 px-2 w-[8%] text-center font-bold">إجراء</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 bg-white">
               {companyAttendance.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="py-12 text-center text-slate-400">
+                  <td colSpan={8} className="py-12 text-center text-slate-400">
                     لا توجد سجلات حضور مسجلة لشهر {selectedPeriod}
                   </td>
                 </tr>
@@ -313,6 +267,16 @@ export const AttendanceLeavesView: React.FC<AttendanceLeavesViewProps> = ({
 
                       <td className="py-2.5 px-3 text-slate-500 text-[11px] truncate" title={rec.notes || ''}>
                         {rec.notes || '-'}
+                      </td>
+                      <td className="py-2.5 px-2 text-center">
+                        <button
+                          type="button"
+                          onClick={() => { if (window.confirm(`هل تريد حذف حركة ${rec.absence ? 'الغياب' : 'الحضور'} المسجلة بتاريخ ${rec.date}؟`)) onDeleteAttendance(rec.id); }}
+                          className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-rose-50 text-rose-700 border border-rose-200 font-bold hover:bg-rose-100"
+                          title="حذف الحركة وإلغاء أثرها من المسير"
+                        >
+                          <Trash2 className="w-3 h-3" /> {rec.absence ? 'إلغاء الغياب' : 'حذف'}
+                        </button>
                       </td>
                     </tr>
                   );

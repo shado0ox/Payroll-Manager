@@ -1,3 +1,5 @@
+import type { CompanyBankDefinition } from '../types';
+
 /**
  * Security, sanitization, XSS mitigation, and runtime integrity layer
  * for Masar Payroll System
@@ -90,16 +92,28 @@ export const SAUDI_BANKS: Record<string, SaudiBankInfo> = {
   '82': { code: '82', nameAr: 'بنك قطر الوطني', nameEn: 'Qatar National Bank', swiftCode: 'QNBCSARI' },
 };
 
+export function getBankDefinitions(customDefinitions?: CompanyBankDefinition[]): CompanyBankDefinition[] {
+  if (customDefinitions?.length) return customDefinitions;
+  return Object.values(SAUDI_BANKS).map(bank => ({
+    ibanBankCode: bank.code,
+    nameAr: bank.nameAr,
+    nameEn: bank.nameEn,
+    swiftCode: bank.swiftCode,
+    isActive: true,
+  }));
+}
+
 /**
  * Automatically detects bank info and SWIFT (BIC) code from Saudi IBAN number
  * Saudi IBAN format: SA + 2 check digits + 2 bank digits + 18 account digits
  */
-export function detectBankFromIBAN(iban: string): SaudiBankInfo | null {
+export function detectBankFromIBAN(iban: string, customDefinitions?: CompanyBankDefinition[]): SaudiBankInfo | null {
   if (!iban) return null;
   const clean = iban.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
   if (clean.startsWith('SA') && clean.length >= 6) {
     const bankCode = clean.slice(4, 6);
-    return SAUDI_BANKS[bankCode] || null;
+    const custom = getBankDefinitions(customDefinitions).find(bank => bank.isActive !== false && bank.ibanBankCode === bankCode);
+    return custom ? { code: custom.ibanBankCode, nameAr: custom.nameAr, nameEn: custom.nameEn, swiftCode: custom.swiftCode } : null;
   }
   return null;
 }
@@ -107,15 +121,15 @@ export function detectBankFromIBAN(iban: string): SaudiBankInfo | null {
 /**
  * Finds matching SWIFT code from a bank's Arabic or English name
  */
-export function getSwiftCodeFromBankName(bankName: string): string {
+export function getSwiftCodeFromBankName(bankName: string, customDefinitions?: CompanyBankDefinition[]): string {
   if (!bankName) return '';
   const cleanName = bankName.trim().toLowerCase();
-  const found = Object.values(SAUDI_BANKS).find(b => 
+  const found = getBankDefinitions(customDefinitions).find(b => b.isActive !== false && (
     cleanName.includes(b.nameAr.toLowerCase()) || 
     b.nameAr.toLowerCase().includes(cleanName) ||
     cleanName.includes(b.nameEn.toLowerCase()) ||
     b.nameEn.toLowerCase().includes(cleanName)
-  );
+  ));
   return found ? found.swiftCode : '';
 }
 

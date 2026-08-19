@@ -28,7 +28,7 @@ import {
   validateSwiftCode, 
   detectBankFromIBAN, 
   getSwiftCodeFromBankName, 
-  SAUDI_BANKS 
+  getBankDefinitions
 } from '../utils/security';
 import {
   EmployeeImportField,
@@ -195,11 +195,11 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
     const empCopy = JSON.parse(JSON.stringify(emp));
     // Auto-detect swift code if not present
     if (!empCopy.bankSwiftCode && empCopy.bankIban) {
-      const detected = detectBankFromIBAN(empCopy.bankIban);
+      const detected = detectBankFromIBAN(empCopy.bankIban, company.bankDefinitions);
       if (detected) {
         empCopy.bankSwiftCode = detected.swiftCode;
       } else if (empCopy.bankName) {
-        empCopy.bankSwiftCode = getSwiftCodeFromBankName(empCopy.bankName);
+        empCopy.bankSwiftCode = getSwiftCodeFromBankName(empCopy.bankName, company.bankDefinitions);
       }
     }
     setFormData(empCopy);
@@ -341,9 +341,9 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
       const firstName = nameParts.shift() || fullName;
       const lastName = nameParts.join(' ') || '-';
       const bankNameFromSheet = getImportValue(row, 'bankName');
-      const detectedBank = iban && validateSaudiIBAN(iban) ? detectBankFromIBAN(iban) : null;
+      const detectedBank = iban && validateSaudiIBAN(iban) ? detectBankFromIBAN(iban, company.bankDefinitions) : null;
       const bankName = bankNameFromSheet || detectedBank?.nameAr || (iban ? 'غير محدد' : 'بيانات بنكية غير مكتملة');
-      const swift = (getImportValue(row, 'bankSwiftCode') || detectedBank?.swiftCode || getSwiftCodeFromBankName(bankName) || '').toUpperCase();
+      const swift = (detectedBank?.swiftCode || getSwiftCodeFromBankName(bankName, company.bankDefinitions) || getImportValue(row, 'bankSwiftCode') || '').toUpperCase();
       const country = getImportValue(row, 'country') || 'غير محدد';
       const rawStatus = getImportValue(row, 'status').toLowerCase();
       const status: EmploymentStatus = ['suspended', 'موقوف', 'معلق'].includes(rawStatus) ? 'SUSPENDED'
@@ -1058,7 +1058,7 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                       value={formData.bankName || ''}
                       onChange={(e) => {
                         const newBank = e.target.value;
-                        const detectedSwift = getSwiftCodeFromBankName(newBank);
+                        const detectedSwift = getSwiftCodeFromBankName(newBank, company.bankDefinitions);
                         setFormData({ 
                           ...formData, 
                           bankName: newBank,
@@ -1068,8 +1068,8 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                       className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 font-medium"
                     >
                       <option value="">-- اختر البنك --</option>
-                      {Object.values(SAUDI_BANKS).map(b => (
-                        <option key={b.code} value={b.nameAr}>
+                      {getBankDefinitions(company.bankDefinitions).filter(b => b.isActive !== false).map(b => (
+                        <option key={b.ibanBankCode} value={b.nameAr}>
                           {b.nameAr} ({b.swiftCode})
                         </option>
                       ))}
@@ -1099,7 +1099,7 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                       value={formData.bankIban || ''}
                       onChange={(e) => {
                         const cleanIban = e.target.value.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
-                        const detected = detectBankFromIBAN(cleanIban);
+                        const detected = detectBankFromIBAN(cleanIban, company.bankDefinitions);
                         setFormData({ 
                           ...formData, 
                           bankIban: cleanIban,
@@ -1125,11 +1125,11 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                         onClick={() => {
                           let code = '';
                           if (formData.bankIban) {
-                            const det = detectBankFromIBAN(formData.bankIban);
+                            const det = detectBankFromIBAN(formData.bankIban, company.bankDefinitions);
                             if (det) code = det.swiftCode;
                           }
                           if (!code && formData.bankName) {
-                            code = getSwiftCodeFromBankName(formData.bankName);
+                            code = getSwiftCodeFromBankName(formData.bankName, company.bankDefinitions);
                           }
                           if (code) {
                             setFormData({ ...formData, bankSwiftCode: code });

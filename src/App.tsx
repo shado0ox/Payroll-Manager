@@ -66,6 +66,10 @@ import { DatabaseStatus, persistFullStateToDatabase, calculateStorageSize } from
 import { api } from './utils/api';
 import { WifiOff, Database, CheckCircle2, X } from 'lucide-react';
 
+const TAB_SESSION_KEY = 'masar_tab_session_v1';
+const LAST_ACTIVITY_KEY = 'masar_last_activity_v1';
+const IDLE_TIMEOUT_MS = 60 * 60 * 1000;
+
 export const App: React.FC = () => {
   // Initialize full application state
   const [state, setState] = useState(() => loadInitialState());
@@ -75,6 +79,44 @@ export const App: React.FC = () => {
   const [isQoyodModalOpen, setIsQoyodModalOpen] = useState(false);
   const [isDbModalOpen, setIsDbModalOpen] = useState(false);
   const [showDbWarningBanner, setShowDbWarningBanner] = useState(true);
+  const [authReady, setAuthReady] = useState(false);
+
+  // Restore authentication only inside the same open tab. sessionStorage survives refresh
+  // but is cleared when the tab/window is closed.
+  useEffect(() => {
+    let cancelled = false;
+    const restoreSession = async () => {
+      if (sessionStorage.getItem(TAB_SESSION_KEY) !== 'active') {
+        if (!cancelled) setAuthReady(true);
+        return;
+      }
+      const lastActivity = Number(sessionStorage.getItem(LAST_ACTIVITY_KEY) || 0);
+      if (!lastActivity || Date.now() - lastActivity >= IDLE_TIMEOUT_MS) {
+        sessionStorage.removeItem(TAB_SESSION_KEY);
+        sessionStorage.removeItem(LAST_ACTIVITY_KEY);
+        api.logout().catch(() => undefined);
+        if (!cancelled) setAuthReady(true);
+        return;
+      }
+      try {
+        const [{ user }, remote] = await Promise.all([api.session(), api.getState()]);
+        if (cancelled) return;
+        setState(prev => {
+          const base = remote.state ? { ...prev, ...remote.state } : prev;
+          const users = [...(base.users || []).filter(item => item.id !== user.id), user];
+          return { ...base, currentUser: user, users, activeRole: user.role } as typeof prev;
+        });
+        sessionStorage.setItem(LAST_ACTIVITY_KEY, String(Date.now()));
+      } catch {
+        sessionStorage.removeItem(TAB_SESSION_KEY);
+        sessionStorage.removeItem(LAST_ACTIVITY_KEY);
+      } finally {
+        if (!cancelled) setAuthReady(true);
+      }
+    };
+    restoreSession();
+    return () => { cancelled = true; };
+  }, []);
 
   // Database Connection Status State
   const [dbStatus, setDbStatus] = useState<DatabaseStatus>(() => ({
@@ -132,9 +174,13 @@ export const App: React.FC = () => {
       saveActiveCompanyId(companyId);
       return next;
     });
+    sessionStorage.setItem(TAB_SESSION_KEY, 'active');
+    sessionStorage.setItem(LAST_ACTIVITY_KEY, String(Date.now()));
   };
 
   const handleLogout = () => {
+    sessionStorage.removeItem(TAB_SESSION_KEY);
+    sessionStorage.removeItem(LAST_ACTIVITY_KEY);
     api.logout().catch(() => undefined);
     setState(prev => {
       if (prev.currentUser) {
@@ -161,6 +207,33 @@ export const App: React.FC = () => {
       return { ...prev, currentUser: null };
     });
   };
+
+  useEffect(() => {
+    if (!state.currentUser) return;
+    let timeoutId = 0;
+    let lastWrite = 0;
+    const expire = () => handleLogout();
+    const schedule = () => {
+      window.clearTimeout(timeoutId);
+      const lastActivity = Number(sessionStorage.getItem(LAST_ACTIVITY_KEY) || Date.now());
+      timeoutId = window.setTimeout(expire, Math.max(0, IDLE_TIMEOUT_MS - (Date.now() - lastActivity)));
+    };
+    const markActive = () => {
+      const now = Date.now();
+      if (now - lastWrite > 15_000) {
+        sessionStorage.setItem(LAST_ACTIVITY_KEY, String(now));
+        lastWrite = now;
+      }
+      schedule();
+    };
+    const events: Array<keyof WindowEventMap> = ['pointerdown', 'keydown', 'scroll', 'touchstart'];
+    events.forEach(event => window.addEventListener(event, markActive, { passive: true }));
+    schedule();
+    return () => {
+      window.clearTimeout(timeoutId);
+      events.forEach(event => window.removeEventListener(event, markActive));
+    };
+  }, [state.currentUser?.id]);
 
   // User Management handlers
   const handleSaveUser = async (user: UserAccount) => {
@@ -414,6 +487,29 @@ export const App: React.FC = () => {
     });
   };
 
+  const handleDeleteAttendance = (recordId: string) => {
+    setState(prev => {
+      const record = prev.attendance.find(item => item.id === recordId);
+      const updated = prev.attendance.filter(item => item.id !== recordId);
+      saveAttendance(updated);
+      if (!record) return { ...prev, attendance: updated };
+      const employee = prev.employees.find(item => item.id === record.employeeId);
+      const log: AuditLog = {
+        id: `log-${Date.now()}`,
+        timestamp: new Date().toISOString(),
+        userName: prev.currentUser?.name || 'مسؤول الموارد البشرية',
+        userRole: prev.activeRole,
+        action: record.absence ? 'إلغاء غياب مسجل' : 'حذف حركة حضور',
+        entityType: 'EMPLOYEE',
+        entityId: record.employeeId,
+        details: `${employee ? `${employee.firstNameAr} ${employee.lastNameAr}` : record.employeeId} - ${record.date}`,
+      };
+      const auditLogs = [log, ...prev.auditLogs];
+      saveAuditLogs(auditLogs);
+      return { ...prev, attendance: updated, auditLogs };
+    });
+  };
+
   const handleUpdateLeaveStatus = (leaveId: string, status: 'APPROVED' | 'REJECTED') => {
     setState(prev => {
       const updated = prev.leaves.map(l => l.id === leaveId ? { ...l, status } : l);
@@ -581,6 +677,10 @@ export const App: React.FC = () => {
   };
 
   // If not logged in, show real Login View
+  if (!authReady) {
+    return <div className="min-h-screen bg-slate-950 flex items-center justify-center text-white text-sm font-bold">جاري التحقق من الجلسة...</div>;
+  }
+
   if (!state.currentUser) {
     return <LoginView defaultCompanyCode={state.companies[0]?.companyCode || '101'} onLogin={handleLogin} />;
   }
@@ -715,6 +815,7 @@ export const App: React.FC = () => {
                 activeRole={state.activeRole}
                 onAddAttendance={handleAddAttendance}
                 onBulkImportAttendance={handleBulkImportAttendance}
+                onDeleteAttendance={handleDeleteAttendance}
                 onUpdateLeaveStatus={handleUpdateLeaveStatus}
                 onAddLeave={handleAddLeave}
               />

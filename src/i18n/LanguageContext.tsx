@@ -95,6 +95,13 @@ const qualityOverrides: Record<string, string> = {
   'رقم فرع البنك': 'Bank branch number', 'رقم المنشأة في مكتب العمل': 'Labor Office establishment number',
   'رقم المنشأة في الغرفة التجارية': 'Chamber of Commerce establishment number',
   'رمز البنك المختصر في ملف الرواتب': 'Payroll file bank code',
+  'تعريفات البنوك وSWIFT للموظفين': 'Employee bank and SWIFT definitions',
+  'يُحدد البنك تلقائيًا من الرقمين الخامس والسادس في IBAN ويُطبّق SWIFT هنا على كل موظفي البنك.': 'The bank is detected from the IBAN bank code and this SWIFT is applied to every employee at that bank.',
+  'إضافة بنك': 'Add bank', 'كود IBAN': 'IBAN bank code', 'اسم البنك بالعربي': 'Arabic bank name',
+  'الاسم بالإنجليزي': 'English name', 'إجراء': 'Action',
+  'إلغاء الغياب': 'Cancel absence', 'إلغاء غياب مسجل': 'Cancel recorded absence',
+  'حذف الحركة وإلغاء أثرها من المسير': 'Delete the record and remove its payroll impact',
+  'جاري التحقق من الجلسة...': 'Checking session...',
 };
 const translationCatalog: Record<string, string> = { ...generatedTranslations, ...qualityOverrides };
 // Only the compact, reviewed glossary is used for partial/dynamic replacements.

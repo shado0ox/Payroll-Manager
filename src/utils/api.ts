@@ -11,6 +11,7 @@ let stateVersion = 0;
 
 export const api = {
   login: (companyCode: string, username: string, password: string) => request<{user: UserAccount; companyId: string}>('/api/auth/login', { method:'POST', body:JSON.stringify({ companyCode, username, password }) }),
+  session: () => request<{user: UserAccount}>('/api/auth/session'),
   logout: () => request<void>('/api/auth/logout', { method:'POST' }),
   getState: async () => {
     const result = await request<{state: Partial<AppState> | null; version: number}>('/api/state');

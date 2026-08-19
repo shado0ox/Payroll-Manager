@@ -89,6 +89,7 @@ async function auth(req, res, next) {
       FROM ${q('sessions')} s JOIN ${q('users')} u ON u.id=s.user_id
       WHERE s.token_hash=$1 AND s.expires_at > now() AND u.is_active=true`, [sha256(token)]);
     if (!result.rowCount) return res.status(401).json({ error: 'SESSION_EXPIRED' });
+    await pool.query(`UPDATE ${q('sessions')} SET expires_at=now()+interval '1 hour' WHERE token_hash=$1`, [sha256(token)]);
     req.user = result.rows[0];
     next();
   } catch (error) { next(error); }
@@ -114,14 +115,21 @@ app.post('/api/auth/login', loginLimiter, async (req, res, next) => {
     try {
       await client.query('BEGIN');
       await client.query(`DELETE FROM ${q('sessions')} WHERE expires_at <= now()`);
-      await client.query(`INSERT INTO ${q('sessions')} (token_hash,user_id,expires_at) VALUES ($1,$2,now()+interval '12 hours')`, [sha256(token), user.id]);
+      await client.query(`INSERT INTO ${q('sessions')} (token_hash,user_id,expires_at) VALUES ($1,$2,now()+interval '1 hour')`, [sha256(token), user.id]);
       await client.query(`UPDATE ${q('users')} SET last_login=now() WHERE id=$1`, [user.id]);
       await client.query(`INSERT INTO ${q('audit_log')} (user_id,action,ip) VALUES ($1,'LOGIN',$2)`, [user.id, req.ip]);
       await client.query('COMMIT');
     } catch (e) { await client.query('ROLLBACK'); throw e; } finally { client.release(); }
-    res.setHeader('Set-Cookie', `masar_session=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=43200${process.env.COOKIE_SECURE === 'false' ? '' : '; Secure'}`);
+    res.setHeader('Set-Cookie', `masar_session=${token}; Path=/; HttpOnly; SameSite=Strict${process.env.COOKIE_SECURE === 'false' ? '' : '; Secure'}`);
     res.json({ user: { id:user.id, username:user.username, name:user.name, email:user.email, phone:user.phone, role:user.role, companyIds:user.company_ids, isActive:true, createdAt:user.created_at, lastLogin:new Date().toISOString() }, companyId:user.company_id });
   } catch (e) { next(e); }
+});
+
+app.get('/api/auth/session', auth, async (req, res) => {
+  const user = req.user;
+  res.json({
+    user: { id:user.id, username:user.username, name:user.name, email:user.email, phone:user.phone, role:user.role, companyIds:user.company_ids, isActive:true },
+  });
 });
 
 app.post('/api/auth/logout', auth, async (req, res, next) => {

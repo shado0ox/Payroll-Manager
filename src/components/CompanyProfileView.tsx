@@ -50,7 +50,8 @@ import {
   DepartmentInfo,
   PayrollRun,
   QoyodApiConfig,
-  JournalBatch
+  JournalBatch,
+  CompanyBankDefinition
 } from '../types';
 import { 
   validateSaudiIBAN, 
@@ -59,7 +60,7 @@ import {
   getSwiftCodeFromBankName, 
   validateSaudiCR,
   validateSaudiTaxNumber,
-  SAUDI_BANKS 
+  getBankDefinitions
 } from '../utils/security';
 import { buildQoyodJournalPayload, generateQoyodCurlCommand, sendJournalEntryToQoyod } from '../utils/qoyodApi';
 import { exportQoyodJournalCsv } from '../utils/exportUtils';
@@ -145,7 +146,10 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
   const [deleteEmployeesConfirmation, setDeleteEmployeesConfirmation] = useState('');
 
   // Local editable company state
-  const [formData, setFormData] = useState<Company>(() => JSON.parse(JSON.stringify(company)));
+  const [formData, setFormData] = useState<Company>(() => ({
+    ...JSON.parse(JSON.stringify(company)),
+    bankDefinitions: getBankDefinitions(company.bankDefinitions),
+  }));
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Local Qoyod config state
@@ -167,7 +171,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
   // Sync state if active company changes from outside
   React.useEffect(() => {
     if (company) {
-      setFormData(JSON.parse(JSON.stringify(company)));
+      setFormData({ ...JSON.parse(JSON.stringify(company)), bankDefinitions: getBankDefinitions(company.bankDefinitions) });
     }
   }, [company]);
 
@@ -256,7 +260,26 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
       return;
     }
 
-    onUpdateCompany(dataToSave);
+    const bankDefinitions = (dataToSave.bankDefinitions || []).map(bank => ({
+      ...bank,
+      ibanBankCode: bank.ibanBankCode.trim(),
+      nameAr: bank.nameAr.trim(),
+      nameEn: bank.nameEn.trim(),
+      swiftCode: bank.swiftCode.trim().toUpperCase(),
+    }));
+    const invalidBank = bankDefinitions.find(bank => !/^\d{2}$/.test(bank.ibanBankCode) || !bank.nameAr || !validateSwiftCode(bank.swiftCode));
+    if (invalidBank) {
+      alert('راجع تعريفات البنوك: كود IBAN يجب أن يكون رقمين، واسم البنك مطلوب، وSWIFT يجب أن يكون 8 أو 11 خانة صحيحة.');
+      return;
+    }
+    if (new Set(bankDefinitions.map(bank => bank.ibanBankCode)).size !== bankDefinitions.length) {
+      alert('لا يمكن تكرار كود IBAN لأكثر من بنك.');
+      return;
+    }
+
+    const normalizedCompany = { ...dataToSave, bankDefinitions };
+    setFormData(normalizedCompany);
+    onUpdateCompany(normalizedCompany);
     setSaveSuccessMessage('تم تطبيق وحفظ كافة الإعدادات والسياسات للمنشأة بنجاح');
     setTimeout(() => {
       setSaveSuccessMessage(null);
@@ -916,6 +939,31 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
             </span>
           </div>
 
+          <div className="rounded-2xl border border-emerald-200 bg-emerald-50/40 overflow-hidden">
+            <div className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-emerald-200">
+              <div><h4 className="text-sm font-black text-slate-900">تعريفات البنوك وSWIFT للموظفين</h4><p className="text-[11px] text-slate-600 mt-1">يُحدد البنك تلقائيًا من الرقمين الخامس والسادس في IBAN ويُطبّق SWIFT هنا على كل موظفي البنك.</p></div>
+              <button type="button" onClick={() => setFormData({ ...formData, bankDefinitions: [...(formData.bankDefinitions || []), { ibanBankCode: '', nameAr: '', nameEn: '', swiftCode: '', isActive: true }] })} className="px-3 py-2 bg-emerald-600 text-white rounded-xl text-xs font-bold flex items-center gap-1.5"><Plus className="w-3.5 h-3.5" /> إضافة بنك</button>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[760px] text-xs">
+                <thead className="bg-white/80 text-slate-600"><tr><th className="p-2 text-right">كود IBAN</th><th className="p-2 text-right">اسم البنك بالعربي</th><th className="p-2 text-right">الاسم بالإنجليزي</th><th className="p-2 text-right">SWIFT / BIC</th><th className="p-2 text-center">نشط</th><th className="p-2"></th></tr></thead>
+                <tbody className="divide-y divide-emerald-100">
+                  {(formData.bankDefinitions || []).map((bank, index) => {
+                    const updateBank = (changes: Partial<CompanyBankDefinition>) => setFormData({ ...formData, bankDefinitions: (formData.bankDefinitions || []).map((item, itemIndex) => itemIndex === index ? { ...item, ...changes } : item) });
+                    return <tr key={`${bank.ibanBankCode}-${index}`} className="bg-white/60">
+                      <td className="p-2"><input value={bank.ibanBankCode} onChange={event => updateBank({ ibanBankCode: event.target.value.replace(/\D/g, '').slice(0, 2) })} className="w-20 px-2 py-1.5 border border-slate-200 rounded-lg font-mono text-center" placeholder="80" /></td>
+                      <td className="p-2"><input value={bank.nameAr} onChange={event => updateBank({ nameAr: event.target.value })} className="w-full px-2 py-1.5 border border-slate-200 rounded-lg" /></td>
+                      <td className="p-2"><input value={bank.nameEn} onChange={event => updateBank({ nameEn: event.target.value })} className="w-full px-2 py-1.5 border border-slate-200 rounded-lg" dir="ltr" /></td>
+                      <td className="p-2"><input value={bank.swiftCode} onChange={event => updateBank({ swiftCode: event.target.value.replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, 11) })} className="w-36 px-2 py-1.5 border border-slate-200 rounded-lg font-mono" dir="ltr" /></td>
+                      <td className="p-2 text-center"><input type="checkbox" checked={bank.isActive !== false} onChange={event => updateBank({ isActive: event.target.checked })} className="accent-emerald-600" /></td>
+                      <td className="p-2 text-center"><button type="button" onClick={() => setFormData({ ...formData, bankDefinitions: (formData.bankDefinitions || []).filter((_, itemIndex) => itemIndex !== index) })} className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-lg" title="حذف تعريف البنك"><Trash2 className="w-4 h-4" /></button></td>
+                    </tr>;
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
           <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
             {/* Bank Name */}
             <div>
@@ -927,7 +975,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
                 value={formData.bankName || ''}
                 onChange={(e) => {
                   const newBank = e.target.value;
-                  const swift = getSwiftCodeFromBankName(newBank);
+                  const swift = getSwiftCodeFromBankName(newBank, formData.bankDefinitions);
                   setFormData({ 
                     ...formData, 
                     bankName: newBank,
@@ -937,8 +985,8 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
                 className="w-full px-3.5 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:border-emerald-500 font-semibold text-slate-900"
               >
                 <option value="">-- اختر البنك --</option>
-                {Object.values(SAUDI_BANKS).map(b => (
-                  <option key={b.code} value={b.nameAr}>
+                {getBankDefinitions(formData.bankDefinitions).filter(b => b.isActive !== false).map(b => (
+                  <option key={b.ibanBankCode} value={b.nameAr}>
                     {b.nameAr} ({b.swiftCode})
                   </option>
                 ))}
@@ -967,7 +1015,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
                 value={formData.bankIban || ''}
                 onChange={(e) => {
                   const cleanIban = e.target.value.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
-                  const detected = detectBankFromIBAN(cleanIban);
+                  const detected = detectBankFromIBAN(cleanIban, formData.bankDefinitions);
                   setFormData({ 
                     ...formData, 
                     bankIban: cleanIban,
@@ -990,11 +1038,11 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
                   onClick={() => {
                     let code = '';
                     if (formData.bankIban) {
-                      const det = detectBankFromIBAN(formData.bankIban);
+                      const det = detectBankFromIBAN(formData.bankIban, formData.bankDefinitions);
                       if (det) code = det.swiftCode;
                     }
                     if (!code && formData.bankName) {
-                      code = getSwiftCodeFromBankName(formData.bankName);
+                      code = getSwiftCodeFromBankName(formData.bankName, formData.bankDefinitions);
                     }
                     if (code) {
                       setFormData({ ...formData, bankSwiftCode: code });

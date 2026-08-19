@@ -6,6 +6,7 @@ import {
   PenaltyRecord, 
   PayrollRunItem 
 } from '../types';
+import { detectBankFromIBAN, getSwiftCodeFromBankName } from './security';
 
 export interface EmployeeCalculationInput {
   employee: Employee;
@@ -21,6 +22,9 @@ export function calculateEmployeePayrollItem(input: EmployeeCalculationInput): P
   const attendanceRecords = input.attendanceRecords || [];
   const activeLoans = input.activeLoans || [];
   const penalties = input.penalties || [];
+  const companyBank = detectBankFromIBAN(employee.bankIban, company.bankDefinitions);
+  const effectiveBankName = companyBank?.nameAr || employee.bankName;
+  const effectiveBankSwift = companyBank?.swiftCode || getSwiftCodeFromBankName(employee.bankName, company.bankDefinitions) || employee.bankSwiftCode;
   const rules = company.calculationRules || {
     dailyRateFormula: 'BASE_PLUS_HOUSING',
     hourlyRateDivisor: 8,
@@ -209,8 +213,8 @@ export function calculateEmployeePayrollItem(input: EmployeeCalculationInput): P
     costCenterId: employee.costCenterId,
     nationality: employee.nationality,
     bankIban: employee.bankIban,
-    bankName: employee.bankName,
-    bankSwiftCode: employee.bankSwiftCode,
+    bankName: effectiveBankName,
+    bankSwiftCode: effectiveBankSwift,
     
     baseSalary: effectiveBaseSalary,
     housingAllowance: effectiveHousing,

@@ -1,5 +1,6 @@
 import { strToU8, zipSync } from 'fflate';
 import { Company, Employee, PayrollPaymentBatch, PayrollRun } from '../types';
+import { detectBankFromIBAN, getSwiftCodeFromBankName } from './security';
 
 const xmlEscape = (value: unknown) => String(value ?? '')
   .replace(/&/g, '&amp;')
@@ -47,7 +48,9 @@ export function buildBankPayrollXlsx(payrollRun: PayrollRun, company: Company, b
 
   const missingBankData = items.filter(item => {
     const employee = employeeById.get(item.employeeId);
-    return !(item.nationalIdOrIqama || employee?.nationalIdOrIqama) || !item.bankIban || !(item.bankSwiftCode || employee?.bankSwiftCode);
+    const centralBank = detectBankFromIBAN(item.bankIban, company.bankDefinitions);
+    const swift = centralBank?.swiftCode || getSwiftCodeFromBankName(item.bankName || employee?.bankName || '', company.bankDefinitions) || item.bankSwiftCode || employee?.bankSwiftCode;
+    return !(item.nationalIdOrIqama || employee?.nationalIdOrIqama) || !item.bankIban || !swift;
   });
   if (missingBankData.length) {
     throw new Error(`لا يمكن إنشاء ملف البنك: يوجد ${missingBankData.length} موظف ببيانات هوية أو IBAN أو SWIFT غير مكتملة.`);
@@ -76,12 +79,14 @@ export function buildBankPayrollXlsx(payrollRun: PayrollRun, company: Company, b
     makeRow(3, detailHeaders, 1),
     ...items.map((item, index) => {
       const employee = employeeById.get(item.employeeId);
+      const centralBank = detectBankFromIBAN(item.bankIban, company.bankDefinitions);
+      const centralSwift = centralBank?.swiftCode || getSwiftCodeFromBankName(item.bankName || employee?.bankName || '', company.bankDefinitions);
       return makeRow(index + 4, [
       String(index + 1).padStart(4, '0'),
       item.nationalIdOrIqama || employee?.nationalIdOrIqama || '',
       item.employeeNameEn || (employee ? `${employee.firstNameEn || ''} ${employee.lastNameEn || ''}`.trim() : '') || item.employeeName,
       item.bankIban,
-      item.bankSwiftCode || employee?.bankSwiftCode || '',
+      centralSwift || item.bankSwiftCode || employee?.bankSwiftCode || '',
       item.netSalary,
       item.baseSalary,
       item.housingAllowance,
