@@ -559,6 +559,14 @@ export const App: React.FC = () => {
     });
   };
 
+  const handleDeleteLoan = (loanId: string) => {
+    setState(prev => {
+      const updated = prev.loans.filter(item => item.id !== loanId);
+      saveLoans(updated);
+      return { ...prev, loans: updated };
+    });
+  };
+
   const handleAddPenalty = (penalty: PenaltyRecord) => {
     setState(prev => {
       const updated = prev.penalties.some(item => item.id === penalty.id)
@@ -572,6 +580,14 @@ export const App: React.FC = () => {
   const handleCancelPenalty = (penaltyId: string) => {
     setState(prev => {
       const updated = prev.penalties.map(item => item.id === penaltyId ? { ...item, appliedInPayroll: false } : item);
+      savePenalties(updated);
+      return { ...prev, penalties: updated };
+    });
+  };
+
+  const handleDeletePenalty = (penaltyId: string) => {
+    setState(prev => {
+      const updated = prev.penalties.filter(item => item.id !== penaltyId);
       savePenalties(updated);
       return { ...prev, penalties: updated };
     });
@@ -857,8 +873,10 @@ export const App: React.FC = () => {
                 activeRole={state.activeRole}
                 onSaveLoan={handleAddLoan}
                 onUpdateLoanStatus={handleUpdateLoanStatus}
+                onDeleteLoan={handleDeleteLoan}
                 onSavePenalty={handleAddPenalty}
                 onCancelPenalty={handleCancelPenalty}
+                onDeletePenalty={handleDeletePenalty}
               />
             )}
 

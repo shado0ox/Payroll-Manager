@@ -191,7 +191,7 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
   };
 
   const handleCreatePaymentBatch = () => {
-    if (!currentRun || !selectedPaymentItems.length || !['APPROVED', 'POSTED'].includes(currentRun.status)) return;
+    if (!currentRun || !selectedPaymentItems.length || currentRun.status !== 'APPROVED') return;
     const stillEligible = selectedPaymentItems.filter(item => !item.isSuspended && item.netSalary > 0 && !committedEmployeeIds.has(item.employeeId));
     if (!stillEligible.length) return;
     const sequence = (currentRun.paymentBatches?.length || 0) + 1;
@@ -304,7 +304,7 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
       const runItems: PayrollRunItem[] = companyEmployees.map(emp => {
         const empAtt = attendance.filter(a => a.employeeId === emp.id && a.periodMonth === selectedPeriod);
         const empLoans = loans.filter(l => l.employeeId === emp.id);
-        const empPens = penalties.filter(p => p.employeeId === emp.id && p.periodMonth === selectedPeriod);
+        const empPens = penalties.filter(p => p.employeeId === emp.id && p.periodMonth === selectedPeriod && p.appliedInPayroll !== false);
 
         return calculateEmployeePayrollItem({
           employee: emp,
@@ -526,6 +526,27 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
         </div>
       )}
 
+      {currentRun && (
+        <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-xs">
+          <div className="flex items-center justify-between mb-3">
+            <div><h3 className="text-sm font-black text-slate-900">ملخص الإضافات والخصومات قبل الاعتماد</h3><p className="text-[11px] text-slate-500">يتحدث تلقائيًا بعد إعادة احتساب المسير أو تعديل موظف.</p></div>
+            <span className={`px-2.5 py-1 rounded-lg text-[10px] font-bold ${currentRun.status === 'APPROVED' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>{currentRun.status === 'APPROVED' ? 'معتمد — جاهز للدفع' : 'غير معتمد'}</span>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2 text-center">
+            {[
+              ['إجمالي الإضافات', currentRun.totalGrossSalaries - currentRun.totalBaseSalaries, 'text-emerald-700'],
+              ['غياب/إجازة', currentRun.totalAbsenceDeductions, 'text-rose-700'],
+              ['تأخير', currentRun.totalDelayDeductions, 'text-rose-700'],
+              ['تأمينات الموظف', currentRun.totalGosiEmployee, 'text-rose-700'],
+              ['أقساط السلف', currentRun.totalLoanDeductions, 'text-rose-700'],
+              ['جزاءات وخصومات', currentRun.totalPenalties, 'text-rose-700'],
+              ['خصومات أخرى', Math.max(0, currentRun.totalDeductions - currentRun.totalAbsenceDeductions - currentRun.totalDelayDeductions - currentRun.totalGosiEmployee - currentRun.totalLoanDeductions - currentRun.totalPenalties), 'text-rose-700'],
+              ['صافي الرواتب', currentRun.totalNetSalaries, 'text-emerald-800'],
+            ].map(([label, amount, color]) => <div key={String(label)} className="rounded-xl bg-slate-50 border border-slate-100 p-2"><div className="text-[10px] text-slate-500">{label}</div><div className={`text-xs font-black mt-1 ${color}`}>{formatSAR(Number(amount))}</div></div>)}
+          </div>
+        </div>
+      )}
+
       {/* Workflow & Export Action Ribbon */}
       {currentRun && (
         <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
@@ -558,11 +579,11 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
             {currentRun.status === 'APPROVED' && (
               <><button
                 onClick={() => handleStatusChange('POSTED')}
-                disabled={!['ADMIN', 'COMPANY_MANAGER'].includes(activeRole)}
+                disabled={!['ADMIN', 'COMPANY_MANAGER'].includes(activeRole) || paidAmount < currentRun.totalNetSalaries}
                 className="px-3.5 py-1.5 bg-purple-600 hover:bg-purple-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white text-xs font-bold rounded-xl transition-all shadow-xs flex items-center gap-1.5"
               >
                 <Lock className="w-3.5 h-3.5" />
-                <span>ترحيل القيد وإقفال الفترة نهائياً</span>
+                <span>{paidAmount < currentRun.totalNetSalaries ? 'الاعتماد تم — أكمل دفع الرواتب أولًا' : 'إقفال وترحيل المسير بعد الدفع'}</span>
               </button>
               {canReversePosting && <button type="button" onClick={handleReverseApproval} className="px-3 py-1.5 rounded-xl bg-amber-50 text-amber-800 border border-amber-200 text-xs font-bold flex items-center gap-1.5"><RotateCcw className="w-3.5 h-3.5" /> التراجع عن الاعتماد والتعديل</button>}
               </>
@@ -650,7 +671,7 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
               <button
                 type="button"
                 onClick={() => setIsPaymentBatchModalOpen(true)}
-                disabled={!selectedPaymentEmployeeIds.length || !['APPROVED', 'POSTED'].includes(currentRun.status)}
+                disabled={!selectedPaymentEmployeeIds.length || currentRun.status !== 'APPROVED'}
                 className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-2 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 <Send className="w-4 h-4" /> إنشاء دفعة للمحددين ({selectedPaymentEmployeeIds.length})
@@ -812,7 +833,7 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
                           <div className="font-bold text-slate-900 flex items-center gap-1 truncate">
                             <span className="truncate">{item.employeeName}</span>
                             {item.nationality === 'SAUDI' && (
-                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" title="سعودي (GOSI)" />
+                              <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${item.gosiEnabled === false ? 'bg-slate-300' : 'bg-emerald-500'}`} title={item.gosiEnabled === false ? 'سعودي غير خاضع للتأمينات' : `GOSI موظف ${((item.gosiEmployeeRate || 0) * 100).toFixed(2)}% / شركة ${((item.gosiEmployerRate || 0) * 100).toFixed(2)}%`} />
                             )}
                           </div>
                           <div className="text-[10px] text-slate-400 font-mono">{item.employeeNo}</div>

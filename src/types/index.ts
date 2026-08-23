@@ -171,6 +171,9 @@ export interface Employee {
   bankName: string;
   bankIban: string;
   bankSwiftCode?: string;
+  gosiEnabled?: boolean;
+  gosiEmployeeRate?: number;
+  gosiEmployerRate?: number;
   saudiGosiPaymentMode?: 'SHARED' | 'COMPANY_FULL';
   dataWarnings?: string[];
   salaryPackage: EmployeeSalaryPackage;
@@ -264,6 +267,10 @@ export interface PayrollRunItem {
   unpaidLeaveDays: number;
   unpaidLeaveDeduction: number;
   gosiEmployeeShare: number;
+  gosiSubjectAmount?: number;
+  gosiEmployeeRate?: number;
+  gosiEmployerRate?: number;
+  gosiEnabled?: boolean;
   loanDeduction: number;
   penaltiesDeduction: number;
   otherDeductions: number;

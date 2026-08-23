@@ -134,9 +134,13 @@ export function calculateEmployeePayrollItem(input: EmployeeCalculationInput): P
   const gosiBaseRaw = baseSalary + housingAllowance;
   const gosiSubjectAmount = Math.min(gosiBaseRaw, rules.saudiGosiMaxCap || 45000);
 
-  if (employee.nationality === 'SAUDI') {
-    const employeeSubscription = roundAmount(gosiSubjectAmount * (rules.saudiGosiEmployeeRate || 0.0975), rules.roundingDecimals);
-    const employerSubscription = roundAmount(gosiSubjectAmount * (rules.saudiGosiEmployerRate || 0.1175), rules.roundingDecimals);
+  const gosiEnabled = employee.gosiEnabled !== false;
+  const employeeGosiRate = employee.gosiEmployeeRate ?? rules.saudiGosiEmployeeRate ?? 0.0975;
+  const employerGosiRate = employee.gosiEmployerRate ?? rules.saudiGosiEmployerRate ?? 0.1175;
+
+  if (employee.nationality === 'SAUDI' && gosiEnabled) {
+    const employeeSubscription = roundAmount(gosiSubjectAmount * employeeGosiRate, rules.roundingDecimals);
+    const employerSubscription = roundAmount(gosiSubjectAmount * employerGosiRate, rules.roundingDecimals);
     if (employee.saudiGosiPaymentMode === 'COMPANY_FULL') {
       gosiEmployeeShare = 0;
       gosiEmployerShare = roundAmount(employeeSubscription + employerSubscription, rules.roundingDecimals);
@@ -144,7 +148,7 @@ export function calculateEmployeePayrollItem(input: EmployeeCalculationInput): P
       gosiEmployeeShare = employeeSubscription;
       gosiEmployerShare = employerSubscription;
     }
-  } else {
+  } else if (employee.nationality === 'NON_SAUDI' && gosiEnabled) {
     // Non-Saudi: No employee share, 2% employer occupational hazard share
     gosiEmployeeShare = 0;
     gosiEmployerShare = roundAmount(gosiSubjectAmount * (rules.nonSaudiGosiEmployerHazardRate || 0.02), rules.roundingDecimals);
@@ -233,6 +237,10 @@ export function calculateEmployeePayrollItem(input: EmployeeCalculationInput): P
     unpaidLeaveDays: totalUnpaidLeaveDays,
     unpaidLeaveDeduction,
     gosiEmployeeShare,
+    gosiSubjectAmount: gosiEnabled ? gosiSubjectAmount : 0,
+    gosiEmployeeRate: employeeGosiRate,
+    gosiEmployerRate: employerGosiRate,
+    gosiEnabled,
     loanDeduction,
     penaltiesDeduction,
     otherDeductions: customDeductionsSum,

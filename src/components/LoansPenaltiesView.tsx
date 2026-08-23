@@ -24,8 +24,10 @@ interface LoansPenaltiesViewProps {
   activeRole: UserRole;
   onSaveLoan: (loan: LoanSchedule) => void;
   onUpdateLoanStatus: (loanId: string, status: LoanSchedule['status']) => void;
+  onDeleteLoan: (loanId: string) => void;
   onSavePenalty: (penalty: PenaltyRecord) => void;
   onCancelPenalty: (penaltyId: string) => void;
+  onDeletePenalty: (penaltyId: string) => void;
 }
 
 export const LoansPenaltiesView: React.FC<LoansPenaltiesViewProps> = ({
@@ -36,8 +38,10 @@ export const LoansPenaltiesView: React.FC<LoansPenaltiesViewProps> = ({
   activeRole,
   onSaveLoan,
   onUpdateLoanStatus,
+  onDeleteLoan,
   onSavePenalty,
   onCancelPenalty,
+  onDeletePenalty,
 }) => {
   const [activeTab, setActiveTab] = useState<'loans' | 'penalties'>('loans');
   const [isLoanModalOpen, setIsLoanModalOpen] = useState(false);
@@ -291,6 +295,7 @@ export const LoansPenaltiesView: React.FC<LoansPenaltiesViewProps> = ({
                         <td className="py-3 px-4 text-center">
                           <div className="flex items-center justify-center gap-2">
                           <button onClick={() => openEditLoan(loan)} className="text-blue-700" title="تعديل السلفة"><Edit3 className="w-4 h-4" /></button>
+                          <button onClick={() => { if (confirm('حذف السلفة نهائيًا وإزالة أقساطها من المسير القادم؟')) onDeleteLoan(loan.id); }} className="text-rose-700" title="حذف السلفة"><Trash2 className="w-4 h-4" /></button>
                           {loan.status === 'ACTIVE' ? (
                             <button
                               onClick={() => onUpdateLoanStatus(loan.id, 'PAUSED')}
@@ -353,6 +358,7 @@ export const LoansPenaltiesView: React.FC<LoansPenaltiesViewProps> = ({
                       <td className="py-3 px-4"><div className="flex justify-center gap-2">
                         <button onClick={() => openEditPenalty(pen)} className="text-blue-700" title="تعديل الخصم"><Edit3 className="w-4 h-4" /></button>
                         {pen.appliedInPayroll && <button onClick={() => { if (confirm('إلغاء هذا الخصم وإزالة أثره من المسير؟')) onCancelPenalty(pen.id); }} className="text-amber-700" title="التراجع عن الخصم"><RotateCcw className="w-4 h-4" /></button>}
+                        <button onClick={() => { if (confirm('حذف الجزاء/الخصم نهائيًا؟')) onDeletePenalty(pen.id); }} className="text-rose-700" title="حذف نهائي"><Trash2 className="w-4 h-4" /></button>
                       </div></td>
                     </tr>
                   );
