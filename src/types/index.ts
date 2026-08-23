@@ -232,6 +232,7 @@ export interface PenaltyRecord {
 }
 
 export type PayrollRunStatus = 'DRAFT' | 'UNDER_REVIEW' | 'APPROVED' | 'POSTED';
+export type PayrollEntitlementStatus = 'PAYABLE' | 'HELD' | 'UNDER_SETTLEMENT' | 'SETTLED' | 'CANCELLED_WITH_DOCUMENT';
 
 export interface PayrollRunItem {
   id: string;
@@ -284,6 +285,10 @@ export interface PayrollRunItem {
   manualAddition?: number;
   manualDeduction?: number;
   adjustmentNotes?: string;
+  entitlementStatus?: PayrollEntitlementStatus;
+  entitlementReason?: string;
+  entitlementDocumentRef?: string;
+  entitlementUpdatedAt?: string;
 
   // Flags & Warnings
   isSuspended: boolean;

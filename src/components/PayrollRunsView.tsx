@@ -39,6 +39,7 @@ import {
   PayrollPaymentBatch,
   PaymentMethod,
   PaymentBatchStatus,
+  PayrollEntitlementStatus,
 } from '../types';
 import { 
   calculateEmployeePayrollItem, 
@@ -80,6 +81,14 @@ const PAYMENT_STATUS_CONFIG: Record<PaymentBatchStatus, { label: string; classes
   PAID: { label: 'تم التحويل', classes: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
   FAILED: { label: 'فشل التحويل', classes: 'bg-rose-50 text-rose-700 border-rose-200' },
   CANCELLED: { label: 'ملغاة', classes: 'bg-slate-100 text-slate-600 border-slate-200' },
+};
+
+const ENTITLEMENT_CONFIG: Record<PayrollEntitlementStatus, { label: string; classes: string }> = {
+  PAYABLE: { label: 'مستحق للدفع', classes: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+  HELD: { label: 'راتب معلق', classes: 'bg-amber-50 text-amber-800 border-amber-200' },
+  UNDER_SETTLEMENT: { label: 'تحت التسوية', classes: 'bg-blue-50 text-blue-700 border-blue-200' },
+  SETTLED: { label: 'مسوى نهائيًا', classes: 'bg-purple-50 text-purple-700 border-purple-200' },
+  CANCELLED_WITH_DOCUMENT: { label: 'ملغى بمستند', classes: 'bg-slate-100 text-slate-700 border-slate-200' },
 };
 
 const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
@@ -163,15 +172,24 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
   );
   const paidAmount = paymentBatches.filter(batch => batch.status === 'PAID').reduce((sum, batch) => sum + batch.totalAmount, 0);
   const scheduledAmount = paymentBatches.filter(batch => batch.status === 'SCHEDULED').reduce((sum, batch) => sum + batch.totalAmount, 0);
-  const remainingToSchedule = Math.max(0, (currentRun?.totalNetSalaries || 0) - paidAmount - scheduledAmount);
-  const unpaidAmount = Math.max(0, (currentRun?.totalNetSalaries || 0) - paidAmount);
+  const entitlementAmount = (statuses: PayrollEntitlementStatus[]) => (currentRun?.items || [])
+    .filter(item => statuses.includes(item.entitlementStatus || 'PAYABLE'))
+    .reduce((sum, item) => sum + item.netSalary, 0);
+  const heldAmount = entitlementAmount(['HELD']);
+  const underSettlementAmount = entitlementAmount(['UNDER_SETTLEMENT']);
+  const settledAmount = entitlementAmount(['SETTLED']);
+  const cancelledByDocumentAmount = entitlementAmount(['CANCELLED_WITH_DOCUMENT']);
+  const exceptionalProcessedAmount = heldAmount + settledAmount + cancelledByDocumentAmount;
+  const remainingToSchedule = Math.max(0, entitlementAmount(['PAYABLE']) - paidAmount - scheduledAmount);
+  const unpaidAmount = Math.max(0, (currentRun?.totalNetSalaries || 0) - paidAmount - exceptionalProcessedAmount);
+  const closeOutstandingAmount = Math.max(0, (currentRun?.totalNetSalaries || 0) - paidAmount - exceptionalProcessedAmount);
 
   const getEmployeePaymentBatch = (employeeId: string) => {
-    return [...paymentBatches].reverse().find(batch => batch.employeeIds.includes(employeeId) && batch.status !== 'CANCELLED');
+    return [...paymentBatches].reverse().find(batch => batch.employeeIds.includes(employeeId) && ['SCHEDULED', 'PAID'].includes(batch.status));
   };
 
   const eligibleFilteredItems = filteredItems.filter(item =>
-    !item.isSuspended && item.netSalary > 0 && !committedEmployeeIds.has(item.employeeId)
+    (item.entitlementStatus || 'PAYABLE') === 'PAYABLE' && item.netSalary > 0 && !committedEmployeeIds.has(item.employeeId)
   );
   const selectedPaymentItems = currentRun?.items.filter(item => selectedPaymentEmployeeIds.includes(item.employeeId)) || [];
   const selectedPaymentTotal = selectedPaymentItems.reduce((sum, item) => sum + item.netSalary, 0);
@@ -191,8 +209,8 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
   };
 
   const handleCreatePaymentBatch = () => {
-    if (!currentRun || !selectedPaymentItems.length || currentRun.status !== 'APPROVED') return;
-    const stillEligible = selectedPaymentItems.filter(item => !item.isSuspended && item.netSalary > 0 && !committedEmployeeIds.has(item.employeeId));
+    if (!currentRun || !selectedPaymentItems.length || !['APPROVED', 'POSTED'].includes(currentRun.status)) return;
+    const stillEligible = selectedPaymentItems.filter(item => (item.entitlementStatus || 'PAYABLE') === 'PAYABLE' && item.netSalary > 0 && !committedEmployeeIds.has(item.employeeId));
     if (!stillEligible.length) return;
     const sequence = (currentRun.paymentBatches?.length || 0) + 1;
     const batchNumber = `PAY-${currentRun.periodMonth.replace('-', '')}-${String(sequence).padStart(3, '0')}`;
@@ -209,7 +227,7 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
       status: 'SCHEDULED',
       scheduledDate: paymentBatchForm.scheduledDate,
       reference: paymentBatchForm.reference.trim() || batchNumber,
-      notes: paymentBatchForm.notes.trim(),
+      notes: `${currentRun.status === 'POSTED' ? 'دفعة متأخرة مرتبطة بالمسير الأصلي. ' : ''}${paymentBatchForm.notes.trim()}`.trim(),
       createdAt: new Date().toISOString(),
     };
     const updatedRun = { ...currentRun, paymentBatches: [...(currentRun.paymentBatches || []), batch] };
@@ -218,6 +236,34 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
     setSelectedPaymentEmployeeIds([]);
     setIsPaymentBatchModalOpen(false);
     setPaymentBatchForm({ method: 'WPS', scheduledDate: new Date().toISOString().slice(0, 10), reference: '', notes: '' });
+  };
+
+  const handleEntitlementStatusChange = (item: PayrollRunItem, status: PayrollEntitlementStatus) => {
+    if (!currentRun) return;
+    const batch = getEmployeePaymentBatch(item.employeeId);
+    if (batch && ['SCHEDULED', 'PAID'].includes(batch.status)) {
+      alert('لا يمكن تغيير حالة الاستحقاق بعد جدولة أو دفع راتب الموظف. ألغِ الدفعة المجدولة أولًا، أما المدفوعة فتحتاج تسوية عكسية مستقلة.');
+      return;
+    }
+    let reason = '';
+    let documentRef = '';
+    if (status !== 'PAYABLE') {
+      reason = window.prompt('اكتب سبب التعليق أو التسوية (إلزامي):', item.entitlementReason || '')?.trim() || '';
+      if (!reason) return;
+    }
+    if (['SETTLED', 'CANCELLED_WITH_DOCUMENT'].includes(status)) {
+      documentRef = window.prompt('رقم مستند/مرجع التسوية (إلزامي):', item.entitlementDocumentRef || '')?.trim() || '';
+      if (!documentRef) return;
+    }
+    const items = currentRun.items.map(current => current.id === item.id ? {
+      ...current,
+      entitlementStatus: status,
+      entitlementReason: status === 'PAYABLE' ? undefined : reason,
+      entitlementDocumentRef: ['SETTLED', 'CANCELLED_WITH_DOCUMENT'].includes(status) ? documentRef : undefined,
+      entitlementUpdatedAt: new Date().toISOString(),
+    } : current);
+    setSelectedPaymentEmployeeIds(selected => selected.filter(id => id !== item.employeeId));
+    onSavePayrollRun({ ...currentRun, items });
   };
 
   const handlePaymentBatchStatus = (batchId: string, status: PaymentBatchStatus) => {
@@ -306,7 +352,7 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
         const empLoans = loans.filter(l => l.employeeId === emp.id);
         const empPens = penalties.filter(p => p.employeeId === emp.id && p.periodMonth === selectedPeriod && p.appliedInPayroll !== false);
 
-        return calculateEmployeePayrollItem({
+        const calculated = calculateEmployeePayrollItem({
           employee: emp,
           company,
           periodMonth: selectedPeriod,
@@ -314,6 +360,14 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
           activeLoans: empLoans,
           penalties: empPens,
         });
+        const previousItem = currentRun?.items.find(item => item.employeeId === emp.id);
+        return previousItem ? {
+          ...calculated,
+          entitlementStatus: previousItem.entitlementStatus,
+          entitlementReason: previousItem.entitlementReason,
+          entitlementDocumentRef: previousItem.entitlementDocumentRef,
+          entitlementUpdatedAt: previousItem.entitlementUpdatedAt,
+        } : calculated;
       });
 
       const decimals = company.calculationRules?.roundingDecimals ?? 2;
@@ -579,11 +633,11 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
             {currentRun.status === 'APPROVED' && (
               <><button
                 onClick={() => handleStatusChange('POSTED')}
-                disabled={!['ADMIN', 'COMPANY_MANAGER'].includes(activeRole) || paidAmount < currentRun.totalNetSalaries}
+                disabled={!['ADMIN', 'COMPANY_MANAGER'].includes(activeRole) || closeOutstandingAmount > 0 || underSettlementAmount > 0}
                 className="px-3.5 py-1.5 bg-purple-600 hover:bg-purple-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white text-xs font-bold rounded-xl transition-all shadow-xs flex items-center gap-1.5"
               >
                 <Lock className="w-3.5 h-3.5" />
-                <span>{paidAmount < currentRun.totalNetSalaries ? 'الاعتماد تم — أكمل دفع الرواتب أولًا' : 'إقفال وترحيل المسير بعد الدفع'}</span>
+                <span>{closeOutstandingAmount > 0 || underSettlementAmount > 0 ? 'عالِج المدفوع والمعلق والتسويات قبل الإقفال' : 'إقفال وترحيل المسير بعد المعالجة'}</span>
               </button>
               {canReversePosting && <button type="button" onClick={handleReverseApproval} className="px-3 py-1.5 rounded-xl bg-amber-50 text-amber-800 border border-amber-200 text-xs font-bold flex items-center gap-1.5"><RotateCcw className="w-3.5 h-3.5" /> التراجع عن الاعتماد والتعديل</button>}
               </>
@@ -628,9 +682,9 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
             </button>
 
             <button
-              onClick={() => exportWpsBankCsv(currentRun, company)}
+              onClick={() => exportWpsBankCsv(currentRun, company, currentRun.items.filter(item => (item.entitlementStatus || 'PAYABLE') === 'PAYABLE' && !committedEmployeeIds.has(item.employeeId)).map(item => item.employeeId))}
               className="px-3 py-1.5 bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all"
-              title="تصدير ملف حماية الأجور المعتمد للبنوك ومنصة مُدد"
+              title="تصدير المستحقين غير المعلقين وغير المدرجين في دفعة فقط"
             >
               <DollarSign className="w-3.5 h-3.5 text-indigo-600" />
               <span>ملف حماية الأجور (WPS)</span>
@@ -671,18 +725,21 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
               <button
                 type="button"
                 onClick={() => setIsPaymentBatchModalOpen(true)}
-                disabled={!selectedPaymentEmployeeIds.length || currentRun.status !== 'APPROVED'}
+                disabled={!selectedPaymentEmployeeIds.length || !['APPROVED', 'POSTED'].includes(currentRun.status)}
                 className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-2 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
               >
-                <Send className="w-4 h-4" /> إنشاء دفعة للمحددين ({selectedPaymentEmployeeIds.length})
+                <Send className="w-4 h-4" /> {currentRun.status === 'POSTED' ? 'إنشاء دفعة متأخرة' : 'إنشاء دفعة للمحددين'} ({selectedPaymentEmployeeIds.length})
               </button>
             </div>
           </div>
 
-          <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 p-4 bg-slate-50/70">
+          <div className="grid grid-cols-2 lg:grid-cols-4 xl:grid-cols-8 gap-3 p-4 bg-slate-50/70">
             <div className="p-3 rounded-xl bg-white border border-slate-200"><div className="text-[10px] text-slate-500">إجمالي المسير</div><div className="font-black text-slate-900">{formatSAR(currentRun.totalNetSalaries)}</div></div>
             <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200"><div className="text-[10px] text-emerald-700">تم تحويله</div><div className="font-black text-emerald-800">{formatSAR(paidAmount)}</div></div>
             <div className="p-3 rounded-xl bg-blue-50 border border-blue-200"><div className="text-[10px] text-blue-700">مجدول للتحويل</div><div className="font-black text-blue-800">{formatSAR(scheduledAmount)}</div></div>
+            <div className="p-3 rounded-xl bg-amber-50 border border-amber-200"><div className="text-[10px] text-amber-700">رواتب معلقة</div><div className="font-black text-amber-800">{formatSAR(heldAmount)}</div></div>
+            <div className="p-3 rounded-xl bg-sky-50 border border-sky-200"><div className="text-[10px] text-sky-700">تحت التسوية</div><div className="font-black text-sky-800">{formatSAR(underSettlementAmount)}</div></div>
+            <div className="p-3 rounded-xl bg-purple-50 border border-purple-200"><div className="text-[10px] text-purple-700">مسوى/ملغى بمستند</div><div className="font-black text-purple-800">{formatSAR(settledAmount + cancelledByDocumentAmount)}</div></div>
             <div className="p-3 rounded-xl bg-amber-50 border border-amber-200"><div className="text-[10px] text-amber-700">غير محوّل</div><div className="font-black text-amber-800">{formatSAR(unpaidAmount)}</div></div>
             <div className="p-3 rounded-xl bg-white border border-slate-200"><div className="text-[10px] text-slate-500">متاح لدفعة جديدة</div><div className="font-black text-slate-900">{formatSAR(remainingToSchedule)}</div></div>
           </div>
@@ -726,6 +783,7 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
           {!['APPROVED', 'POSTED'].includes(currentRun.status) && (
             <div className="px-4 py-3 border-t border-amber-200 bg-amber-50 text-xs text-amber-800 font-semibold">يجب اعتماد المسير أولًا قبل إنشاء دفعات التحويل.</div>
           )}
+          {currentRun.status === 'POSTED' && <div className="px-4 py-3 border-t border-blue-200 bg-blue-50 text-xs text-blue-800 font-semibold">يمكن إنشاء دفعة متأخرة للرواتب التي أُعيدت إلى «مستحق للدفع»، وستظل الدفعة مرتبطة بمسير {currentRun.periodMonth}.</div>}
         </div>
       )}
 
@@ -809,7 +867,8 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
                 const emp = employees.find(e => e.id === item.employeeId);
                 const hasWarning = item.warningFlags.length > 0;
                 const paymentBatch = getEmployeePaymentBatch(item.employeeId);
-                const canSelectForPayment = !item.isSuspended && item.netSalary > 0 && !committedEmployeeIds.has(item.employeeId);
+                const entitlementStatus = item.entitlementStatus || 'PAYABLE';
+                const canSelectForPayment = entitlementStatus === 'PAYABLE' && item.netSalary > 0 && !committedEmployeeIds.has(item.employeeId);
 
                 return (
                   <tr 
@@ -841,7 +900,13 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
                             <div className={`inline-flex mt-0.5 px-1.5 py-0.5 rounded border text-[9px] font-bold ${PAYMENT_STATUS_CONFIG[paymentBatch.status].classes}`} title={paymentBatch.batchNumber}>
                               {PAYMENT_STATUS_CONFIG[paymentBatch.status].label} • {paymentBatch.batchNumber}
                             </div>
-                          ) : <div className="text-[9px] text-amber-600 font-semibold mt-0.5">بانتظار إدراجه في دفعة</div>}
+                          ) : <div className={`inline-flex mt-0.5 px-1.5 py-0.5 rounded border text-[9px] font-bold ${ENTITLEMENT_CONFIG[entitlementStatus].classes}`} title={item.entitlementReason || ''}>{ENTITLEMENT_CONFIG[entitlementStatus].label}</div>}
+                          {!paymentBatch && ['APPROVED', 'POSTED'].includes(currentRun.status) && (
+                            <select value={entitlementStatus} onChange={event => handleEntitlementStatusChange(item, event.target.value as PayrollEntitlementStatus)} className="block mt-1 max-w-full px-1.5 py-1 rounded-lg border border-slate-200 bg-white text-[9px] font-bold">
+                              {Object.entries(ENTITLEMENT_CONFIG).map(([status, config]) => <option key={status} value={status}>{config.label}</option>)}
+                            </select>
+                          )}
+                          {item.entitlementReason && <div className="text-[9px] text-slate-500 mt-0.5 truncate" title={`${item.entitlementReason}${item.entitlementDocumentRef ? ` • ${item.entitlementDocumentRef}` : ''}`}>{item.entitlementReason}{item.entitlementDocumentRef ? ` • ${item.entitlementDocumentRef}` : ''}</div>}
                           {['UNDER_REVIEW', 'APPROVED'].includes(currentRun.status) && (
                             <button type="button" onClick={() => openAdjustmentModal(item)} className="mt-1 text-[9px] font-bold text-blue-700 hover:text-blue-900 inline-flex items-center gap-1">
                               <PencilLine className="w-3 h-3" /> تعديل إضافة أو خصم

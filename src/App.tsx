@@ -440,6 +440,10 @@ export const App: React.FC = () => {
           (previous.adjustmentNotes || '') !== (item.adjustmentNotes || '')
         );
       });
+      const entitlementChangedItem = run.items.find(item => {
+        const previous = previousRun?.items.find(candidate => candidate.id === item.id);
+        return previous && (previous.entitlementStatus || 'PAYABLE') !== (item.entitlementStatus || 'PAYABLE');
+      });
 
       let auditAction = `تحديث مسير الرواتب (${run.status})`;
       let auditDetails = `مسير فترة ${run.periodMonth} - إجمالي الصافي: ${run.totalNetSalaries.toLocaleString()} SAR`;
@@ -450,6 +454,9 @@ export const App: React.FC = () => {
       } else if (previousRun?.status === 'APPROVED' && run.status === 'UNDER_REVIEW') {
         auditAction = 'التراجع عن اعتماد مسير الرواتب';
         auditDetails = `فتح مسير ${run.periodMonth} للتعديل وإعادة الاعتماد - الصافي ${run.totalNetSalaries.toLocaleString()} SAR`;
+      } else if (entitlementChangedItem) {
+        auditAction = 'تغيير حالة استحقاق راتب موظف';
+        auditDetails = `${entitlementChangedItem.employeeName} (${entitlementChangedItem.employeeNo}) - الحالة: ${entitlementChangedItem.entitlementStatus || 'PAYABLE'} - ${entitlementChangedItem.entitlementReason || 'بدون سبب'}`;
       } else if (adjustedItem) {
         auditAction = 'تعديل إضافات وخصومات موظف في المسير';
         auditDetails = `${adjustedItem.employeeName} (${adjustedItem.employeeNo}) - إضافة ${(adjustedItem.manualAddition || 0).toLocaleString()} - خصم ${(adjustedItem.manualDeduction || 0).toLocaleString()} SAR - ${adjustedItem.adjustmentNotes || 'بدون ملاحظات'}`;
