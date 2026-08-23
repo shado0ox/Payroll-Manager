@@ -12,8 +12,11 @@ const port = Number(process.env.PORT || 3000);
 const schema = process.env.DB_SCHEMA || 'masar_payroll';
 if (!/^[a-z_][a-z0-9_]*$/.test(schema)) throw new Error('DB_SCHEMA is invalid');
 if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL is required');
-if (!process.env.ADMIN_PASSWORD || process.env.ADMIN_PASSWORD.length < 12) {
-  throw new Error('ADMIN_PASSWORD must be at least 12 characters');
+const ALLOWED_ROLES = new Set(['ADMIN', 'COMPANY_MANAGER', 'OPERATIONS_MANAGER']);
+const isStrongPassword = (value) => typeof value === 'string' && value.length >= 8 && value.length <= 128
+  && /[A-Z]/.test(value) && /[a-z]/.test(value) && /\d/.test(value) && /[^A-Za-z0-9]/.test(value);
+if (!isStrongPassword(process.env.ADMIN_PASSWORD)) {
+  throw new Error('ADMIN_PASSWORD must be 8-128 characters and include uppercase, lowercase, number, and symbol');
 }
 for (const key of ['ADMIN_USERNAME', 'ADMIN_NAME', 'COMPANY_ID', 'COMPANY_CODE', 'COMPANY_NAME_AR', 'COMPANY_NAME_EN']) {
   if (!process.env[key]) throw new Error(`${key} is required`);
@@ -54,6 +57,8 @@ async function migrate() {
     id bigserial PRIMARY KEY, user_id text, action text NOT NULL, ip inet, created_at timestamptz NOT NULL DEFAULT now()
   )`);
   await pool.query(`CREATE INDEX IF NOT EXISTS sessions_expiry_idx ON ${q('sessions')}(expires_at)`);
+  await pool.query(`UPDATE ${q('users')} SET role='OPERATIONS_MANAGER',updated_at=now()
+    WHERE id <> 'user-admin' AND role IN ('HR_MANAGER','PAYROLL_SPECIALIST','AUDITOR','EMPLOYEE')`);
 
   const companyId = process.env.COMPANY_ID;
   await pool.query(`INSERT INTO ${q('companies')} (id, company_code, name_ar, name_en) VALUES ($1,$2,$3,$4) ON CONFLICT (id) DO NOTHING`, [
@@ -147,11 +152,25 @@ app.get('/api/state', auth, async (_req, res, next) => {
 
 app.put('/api/state', auth, writeLimiter, async (req, res, next) => {
   try {
-    const state = req.body?.state;
+    let state = req.body?.state;
     const expectedVersion = Number(req.body?.version || 0);
     if (!state || typeof state !== 'object' || Array.isArray(state)) return res.status(400).json({ error:'INVALID_STATE' });
     delete state.currentUser;
     if (Array.isArray(state.users)) state.users = state.users.map(({ password, ...u }) => u);
+    if (req.user.role === 'OPERATIONS_MANAGER') {
+      const current = await pool.query(`SELECT state FROM ${q('app_state')} WHERE id=1`);
+      const stored = current.rows[0]?.state || {};
+      for (const protectedKey of ['companies', 'users', 'journals', 'qoyodConfig']) {
+        if (protectedKey in stored) state[protectedKey] = stored[protectedKey];
+      }
+      if (Array.isArray(state.payrollRuns) && Array.isArray(stored.payrollRuns)) {
+        const oldRuns = new Map(stored.payrollRuns.map(run => [run.id, run]));
+        state.payrollRuns = state.payrollRuns.map(run => {
+          const old = oldRuns.get(run.id);
+          return old && run.status !== old.status ? { ...run, status: old.status, approvedAt: old.approvedAt, approvedBy: old.approvedBy, postedAt: old.postedAt, postedBy: old.postedBy } : run;
+        });
+      }
+    }
     const r = await pool.query(`INSERT INTO ${q('app_state')} (id,state,version,updated_by) VALUES (1,$1::jsonb,1,$2)
       ON CONFLICT (id) DO UPDATE SET state=EXCLUDED.state,version=${q('app_state')}.version+1,updated_by=EXCLUDED.updated_by,updated_at=now()
       WHERE ${q('app_state')}.version=$3 RETURNING version,updated_at`, [JSON.stringify(state), req.user.id, expectedVersion]);
@@ -162,11 +181,16 @@ app.put('/api/state', auth, writeLimiter, async (req, res, next) => {
 
 app.put('/api/users/:id', auth, writeLimiter, async (req, res, next) => {
   try {
-    if (req.user.role !== 'ADMIN') return res.status(403).json({ error:'FORBIDDEN' });
+    if (!['ADMIN','COMPANY_MANAGER'].includes(req.user.role)) return res.status(403).json({ error:'FORBIDDEN' });
+    if (req.params.id === 'user-admin') return res.status(403).json({ error:'SYSTEM_ADMIN_IMMUTABLE' });
     const u = req.body || {};
     if (!u.username || !u.name || !u.role || !Array.isArray(u.companyIds)) return res.status(400).json({ error:'INVALID_USER' });
+    if (!ALLOWED_ROLES.has(u.role) || u.role === 'ADMIN') return res.status(400).json({ error:'INVALID_ROLE' });
+    if (req.user.role === 'COMPANY_MANAGER' && (u.role !== 'OPERATIONS_MANAGER' || u.companyIds.some(id => !req.user.company_ids.includes(id)))) {
+      return res.status(403).json({ error:'FORBIDDEN' });
+    }
     const existing = await pool.query(`SELECT id,password_hash FROM ${q('users')} WHERE id=$1`, [req.params.id]);
-    if (!existing.rowCount && (!u.password || u.password.length < 12)) return res.status(400).json({ error:'PASSWORD_TOO_SHORT' });
+    if ((!existing.rowCount || u.password) && !isStrongPassword(u.password)) return res.status(400).json({ error:'PASSWORD_POLICY_FAILED' });
     const passwordHash = u.password ? await bcrypt.hash(u.password, 12) : existing.rows[0]?.password_hash;
     const r = await pool.query(`INSERT INTO ${q('users')} (id,username,password_hash,name,email,phone,role,company_ids,is_active)
       VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9)
@@ -182,9 +206,13 @@ app.put('/api/users/:id', auth, writeLimiter, async (req, res, next) => {
 
 app.delete('/api/users/:id', auth, writeLimiter, async (req, res, next) => {
   try {
-    if (req.user.role !== 'ADMIN') return res.status(403).json({ error:'FORBIDDEN' });
+    if (!['ADMIN','COMPANY_MANAGER'].includes(req.user.role)) return res.status(403).json({ error:'FORBIDDEN' });
+    if (req.params.id === 'user-admin') return res.status(403).json({ error:'SYSTEM_ADMIN_IMMUTABLE' });
     if (req.user.id === req.params.id) return res.status(400).json({ error:'CANNOT_DELETE_SELF' });
-    await pool.query(`DELETE FROM ${q('users')} WHERE id=$1`, [req.params.id]);
+    const params = [req.params.id];
+    const scope = req.user.role === 'COMPANY_MANAGER' ? ` AND role='OPERATIONS_MANAGER' AND company_ids <@ $2::jsonb` : '';
+    if (req.user.role === 'COMPANY_MANAGER') params.push(JSON.stringify(req.user.company_ids));
+    await pool.query(`DELETE FROM ${q('users')} WHERE id=$1${scope}`, params);
     res.status(204).end();
   } catch (e) { next(e); }
 });

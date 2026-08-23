@@ -30,6 +30,7 @@ import {
   RotateCcw
 } from 'lucide-react';
 import { Company, Employee, UserRole, UserAccount, CostCenter } from '../types';
+import { isStrongPassword, passwordPolicyMessage } from '../utils/passwordPolicy';
 import { formatSAR } from '../utils/payrollEngine';
 import { 
   validateSaudiIBAN, 
@@ -61,35 +62,17 @@ const ROLE_INFO: Record<UserRole, { labelAr: string; descAr: string; color: stri
     color: 'text-purple-700',
     badgeBg: 'bg-purple-50 border-purple-200 text-purple-700',
   },
-  HR_MANAGER: {
-    labelAr: 'مدير الموارد البشرية (HR)',
-    descAr: 'إدارة الموظفين، الحضور والانصراف، الإجازات، والطلبات الإدارية',
-    color: 'text-blue-700',
-    badgeBg: 'bg-blue-50 border-blue-200 text-blue-700',
-  },
-  PAYROLL_SPECIALIST: {
-    labelAr: 'أخصائي الرواتب / المحاسب (Payroll)',
-    descAr: 'حساب مسيرات الرواتب، السلف والخصومات، والقيود المحاسبية',
-    color: 'text-emerald-700',
-    badgeBg: 'bg-emerald-50 border-emerald-200 text-emerald-700',
-  },
-  AUDITOR: {
-    labelAr: 'المراجع الداخلي (Auditor)',
-    descAr: 'صلاحيات تدقيق سجلات النشاط، التقارير المالية، والمسيرات المعتمدة',
-    color: 'text-amber-700',
-    badgeBg: 'bg-amber-50 border-amber-200 text-amber-700',
-  },
   COMPANY_MANAGER: {
-    labelAr: 'المدير التنفيذي (Manager)',
-    descAr: 'الاطلاع على لوحات التحكم والتقارير واعتماد مسيرات الرواتب',
+    labelAr: 'المدير العام',
+    descAr: 'إدارة كاملة للمنشأة والمستخدمين والقيود واعتماد الرواتب',
     color: 'text-indigo-700',
     badgeBg: 'bg-indigo-50 border-indigo-200 text-indigo-700',
   },
-  EMPLOYEE: {
-    labelAr: 'بوابة الموظف الذاتية (Employee)',
-    descAr: 'استعراض قسائم الرواتب، كشف الحساب الشخصي، ورصيد الإجازات',
-    color: 'text-slate-700',
-    badgeBg: 'bg-slate-100 border-slate-200 text-slate-700',
+  OPERATIONS_MANAGER: {
+    labelAr: 'مدير العمليات',
+    descAr: 'إدارة الموظفين والرواتب والإجازات والسلف والخصومات وأوامر الدفع دون الاعتماد',
+    color: 'text-emerald-700',
+    badgeBg: 'bg-emerald-50 border-emerald-200 text-emerald-700',
   },
 };
 
@@ -179,7 +162,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     name: '',
     email: '',
     phone: '',
-    role: 'HR_MANAGER' as UserRole,
+    role: 'OPERATIONS_MANAGER' as UserRole,
     employeeId: '',
     companyIds: [] as string[],
     isActive: true,
@@ -347,7 +330,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       name: '',
       email: '',
       phone: '',
-      role: 'HR_MANAGER',
+      role: 'OPERATIONS_MANAGER',
       employeeId: '',
       companyIds: [comp.id],
       isActive: true,
@@ -357,6 +340,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
   // Open Edit User Modal
   const handleOpenEditUser = (user: UserAccount, comp?: Company) => {
+    if (user.id === 'user-admin') return;
     setTargetCompanyForUser(comp || null);
     setEditingUser(user);
     setUserFormError(null);
@@ -379,8 +363,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     e.preventDefault();
     setUserFormError(null);
 
-    if (!userFormData.username.trim() || !userFormData.name.trim() || !userFormData.password.trim()) {
-      setUserFormError('يرجى ملء جميع الحقول المطلوبة (اسم المستخدم، الاسم الكامل، وكلمة المرور)');
+    if (!userFormData.username.trim() || !userFormData.name.trim()) {
+      setUserFormError('يرجى ملء اسم المستخدم والاسم الكامل');
+      return;
+    }
+    if ((!editingUser || userFormData.password) && !isStrongPassword(userFormData.password)) {
+      setUserFormError(passwordPolicyMessage);
       return;
     }
 
@@ -1079,12 +1067,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   onChange={(e) => setUserFormData({ ...userFormData, role: e.target.value as UserRole })}
                   className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800"
                 >
-                  <option value="HR_MANAGER">مدير الموارد البشرية (HR Manager)</option>
-                  <option value="PAYROLL_SPECIALIST">أخصائي الرواتب / المحاسب (Payroll Specialist)</option>
-                  <option value="COMPANY_MANAGER">المدير التنفيذي (Company Manager)</option>
-                  <option value="AUDITOR">المراجع الداخلي (Auditor)</option>
-                  <option value="ADMIN">مسؤول النظام (Admin - وصول شامل)</option>
-                  <option value="EMPLOYEE">بوابة الموظف الذاتية (Employee)</option>
+                  {activeRole === 'ADMIN' && <option value="COMPANY_MANAGER">المدير العام</option>}
+                  <option value="OPERATIONS_MANAGER">مدير العمليات</option>
                 </select>
                 <p className="text-[11px] text-slate-500 mt-1 bg-slate-50 p-2 rounded-lg border border-slate-100">
                   {ROLE_INFO[userFormData.role]?.descAr}
@@ -1220,7 +1204,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {getUsersByCompany(selectedCompanyForUsers).map((u) => {
-                      const roleConfig = ROLE_INFO[u.role] || ROLE_INFO.HR_MANAGER;
+                      const roleConfig = ROLE_INFO[u.role] || ROLE_INFO.OPERATIONS_MANAGER;
 
                       return (
                         <tr key={u.id} className="hover:bg-slate-50/80 transition-colors">
@@ -1273,7 +1257,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                                 <Edit3 className="w-3.5 h-3.5" />
                               </button>
 
-                              {onDeleteUser && u.username !== 'admin' && (
+                              {onDeleteUser && u.id !== 'user-admin' && (
                                 <button
                                   onClick={() => onDeleteUser(u.id)}
                                   className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"

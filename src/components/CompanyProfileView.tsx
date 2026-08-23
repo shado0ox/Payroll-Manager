@@ -53,6 +53,7 @@ import {
   JournalBatch,
   CompanyBankDefinition
 } from '../types';
+import { isStrongPassword, passwordPolicyMessage } from '../utils/passwordPolicy';
 import { 
   validateSaudiIBAN, 
   validateSwiftCode, 
@@ -92,35 +93,17 @@ const ROLE_INFO: Record<UserRole, { labelAr: string; descAr: string; color: stri
     color: 'text-purple-700 border-purple-200',
     badgeBg: 'bg-purple-50 text-purple-700'
   },
-  HR_MANAGER: { 
-    labelAr: 'مدير الموارد البشرية (HR Manager)', 
-    descAr: 'إدارة شؤون الموظفين، الحضور، الإجازات، والجزاءات',
-    color: 'text-blue-700 border-blue-200',
-    badgeBg: 'bg-blue-50 text-blue-700'
-  },
-  PAYROLL_SPECIALIST: { 
-    labelAr: 'أخصائي الرواتب (Payroll Specialist)', 
-    descAr: 'حساب المسيرات، معالجة السلف، وتصدير قيود الرواتب والـ WPS',
-    color: 'text-emerald-700 border-emerald-200',
-    badgeBg: 'bg-emerald-50 text-emerald-700'
-  },
-  AUDITOR: { 
-    labelAr: 'مراجع ومدقق (Auditor)', 
-    descAr: 'صلاحيات القراءة والاطلاع والتدقيق والتقارير وسجلات الأمان',
-    color: 'text-amber-700 border-amber-200',
-    badgeBg: 'bg-amber-50 text-amber-700'
-  },
   COMPANY_MANAGER: { 
-    labelAr: 'المدير التنفيذي للمنشأة (Company Manager)', 
-    descAr: 'صلاحيات الإشراف والاعتماد لمسيرات منشأته الخاصة',
+    labelAr: 'المدير العام للمنشأة',
+    descAr: 'إدارة كاملة للمنشأة والقيود والمستخدمين واعتماد الرواتب',
     color: 'text-indigo-700 border-indigo-200',
     badgeBg: 'bg-indigo-50 text-indigo-700'
   },
-  EMPLOYEE: { 
-    labelAr: 'موظف (Employee)', 
-    descAr: 'الاطلاع على قسائم الراتب الشخصية وتقديم طلبات الإجازة والسلف',
-    color: 'text-slate-700 border-slate-200',
-    badgeBg: 'bg-slate-100 text-slate-700'
+  OPERATIONS_MANAGER: {
+    labelAr: 'مدير العمليات',
+    descAr: 'إدارة الموظفين والرواتب والخصومات والإجازات والسلف وأوامر الدفع دون اعتماد الرواتب',
+    color: 'text-emerald-700 border-emerald-200',
+    badgeBg: 'bg-emerald-50 text-emerald-700'
   },
 };
 
@@ -222,7 +205,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
     name: '',
     email: '',
     phone: '',
-    role: 'PAYROLL_SPECIALIST',
+    role: 'OPERATIONS_MANAGER',
     isActive: true,
   });
   const [userFormError, setUserFormError] = useState<string | null>(null);
@@ -312,7 +295,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
       name: '',
       email: '',
       phone: '',
-      role: 'PAYROLL_SPECIALIST',
+      role: 'OPERATIONS_MANAGER',
       isActive: true,
       companyIds: [formData.id],
     });
@@ -320,6 +303,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
   };
 
   const handleOpenEditUser = (user: UserAccount) => {
+    if (user.id === 'user-admin') return;
     setEditingUser(user);
     setUserFormError(null);
     setUserFormData({ ...user });
@@ -335,8 +319,8 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
       return;
     }
 
-    if (!editingUser && !userFormData.password?.trim()) {
-      setUserFormError('يرجى إدخال كلمة المرور للمستخدم الجديد');
+    if ((!editingUser || userFormData.password) && !isStrongPassword(userFormData.password || '')) {
+      setUserFormError(passwordPolicyMessage);
       return;
     }
 
@@ -368,7 +352,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
         name: userFormData.name!.trim(),
         email: userFormData.email?.trim() || `${userFormData.username!.trim()}@company.sa`,
         phone: userFormData.phone?.trim() || '',
-        role: userFormData.role || 'PAYROLL_SPECIALIST',
+        role: userFormData.role || 'OPERATIONS_MANAGER',
         avatar: userFormData.name!.trim().charAt(0),
         companyIds: updatedCompanyIds,
         isActive: userFormData.isActive ?? true,
@@ -698,7 +682,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
             <span>شجرة الحسابات</span>
           </button>
 
-          {activeRole === 'ADMIN' && (
+          {['ADMIN', 'COMPANY_MANAGER'].includes(activeRole) && (
             <button
               onClick={() => setActiveSubTab('danger')}
               className={`px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap flex items-center gap-2 transition-all cursor-pointer ${
@@ -1605,7 +1589,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
           {/* Users List */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {companyUsers.map((u) => {
-              const roleData = ROLE_INFO[u.role] || ROLE_INFO.EMPLOYEE;
+              const roleData = ROLE_INFO[u.role] || ROLE_INFO.OPERATIONS_MANAGER;
               const isCurrentUser = currentUser?.id === u.id;
 
               return (
@@ -1668,7 +1652,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
                       >
                         <Edit className="w-3.5 h-3.5" />
                       </button>
-                      {onDeleteUser && !isCurrentUser && (
+                      {onDeleteUser && !isCurrentUser && u.id !== 'user-admin' && (
                         <button
                           type="button"
                           onClick={() => {
@@ -2186,7 +2170,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
       )}
 
       {/* SUB-TAB 8: Sensitive Data Management */}
-      {activeSubTab === 'danger' && activeRole === 'ADMIN' && (
+      {activeSubTab === 'danger' && ['ADMIN', 'COMPANY_MANAGER'].includes(activeRole) && (
         <div className="bg-white rounded-2xl p-6 border border-rose-200 shadow-sm space-y-5">
           <div className="flex items-start gap-3 border-b border-rose-100 pb-4">
             <div className="w-10 h-10 rounded-xl bg-rose-100 text-rose-700 flex items-center justify-center shrink-0">
@@ -2346,11 +2330,11 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">الدور والصلاحية *</label>
                   <select
-                    value={userFormData.role || 'PAYROLL_SPECIALIST'}
+                    value={userFormData.role || 'OPERATIONS_MANAGER'}
                     onChange={(e) => setUserFormData({ ...userFormData, role: e.target.value as UserRole })}
                     className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white font-semibold"
                   >
-                    {Object.entries(ROLE_INFO).map(([key, info]) => (
+                    {Object.entries(ROLE_INFO).filter(([key]) => key !== 'ADMIN' && (activeRole === 'ADMIN' || key === 'OPERATIONS_MANAGER')).map(([key, info]) => (
                       <option key={key} value={key}>
                         {info.labelAr}
                       </option>

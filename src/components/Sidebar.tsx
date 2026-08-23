@@ -28,11 +28,8 @@ interface SidebarProps {
 
 const ROLE_DISPLAY: Record<UserRole, { title: string }> = {
   ADMIN: { title: 'مسؤول النظام الرئيسي' },
-  HR_MANAGER: { title: 'مدير الموارد البشرية' },
-  PAYROLL_SPECIALIST: { title: 'أخصائي الرواتب والمحاسب' },
-  AUDITOR: { title: 'المراجع الداخلي والمدقق' },
-  COMPANY_MANAGER: { title: 'المدير التنفيذي' },
-  EMPLOYEE: { title: 'بوابة الموظف' },
+  COMPANY_MANAGER: { title: 'المدير العام' },
+  OPERATIONS_MANAGER: { title: 'مدير العمليات' },
 };
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -46,8 +43,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
 }) => {
   const { language, t } = useLanguage();
   const isAdmin = activeRole === 'ADMIN';
+  const isGeneralManager = activeRole === 'COMPANY_MANAGER';
 
-  const navItems: { id: NavigationTab; label: string; icon: React.ComponentType<{ className?: string }>; adminOnly?: boolean }[] = [
+  const navItems: { id: NavigationTab; label: string; icon: React.ComponentType<{ className?: string }>; adminOnly?: boolean; managementOnly?: boolean }[] = [
     {
       id: 'dashboard',
       label: t('dashboard'),
@@ -57,6 +55,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       id: 'company_profile',
       label: t('companyProfile'),
       icon: Building2,
+      managementOnly: true,
     },
     {
       id: 'payroll_runs',
@@ -82,6 +81,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       id: 'journals',
       label: t('journals'),
       icon: Layers,
+      managementOnly: true,
     },
     {
       id: 'reports',
@@ -108,7 +108,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
     },
   ];
 
-  const visibleNavItems = navItems.filter(item => !item.adminOnly || isAdmin);
+  const visibleNavItems = navItems.filter(item =>
+    (!item.adminOnly || isAdmin || (isGeneralManager && item.id !== 'audit_logs'))
+    && (!item.managementOnly || isAdmin || isGeneralManager)
+  );
   const roleTitle = ROLE_DISPLAY[activeRole]?.title || 'مستخدم النظام';
   const displayName = currentUser?.name || (isAdmin ? 'مسؤول النظام' : 'المستخدم');
   const avatarLetter = currentUser?.name ? currentUser.name.charAt(0) : 'م';

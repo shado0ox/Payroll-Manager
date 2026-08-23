@@ -31,11 +31,8 @@ interface NavbarProps {
 
 const ROLE_LABELS: Record<UserRole, { label: string; color: string }> = {
   ADMIN: { label: 'مسؤول النظام', color: 'bg-purple-50 text-purple-700 border-purple-200' },
-  HR_MANAGER: { label: 'مدير الموارد البشرية', color: 'bg-blue-50 text-blue-700 border-blue-200' },
-  PAYROLL_SPECIALIST: { label: 'أخصائي الرواتب', color: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
-  AUDITOR: { label: 'المراجع الداخلي', color: 'bg-amber-50 text-amber-700 border-amber-200' },
-  COMPANY_MANAGER: { label: 'مدير الشركة', color: 'bg-indigo-50 text-indigo-700 border-indigo-200' },
-  EMPLOYEE: { label: 'بوابة الموظف', color: 'bg-slate-100 text-slate-700 border-slate-200' },
+  COMPANY_MANAGER: { label: 'المدير العام', color: 'bg-indigo-50 text-indigo-700 border-indigo-200' },
+  OPERATIONS_MANAGER: { label: 'مدير العمليات', color: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
 };
 
 export const Navbar: React.FC<NavbarProps> = ({

@@ -237,6 +237,10 @@ export const App: React.FC = () => {
 
   // User Management handlers
   const handleSaveUser = async (user: UserAccount) => {
+    if (user.id === 'user-admin' || !['ADMIN', 'COMPANY_MANAGER'].includes(state.activeRole)) {
+      alert('لا يمكن تعديل مدير النظام الأساسي، وإدارة المستخدمين متاحة للإدارة فقط.');
+      return;
+    }
     const savedUser = await api.saveUser(user);
     user = savedUser;
     setState(prev => {
@@ -277,6 +281,10 @@ export const App: React.FC = () => {
   };
 
   const handleDeleteUser = async (userId: string) => {
+    if (userId === 'user-admin' || !['ADMIN', 'COMPANY_MANAGER'].includes(state.activeRole)) {
+      alert('لا يمكن حذف مدير النظام الأساسي، وإدارة المستخدمين متاحة للإدارة فقط.');
+      return;
+    }
     await api.deleteUser(userId);
     setState(prev => {
       const targetUser = prev.users.find(u => u.id === userId);

@@ -372,11 +372,16 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
   // Workflow status transitions
   const handleStatusChange = (newStatus: PayrollRunStatus) => {
     if (!currentRun) return;
+    const canApprove = activeRole === 'ADMIN' || activeRole === 'COMPANY_MANAGER';
+    if (['APPROVED', 'POSTED'].includes(newStatus) && !canApprove) {
+      alert('اعتماد الرواتب وترحيلها متاح للمدير العام أو مدير النظام فقط.');
+      return;
+    }
     const updated: PayrollRun = {
       ...currentRun,
       status: newStatus,
       approvedAt: newStatus === 'APPROVED' ? new Date().toISOString() : currentRun.approvedAt,
-      approvedBy: newStatus === 'APPROVED' ? 'سلطان القحطاني (مدير HR)' : currentRun.approvedBy,
+      approvedBy: newStatus === 'APPROVED' ? 'المدير العام' : currentRun.approvedBy,
       postedAt: newStatus === 'POSTED' ? new Date().toISOString() : currentRun.postedAt,
       postedBy: newStatus === 'POSTED' ? 'عبدالله الغامدي (المدير المالي)' : currentRun.postedBy,
     };
@@ -533,17 +538,19 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
             {currentRun.status === 'UNDER_REVIEW' && (
               <button
                 onClick={() => handleStatusChange('APPROVED')}
-                className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition-all shadow-xs flex items-center gap-1.5"
+                disabled={!['ADMIN', 'COMPANY_MANAGER'].includes(activeRole)}
+                className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white text-xs font-bold rounded-xl transition-all shadow-xs flex items-center gap-1.5"
               >
                 <CheckCircle2 className="w-3.5 h-3.5" />
-                <span>اعتماد مدير الموارد البشرية (HR Approval)</span>
+                <span>اعتماد المدير العام</span>
               </button>
             )}
 
             {currentRun.status === 'APPROVED' && (
               <button
                 onClick={() => handleStatusChange('POSTED')}
-                className="px-3.5 py-1.5 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold rounded-xl transition-all shadow-xs flex items-center gap-1.5"
+                disabled={!['ADMIN', 'COMPANY_MANAGER'].includes(activeRole)}
+                className="px-3.5 py-1.5 bg-purple-600 hover:bg-purple-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white text-xs font-bold rounded-xl transition-all shadow-xs flex items-center gap-1.5"
               >
                 <Lock className="w-3.5 h-3.5" />
                 <span>ترحيل القيد وإقفال الفترة نهائياً</span>
