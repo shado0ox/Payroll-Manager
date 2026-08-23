@@ -8,6 +8,8 @@ import {
   CheckCircle2, 
   PauseCircle, 
   Trash2,
+  Edit3,
+  RotateCcw,
   FileText
 } from 'lucide-react';
 import { Company, Employee, LoanSchedule, PenaltyRecord, UserRole } from '../types';
@@ -20,9 +22,10 @@ interface LoansPenaltiesViewProps {
   loans: LoanSchedule[];
   penalties: PenaltyRecord[];
   activeRole: UserRole;
-  onAddLoan: (loan: LoanSchedule) => void;
+  onSaveLoan: (loan: LoanSchedule) => void;
   onUpdateLoanStatus: (loanId: string, status: LoanSchedule['status']) => void;
-  onAddPenalty: (penalty: PenaltyRecord) => void;
+  onSavePenalty: (penalty: PenaltyRecord) => void;
+  onCancelPenalty: (penaltyId: string) => void;
 }
 
 export const LoansPenaltiesView: React.FC<LoansPenaltiesViewProps> = ({
@@ -31,13 +34,16 @@ export const LoansPenaltiesView: React.FC<LoansPenaltiesViewProps> = ({
   loans,
   penalties,
   activeRole,
-  onAddLoan,
+  onSaveLoan,
   onUpdateLoanStatus,
-  onAddPenalty,
+  onSavePenalty,
+  onCancelPenalty,
 }) => {
   const [activeTab, setActiveTab] = useState<'loans' | 'penalties'>('loans');
   const [isLoanModalOpen, setIsLoanModalOpen] = useState(false);
   const [isPenaltyModalOpen, setIsPenaltyModalOpen] = useState(false);
+  const [editingLoan, setEditingLoan] = useState<LoanSchedule | null>(null);
+  const [editingPenalty, setEditingPenalty] = useState<PenaltyRecord | null>(null);
 
   const companyEmployees = useMemo(() => {
     return employees.filter(e => e.companyId === company.id);
@@ -75,21 +81,26 @@ export const LoansPenaltiesView: React.FC<LoansPenaltiesViewProps> = ({
     if (!loanForm.employeeId) return;
 
     const newLoan: LoanSchedule = {
-      id: `loan-${Date.now()}`,
+      id: editingLoan?.id || `loan-${Date.now()}`,
       companyId: company.id,
       employeeId: loanForm.employeeId,
       totalAmount: loanForm.totalAmount,
       monthlyInstallment: loanForm.monthlyInstallment,
       totalInstallments: loanForm.totalInstallments,
-      remainingInstallments: loanForm.totalInstallments,
-      remainingAmount: loanForm.totalAmount,
+      remainingInstallments: editingLoan
+        ? Math.max(0, loanForm.totalInstallments - (editingLoan.totalInstallments - editingLoan.remainingInstallments))
+        : loanForm.totalInstallments,
+      remainingAmount: editingLoan
+        ? Math.max(0, loanForm.totalAmount - (editingLoan.totalAmount - editingLoan.remainingAmount))
+        : loanForm.totalAmount,
       startDate: loanForm.startDate,
-      status: 'ACTIVE',
+      status: editingLoan?.status || 'ACTIVE',
       reason: loanForm.reason,
     };
 
-    onAddLoan(newLoan);
+    onSaveLoan(newLoan);
     setIsLoanModalOpen(false);
+    setEditingLoan(null);
   };
 
   const handleSavePenalty = (e: React.FormEvent) => {
@@ -97,18 +108,37 @@ export const LoansPenaltiesView: React.FC<LoansPenaltiesViewProps> = ({
     if (!penaltyForm.employeeId) return;
 
     const newPenalty: PenaltyRecord = {
-      id: `pen-${Date.now()}`,
+      id: editingPenalty?.id || `pen-${Date.now()}`,
       companyId: company.id,
       employeeId: penaltyForm.employeeId,
       periodMonth: penaltyForm.periodMonth,
       date: penaltyForm.date,
       reason: penaltyForm.reason,
       amount: penaltyForm.amount,
-      appliedInPayroll: true,
+      appliedInPayroll: editingPenalty?.appliedInPayroll ?? true,
     };
 
-    onAddPenalty(newPenalty);
+    onSavePenalty(newPenalty);
     setIsPenaltyModalOpen(false);
+    setEditingPenalty(null);
+  };
+
+  const openEditLoan = (loan: LoanSchedule) => {
+    setEditingLoan(loan);
+    setLoanForm({
+      employeeId: loan.employeeId, totalAmount: loan.totalAmount, monthlyInstallment: loan.monthlyInstallment,
+      totalInstallments: loan.totalInstallments, startDate: loan.startDate, reason: loan.reason,
+    });
+    setIsLoanModalOpen(true);
+  };
+
+  const openEditPenalty = (penalty: PenaltyRecord) => {
+    setEditingPenalty(penalty);
+    setPenaltyForm({
+      employeeId: penalty.employeeId, periodMonth: penalty.periodMonth, date: penalty.date,
+      reason: penalty.reason, amount: penalty.amount,
+    });
+    setIsPenaltyModalOpen(true);
   };
 
   // Metrics
@@ -138,7 +168,7 @@ export const LoansPenaltiesView: React.FC<LoansPenaltiesViewProps> = ({
         <div className="flex items-center gap-2">
           {activeTab === 'loans' ? (
             <button
-              onClick={() => setIsLoanModalOpen(true)}
+              onClick={() => { setEditingLoan(null); setIsLoanModalOpen(true); }}
               className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
             >
               <Plus className="w-4 h-4" />
@@ -146,7 +176,7 @@ export const LoansPenaltiesView: React.FC<LoansPenaltiesViewProps> = ({
             </button>
           ) : (
             <button
-              onClick={() => setIsPenaltyModalOpen(true)}
+              onClick={() => { setEditingPenalty(null); setIsPenaltyModalOpen(true); }}
               className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
             >
               <Plus className="w-4 h-4" />
@@ -259,6 +289,8 @@ export const LoansPenaltiesView: React.FC<LoansPenaltiesViewProps> = ({
                         </td>
 
                         <td className="py-3 px-4 text-center">
+                          <div className="flex items-center justify-center gap-2">
+                          <button onClick={() => openEditLoan(loan)} className="text-blue-700" title="تعديل السلفة"><Edit3 className="w-4 h-4" /></button>
                           {loan.status === 'ACTIVE' ? (
                             <button
                               onClick={() => onUpdateLoanStatus(loan.id, 'PAUSED')}
@@ -274,6 +306,7 @@ export const LoansPenaltiesView: React.FC<LoansPenaltiesViewProps> = ({
                               تفعيل الخصم
                             </button>
                           )}
+                          </div>
                         </td>
                       </tr>
                     );
@@ -296,6 +329,7 @@ export const LoansPenaltiesView: React.FC<LoansPenaltiesViewProps> = ({
                   <th className="py-3 px-4">سبب الجزاء / المخالفة</th>
                   <th className="py-3 px-4">مبلغ الخصم</th>
                   <th className="py-3 px-4">التطبيق في المسير</th>
+                  <th className="py-3 px-4 text-center">الإجراء</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -312,10 +346,14 @@ export const LoansPenaltiesView: React.FC<LoansPenaltiesViewProps> = ({
                       <td className="py-3 px-4 text-slate-700">{pen.reason}</td>
                       <td className="py-3 px-4 font-bold text-rose-700">{formatSAR(pen.amount)}</td>
                       <td className="py-3 px-4">
-                        <span className="px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 font-bold text-[10px] border border-emerald-200">
-                          مطبق بالمسير
+                        <span className={`px-2 py-0.5 rounded-md font-bold text-[10px] border ${pen.appliedInPayroll ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-slate-100 text-slate-600 border-slate-200'}`}>
+                          {pen.appliedInPayroll ? 'مطبق بالمسير' : 'ملغى'}
                         </span>
                       </td>
+                      <td className="py-3 px-4"><div className="flex justify-center gap-2">
+                        <button onClick={() => openEditPenalty(pen)} className="text-blue-700" title="تعديل الخصم"><Edit3 className="w-4 h-4" /></button>
+                        {pen.appliedInPayroll && <button onClick={() => { if (confirm('إلغاء هذا الخصم وإزالة أثره من المسير؟')) onCancelPenalty(pen.id); }} className="text-amber-700" title="التراجع عن الخصم"><RotateCcw className="w-4 h-4" /></button>}
+                      </div></td>
                     </tr>
                   );
                 })}
@@ -402,7 +440,7 @@ export const LoansPenaltiesView: React.FC<LoansPenaltiesViewProps> = ({
               <div className="pt-3 flex items-center justify-end gap-2">
                 <button
                   type="button"
-                  onClick={() => setIsLoanModalOpen(false)}
+                  onClick={() => { setIsLoanModalOpen(false); setEditingLoan(null); }}
                   className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-xl"
                 >
                   إلغاء
@@ -475,7 +513,7 @@ export const LoansPenaltiesView: React.FC<LoansPenaltiesViewProps> = ({
               <div className="pt-3 flex items-center justify-end gap-2">
                 <button
                   type="button"
-                  onClick={() => setIsPenaltyModalOpen(false)}
+                  onClick={() => { setIsPenaltyModalOpen(false); setEditingPenalty(null); }}
                   className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-xl"
                 >
                   إلغاء

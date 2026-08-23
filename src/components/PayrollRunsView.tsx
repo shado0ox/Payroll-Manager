@@ -389,14 +389,23 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
   };
 
   const canReversePosting = activeRole === 'ADMIN' || activeRole === 'COMPANY_MANAGER';
+  const handleReverseApproval = () => {
+    if (!currentRun || currentRun.status !== 'APPROVED' || !canReversePosting) return;
+    if (currentRun.paymentBatches?.some(batch => batch.status === 'PAID')) {
+      alert('لا يمكن فتح المسير بعد تسجيل دفعة مدفوعة. ألغِ إثبات السداد أولًا.');
+      return;
+    }
+    if (!window.confirm('هل تريد التراجع عن اعتماد المسير وفتحه للتعديل؟')) return;
+    onSavePayrollRun({ ...currentRun, status: 'UNDER_REVIEW', approvedAt: undefined, approvedBy: undefined });
+  };
   const handleReversePosting = () => {
     if (!currentRun || currentRun.status !== 'POSTED' || !canReversePosting) return;
     if (currentRun.paymentBatches?.some(batch => batch.status === 'PAID')) {
       alert('لا يمكن التراجع عن الترحيل بعد تسجيل دفعة محولة. يجب عمل تسوية أو إلغاء إثبات السداد أولًا.');
       return;
     }
-    if (!window.confirm('هل تريد التراجع عن ترحيل المسير وإعادته إلى حالة معتمد؟ سيتم فتحه للمراجعة من جديد.')) return;
-    onSavePayrollRun({ ...currentRun, status: 'APPROVED', postedAt: undefined, postedBy: undefined });
+    if (!window.confirm('هل تريد التراجع عن ترحيل المسير وفتحه للتعديل؟')) return;
+    onSavePayrollRun({ ...currentRun, status: 'UNDER_REVIEW', approvedAt: undefined, approvedBy: undefined, postedAt: undefined, postedBy: undefined });
   };
 
   // Warning metrics
@@ -547,7 +556,7 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
             )}
 
             {currentRun.status === 'APPROVED' && (
-              <button
+              <><button
                 onClick={() => handleStatusChange('POSTED')}
                 disabled={!['ADMIN', 'COMPANY_MANAGER'].includes(activeRole)}
                 className="px-3.5 py-1.5 bg-purple-600 hover:bg-purple-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white text-xs font-bold rounded-xl transition-all shadow-xs flex items-center gap-1.5"
@@ -555,6 +564,8 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
                 <Lock className="w-3.5 h-3.5" />
                 <span>ترحيل القيد وإقفال الفترة نهائياً</span>
               </button>
+              {canReversePosting && <button type="button" onClick={handleReverseApproval} className="px-3 py-1.5 rounded-xl bg-amber-50 text-amber-800 border border-amber-200 text-xs font-bold flex items-center gap-1.5"><RotateCcw className="w-3.5 h-3.5" /> التراجع عن الاعتماد والتعديل</button>}
+              </>
             )}
 
             {currentRun.status === 'POSTED' && (

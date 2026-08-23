@@ -9,7 +9,9 @@ import {
   XCircle, 
   AlertCircle, 
   Sparkles,
-  Trash2
+  Trash2,
+  Edit3,
+  RotateCcw
 } from 'lucide-react';
 import { Company, Employee, AttendanceRecord, LeaveRequest, UserRole } from '../types';
 import { SearchableEmployeeSelect } from './SearchableEmployeeSelect';
@@ -23,7 +25,7 @@ interface AttendanceLeavesViewProps {
   onAddAttendance: (record: AttendanceRecord) => void;
   onBulkImportAttendance: (records: AttendanceRecord[]) => void;
   onDeleteAttendance: (recordId: string) => void;
-  onUpdateLeaveStatus: (leaveId: string, status: 'APPROVED' | 'REJECTED') => void;
+  onUpdateLeaveStatus: (leaveId: string, status: 'PENDING' | 'APPROVED' | 'REJECTED') => void;
   onAddLeave: (leave: LeaveRequest) => void;
 }
 
@@ -45,6 +47,7 @@ export const AttendanceLeavesView: React.FC<AttendanceLeavesViewProps> = ({
 
   // Attendance Modal
   const [isAttendanceModalOpen, setIsAttendanceModalOpen] = useState(false);
+  const [editingAttendanceId, setEditingAttendanceId] = useState<string | null>(null);
   const [startDate, setStartDate] = useState('2026-08-15');
   const [endDate, setEndDate] = useState('2026-08-15');
   const [newAttendance, setNewAttendance] = useState<Partial<AttendanceRecord>>({
@@ -99,7 +102,7 @@ export const AttendanceLeavesView: React.FC<AttendanceLeavesViewProps> = ({
     if (dateList.length <= 1) {
       const record: AttendanceRecord = {
         ...newAttendance as AttendanceRecord,
-        id: `att-${Date.now()}`,
+        id: editingAttendanceId || `att-${Date.now()}`,
         date: startDate,
         periodMonth: startDate.substring(0, 7) || selectedPeriod,
       };
@@ -118,6 +121,15 @@ export const AttendanceLeavesView: React.FC<AttendanceLeavesViewProps> = ({
     }
 
     setIsAttendanceModalOpen(false);
+    setEditingAttendanceId(null);
+  };
+
+  const openEditAttendance = (record: AttendanceRecord) => {
+    setEditingAttendanceId(record.id);
+    setNewAttendance(record);
+    setStartDate(record.date);
+    setEndDate(record.date);
+    setIsAttendanceModalOpen(true);
   };
 
   return (
@@ -269,6 +281,8 @@ export const AttendanceLeavesView: React.FC<AttendanceLeavesViewProps> = ({
                         {rec.notes || '-'}
                       </td>
                       <td className="py-2.5 px-2 text-center">
+                        <div className="flex items-center justify-center gap-1">
+                        <button type="button" onClick={() => openEditAttendance(rec)} className="p-1.5 rounded-lg bg-blue-50 text-blue-700 border border-blue-200" title="تعديل الحركة"><Edit3 className="w-3 h-3" /></button>
                         <button
                           type="button"
                           onClick={() => { if (window.confirm(`هل تريد حذف حركة ${rec.absence ? 'الغياب' : 'الحضور'} المسجلة بتاريخ ${rec.date}؟`)) onDeleteAttendance(rec.id); }}
@@ -277,6 +291,7 @@ export const AttendanceLeavesView: React.FC<AttendanceLeavesViewProps> = ({
                         >
                           <Trash2 className="w-3 h-3" /> {rec.absence ? 'إلغاء الغياب' : 'حذف'}
                         </button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -358,7 +373,7 @@ export const AttendanceLeavesView: React.FC<AttendanceLeavesViewProps> = ({
                           </button>
                         </div>
                       ) : (
-                        <span className="text-slate-400 text-[10px]">-</span>
+                        <button onClick={() => onUpdateLeaveStatus(leave.id, 'PENDING')} className="inline-flex items-center gap-1 text-amber-700 font-bold text-[10px]" title="التراجع وإعادة الطلب للمراجعة"><RotateCcw className="w-3 h-3" /> تراجع</button>
                       )}
                     </td>
                   </tr>
@@ -373,7 +388,7 @@ export const AttendanceLeavesView: React.FC<AttendanceLeavesViewProps> = ({
       {isAttendanceModalOpen && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl max-w-lg w-full shadow-2xl border border-slate-200 p-6 space-y-4">
-            <h3 className="text-sm font-bold text-slate-900">تسجيل حركة حضور / تأخير / إضافي</h3>
+            <h3 className="text-sm font-bold text-slate-900">{editingAttendanceId ? 'تعديل حركة الحضور' : 'تسجيل حركة حضور / تأخير / إضافي'}</h3>
 
             <form onSubmit={handleSaveAttendance} className="space-y-3.5 text-xs">
               <div>
@@ -507,7 +522,7 @@ export const AttendanceLeavesView: React.FC<AttendanceLeavesViewProps> = ({
               <div className="pt-3 flex items-center justify-end gap-2">
                 <button
                   type="button"
-                  onClick={() => setIsAttendanceModalOpen(false)}
+                  onClick={() => { setIsAttendanceModalOpen(false); setEditingAttendanceId(null); }}
                   className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-xl font-semibold"
                 >
                   إلغاء

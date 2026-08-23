@@ -444,9 +444,12 @@ export const App: React.FC = () => {
       let auditAction = `تحديث مسير الرواتب (${run.status})`;
       let auditDetails = `مسير فترة ${run.periodMonth} - إجمالي الصافي: ${run.totalNetSalaries.toLocaleString()} SAR`;
 
-      if (previousRun?.status === 'POSTED' && run.status === 'APPROVED') {
+      if (previousRun?.status === 'POSTED' && run.status === 'UNDER_REVIEW') {
         auditAction = 'التراجع عن ترحيل مسير الرواتب';
-        auditDetails = `إعادة مسير ${run.periodMonth} من مرحل إلى معتمد للمراجعة - الصافي ${run.totalNetSalaries.toLocaleString()} SAR`;
+        auditDetails = `فتح مسير ${run.periodMonth} المرحل للتعديل وإعادة الاعتماد - الصافي ${run.totalNetSalaries.toLocaleString()} SAR`;
+      } else if (previousRun?.status === 'APPROVED' && run.status === 'UNDER_REVIEW') {
+        auditAction = 'التراجع عن اعتماد مسير الرواتب';
+        auditDetails = `فتح مسير ${run.periodMonth} للتعديل وإعادة الاعتماد - الصافي ${run.totalNetSalaries.toLocaleString()} SAR`;
       } else if (adjustedItem) {
         auditAction = 'تعديل إضافات وخصومات موظف في المسير';
         auditDetails = `${adjustedItem.employeeName} (${adjustedItem.employeeNo}) - إضافة ${(adjustedItem.manualAddition || 0).toLocaleString()} - خصم ${(adjustedItem.manualDeduction || 0).toLocaleString()} SAR - ${adjustedItem.adjustmentNotes || 'بدون ملاحظات'}`;
@@ -481,7 +484,9 @@ export const App: React.FC = () => {
 
   const handleAddAttendance = (record: AttendanceRecord) => {
     setState(prev => {
-      const updated = [record, ...prev.attendance];
+      const updated = prev.attendance.some(item => item.id === record.id)
+        ? prev.attendance.map(item => item.id === record.id ? record : item)
+        : [record, ...prev.attendance];
       saveAttendance(updated);
       return { ...prev, attendance: updated };
     });
@@ -518,7 +523,7 @@ export const App: React.FC = () => {
     });
   };
 
-  const handleUpdateLeaveStatus = (leaveId: string, status: 'APPROVED' | 'REJECTED') => {
+  const handleUpdateLeaveStatus = (leaveId: string, status: 'PENDING' | 'APPROVED' | 'REJECTED') => {
     setState(prev => {
       const updated = prev.leaves.map(l => l.id === leaveId ? { ...l, status } : l);
       saveLeaves(updated);
@@ -528,7 +533,9 @@ export const App: React.FC = () => {
 
   const handleAddLeave = (leave: LeaveRequest) => {
     setState(prev => {
-      const updated = [leave, ...prev.leaves];
+      const updated = prev.leaves.some(item => item.id === leave.id)
+        ? prev.leaves.map(item => item.id === leave.id ? leave : item)
+        : [leave, ...prev.leaves];
       saveLeaves(updated);
       return { ...prev, leaves: updated };
     });
@@ -536,7 +543,9 @@ export const App: React.FC = () => {
 
   const handleAddLoan = (loan: LoanSchedule) => {
     setState(prev => {
-      const updated = [loan, ...prev.loans];
+      const updated = prev.loans.some(item => item.id === loan.id)
+        ? prev.loans.map(item => item.id === loan.id ? loan : item)
+        : [loan, ...prev.loans];
       saveLoans(updated);
       return { ...prev, loans: updated };
     });
@@ -552,7 +561,17 @@ export const App: React.FC = () => {
 
   const handleAddPenalty = (penalty: PenaltyRecord) => {
     setState(prev => {
-      const updated = [penalty, ...prev.penalties];
+      const updated = prev.penalties.some(item => item.id === penalty.id)
+        ? prev.penalties.map(item => item.id === penalty.id ? penalty : item)
+        : [penalty, ...prev.penalties];
+      savePenalties(updated);
+      return { ...prev, penalties: updated };
+    });
+  };
+
+  const handleCancelPenalty = (penaltyId: string) => {
+    setState(prev => {
+      const updated = prev.penalties.map(item => item.id === penaltyId ? { ...item, appliedInPayroll: false } : item);
       savePenalties(updated);
       return { ...prev, penalties: updated };
     });
@@ -836,9 +855,10 @@ export const App: React.FC = () => {
                 loans={state.loans}
                 penalties={state.penalties}
                 activeRole={state.activeRole}
-                onAddLoan={handleAddLoan}
+                onSaveLoan={handleAddLoan}
                 onUpdateLoanStatus={handleUpdateLoanStatus}
-                onAddPenalty={handleAddPenalty}
+                onSavePenalty={handleAddPenalty}
+                onCancelPenalty={handleCancelPenalty}
               />
             )}
 
