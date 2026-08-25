@@ -393,6 +393,7 @@ export const LoansPenaltiesView: React.FC<LoansPenaltiesViewProps> = ({
                     type="number"
                     required
                     min="100"
+                    step="0.01"
                     value={loanForm.totalAmount}
                     onChange={(e) => {
                       const total = parseFloat(e.target.value) || 0;
@@ -487,6 +488,7 @@ export const LoansPenaltiesView: React.FC<LoansPenaltiesViewProps> = ({
                     type="number"
                     required
                     min="10"
+                    step="0.01"
                     value={penaltyForm.amount}
                     onChange={(e) => setPenaltyForm({ ...penaltyForm, amount: parseFloat(e.target.value) || 0 })}
                     className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-rose-700"

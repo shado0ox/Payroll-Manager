@@ -2041,7 +2041,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
               <div className="flex items-center gap-2">
                 <input
                   type="number"
-                  step="1000"
+                  step="0.01"
                   value={formData.calculationRules?.saudiGosiMaxCap || 45000}
                   onChange={(e) => setFormData({
                     ...formData,
