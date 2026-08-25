@@ -1228,7 +1228,7 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                       type="number"
                       required
                       min="0"
-                      step="50"
+                      step="0.01"
                       value={formData.salaryPackage?.baseSalary ?? 0}
                       onChange={(e) => setFormData({
                         ...formData,
@@ -1246,7 +1246,7 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                     <input
                       type="number"
                       min="0"
-                      step="50"
+                      step="0.01"
                       value={formData.salaryPackage?.housingAllowance ?? 0}
                       onChange={(e) => setFormData({
                         ...formData,
@@ -1264,7 +1264,7 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                     <input
                       type="number"
                       min="0"
-                      step="50"
+                      step="0.01"
                       value={formData.salaryPackage?.transportAllowance ?? 0}
                       onChange={(e) => setFormData({
                         ...formData,
@@ -1282,7 +1282,7 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                     <input
                       type="number"
                       min="0"
-                      step="50"
+                      step="0.01"
                       value={formData.salaryPackage?.otherFixedAllowances ?? 0}
                       onChange={(e) => setFormData({
                         ...formData,
@@ -1300,7 +1300,7 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                     <input
                       type="number"
                       min="0"
-                      step="50"
+                      step="0.01"
                       value={formData.salaryPackage?.nonGosiOtherAllowances ?? 0}
                       onChange={(e) => setFormData({
                         ...formData,
