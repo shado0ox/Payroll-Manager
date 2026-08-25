@@ -66,6 +66,8 @@ import {
 import { buildQoyodJournalPayload, generateQoyodCurlCommand, sendJournalEntryToQoyod } from '../utils/qoyodApi';
 import { exportQoyodJournalCsv } from '../utils/exportUtils';
 import { generatePayrollJournalBatch } from '../utils/accountingEngine';
+import { useLanguage } from '../i18n/LanguageContext';
+import { hasPermission } from '../utils/permissions';
 
 interface CompanyProfileViewProps {
   company: Company;
@@ -95,7 +97,7 @@ const ROLE_INFO: Record<UserRole, { labelAr: string; descAr: string; color: stri
   },
   COMPANY_MANAGER: { 
     labelAr: 'المدير العام للمنشأة',
-    descAr: 'إدارة كاملة للمنشأة والقيود والمستخدمين واعتماد الرواتب',
+    descAr: 'إدارة تشغيلية ومالية للمنشأة دون إضافة أو حذف الشركات، بصلاحيات قابلة للتخصيص',
     color: 'text-indigo-700 border-indigo-200',
     badgeBg: 'bg-indigo-50 text-indigo-700'
   },
@@ -123,6 +125,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
   onDeleteUser,
   onDeleteAllCompanyEmployees,
 }) => {
+  const { language } = useLanguage();
   const [activeSubTab, setActiveSubTab] = useState<ProfileSubTab>('details');
   const [saveSuccessMessage, setSaveSuccessMessage] = useState<string | null>(null);
   const [isDeleteEmployeesModalOpen, setIsDeleteEmployeesModalOpen] = useState(false);
@@ -610,7 +613,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
             <span>الحساب البنكي والسويفت (WPS)</span>
           </button>
 
-          <button
+          {hasPermission(currentUser, 'MANAGE_JOURNALS') && <button
             onClick={() => setActiveSubTab('qoyod')}
             className={`px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap flex items-center gap-2 transition-all cursor-pointer ${
               activeSubTab === 'qoyod'
@@ -620,9 +623,9 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
           >
             <Sparkles className="w-4 h-4 text-sky-400" />
             <span>تكامل برنامج قيود (Qoyod API)</span>
-          </button>
+          </button>}
 
-          <button
+          {hasPermission(currentUser, 'MANAGE_USERS') && <button
             onClick={() => setActiveSubTab('users')}
             className={`px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap flex items-center gap-2 transition-all cursor-pointer ${
               activeSubTab === 'users'
@@ -632,7 +635,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
           >
             <Users className="w-4 h-4" />
             <span>المستخدمون المفوضون ({companyUsers.length})</span>
-          </button>
+          </button>}
 
           <button
             onClick={() => setActiveSubTab('departments')}
@@ -682,7 +685,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
             <span>شجرة الحسابات</span>
           </button>
 
-          {['ADMIN', 'COMPANY_MANAGER'].includes(activeRole) && (
+          {hasPermission(currentUser, 'MANAGE_EMPLOYEES') && (
             <button
               onClick={() => setActiveSubTab('danger')}
               className={`px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap flex items-center gap-2 transition-all cursor-pointer ${
@@ -956,22 +959,22 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
                 <span className="text-[10px] text-slate-400">قائمة البنوك السعودية</span>
               </div>
               <select
-                value={formData.bankName || ''}
+                value={formData.bankCode || detectBankFromIBAN(formData.bankIban || '', formData.bankDefinitions)?.code || getBankDefinitions(formData.bankDefinitions).find(bank => bank.nameAr === formData.bankName || bank.nameEn === formData.bankName)?.ibanBankCode || ''}
                 onChange={(e) => {
-                  const newBank = e.target.value;
-                  const swift = getSwiftCodeFromBankName(newBank, formData.bankDefinitions);
+                  const selectedBank = getBankDefinitions(formData.bankDefinitions).find(bank => bank.ibanBankCode === e.target.value);
                   setFormData({ 
                     ...formData, 
-                    bankName: newBank,
-                    bankSwiftCode: swift || formData.bankSwiftCode || ''
+                    bankCode: selectedBank?.ibanBankCode || '',
+                    bankName: selectedBank?.nameAr || '',
+                    bankSwiftCode: selectedBank?.swiftCode || formData.bankSwiftCode || ''
                   });
                 }}
                 className="w-full px-3.5 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:border-emerald-500 font-semibold text-slate-900"
               >
                 <option value="">-- اختر البنك --</option>
                 {getBankDefinitions(formData.bankDefinitions).filter(b => b.isActive !== false).map(b => (
-                  <option key={b.ibanBankCode} value={b.nameAr}>
-                    {b.nameAr} ({b.swiftCode})
+                  <option key={b.ibanBankCode} value={b.ibanBankCode}>
+                    {language === 'en' ? b.nameEn || b.nameAr : b.nameAr} ({b.swiftCode})
                   </option>
                 ))}
               </select>
@@ -1003,6 +1006,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
                   setFormData({ 
                     ...formData, 
                     bankIban: cleanIban,
+                    bankCode: detected?.code || formData.bankCode,
                     bankName: detected ? detected.nameAr : formData.bankName,
                     bankSwiftCode: detected ? detected.swiftCode : formData.bankSwiftCode
                   });
@@ -1569,7 +1573,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
       })()}
 
       {/* SUB-TAB 3: Company Users Management */}
-      {activeSubTab === 'users' && (
+      {activeSubTab === 'users' && hasPermission(currentUser, 'MANAGE_USERS') && (
         <div className="bg-white rounded-2xl p-6 border border-slate-200/80 shadow-sm space-y-6">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-slate-100 pb-4">
             <div>
@@ -2170,7 +2174,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
       )}
 
       {/* SUB-TAB 8: Sensitive Data Management */}
-      {activeSubTab === 'danger' && ['ADMIN', 'COMPANY_MANAGER'].includes(activeRole) && (
+      {activeSubTab === 'danger' && hasPermission(currentUser, 'MANAGE_EMPLOYEES') && (
         <div className="bg-white rounded-2xl p-6 border border-rose-200 shadow-sm space-y-5">
           <div className="flex items-start gap-3 border-b border-rose-100 pb-4">
             <div className="w-10 h-10 rounded-xl bg-rose-100 text-rose-700 flex items-center justify-center shrink-0">

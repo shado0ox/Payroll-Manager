@@ -13,6 +13,11 @@ const schema = process.env.DB_SCHEMA || 'masar_payroll';
 if (!/^[a-z_][a-z0-9_]*$/.test(schema)) throw new Error('DB_SCHEMA is invalid');
 if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL is required');
 const ALLOWED_ROLES = new Set(['ADMIN', 'COMPANY_MANAGER', 'OPERATIONS_MANAGER']);
+const ALL_PERMISSIONS = new Set(['VIEW_DASHBOARD','MANAGE_COMPANY_PROFILE','MANAGE_COMPANIES','MANAGE_EMPLOYEES','MANAGE_ATTENDANCE','MANAGE_LOANS_PENALTIES','MANAGE_PAYROLL','APPROVE_PAYROLL','POST_PAYROLL','MANAGE_JOURNALS','VIEW_REPORTS','MANAGE_USERS','VIEW_AUDIT_LOGS']);
+const DEFAULT_PERMISSIONS = {
+  COMPANY_MANAGER: [...ALL_PERMISSIONS].filter(value => value !== 'MANAGE_COMPANIES'),
+  OPERATIONS_MANAGER: ['VIEW_DASHBOARD','MANAGE_EMPLOYEES','MANAGE_ATTENDANCE','MANAGE_LOANS_PENALTIES','MANAGE_PAYROLL','POST_PAYROLL','VIEW_REPORTS'],
+};
 const isStrongPassword = (value) => typeof value === 'string' && value.length >= 8 && value.length <= 128
   && /[A-Z]/.test(value) && /[a-z]/.test(value) && /\d/.test(value) && /[^A-Za-z0-9]/.test(value);
 if (!isStrongPassword(process.env.ADMIN_PASSWORD)) {
@@ -38,6 +43,8 @@ const OPERATIONS_MUTABLE_KEYS = new Set(['employees', 'attendance', 'loans', 'pe
 const clone = (value) => value == null ? value : structuredClone(value);
 const allowedCompanyIds = (user) => new Set(user.role === 'ADMIN' ? [] : (Array.isArray(user.company_ids) ? user.company_ids : []));
 const itemCompanyId = (item) => item && typeof item.companyId === 'string' ? item.companyId : '';
+const permissionsFor = (user) => user.role === 'ADMIN' ? [...ALL_PERMISSIONS] : (Array.isArray(user.permissions) ? user.permissions : DEFAULT_PERMISSIONS[user.role] || []);
+const can = (user, permission) => user.role === 'ADMIN' || permissionsFor(user).includes(permission);
 
 function publicStateForUser(rawState, user) {
   const state = clone(rawState || {});
@@ -72,16 +79,20 @@ function mergeStateForUser(stored, incoming, user) {
   if (user.role === 'ADMIN') return incoming;
   const next = clone(stored || {});
   const allowed = allowedCompanyIds(user);
-  const mutableKeys = user.role === 'OPERATIONS_MANAGER' ? OPERATIONS_MUTABLE_KEYS : new Set(COMPANY_SCOPED_KEYS);
+  const keyPermissions = {
+    employees:'MANAGE_EMPLOYEES', attendance:'MANAGE_ATTENDANCE', leaves:'MANAGE_ATTENDANCE',
+    loans:'MANAGE_LOANS_PENALTIES', penalties:'MANAGE_LOANS_PENALTIES', payrollRuns:'MANAGE_PAYROLL', journals:'MANAGE_JOURNALS',
+  };
+  const roleKeys = user.role === 'OPERATIONS_MANAGER' ? OPERATIONS_MUTABLE_KEYS : new Set(COMPANY_SCOPED_KEYS);
+  const mutableKeys = [...roleKeys].filter(key => can(user, keyPermissions[key]));
   for (const key of mutableKeys) next[key] = mergeCompanyScoped(stored?.[key], incoming?.[key], allowed);
 
-  if (user.role === 'COMPANY_MANAGER') {
+  if (user.role === 'COMPANY_MANAGER' && can(user, 'MANAGE_COMPANY_PROFILE')) {
     const oldCompanies = Array.isArray(stored?.companies) ? stored.companies : [];
     const newCompanies = Array.isArray(incoming?.companies) ? incoming.companies : [];
-    next.companies = [
-      ...oldCompanies.filter(item => !allowed.has(item.id)),
-      ...newCompanies.filter(item => allowed.has(item.id)),
-    ];
+    const incomingById = new Map(newCompanies.filter(item => allowed.has(item.id)).map(item => [item.id, item]));
+    // General managers may edit assigned company profiles, but cannot add or delete companies.
+    next.companies = oldCompanies.map(item => allowed.has(item.id) && incomingById.has(item.id) ? incomingById.get(item.id) : item);
   }
   // Users, audit history and integration secrets use dedicated server-owned paths.
   next.users = stored?.users || [];
@@ -89,7 +100,7 @@ function mergeStateForUser(stored, incoming, user) {
   next.qoyodConfig = stored?.qoyodConfig || {};
   if (incoming?.activeCompanyId && allowed.has(incoming.activeCompanyId)) next.activeCompanyId = incoming.activeCompanyId;
 
-  if (user.role === 'OPERATIONS_MANAGER' && Array.isArray(next.payrollRuns)) {
+  if (!can(user, 'APPROVE_PAYROLL') && Array.isArray(next.payrollRuns)) {
     const oldRuns = new Map((stored?.payrollRuns || []).map(run => [run.id, run]));
     next.payrollRuns = next.payrollRuns.map(run => {
       const old = oldRuns.get(run.id);
@@ -112,6 +123,7 @@ async function migrate() {
     company_ids jsonb NOT NULL DEFAULT '[]', is_active boolean NOT NULL DEFAULT true,
     last_login timestamptz, created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now()
   )`);
+  await pool.query(`ALTER TABLE ${q('users')} ADD COLUMN IF NOT EXISTS permissions jsonb`);
   await pool.query(`CREATE TABLE IF NOT EXISTS ${q('sessions')} (
     token_hash text PRIMARY KEY, user_id text NOT NULL REFERENCES ${q('users')}(id) ON DELETE CASCADE,
     expires_at timestamptz NOT NULL, created_at timestamptz NOT NULL DEFAULT now()
@@ -161,7 +173,7 @@ async function auth(req, res, next) {
   try {
     const token = cookieValue(req, 'masar_session');
     if (!token) return res.status(401).json({ error: 'AUTH_REQUIRED' });
-    const result = await pool.query(`SELECT u.id,u.username,u.name,u.email,u.phone,u.role,u.company_ids,u.is_active
+    const result = await pool.query(`SELECT u.id,u.username,u.name,u.email,u.phone,u.role,u.company_ids,u.permissions,u.is_active
       FROM ${q('sessions')} s JOIN ${q('users')} u ON u.id=s.user_id
       WHERE s.token_hash=$1 AND s.expires_at > now() AND u.is_active=true`, [sha256(token)]);
     if (!result.rowCount) return res.status(401).json({ error: 'SESSION_EXPIRED' });
@@ -197,14 +209,14 @@ app.post('/api/auth/login', loginLimiter, async (req, res, next) => {
       await client.query('COMMIT');
     } catch (e) { await client.query('ROLLBACK'); throw e; } finally { client.release(); }
     res.setHeader('Set-Cookie', `masar_session=${token}; Path=/; HttpOnly; SameSite=Strict${process.env.COOKIE_SECURE === 'false' ? '' : '; Secure'}`);
-    res.json({ user: { id:user.id, username:user.username, name:user.name, email:user.email, phone:user.phone, role:user.role, companyIds:user.company_ids, isActive:true, createdAt:user.created_at, lastLogin:new Date().toISOString() }, companyId:user.company_id });
+    res.json({ user: { id:user.id, username:user.username, name:user.name, email:user.email, phone:user.phone, role:user.role, companyIds:user.company_ids, permissions:permissionsFor(user), isActive:true, createdAt:user.created_at, lastLogin:new Date().toISOString() }, companyId:user.company_id });
   } catch (e) { next(e); }
 });
 
 app.get('/api/auth/session', auth, async (req, res) => {
   const user = req.user;
   res.json({
-    user: { id:user.id, username:user.username, name:user.name, email:user.email, phone:user.phone, role:user.role, companyIds:user.company_ids, isActive:true },
+    user: { id:user.id, username:user.username, name:user.name, email:user.email, phone:user.phone, role:user.role, companyIds:user.company_ids, permissions:permissionsFor(user), isActive:true },
   });
 });
 
@@ -219,9 +231,18 @@ app.post('/api/auth/logout', auth, async (req, res, next) => {
 
 app.get('/api/state', auth, async (req, res, next) => {
   try {
-    const r = await pool.query(`SELECT state,version,updated_at FROM ${q('app_state')} WHERE id=1`);
+    const [r, userResult] = await Promise.all([
+      pool.query(`SELECT state,version,updated_at FROM ${q('app_state')} WHERE id=1`),
+      pool.query(`SELECT id,username,name,email,phone,role,company_ids,permissions,is_active,created_at,last_login FROM ${q('users')} ORDER BY created_at`),
+    ]);
     if (!r.rowCount) return res.json({ state:null, version:0 });
-    res.json({ ...r.rows[0], state: publicStateForUser(r.rows[0].state, req.user) });
+    const state = publicStateForUser(r.rows[0].state, req.user);
+    const allowed = allowedCompanyIds(req.user);
+    state.users = userResult.rows
+      .filter(user => req.user.role === 'ADMIN' || (Array.isArray(user.company_ids) && user.company_ids.some(id => allowed.has(id))))
+      .map(user => ({ id:user.id, username:user.username, name:user.name, email:user.email, phone:user.phone, role:user.role,
+        companyIds:user.company_ids, permissions:permissionsFor(user), isActive:user.is_active, createdAt:user.created_at, lastLogin:user.last_login }));
+    res.json({ ...r.rows[0], state });
   } catch (e) { next(e); }
 });
 
@@ -250,37 +271,39 @@ app.put('/api/state', auth, writeLimiter, async (req, res, next) => {
 
 app.put('/api/users/:id', auth, writeLimiter, async (req, res, next) => {
   try {
-    if (!['ADMIN','COMPANY_MANAGER'].includes(req.user.role)) return res.status(403).json({ error:'FORBIDDEN' });
+    if (!can(req.user, 'MANAGE_USERS')) return res.status(403).json({ error:'FORBIDDEN' });
     if (req.params.id === 'user-admin') return res.status(403).json({ error:'SYSTEM_ADMIN_IMMUTABLE' });
     const u = req.body || {};
     if (!u.username || !u.name || !u.role || !Array.isArray(u.companyIds)) return res.status(400).json({ error:'INVALID_USER' });
     if (!ALLOWED_ROLES.has(u.role) || u.role === 'ADMIN') return res.status(400).json({ error:'INVALID_ROLE' });
-    if (req.user.role === 'COMPANY_MANAGER' && (u.role !== 'OPERATIONS_MANAGER' || u.companyIds.some(id => !req.user.company_ids.includes(id)))) {
+    const permissions = Array.isArray(u.permissions) ? [...new Set(u.permissions)].filter(value => ALL_PERMISSIONS.has(value) && value !== 'MANAGE_COMPANIES') : DEFAULT_PERMISSIONS[u.role];
+    if (req.user.role !== 'ADMIN' && (u.role !== 'OPERATIONS_MANAGER' || u.companyIds.some(id => !req.user.company_ids.includes(id)))) {
       return res.status(403).json({ error:'FORBIDDEN' });
     }
+    if (req.user.role !== 'ADMIN' && permissions.some(permission => !permissionsFor(req.user).includes(permission))) return res.status(403).json({ error:'CANNOT_GRANT_UNOWNED_PERMISSION' });
     const existing = await pool.query(`SELECT id,password_hash FROM ${q('users')} WHERE id=$1`, [req.params.id]);
     if ((!existing.rowCount || u.password) && !isStrongPassword(u.password)) return res.status(400).json({ error:'PASSWORD_POLICY_FAILED' });
     const passwordHash = u.password ? await bcrypt.hash(u.password, 12) : existing.rows[0]?.password_hash;
-    const r = await pool.query(`INSERT INTO ${q('users')} (id,username,password_hash,name,email,phone,role,company_ids,is_active)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9)
+    const r = await pool.query(`INSERT INTO ${q('users')} (id,username,password_hash,name,email,phone,role,company_ids,permissions,is_active)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9::jsonb,$10)
       ON CONFLICT (id) DO UPDATE SET username=EXCLUDED.username,password_hash=EXCLUDED.password_hash,name=EXCLUDED.name,
-      email=EXCLUDED.email,phone=EXCLUDED.phone,role=EXCLUDED.role,company_ids=EXCLUDED.company_ids,is_active=EXCLUDED.is_active,updated_at=now()
-      RETURNING id,username,name,email,phone,role,company_ids,is_active,created_at,last_login`, [
-      req.params.id, String(u.username).toLowerCase(), passwordHash, u.name, u.email || '', u.phone || '', u.role, JSON.stringify(u.companyIds), u.isActive !== false
+      email=EXCLUDED.email,phone=EXCLUDED.phone,role=EXCLUDED.role,company_ids=EXCLUDED.company_ids,permissions=EXCLUDED.permissions,is_active=EXCLUDED.is_active,updated_at=now()
+      RETURNING id,username,name,email,phone,role,company_ids,permissions,is_active,created_at,last_login`, [
+      req.params.id, String(u.username).toLowerCase(), passwordHash, u.name, u.email || '', u.phone || '', u.role, JSON.stringify(u.companyIds), JSON.stringify(permissions), u.isActive !== false
     ]);
     const row = r.rows[0];
-    res.json({ id:row.id,username:row.username,name:row.name,email:row.email,phone:row.phone,role:row.role,companyIds:row.company_ids,isActive:row.is_active,createdAt:row.created_at,lastLogin:row.last_login });
+    res.json({ id:row.id,username:row.username,name:row.name,email:row.email,phone:row.phone,role:row.role,companyIds:row.company_ids,permissions:row.permissions,isActive:row.is_active,createdAt:row.created_at,lastLogin:row.last_login });
   } catch (e) { if (e?.code === '23505') return res.status(409).json({ error:'USERNAME_EXISTS' }); next(e); }
 });
 
 app.delete('/api/users/:id', auth, writeLimiter, async (req, res, next) => {
   try {
-    if (!['ADMIN','COMPANY_MANAGER'].includes(req.user.role)) return res.status(403).json({ error:'FORBIDDEN' });
+    if (!can(req.user, 'MANAGE_USERS')) return res.status(403).json({ error:'FORBIDDEN' });
     if (req.params.id === 'user-admin') return res.status(403).json({ error:'SYSTEM_ADMIN_IMMUTABLE' });
     if (req.user.id === req.params.id) return res.status(400).json({ error:'CANNOT_DELETE_SELF' });
     const params = [req.params.id];
-    const scope = req.user.role === 'COMPANY_MANAGER' ? ` AND role='OPERATIONS_MANAGER' AND company_ids <@ $2::jsonb` : '';
-    if (req.user.role === 'COMPANY_MANAGER') params.push(JSON.stringify(req.user.company_ids));
+    const scope = req.user.role !== 'ADMIN' ? ` AND role='OPERATIONS_MANAGER' AND company_ids <@ $2::jsonb` : '';
+    if (req.user.role !== 'ADMIN') params.push(JSON.stringify(req.user.company_ids));
     await pool.query(`DELETE FROM ${q('users')} WHERE id=$1${scope}`, params);
     res.status(204).end();
   } catch (e) { next(e); }
@@ -288,7 +311,7 @@ app.delete('/api/users/:id', auth, writeLimiter, async (req, res, next) => {
 
 app.post('/api/integrations/qoyod/journal', auth, writeLimiter, async (req, res, next) => {
   try {
-    if (!['ADMIN', 'COMPANY_MANAGER'].includes(req.user.role)) return res.status(403).json({ error:'FORBIDDEN' });
+    if (!can(req.user, 'MANAGE_JOURNALS')) return res.status(403).json({ error:'FORBIDDEN' });
     const companyId = String(req.body?.companyId || '');
     if (!companyId || (req.user.role !== 'ADMIN' && !req.user.company_ids.includes(companyId))) {
       return res.status(403).json({ error:'FORBIDDEN' });

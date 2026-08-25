@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { NavigationTab, UserRole, UserAccount, Company } from '../types';
 import { useLanguage } from '../i18n/LanguageContext';
+import { hasPermission, TAB_PERMISSION } from '../utils/permissions';
 
 interface SidebarProps {
   activeTab: NavigationTab;
@@ -43,7 +44,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
 }) => {
   const { language, t } = useLanguage();
   const isAdmin = activeRole === 'ADMIN';
-  const isGeneralManager = activeRole === 'COMPANY_MANAGER';
 
   const navItems: { id: NavigationTab; label: string; icon: React.ComponentType<{ className?: string }>; adminOnly?: boolean; managementOnly?: boolean }[] = [
     {
@@ -108,10 +108,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     },
   ];
 
-  const visibleNavItems = navItems.filter(item =>
-    (!item.adminOnly || isAdmin || (isGeneralManager && item.id !== 'audit_logs'))
-    && (!item.managementOnly || isAdmin || isGeneralManager)
-  );
+  const visibleNavItems = navItems.filter(item => hasPermission(currentUser, TAB_PERMISSION[item.id]));
   const roleTitle = ROLE_DISPLAY[activeRole]?.title || 'مستخدم النظام';
   const displayName = currentUser?.name || (isAdmin ? 'مسؤول النظام' : 'المستخدم');
   const avatarLetter = currentUser?.name ? currentUser.name.charAt(0) : 'م';

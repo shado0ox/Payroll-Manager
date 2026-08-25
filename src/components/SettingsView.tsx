@@ -37,8 +37,9 @@ import {
   validateSwiftCode, 
   detectBankFromIBAN, 
   getSwiftCodeFromBankName, 
-  SAUDI_BANKS 
+  getBankDefinitions
 } from '../utils/security';
+import { useLanguage } from '../i18n/LanguageContext';
 
 interface SettingsViewProps {
   companies: Company[];
@@ -64,7 +65,7 @@ const ROLE_INFO: Record<UserRole, { labelAr: string; descAr: string; color: stri
   },
   COMPANY_MANAGER: {
     labelAr: 'المدير العام',
-    descAr: 'إدارة كاملة للمنشأة والمستخدمين والقيود واعتماد الرواتب',
+    descAr: 'إدارة تشغيلية ومالية دون صلاحية إضافة أو حذف الشركات',
     color: 'text-indigo-700',
     badgeBg: 'bg-indigo-50 border-indigo-200 text-indigo-700',
   },
@@ -90,6 +91,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   onDeleteUser,
   onSelectCompany,
 }) => {
+  const { language } = useLanguage();
   const [searchTerm, setSearchTerm] = useState('');
 
   // Modals state
@@ -745,22 +747,22 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     <span className="text-[10px] text-slate-400">البنوك السعودية المعتمدة</span>
                   </div>
                   <select
-                    value={companyForm.bankName || ''}
+                    value={companyForm.bankCode || detectBankFromIBAN(companyForm.bankIban || '', companyForm.bankDefinitions)?.code || getBankDefinitions(companyForm.bankDefinitions).find(bank => bank.nameAr === companyForm.bankName || bank.nameEn === companyForm.bankName)?.ibanBankCode || ''}
                     onChange={(e) => {
-                      const newBank = e.target.value;
-                      const swift = getSwiftCodeFromBankName(newBank);
+                      const selectedBank = getBankDefinitions(companyForm.bankDefinitions).find(bank => bank.ibanBankCode === e.target.value);
                       setCompanyForm({ 
                         ...companyForm, 
-                        bankName: newBank,
-                        bankSwiftCode: swift || companyForm.bankSwiftCode || ''
+                        bankCode: selectedBank?.ibanBankCode || '',
+                        bankName: selectedBank?.nameAr || '',
+                        bankSwiftCode: selectedBank?.swiftCode || companyForm.bankSwiftCode || ''
                       });
                     }}
                     className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-medium focus:bg-white"
                   >
                     <option value="">-- اختر البنك --</option>
-                    {Object.values(SAUDI_BANKS).map(b => (
-                      <option key={b.code} value={b.nameAr}>
-                        {b.nameAr} ({b.swiftCode})
+                    {getBankDefinitions(companyForm.bankDefinitions).map(b => (
+                      <option key={b.ibanBankCode} value={b.ibanBankCode}>
+                        {language === 'en' ? b.nameEn || b.nameAr : b.nameAr} ({b.swiftCode})
                       </option>
                     ))}
                   </select>
@@ -791,6 +793,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                       setCompanyForm({ 
                         ...companyForm, 
                         bankIban: cleanIban,
+                        bankCode: detected?.code || companyForm.bankCode,
                         bankName: detected ? detected.nameAr : companyForm.bankName,
                         bankSwiftCode: detected ? detected.swiftCode : companyForm.bankSwiftCode
                       });

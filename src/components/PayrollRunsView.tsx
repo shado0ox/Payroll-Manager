@@ -36,6 +36,7 @@ import {
   LoanSchedule, 
   PenaltyRecord, 
   UserRole,
+  UserPermission,
   PayrollPaymentBatch,
   PaymentMethod,
   PaymentBatchStatus,
@@ -55,6 +56,7 @@ import {
 } from '../utils/exportUtils';
 import { generatePayrollJournalBatch, generatePaymentJournalBatch } from '../utils/accountingEngine';
 import { exportBankPayrollXlsx } from '../utils/bankExcelExport';
+import { hasPermission } from '../utils/permissions';
 
 interface PayrollRunsViewProps {
   company: Company;
@@ -64,6 +66,7 @@ interface PayrollRunsViewProps {
   loans: LoanSchedule[];
   penalties: PenaltyRecord[];
   activeRole: UserRole;
+  permissions?: UserPermission[];
   onSavePayrollRun: (run: PayrollRun) => void;
   onViewEmployeeStatement: (emp: Employee) => void;
   onOpenQoyodModal: () => void;
@@ -105,6 +108,7 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
   loans,
   penalties,
   activeRole,
+  permissions,
   onSavePayrollRun,
   onViewEmployeeStatement,
   onOpenQoyodModal,
@@ -426,9 +430,9 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
   // Workflow status transitions
   const handleStatusChange = (newStatus: PayrollRunStatus) => {
     if (!currentRun) return;
-    const canApprove = activeRole === 'ADMIN' || activeRole === 'COMPANY_MANAGER';
-    if (['APPROVED', 'POSTED'].includes(newStatus) && !canApprove) {
-      alert('اعتماد الرواتب وترحيلها متاح للمدير العام أو مدير النظام فقط.');
+    const permission = newStatus === 'APPROVED' ? 'APPROVE_PAYROLL' : newStatus === 'POSTED' ? 'POST_PAYROLL' : 'MANAGE_PAYROLL';
+    if (!hasPermission({ role: activeRole, permissions } as any, permission)) {
+      alert('ليس لديك الصلاحية المطلوبة لتنفيذ هذه المرحلة.');
       return;
     }
     const updated: PayrollRun = {
@@ -442,7 +446,7 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
     onSavePayrollRun(updated);
   };
 
-  const canReversePosting = activeRole === 'ADMIN' || activeRole === 'COMPANY_MANAGER';
+  const canReversePosting = hasPermission({ role: activeRole, permissions } as any, 'APPROVE_PAYROLL');
   const handleReverseApproval = () => {
     if (!currentRun || currentRun.status !== 'APPROVED' || !canReversePosting) return;
     if (currentRun.paymentBatches?.some(batch => batch.status === 'PAID')) {
@@ -622,7 +626,7 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
             {currentRun.status === 'UNDER_REVIEW' && (
               <button
                 onClick={() => handleStatusChange('APPROVED')}
-                disabled={!['ADMIN', 'COMPANY_MANAGER'].includes(activeRole)}
+                disabled={!hasPermission({ role: activeRole, permissions } as any, 'APPROVE_PAYROLL')}
                 className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white text-xs font-bold rounded-xl transition-all shadow-xs flex items-center gap-1.5"
               >
                 <CheckCircle2 className="w-3.5 h-3.5" />
@@ -633,7 +637,7 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
             {currentRun.status === 'APPROVED' && (
               <><button
                 onClick={() => handleStatusChange('POSTED')}
-                disabled={!['ADMIN', 'COMPANY_MANAGER'].includes(activeRole) || closeOutstandingAmount > 0 || underSettlementAmount > 0}
+                disabled={!hasPermission({ role: activeRole, permissions } as any, 'POST_PAYROLL') || closeOutstandingAmount > 0 || underSettlementAmount > 0}
                 className="px-3.5 py-1.5 bg-purple-600 hover:bg-purple-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white text-xs font-bold rounded-xl transition-all shadow-xs flex items-center gap-1.5"
               >
                 <Lock className="w-3.5 h-3.5" />

@@ -1,4 +1,18 @@
 export type UserRole = 'ADMIN' | 'COMPANY_MANAGER' | 'OPERATIONS_MANAGER';
+export type UserPermission =
+  | 'VIEW_DASHBOARD'
+  | 'MANAGE_COMPANY_PROFILE'
+  | 'MANAGE_COMPANIES'
+  | 'MANAGE_EMPLOYEES'
+  | 'MANAGE_ATTENDANCE'
+  | 'MANAGE_LOANS_PENALTIES'
+  | 'MANAGE_PAYROLL'
+  | 'APPROVE_PAYROLL'
+  | 'POST_PAYROLL'
+  | 'MANAGE_JOURNALS'
+  | 'VIEW_REPORTS'
+  | 'MANAGE_USERS'
+  | 'VIEW_AUDIT_LOGS';
 
 export interface UserAccount {
   id: string;
@@ -8,6 +22,7 @@ export interface UserAccount {
   email: string;
   phone?: string;
   role: UserRole;
+  permissions?: UserPermission[];
   avatar?: string;
   companyIds: string[];
   employeeId?: string; // Optional link to employee profile
@@ -44,6 +59,7 @@ export interface Company {
   taxNumber: string; // VAT
   gosiEstablishmentNo: string;
   bankName?: string;
+  bankCode?: string;
   bankIban?: string;
   bankSwiftCode?: string;
   bankCustomerCode?: string;
@@ -169,6 +185,7 @@ export interface Employee {
   suspensionEndDate?: string;
   suspensionReason?: string;
   bankName: string;
+  bankCode?: string;
   bankIban: string;
   bankSwiftCode?: string;
   gosiEnabled?: boolean;

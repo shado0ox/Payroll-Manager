@@ -23,9 +23,11 @@ import {
   Shield,
   Briefcase
 } from 'lucide-react';
-import { UserAccount, UserRole, Employee, Company } from '../types';
+import { UserAccount, UserRole, UserPermission, Employee, Company } from '../types';
 import { SearchableEmployeeSelect } from './SearchableEmployeeSelect';
 import { isStrongPassword, passwordPolicyMessage } from '../utils/passwordPolicy';
+import { ALL_PERMISSIONS, defaultPermissionsForRole, PERMISSION_LABELS } from '../utils/permissions';
+import { useLanguage } from '../i18n/LanguageContext';
 
 interface UserManagementViewProps {
   users: UserAccount[];
@@ -45,7 +47,7 @@ const ROLE_INFO: Record<UserRole, { labelAr: string; descAr: string; color: stri
   },
   COMPANY_MANAGER: {
     labelAr: 'المدير العام (General Manager)',
-    descAr: 'إدارة كاملة للمنشأة والمستخدمين والقيود واعتماد وترحيل مسيرات الرواتب',
+    descAr: 'إدارة تشغيلية ومالية واعتماد الرواتب دون إضافة أو حذف الشركات، مع صلاحيات قابلة للتخصيص',
     color: 'text-indigo-700',
     badgeBg: 'bg-indigo-50 border-indigo-200 text-indigo-700',
   },
@@ -65,6 +67,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
   onSaveUser,
   onDeleteUser,
 }) => {
+  const { language } = useLanguage();
   const [searchTerm, setSearchTerm] = useState('');
   const [roleFilter, setRoleFilter] = useState<string>('ALL');
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
@@ -83,6 +86,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
     role: 'OPERATIONS_MANAGER' as UserRole,
     employeeId: '',
     companyIds: companies.map(c => c.id),
+    permissions: defaultPermissionsForRole('OPERATIONS_MANAGER'),
     isActive: true,
   });
 
@@ -101,6 +105,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
       role: 'OPERATIONS_MANAGER',
       employeeId: '',
       companyIds: companies.map(c => c.id),
+      permissions: defaultPermissionsForRole('OPERATIONS_MANAGER'),
       isActive: true,
     });
     setFormError(null);
@@ -114,13 +119,14 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
     setEditingUser(user);
     setFormData({
       username: user.username,
-      password: user.password,
+      password: user.password || '',
       name: user.name,
       email: user.email,
       phone: user.phone || '',
       role: user.role,
       employeeId: user.employeeId || '',
       companyIds: user.companyIds.length > 0 ? user.companyIds : companies.map(c => c.id),
+      permissions: user.permissions || defaultPermissionsForRole(user.role),
       isActive: user.isActive,
     });
     setFormError(null);
@@ -181,6 +187,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
       role: formData.role,
       avatar: formData.name ? formData.name.charAt(0) : 'م',
       companyIds: formData.companyIds.length > 0 ? formData.companyIds : ['comp-1'],
+      permissions: formData.permissions.filter(permission => permission !== 'MANAGE_COMPANIES'),
       employeeId: formData.employeeId || undefined,
       isActive: formData.isActive,
       createdAt: editingUser ? editingUser.createdAt : new Date().toISOString(),
@@ -609,16 +616,42 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
                 </label>
                 <select
                   value={formData.role}
-                  onChange={(e) => setFormData({ ...formData, role: e.target.value as UserRole })}
+                  onChange={(e) => {
+                    const role = e.target.value as UserRole;
+                    setFormData({ ...formData, role, permissions: defaultPermissionsForRole(role) });
+                  }}
                   className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:bg-white focus:outline-none focus:border-emerald-500 cursor-pointer"
                 >
-                  {currentUser?.role === 'ADMIN' && <option value="COMPANY_MANAGER">المدير العام - إدارة كاملة واعتماد الرواتب</option>}
+                  {currentUser?.role === 'ADMIN' && <option value="COMPANY_MANAGER">المدير العام - دون إدارة الشركات</option>}
                   <option value="OPERATIONS_MANAGER">مدير العمليات - جميع العمليات دون اعتماد الرواتب</option>
                 </select>
                 <p className="text-[11px] text-slate-500 mt-1">
                   {ROLE_INFO[formData.role]?.descAr}
                 </p>
               </div>
+
+              <fieldset className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+                <legend className="px-2 text-xs font-black text-slate-800">تخصيص ما يمكن للمستخدم استخدامه</legend>
+                <p className="text-[11px] text-slate-500 mb-3">يمكن تعديل الصلاحيات الافتراضية للدور. إضافة وحذف الشركات متاحة لمسؤول النظام الرئيسي فقط.</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {ALL_PERMISSIONS.filter(permission => permission !== 'MANAGE_COMPANIES').map(permission => (
+                    <label key={permission} className="flex items-center gap-2 rounded-xl bg-white border border-slate-200 px-3 py-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={formData.permissions.includes(permission)}
+                        onChange={(e) => setFormData(prev => ({
+                          ...prev,
+                          permissions: e.target.checked
+                            ? [...new Set([...prev.permissions, permission])] as UserPermission[]
+                            : prev.permissions.filter(item => item !== permission),
+                        }))}
+                        className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                      />
+                      <span className="text-[11px] font-bold text-slate-700">{PERMISSION_LABELS[permission][language]}</span>
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
 
               {/* Status Toggle */}
               <div className="pt-2">

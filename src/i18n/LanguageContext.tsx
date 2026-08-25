@@ -101,6 +101,32 @@ const qualityOverrides: Record<string, string> = {
   'الاسم بالإنجليزي': 'English name', 'إجراء': 'Action',
   'إلغاء الغياب': 'Cancel absence', 'إلغاء غياب مسجل': 'Cancel recorded absence',
   'حذف الحركة وإلغاء أثرها من المسير': 'Delete the record and remove its payroll impact',
+  'الحضور والانصراف والإجازات': 'Attendance, time tracking & leave',
+  'تسجيل التأخير، الغياب، العمل الإضافي، والإجازات بدون راتب لتطبيقها آلياً في مسير الرواتب': 'Record lateness, absence, overtime, and unpaid leave for automatic payroll processing',
+  'تسجيل حركة حضور / غياب': 'Record attendance / absence',
+  'سجل الحضور والحركات': 'Attendance records', 'طلبات الإجازات': 'Leave requests',
+  'تسجيل حركة حضور / تأخير / إضافي': 'Record attendance / lateness / overtime',
+  'تاريخ الغياب / الحركة (من وإلى)': 'Absence / transaction dates (from–to)',
+  'من تاريخ (البداية)': 'From date', 'إلى تاريخ (النهاية)': 'To date', 'يوم واحد': 'One day',
+  'دقائق التأخير': 'Lateness minutes', 'ساعات العمل الإضافي': 'Overtime hours',
+  'غياب غير مبرر (خصم يوم كامل)': 'Unexcused absence (full-day deduction)', 'إجازة بدون راتب': 'Unpaid leave',
+  'سبب التأخير أو العمل الإضافي...': 'Reason for lateness or overtime...', 'حفظ الحركة': 'Save record',
+  'السلف والأقساط والجزاءات الإدارية': 'Employee loans, installments & administrative deductions',
+  'جدولة أقساط سلف الموظفين، ضبط حد الاستقطاع (33%)، وتسجيل الخصومات الإدارية': 'Schedule employee loan installments, control the 33% deduction limit, and record administrative deductions',
+  'إضافة سلفة جديدة': 'Add new loan', 'تسجيل جزاء / خصم إداري': 'Record penalty / administrative deduction',
+  'إجمالي أرصدة السلف القائمة': 'Total outstanding loan balances', 'استقطاع الأقساط الشهري المتوقع': 'Expected monthly installment deduction',
+  'عدد الموظفين المستفيدين من السلف': 'Employees with active loans', 'ذمم مدينة لموظفي المنشأة': 'Employee receivables',
+  'يُخصم شهرياً عبر مسير الرواتب': 'Deducted monthly through payroll', 'سلف سارية المفعول': 'Active loans',
+  'سجل سلف الموظفين': 'Employee loan register', 'الجزاءات والخصومات': 'Penalties and deductions',
+  'تعديل السلفة': 'Edit loan', 'حذف السلفة': 'Delete loan', 'ملغى': 'Cancelled', 'تعديل الخصم': 'Edit deduction',
+  'التراجع عن الخصم': 'Reverse deduction', 'تعديل الحركة': 'Edit record', 'تعديل حركة الحضور': 'Edit attendance record',
+  'التراجع وإعادة الطلب للمراجعة': 'Reverse and return request for review',
+  'حذف السلفة نهائيًا وإزالة أقساطها من المسير القادم؟': 'Permanently delete this loan and remove its installments from the next payroll run?',
+  'إلغاء هذا الخصم وإزالة أثره من المسير؟': 'Reverse this deduction and remove its payroll impact?',
+  'حذف الجزاء/الخصم نهائيًا؟': 'Permanently delete this penalty/deduction?',
+  'غياب فترة': 'Absence period', 'المدة:': 'Duration:', 'أيام غياب': 'absence days',
+  'تخصيص ما يمكن للمستخدم استخدامه': 'Customize user access',
+  'إضافة وحذف الشركات متاحة لمسؤول النظام الرئيسي فقط.': 'Adding and deleting companies is restricted to the primary system administrator.',
   'جاري التحقق من الجلسة...': 'Checking session...',
 };
 const translationCatalog: Record<string, string> = { ...generatedTranslations, ...qualityOverrides };
@@ -177,10 +203,11 @@ const DomLocalizer: React.FC<{ language: AppLanguage }> = ({ language }) => {
     processElement(document.body);
     const observer = new MutationObserver(mutations => {
       for (const mutation of mutations) {
+        if (mutation.type === 'characterData') processElement(mutation.target);
         for (const node of mutation.addedNodes) processElement(node);
       }
     });
-    observer.observe(document.body, { subtree: true, childList: true });
+    observer.observe(document.body, { subtree: true, childList: true, characterData: true });
     return () => observer.disconnect();
   }, [language]);
   return null;

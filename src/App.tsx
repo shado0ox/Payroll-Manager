@@ -47,6 +47,7 @@ import {
   resetToCleanState
 } from './utils/storage';
 import { Navbar } from './components/Navbar';
+import { hasPermission, TAB_PERMISSION } from './utils/permissions';
 import { Sidebar } from './components/Sidebar';
 import { LoginView } from './components/LoginView';
 import { UserManagementView } from './components/UserManagementView';
@@ -162,6 +163,13 @@ export const App: React.FC = () => {
     return state.companies.find(c => c.id === state.activeCompanyId) || state.companies[0];
   }, [state.companies, state.activeCompanyId]);
 
+  useEffect(() => {
+    if (state.currentUser && !hasPermission(state.currentUser, TAB_PERMISSION[activeTab])) {
+      const fallback = (Object.keys(TAB_PERMISSION) as NavigationTab[]).find(tab => hasPermission(state.currentUser, TAB_PERMISSION[tab]));
+      if (fallback) setActiveTab(fallback);
+    }
+  }, [activeTab, state.currentUser]);
+
   // Auth handlers
   const handleLogin = async (companyCode: string, username: string, password: string) => {
     const { user, companyId } = await api.login(companyCode, username, password);
@@ -239,7 +247,7 @@ export const App: React.FC = () => {
 
   // User Management handlers
   const handleSaveUser = async (user: UserAccount) => {
-    if (user.id === 'user-admin' || !['ADMIN', 'COMPANY_MANAGER'].includes(state.activeRole)) {
+    if (user.id === 'user-admin' || !hasPermission(state.currentUser, 'MANAGE_USERS')) {
       alert('لا يمكن تعديل مدير النظام الأساسي، وإدارة المستخدمين متاحة للإدارة فقط.');
       return;
     }
@@ -283,7 +291,7 @@ export const App: React.FC = () => {
   };
 
   const handleDeleteUser = async (userId: string) => {
-    if (userId === 'user-admin' || !['ADMIN', 'COMPANY_MANAGER'].includes(state.activeRole)) {
+    if (userId === 'user-admin' || !hasPermission(state.currentUser, 'MANAGE_USERS')) {
       alert('لا يمكن حذف مدير النظام الأساسي، وإدارة المستخدمين متاحة للإدارة فقط.');
       return;
     }
@@ -630,6 +638,7 @@ export const App: React.FC = () => {
   };
 
   const handleAddCompany = (company: Company) => {
+    if (!hasPermission(state.currentUser, 'MANAGE_COMPANIES')) return;
     setState(prev => {
       const updated = [...prev.companies, company];
       saveCompanies(updated);
@@ -652,6 +661,7 @@ export const App: React.FC = () => {
   };
 
   const handleUpdateCompany = (company: Company) => {
+    if (!hasPermission(state.currentUser, 'MANAGE_COMPANY_PROFILE')) return;
     setState(prev => {
       const updated = prev.companies.map(c => c.id === company.id ? company : c);
       saveCompanies(updated);
@@ -674,6 +684,7 @@ export const App: React.FC = () => {
   };
 
   const handleDeleteCompany = (companyId: string) => {
+    if (!hasPermission(state.currentUser, 'MANAGE_COMPANIES')) return;
     setState(prev => {
       if (prev.companies.length <= 1) {
         alert('لا يمكن حذف الشركة الوحيدة المتبقية في النظام.');
@@ -799,7 +810,7 @@ export const App: React.FC = () => {
         {/* Scrollable Workspace Content */}
         <div className="flex-1 overflow-y-auto p-6 sm:p-8">
           <div className="max-w-7xl mx-auto w-full">
-            {activeTab === 'dashboard' && (
+            {activeTab === 'dashboard' && hasPermission(state.currentUser, 'VIEW_DASHBOARD') && (
               <DashboardView
                 company={activeCompany}
                 employees={state.employees}
@@ -812,7 +823,7 @@ export const App: React.FC = () => {
               />
             )}
 
-            {activeTab === 'company_profile' && (
+            {activeTab === 'company_profile' && hasPermission(state.currentUser, 'MANAGE_COMPANY_PROFILE') && (
               <CompanyProfileView
                 company={activeCompany}
                 allCompanies={state.companies}
@@ -831,7 +842,7 @@ export const App: React.FC = () => {
               />
             )}
 
-            {activeTab === 'employees' && (
+            {activeTab === 'employees' && hasPermission(state.currentUser, 'MANAGE_EMPLOYEES') && (
               <EmployeesView
                 company={activeCompany}
                 employees={state.employees}
@@ -843,7 +854,7 @@ export const App: React.FC = () => {
               />
             )}
 
-            {activeTab === 'payroll_runs' && (
+            {activeTab === 'payroll_runs' && hasPermission(state.currentUser, 'MANAGE_PAYROLL') && (
               <PayrollRunsView
                 company={activeCompany}
                 employees={state.employees}
@@ -852,13 +863,14 @@ export const App: React.FC = () => {
                 loans={state.loans}
                 penalties={state.penalties}
                 activeRole={state.activeRole}
+                permissions={state.currentUser?.permissions}
                 onSavePayrollRun={handleSavePayrollRun}
                 onViewEmployeeStatement={setStatementEmployee}
                 onOpenQoyodModal={() => setIsQoyodModalOpen(true)}
               />
             )}
 
-            {activeTab === 'attendance' && (
+            {activeTab === 'attendance' && hasPermission(state.currentUser, 'MANAGE_ATTENDANCE') && (
               <AttendanceLeavesView
                 company={activeCompany}
                 employees={state.employees}
@@ -873,7 +885,7 @@ export const App: React.FC = () => {
               />
             )}
 
-            {activeTab === 'loans_penalties' && (
+            {activeTab === 'loans_penalties' && hasPermission(state.currentUser, 'MANAGE_LOANS_PENALTIES') && (
               <LoansPenaltiesView
                 company={activeCompany}
                 employees={state.employees}
@@ -889,7 +901,7 @@ export const App: React.FC = () => {
               />
             )}
 
-            {activeTab === 'journals' && (
+            {activeTab === 'journals' && hasPermission(state.currentUser, 'MANAGE_JOURNALS') && (
               <AccountingJournalsView
                 company={activeCompany}
                 payrollRuns={state.payrollRuns}
@@ -900,7 +912,7 @@ export const App: React.FC = () => {
               />
             )}
 
-            {activeTab === 'reports' && (
+            {activeTab === 'reports' && hasPermission(state.currentUser, 'VIEW_REPORTS') && (
               <ReportsView
                 company={activeCompany}
                 employees={state.employees}
@@ -909,7 +921,7 @@ export const App: React.FC = () => {
               />
             )}
 
-            {activeTab === 'users' && (
+            {activeTab === 'users' && hasPermission(state.currentUser, 'MANAGE_USERS') && (
               <UserManagementView
                 users={state.users}
                 employees={state.employees}
@@ -920,7 +932,7 @@ export const App: React.FC = () => {
               />
             )}
 
-            {activeTab === 'settings' && (
+            {activeTab === 'settings' && hasPermission(state.currentUser, 'MANAGE_COMPANIES') && (
               <SettingsView
                 companies={state.companies}
                 activeCompany={activeCompany}
@@ -937,7 +949,7 @@ export const App: React.FC = () => {
               />
             )}
 
-            {activeTab === 'audit_logs' && (
+            {activeTab === 'audit_logs' && hasPermission(state.currentUser, 'VIEW_AUDIT_LOGS') && (
               <AuditLogsView logs={state.auditLogs} />
             )}
           </div>

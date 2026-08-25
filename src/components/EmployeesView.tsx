@@ -36,6 +36,7 @@ import {
   parseEmployeeSheet,
   parseMoney,
 } from '../utils/employeeImport';
+import { useLanguage } from '../i18n/LanguageContext';
 
 interface EmployeesViewProps {
   company: Company;
@@ -64,6 +65,7 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
   onDeleteEmployee,
   onViewEmployeeStatement,
 }) => {
+  const { language } = useLanguage();
   const handleSave = (emp: Employee) => {
     if (onSaveEmployee) onSaveEmployee(emp);
     if (onUpdateEmployee && employees.some(e => e.id === emp.id)) onUpdateEmployee(emp);
@@ -348,7 +350,7 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
       const lastName = nameParts.join(' ') || '-';
       const bankNameFromSheet = getImportValue(row, 'bankName');
       const detectedBank = iban && validateSaudiIBAN(iban) ? detectBankFromIBAN(iban, company.bankDefinitions) : null;
-      const bankName = bankNameFromSheet || detectedBank?.nameAr || (iban ? 'غير محدد' : 'بيانات بنكية غير مكتملة');
+      const bankName = detectedBank?.nameAr || bankNameFromSheet || (iban ? 'غير محدد' : 'بيانات بنكية غير مكتملة');
       const swift = (detectedBank?.swiftCode || getSwiftCodeFromBankName(bankName, company.bankDefinitions) || getImportValue(row, 'bankSwiftCode') || '').toUpperCase();
       const country = getImportValue(row, 'country') || 'غير محدد';
       const rawStatus = getImportValue(row, 'status').toLowerCase();
@@ -375,6 +377,7 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
         salaryStartDate: today,
         status,
         bankName,
+        bankCode: detectedBank?.code,
         bankIban: iban,
         bankSwiftCode: swift,
         dataWarnings: rowWarnings,
@@ -1078,22 +1081,22 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                       <span className="text-[10px] text-slate-400">البنوك المعتمدة</span>
                     </div>
                     <select
-                      value={formData.bankName || ''}
+                      value={formData.bankCode || detectBankFromIBAN(formData.bankIban, company.bankDefinitions)?.code || getBankDefinitions(company.bankDefinitions).find(bank => bank.nameAr === formData.bankName || bank.nameEn === formData.bankName)?.ibanBankCode || ''}
                       onChange={(e) => {
-                        const newBank = e.target.value;
-                        const detectedSwift = getSwiftCodeFromBankName(newBank, company.bankDefinitions);
+                        const selectedBank = getBankDefinitions(company.bankDefinitions).find(bank => bank.ibanBankCode === e.target.value);
                         setFormData({ 
                           ...formData, 
-                          bankName: newBank,
-                          bankSwiftCode: detectedSwift || formData.bankSwiftCode || ''
+                          bankCode: selectedBank?.ibanBankCode || '',
+                          bankName: selectedBank?.nameAr || '',
+                          bankSwiftCode: selectedBank?.swiftCode || formData.bankSwiftCode || ''
                         });
                       }}
                       className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 font-medium"
                     >
                       <option value="">-- اختر البنك --</option>
                       {getBankDefinitions(company.bankDefinitions).filter(b => b.isActive !== false).map(b => (
-                        <option key={b.ibanBankCode} value={b.nameAr}>
-                          {b.nameAr} ({b.swiftCode})
+                        <option key={b.ibanBankCode} value={b.ibanBankCode}>
+                          {language === 'en' ? b.nameEn || b.nameAr : b.nameAr} ({b.swiftCode})
                         </option>
                       ))}
                     </select>
@@ -1126,6 +1129,7 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                         setFormData({ 
                           ...formData, 
                           bankIban: cleanIban,
+                          bankCode: detected?.code || formData.bankCode,
                           bankName: detected ? detected.nameAr : formData.bankName,
                           bankSwiftCode: detected ? detected.swiftCode : formData.bankSwiftCode
                         });
