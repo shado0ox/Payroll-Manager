@@ -418,6 +418,7 @@ export interface AuditLog {
 
 export interface QoyodApiConfig {
   apiKey: string;
+  apiKeyConfigured?: boolean;
   baseUrl: string;
   organizationId: string;
   autoSyncOnApprove: boolean;

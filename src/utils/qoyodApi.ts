@@ -64,7 +64,8 @@ export function generateQoyodCurlCommand(
 }
 
 /**
- * Sends or simulates sending the journal entry to Qoyod API 2.0
+ * Sends the journal entry through the authenticated server proxy.
+ * The API key never leaves the server and failed requests are never reported as success.
  */
 export async function sendJournalEntryToQoyod(
   batch: JournalBatch,
@@ -78,25 +79,16 @@ export async function sendJournalEntryToQoyod(
 }> {
   const payload = buildQoyodJournalPayload(batch, company);
   const baseUrl = (config.baseUrl || 'https://api.qoyod.com/2.0').replace(/\/+$/, '');
-  const endpoint = `${baseUrl}/journal_entries`;
-  const curlCommand = generateQoyodCurlCommand(payload, config.apiKey, baseUrl);
-
-  if (!config.apiKey || config.apiKey.trim().length < 5) {
-    return {
-      success: false,
-      message: 'يرجى إدخال مفتاح API-KEY الخاص بحساب قيود في الإعدادات أولاً.',
-      curlCommand,
-    };
-  }
+  const curlCommand = generateQoyodCurlCommand(payload, '[محفوظ بأمان على الخادم]', baseUrl);
 
   try {
-    const response = await fetch(endpoint, {
+    const response = await fetch('/api/integrations/qoyod/journal', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'API-KEY': config.apiKey.trim(),
       },
-      body: JSON.stringify(payload),
+      credentials: 'same-origin',
+      body: JSON.stringify({ companyId: company.id, payload }),
     });
 
     if (response.ok) {
@@ -108,14 +100,8 @@ export async function sendJournalEntryToQoyod(
         curlCommand,
       };
     } else {
-      const errText = await response.text();
-      let parsedErr = errText;
-      try {
-        const errJson = JSON.parse(errText);
-        parsedErr = errJson.message || errJson.error || JSON.stringify(errJson);
-      } catch {
-        // use raw text
-      }
+      const errJson = await response.json().catch(() => ({}));
+      const parsedErr = errJson.message || errJson.error;
 
       return {
         success: false,
@@ -124,31 +110,9 @@ export async function sendJournalEntryToQoyod(
       };
     }
   } catch (error: any) {
-    // If CORS or network error happens (common in client-side preview for external APIs without CORS proxy)
-    // We simulate a compliant response for preview and instruct the user
-    const totalDebit = batch.totalDebit.toFixed(1);
-    const mockResponse: QoyodJournalEntryResponse = {
-      id: Math.floor(1000 + Math.random() * 9000),
-      date: batch.date,
-      description: payload.journal_entry.description,
-      total_debit: totalDebit,
-      total_credit: totalDebit,
-      debit_amounts: payload.journal_entry.debit_amounts.map((d, i) => ({
-        ...d,
-        entry_id: 100 + i,
-        all_comments: [d.comment || ''],
-      })),
-      credit_amounts: payload.journal_entry.credit_amounts.map((c, i) => ({
-        ...c,
-        entry_id: 200 + i,
-        all_comments: [c.comment || ''],
-      })),
-    };
-
     return {
-      success: true,
-      message: `تم توليد وترحيل قيد اليومية وفق معايير قيود 2.0 (رقم القيد في قيود: #${mockResponse.id}) - إجمالي المدين والدائن: ${totalDebit} ر.س`,
-      responseData: mockResponse,
+      success: false,
+      message: error?.message || 'تعذر الاتصال بخادم ترحيل قيود.',
       curlCommand,
     };
   }

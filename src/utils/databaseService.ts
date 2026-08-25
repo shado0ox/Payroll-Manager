@@ -100,21 +100,8 @@ export function calculateStorageSize(): number {
 // Persist entire application state to Local & IndexedDB database
 export async function persistFullStateToDatabase(state: AppState): Promise<DatabaseStatus> {
   try {
-    // 1. Save to standard storage mirrors
-    saveCompanies(state.companies);
-    saveEmployees(state.employees);
-    savePayrollRuns(state.payrollRuns);
-    saveAttendance(state.attendance);
-    saveLoans(state.loans);
-    savePenalties(state.penalties);
-    saveLeaves(state.leaves);
-    saveJournals(state.journals);
-    saveAuditLogs(state.auditLogs);
-    saveUsers(state.users);
-    saveQoyodConfig(state.qoyodConfig);
-
-    // 2. Save full snapshot to IndexedDB
-    await saveToIndexedDB('full_app_state', state);
+    // PostgreSQL is the only persistence layer. Never mirror payroll/PII in browser storage.
+    if (window.indexedDB) indexedDB.deleteDatabase(DB_NAME);
 
     const sizeKb = calculateStorageSize();
     const now = new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit', second: '2-digit' });

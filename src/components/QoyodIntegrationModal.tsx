@@ -94,7 +94,7 @@ export const QoyodIntegrationModal: React.FC<QoyodIntegrationModalProps> = ({
       return;
     }
 
-    if (!config.apiKey || config.apiKey.trim().length < 5) {
+    if ((!config.apiKey || config.apiKey.trim().length < 5) && !config.apiKeyConfigured) {
       alert('يرجى إدخال مفتاح الـ API-KEY الخاص بقيود أولاً');
       return;
     }

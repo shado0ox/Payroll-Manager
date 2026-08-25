@@ -33,6 +33,73 @@ const pool = new Pool({
 const q = (name) => `"${schema}".${name}`;
 const sha256 = (value) => crypto.createHash('sha256').update(value).digest('hex');
 const cookieValue = (req, key) => (req.headers.cookie || '').split(';').map(v => v.trim()).find(v => v.startsWith(`${key}=`))?.slice(key.length + 1);
+const COMPANY_SCOPED_KEYS = ['employees', 'attendance', 'loans', 'penalties', 'leaves', 'payrollRuns', 'journals'];
+const OPERATIONS_MUTABLE_KEYS = new Set(['employees', 'attendance', 'loans', 'penalties', 'leaves', 'payrollRuns']);
+const clone = (value) => value == null ? value : structuredClone(value);
+const allowedCompanyIds = (user) => new Set(user.role === 'ADMIN' ? [] : (Array.isArray(user.company_ids) ? user.company_ids : []));
+const itemCompanyId = (item) => item && typeof item.companyId === 'string' ? item.companyId : '';
+
+function publicStateForUser(rawState, user) {
+  const state = clone(rawState || {});
+  delete state.currentUser;
+  const allowed = allowedCompanyIds(user);
+  if (user.role !== 'ADMIN') {
+    if (Array.isArray(state.companies)) state.companies = state.companies.filter(item => allowed.has(item.id));
+    for (const key of COMPANY_SCOPED_KEYS) {
+      if (Array.isArray(state[key])) state[key] = state[key].filter(item => allowed.has(itemCompanyId(item)));
+    }
+    if (Array.isArray(state.users)) {
+      state.users = state.users.filter(item => Array.isArray(item.companyIds) && item.companyIds.some(id => allowed.has(id)));
+    }
+    if (Array.isArray(state.auditLogs)) state.auditLogs = state.auditLogs.filter(item => item.companyId && allowed.has(item.companyId));
+    if (state.activeCompanyId && !allowed.has(state.activeCompanyId)) state.activeCompanyId = [...allowed][0] || '';
+  }
+  if (Array.isArray(state.users)) state.users = state.users.map(({ password, ...item }) => item);
+  // Integration secrets must never be returned to the browser.
+  if (state.qoyodConfig && typeof state.qoyodConfig === 'object') {
+    state.qoyodConfig = { ...state.qoyodConfig, apiKey: '', apiKeyConfigured: Boolean(state.qoyodConfig.apiKey) };
+  }
+  return state;
+}
+
+function mergeCompanyScoped(storedItems, incomingItems, allowed) {
+  const preserved = (Array.isArray(storedItems) ? storedItems : []).filter(item => !allowed.has(itemCompanyId(item)));
+  const accepted = (Array.isArray(incomingItems) ? incomingItems : []).filter(item => allowed.has(itemCompanyId(item)));
+  return [...preserved, ...accepted];
+}
+
+function mergeStateForUser(stored, incoming, user) {
+  if (user.role === 'ADMIN') return incoming;
+  const next = clone(stored || {});
+  const allowed = allowedCompanyIds(user);
+  const mutableKeys = user.role === 'OPERATIONS_MANAGER' ? OPERATIONS_MUTABLE_KEYS : new Set(COMPANY_SCOPED_KEYS);
+  for (const key of mutableKeys) next[key] = mergeCompanyScoped(stored?.[key], incoming?.[key], allowed);
+
+  if (user.role === 'COMPANY_MANAGER') {
+    const oldCompanies = Array.isArray(stored?.companies) ? stored.companies : [];
+    const newCompanies = Array.isArray(incoming?.companies) ? incoming.companies : [];
+    next.companies = [
+      ...oldCompanies.filter(item => !allowed.has(item.id)),
+      ...newCompanies.filter(item => allowed.has(item.id)),
+    ];
+  }
+  // Users, audit history and integration secrets use dedicated server-owned paths.
+  next.users = stored?.users || [];
+  next.auditLogs = stored?.auditLogs || [];
+  next.qoyodConfig = stored?.qoyodConfig || {};
+  if (incoming?.activeCompanyId && allowed.has(incoming.activeCompanyId)) next.activeCompanyId = incoming.activeCompanyId;
+
+  if (user.role === 'OPERATIONS_MANAGER' && Array.isArray(next.payrollRuns)) {
+    const oldRuns = new Map((stored?.payrollRuns || []).map(run => [run.id, run]));
+    next.payrollRuns = next.payrollRuns.map(run => {
+      const old = oldRuns.get(run.id);
+      return old && run.status !== old.status
+        ? { ...run, status: old.status, approvedAt: old.approvedAt, approvedBy: old.approvedBy, postedAt: old.postedAt, postedBy: old.postedBy }
+        : run;
+    });
+  }
+  return next;
+}
 
 async function migrate() {
   await pool.query(`CREATE SCHEMA IF NOT EXISTS "${schema}"`);
@@ -77,8 +144,12 @@ app.set('trust proxy', Number(process.env.TRUST_PROXY || 1));
 app.use(helmet({ contentSecurityPolicy: { directives: { defaultSrc: ["'self'"], scriptSrc: ["'self'"], styleSrc: ["'self'", "'unsafe-inline'"], imgSrc: ["'self'", 'data:', 'blob:'], connectSrc: ["'self'"] } } }));
 app.use(express.json({ limit: '5mb' }));
 app.use((req, res, next) => {
-  if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method) && req.headers['sec-fetch-site'] === 'cross-site') {
-    return res.status(403).json({ error: 'CROSS_SITE_REQUEST_BLOCKED' });
+  if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
+    const origin = req.get('origin');
+    const expectedOrigin = process.env.APP_ORIGIN || `${req.get('x-forwarded-proto') || req.protocol}://${req.get('host')}`;
+    if (req.headers['sec-fetch-site'] === 'cross-site' || (origin && origin !== expectedOrigin)) {
+      return res.status(403).json({ error: 'CROSS_SITE_REQUEST_BLOCKED' });
+    }
   }
   next();
 });
@@ -146,31 +217,29 @@ app.post('/api/auth/logout', auth, async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
-app.get('/api/state', auth, async (_req, res, next) => {
-  try { const r = await pool.query(`SELECT state,version,updated_at FROM ${q('app_state')} WHERE id=1`); res.json(r.rows[0] || { state:null, version:0 }); } catch (e) { next(e); }
+app.get('/api/state', auth, async (req, res, next) => {
+  try {
+    const r = await pool.query(`SELECT state,version,updated_at FROM ${q('app_state')} WHERE id=1`);
+    if (!r.rowCount) return res.json({ state:null, version:0 });
+    res.json({ ...r.rows[0], state: publicStateForUser(r.rows[0].state, req.user) });
+  } catch (e) { next(e); }
 });
 
 app.put('/api/state', auth, writeLimiter, async (req, res, next) => {
   try {
-    let state = req.body?.state;
+    let state = clone(req.body?.state);
     const expectedVersion = Number(req.body?.version || 0);
     if (!state || typeof state !== 'object' || Array.isArray(state)) return res.status(400).json({ error:'INVALID_STATE' });
     delete state.currentUser;
     if (Array.isArray(state.users)) state.users = state.users.map(({ password, ...u }) => u);
-    if (req.user.role === 'OPERATIONS_MANAGER') {
-      const current = await pool.query(`SELECT state FROM ${q('app_state')} WHERE id=1`);
-      const stored = current.rows[0]?.state || {};
-      for (const protectedKey of ['companies', 'users', 'journals', 'qoyodConfig']) {
-        if (protectedKey in stored) state[protectedKey] = stored[protectedKey];
-      }
-      if (Array.isArray(state.payrollRuns) && Array.isArray(stored.payrollRuns)) {
-        const oldRuns = new Map(stored.payrollRuns.map(run => [run.id, run]));
-        state.payrollRuns = state.payrollRuns.map(run => {
-          const old = oldRuns.get(run.id);
-          return old && run.status !== old.status ? { ...run, status: old.status, approvedAt: old.approvedAt, approvedBy: old.approvedBy, postedAt: old.postedAt, postedBy: old.postedBy } : run;
-        });
-      }
+    const current = await pool.query(`SELECT state FROM ${q('app_state')} WHERE id=1`);
+    const stored = current.rows[0]?.state || {};
+    // A redacted key from GET must not erase the existing server-side secret.
+    if (stored.qoyodConfig?.apiKey && !state.qoyodConfig?.apiKey) {
+      state.qoyodConfig = { ...(state.qoyodConfig || {}), apiKey: stored.qoyodConfig.apiKey };
     }
+    delete state.qoyodConfig?.apiKeyConfigured;
+    state = mergeStateForUser(stored, state, req.user);
     const r = await pool.query(`INSERT INTO ${q('app_state')} (id,state,version,updated_by) VALUES (1,$1::jsonb,1,$2)
       ON CONFLICT (id) DO UPDATE SET state=EXCLUDED.state,version=${q('app_state')}.version+1,updated_by=EXCLUDED.updated_by,updated_at=now()
       WHERE ${q('app_state')}.version=$3 RETURNING version,updated_at`, [JSON.stringify(state), req.user.id, expectedVersion]);
@@ -214,6 +283,42 @@ app.delete('/api/users/:id', auth, writeLimiter, async (req, res, next) => {
     if (req.user.role === 'COMPANY_MANAGER') params.push(JSON.stringify(req.user.company_ids));
     await pool.query(`DELETE FROM ${q('users')} WHERE id=$1${scope}`, params);
     res.status(204).end();
+  } catch (e) { next(e); }
+});
+
+app.post('/api/integrations/qoyod/journal', auth, writeLimiter, async (req, res, next) => {
+  try {
+    if (!['ADMIN', 'COMPANY_MANAGER'].includes(req.user.role)) return res.status(403).json({ error:'FORBIDDEN' });
+    const companyId = String(req.body?.companyId || '');
+    if (!companyId || (req.user.role !== 'ADMIN' && !req.user.company_ids.includes(companyId))) {
+      return res.status(403).json({ error:'FORBIDDEN' });
+    }
+    const stateResult = await pool.query(`SELECT state FROM ${q('app_state')} WHERE id=1`);
+    const config = stateResult.rows[0]?.state?.qoyodConfig || {};
+    const apiKey = String(config.apiKey || '').trim();
+    if (apiKey.length < 5) return res.status(400).json({ error:'QOYOD_NOT_CONFIGURED' });
+    const baseUrl = new URL(String(config.baseUrl || 'https://api.qoyod.com/2.0'));
+    if (baseUrl.protocol !== 'https:' || baseUrl.hostname !== 'api.qoyod.com') {
+      return res.status(400).json({ error:'INVALID_QOYOD_URL' });
+    }
+    const payload = req.body?.payload;
+    if (!payload?.journal_entry || !Array.isArray(payload.journal_entry.debit_amounts) || !Array.isArray(payload.journal_entry.credit_amounts)) {
+      return res.status(400).json({ error:'INVALID_QOYOD_PAYLOAD' });
+    }
+    const response = await fetch(`${baseUrl.toString().replace(/\/+$/, '')}/journal_entries`, {
+      method: 'POST',
+      headers: { 'Content-Type':'application/json', 'API-KEY':apiKey },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(20_000),
+    });
+    const text = await response.text();
+    let data;
+    try { data = text ? JSON.parse(text) : {}; } catch { data = { message:text.slice(0, 500) }; }
+    await pool.query(`INSERT INTO ${q('audit_log')} (user_id,action,ip) VALUES ($1,$2,$3)`, [
+      req.user.id, response.ok ? `QOYOD_JOURNAL_SYNC:${companyId}` : `QOYOD_JOURNAL_FAILED:${companyId}:${response.status}`, req.ip,
+    ]);
+    if (!response.ok) return res.status(502).json({ error:'QOYOD_REQUEST_FAILED', upstreamStatus:response.status, message:data?.message || data?.error || 'Qoyod rejected the request' });
+    res.json(data);
   } catch (e) { next(e); }
 });
 

@@ -1251,7 +1251,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
         };
 
         const handleDirectSync = async () => {
-          if (!qConfig.apiKey || qConfig.apiKey.trim().length < 5) {
+          if ((!qConfig.apiKey || qConfig.apiKey.trim().length < 5) && !qConfig.apiKeyConfigured) {
             alert('يرجى حفظ وإدخال مفتاح API-KEY أولاً');
             return;
           }

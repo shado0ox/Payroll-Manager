@@ -55,6 +55,8 @@ export interface AppState {
 
 export function loadInitialState(): AppState {
   try {
+    // Remove snapshots created by older releases; PostgreSQL is the source of truth.
+    clearSensitiveLocalState();
     const rawCompanies = localStorage.getItem(STORAGE_KEYS.COMPANIES);
     if (rawCompanies) {
       const companies: Company[] = JSON.parse(rawCompanies);
@@ -164,7 +166,7 @@ export function loadInitialState(): AppState {
 
 export function saveState(state: AppState): void {
   try {
-    localStorage.setItem(STORAGE_KEYS.COMPANIES, JSON.stringify(state.companies));
+    // Sensitive payroll data is server-owned. Keep only harmless UI preferences locally.
     localStorage.setItem(STORAGE_KEYS.ACTIVE_COMPANY_ID, state.activeCompanyId);
     localStorage.setItem(STORAGE_KEYS.ACTIVE_ROLE, state.activeRole);
     if (state.currentUser) {
@@ -172,19 +174,19 @@ export function saveState(state: AppState): void {
     } else {
       localStorage.removeItem(STORAGE_KEYS.CURRENT_USER);
     }
-    localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(state.users));
-    localStorage.setItem(STORAGE_KEYS.EMPLOYEES, JSON.stringify(state.employees));
-    localStorage.setItem(STORAGE_KEYS.ATTENDANCE, JSON.stringify(state.attendance));
-    localStorage.setItem(STORAGE_KEYS.LOANS, JSON.stringify(state.loans));
-    localStorage.setItem(STORAGE_KEYS.PENALTIES, JSON.stringify(state.penalties));
-    localStorage.setItem(STORAGE_KEYS.LEAVES, JSON.stringify(state.leaves));
-    localStorage.setItem(STORAGE_KEYS.PAYROLL_RUNS, JSON.stringify(state.payrollRuns));
-    localStorage.setItem(STORAGE_KEYS.JOURNALS, JSON.stringify(state.journals));
-    localStorage.setItem(STORAGE_KEYS.AUDIT_LOGS, JSON.stringify(state.auditLogs));
-    localStorage.setItem(STORAGE_KEYS.QOYOD_CONFIG, JSON.stringify(state.qoyodConfig));
+    clearSensitiveLocalState();
   } catch (err) {
     console.error('Error saving state to localStorage', err);
   }
+}
+
+export function clearSensitiveLocalState(): void {
+  for (const key of [STORAGE_KEYS.COMPANIES, STORAGE_KEYS.USERS, STORAGE_KEYS.EMPLOYEES, STORAGE_KEYS.ATTENDANCE,
+    STORAGE_KEYS.LOANS, STORAGE_KEYS.PENALTIES, STORAGE_KEYS.LEAVES, STORAGE_KEYS.PAYROLL_RUNS,
+    STORAGE_KEYS.JOURNALS, STORAGE_KEYS.AUDIT_LOGS, STORAGE_KEYS.QOYOD_CONFIG]) {
+    localStorage.removeItem(key);
+  }
+  if (typeof indexedDB !== 'undefined') indexedDB.deleteDatabase('MasarPayrollDB');
 }
 
 export function saveCurrentUser(user: UserAccount | null): void {
@@ -198,63 +200,47 @@ export function saveCurrentUser(user: UserAccount | null): void {
 }
 
 export function saveUsers(users: UserAccount[]): void {
-  try { localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users)); } catch (e) {}
+  void users;
 }
 
 export function saveCompanies(companies: Company[]): void {
-  try { localStorage.setItem(STORAGE_KEYS.COMPANIES, JSON.stringify(companies)); } catch (e) {}
+  void companies;
 }
 
 export function saveEmployees(employees: Employee[]): void {
-  try {
-    const seen = new Set<string>();
-    const deduplicated: Employee[] = [];
-    employees.forEach((emp, index) => {
-      if (!emp) return;
-      const safeId = emp.id || `emp-${Date.now()}-${index}`;
-      if (!seen.has(safeId)) {
-        seen.add(safeId);
-        deduplicated.push({ ...emp, id: safeId });
-      } else {
-        const uniqueId = `${safeId}-dup-${index}-${Math.random().toString(36).substring(2, 6)}`;
-        seen.add(uniqueId);
-        deduplicated.push({ ...emp, id: uniqueId });
-      }
-    });
-    localStorage.setItem(STORAGE_KEYS.EMPLOYEES, JSON.stringify(deduplicated));
-  } catch (e) {}
+  void employees;
 }
 
 export function savePayrollRuns(runs: PayrollRun[]): void {
-  try { localStorage.setItem(STORAGE_KEYS.PAYROLL_RUNS, JSON.stringify(runs)); } catch (e) {}
+  void runs;
 }
 
 export function saveAttendance(att: AttendanceRecord[]): void {
-  try { localStorage.setItem(STORAGE_KEYS.ATTENDANCE, JSON.stringify(att)); } catch (e) {}
+  void att;
 }
 
 export function saveLeaves(leaves: LeaveRequest[]): void {
-  try { localStorage.setItem(STORAGE_KEYS.LEAVES, JSON.stringify(leaves)); } catch (e) {}
+  void leaves;
 }
 
 export function saveLoans(loans: LoanSchedule[]): void {
-  try { localStorage.setItem(STORAGE_KEYS.LOANS, JSON.stringify(loans)); } catch (e) {}
+  void loans;
 }
 
 export function savePenalties(penalties: PenaltyRecord[]): void {
-  try { localStorage.setItem(STORAGE_KEYS.PENALTIES, JSON.stringify(penalties)); } catch (e) {}
+  void penalties;
 }
 
 export function saveJournals(journals: JournalBatch[]): void {
-  try { localStorage.setItem(STORAGE_KEYS.JOURNALS, JSON.stringify(journals)); } catch (e) {}
+  void journals;
 }
 
 export function saveAuditLogs(logs: AuditLog[]): void {
-  try { localStorage.setItem(STORAGE_KEYS.AUDIT_LOGS, JSON.stringify(logs)); } catch (e) {}
+  void logs;
 }
 
 export function saveQoyodConfig(config: QoyodApiConfig): void {
-  try { localStorage.setItem(STORAGE_KEYS.QOYOD_CONFIG, JSON.stringify(config)); } catch (e) {}
+  void config;
 }
 
 export function saveActiveCompanyId(id: string): void {

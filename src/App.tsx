@@ -39,6 +39,7 @@ import {
   saveJournals, 
   saveAuditLogs, 
   saveQoyodConfig, 
+  clearSensitiveLocalState,
   saveActiveCompanyId, 
   saveActiveRole,
   saveUsers,
@@ -182,6 +183,7 @@ export const App: React.FC = () => {
     sessionStorage.removeItem(TAB_SESSION_KEY);
     sessionStorage.removeItem(LAST_ACTIVITY_KEY);
     api.logout().catch(() => undefined);
+    clearSensitiveLocalState();
     setState(prev => {
       if (prev.currentUser) {
         const log: AuditLog = {
