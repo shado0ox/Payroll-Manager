@@ -203,11 +203,12 @@ const DomLocalizer: React.FC<{ language: AppLanguage }> = ({ language }) => {
     processElement(document.body);
     const observer = new MutationObserver(mutations => {
       for (const mutation of mutations) {
-        if (mutation.type === 'characterData') processElement(mutation.target);
         for (const node of mutation.addedNodes) processElement(node);
       }
     });
-    observer.observe(document.body, { subtree: true, childList: true, characterData: true });
+    // Observe newly rendered controls/modals only. Watching characterData causes
+    // the translator to observe its own edits and can freeze large payroll tables.
+    observer.observe(document.body, { subtree: true, childList: true });
     return () => observer.disconnect();
   }, [language]);
   return null;
