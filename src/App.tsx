@@ -67,6 +67,7 @@ import { DatabaseStatusModal } from './components/DatabaseStatusModal';
 import { DatabaseStatus, persistFullStateToDatabase, calculateStorageSize } from './utils/databaseService';
 import { api } from './utils/api';
 import { WifiOff, Database, CheckCircle2, X } from 'lucide-react';
+import { synchronizeEmployeeBankDetails } from './utils/security';
 
 const TAB_SESSION_KEY = 'masar_tab_session_v1';
 const LAST_ACTIVITY_KEY = 'masar_last_activity_v1';
@@ -106,7 +107,8 @@ export const App: React.FC = () => {
         setState(prev => {
           const base = remote.state ? { ...prev, ...remote.state } : prev;
           const users = [...(base.users || []).filter(item => item.id !== user.id), user];
-          return { ...base, currentUser: user, users, activeRole: user.role } as typeof prev;
+          const employees = synchronizeEmployeeBankDetails(base.companies || [], base.employees || []);
+          return { ...base, employees, currentUser: user, users, activeRole: user.role } as typeof prev;
         });
         sessionStorage.setItem(LAST_ACTIVITY_KEY, String(Date.now()));
       } catch {
@@ -177,7 +179,8 @@ export const App: React.FC = () => {
     setState(prev => {
       const base = remote.state ? { ...prev, ...remote.state } : prev;
       const users = [...(base.users || []).filter(u => u.id !== user.id), user];
-      const next = { ...base, currentUser: user, users, activeCompanyId: companyId, activeRole: user.role } as typeof prev;
+      const employees = synchronizeEmployeeBankDetails(base.companies || [], base.employees || []);
+      const next = { ...base, employees, currentUser: user, users, activeCompanyId: companyId, activeRole: user.role } as typeof prev;
       saveCurrentUser(user);
       saveActiveRole(user.role);
       saveActiveCompanyId(companyId);
@@ -664,6 +667,7 @@ export const App: React.FC = () => {
     if (!hasPermission(state.currentUser, 'MANAGE_COMPANY_PROFILE')) return;
     setState(prev => {
       const updated = prev.companies.map(c => c.id === company.id ? company : c);
+      const synchronizedEmployees = synchronizeEmployeeBankDetails(updated, prev.employees);
       saveCompanies(updated);
 
       const log: AuditLog = {
@@ -679,7 +683,7 @@ export const App: React.FC = () => {
       const updatedLogs = [log, ...prev.auditLogs];
       saveAuditLogs(updatedLogs);
 
-      return { ...prev, companies: updated, auditLogs: updatedLogs };
+      return { ...prev, companies: updated, employees: synchronizedEmployees, auditLogs: updatedLogs };
     });
   };
 

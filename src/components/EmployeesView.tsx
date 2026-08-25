@@ -578,6 +578,9 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                   (emp.salaryPackage.otherFixedAllowances || 0);
 
                 const isSuspended = emp.status === 'SUSPENDED';
+                const resolvedBank = detectBankFromIBAN(emp.bankIban, company.bankDefinitions);
+                const displayBankName = resolvedBank ? (language === 'en' ? resolvedBank.nameEn || resolvedBank.nameAr : resolvedBank.nameAr) : emp.bankName;
+                const displaySwift = resolvedBank?.swiftCode || emp.bankSwiftCode;
 
                 return (
                   <tr key={`${emp.id || 'emp'}-${idx}`} className="hover:bg-slate-50/80 transition-colors text-[11px]">
@@ -623,15 +626,15 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
 
                     {/* Bank & IBAN & SWIFT */}
                     <td className="py-3 px-2 truncate">
-                      <div className="text-slate-800 font-medium truncate">{emp.bankName}</div>
+                      <div className="text-slate-800 font-medium truncate">{displayBankName}</div>
                       {emp.bankIban ? (
                         <div className="text-[10px] text-slate-500 font-mono truncate" title={emp.bankIban}>
                           {emp.bankIban.slice(0, 6)}...{emp.bankIban.slice(-4)}
                         </div>
                       ) : <div className="text-[9px] text-amber-600 font-semibold">IBAN غير مكتمل</div>}
-                      {emp.bankSwiftCode ? (
-                        <div className="text-[9px] text-emerald-700 font-mono font-semibold truncate" title={`رمز السويفت: ${emp.bankSwiftCode}`}>
-                          SWIFT: {emp.bankSwiftCode}
+                      {displaySwift ? (
+                        <div className="text-[9px] text-emerald-700 font-mono font-semibold truncate" title={`رمز السويفت: ${displaySwift}`}>
+                          SWIFT: {displaySwift}
                         </div>
                       ) : (
                         <div className="text-[9px] text-slate-400 font-mono">

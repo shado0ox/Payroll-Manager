@@ -1,4 +1,4 @@
-import type { CompanyBankDefinition } from '../types';
+import type { Company, CompanyBankDefinition, Employee } from '../types';
 
 /**
  * Security, sanitization, XSS mitigation, and runtime integrity layer
@@ -116,6 +116,21 @@ export function detectBankFromIBAN(iban: string, customDefinitions?: CompanyBank
     return custom ? { code: custom.ibanBankCode, nameAr: custom.nameAr, nameEn: custom.nameEn, swiftCode: custom.swiftCode } : null;
   }
   return null;
+}
+
+/**
+ * Re-links every employee to the company's central bank definitions using IBAN.
+ * Existing salary and personal data are left untouched.
+ */
+export function synchronizeEmployeeBankDetails(companies: Company[], employees: Employee[]): Employee[] {
+  const companiesById = new Map(companies.map(company => [company.id, company]));
+  return employees.map(employee => {
+    const company = companiesById.get(employee.companyId);
+    const detected = detectBankFromIBAN(employee.bankIban, company?.bankDefinitions);
+    if (!detected) return employee;
+    if (employee.bankCode === detected.code && employee.bankName === detected.nameAr && employee.bankSwiftCode === detected.swiftCode) return employee;
+    return { ...employee, bankCode: detected.code, bankName: detected.nameAr, bankSwiftCode: detected.swiftCode };
+  });
 }
 
 /**
