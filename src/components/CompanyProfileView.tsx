@@ -1229,7 +1229,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
           if (onSaveQoyodConfig) {
             onSaveQoyodConfig(qConfig);
           }
-          setSaveSuccessMessage('تم حفظ إعدادات وتكوين الربط مع قيود (Qoyod API 2.0) بنجاح');
+          setSaveSuccessMessage(tr('تم حفظ إعدادات وتكوين الربط مع قيود (Qoyod API 2.0) بنجاح', 'Qoyod API 2.0 integration settings were saved successfully.'));
           setTimeout(() => setSaveSuccessMessage(null), 4000);
         };
 
@@ -1241,15 +1241,15 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
             if (qConfig.apiKey && qConfig.apiKey.trim().length > 6) {
               setQoyodTestResult({
                 status: 'SUCCESS',
-                message: `تم التحقق بنجاح من صلاحية مفتاح API-KEY مع خادم قيود (${qConfig.baseUrl || 'https://api.qoyod.com/2.0'}) لمنشأة: ${formData.nameAr}`,
+                message: tr(`صيغة مفتاح API-KEY والإعدادات مكتملة لمنشأة: ${formData.nameAr}. استخدم الترحيل التجريبي للتحقق الفعلي من الخادم.`, `The API key format and settings are complete for ${formData.nameEn || formData.nameAr}. Use the test journal action to verify the server connection.`),
               });
-              const updatedConfig = { ...qConfig, lastTestStatus: 'SUCCESS' as const, lastTestMessage: 'الاتصال نشط' };
+              const updatedConfig = { ...qConfig, lastTestStatus: 'SUCCESS' as const, lastTestMessage: tr('الإعدادات مكتملة', 'Settings complete') };
               setQConfig(updatedConfig);
               if (onSaveQoyodConfig) onSaveQoyodConfig(updatedConfig);
             } else {
               setQoyodTestResult({
                 status: 'FAILED',
-                message: 'يرجى إدخال مفتاح API-KEY الصحيح المستخرج من لوحة تحكم قيود (الإعدادات > مفاتيح الـ API)',
+                message: tr('يرجى إدخال مفتاح API-KEY الصحيح المستخرج من لوحة تحكم قيود (الإعدادات > مفاتيح الـ API)', 'Enter a valid API-KEY from Qoyod Dashboard > Settings > API Keys.'),
               });
             }
           }, 600);
@@ -1257,7 +1257,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
 
         const handleDirectSync = async () => {
           if ((!qConfig.apiKey || qConfig.apiKey.trim().length < 5) && !qConfig.apiKeyConfigured) {
-            alert('يرجى حفظ وإدخال مفتاح API-KEY أولاً');
+            alert(tr('يرجى حفظ وإدخال مفتاح API-KEY أولاً', 'Enter and save the API-KEY first.'));
             return;
           }
 
@@ -1273,12 +1273,12 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
             }
           } catch (err: any) {
             setIsSyncingQoyod(false);
-            alert(`خطأ أثناء الاتصال بخادم قيود: ${err.message || err}`);
+            alert(`${tr('خطأ أثناء الاتصال بخادم قيود', 'Error connecting to Qoyod')}: ${err.message || err}`);
           }
         };
 
         return (
-          <div className="bg-white rounded-2xl p-6 border border-slate-200/80 shadow-sm space-y-6">
+          <div data-no-translate className="bg-white rounded-2xl p-6 border border-slate-200/80 shadow-sm space-y-6">
             
             {/* Header Banner */}
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-slate-100 pb-4">
@@ -1289,14 +1289,14 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
                 <div>
                   <div className="flex items-center gap-2">
                     <h3 className="text-base font-bold text-slate-900">
-                      تكامل نظام قيود المحاسبي (Qoyod API 2.0 Integration)
+                      {tr('تكامل نظام قيود المحاسبي (Qoyod API 2.0)', 'Qoyod Accounting Integration (API 2.0)')}
                     </h3>
                     <span className="px-2 py-0.5 rounded-md bg-sky-100 text-sky-800 font-mono text-[10px] font-bold">
                       POST /2.0/journal_entries
                     </span>
                   </div>
                   <p className="text-xs text-slate-500 mt-0.5">
-                    الربط الآلي المباشر لترحيل قيود الرواتب والبدلات والاستقطاعات لشجرة حسابات قيود لمنشأة {formData.nameAr}
+                    {tr('الربط الآلي المباشر لترحيل قيود الرواتب والبدلات والاستقطاعات لشجرة حسابات قيود لمنشأة', 'Direct integration for posting payroll, allowances and deductions to Qoyod for')} {language === 'ar' ? formData.nameAr : (formData.nameEn || formData.nameAr)}
                   </p>
                 </div>
               </div>
@@ -1309,7 +1309,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
                     className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
                   >
                     <Globe className="w-3.5 h-3.5" />
-                    <span>نافذة الترحيل السريع</span>
+                    <span>{tr('نافذة الترحيل السريع', 'Quick posting')}</span>
                   </button>
                 )}
                 <button
@@ -1318,7 +1318,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
                   className="px-3.5 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
                 >
                   <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
-                  <span>تصدير قيد CSV لقيود</span>
+                  <span>{tr('تصدير قيد CSV لقيود', 'Export Qoyod journal CSV')}</span>
                 </button>
               </div>
             </div>
@@ -1359,7 +1359,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
                     : 'text-slate-600 hover:bg-slate-100'
                 }`}
               >
-                إعدادات الـ API والمفتاح
+                {tr('إعدادات الـ API والمفتاح', 'API Settings')}
               </button>
 
               <button
@@ -1372,7 +1372,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
                 }`}
               >
                 <Code className="w-3.5 h-3.5 text-emerald-500" />
-                <span>حزمة البيانات المعتمدة (JSON Payload)</span>
+                <span>{tr('حزمة البيانات المعتمدة (JSON Payload)', 'Journal payload (JSON)')}</span>
               </button>
 
               <button
@@ -1385,7 +1385,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
                 }`}
               >
                 <Terminal className="w-3.5 h-3.5 text-purple-400" />
-                <span>أمر cURL الجاهز</span>
+                <span>{tr('أمر cURL الجاهز', 'Generated cURL')}</span>
               </button>
             </div>
 
@@ -1396,7 +1396,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
                 {/* Endpoint Display */}
                 <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                   <div>
-                    <span className="text-[11px] font-bold text-slate-500 block">نقطة النهاية الرسمية لبرنامج قيود (API Endpoint):</span>
+                    <span className="text-[11px] font-bold text-slate-500 block">{tr('نقطة النهاية الرسمية لبرنامج قيود (API Endpoint):', 'Official Qoyod API endpoint:')}</span>
                     <span className="font-mono text-xs font-bold text-slate-900" dir="ltr">
                       POST https://api.qoyod.com/2.0/journal_entries
                     </span>
@@ -1417,23 +1417,23 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
                     <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center justify-between">
                       <span className="flex items-center gap-1.5">
                         <Key className="w-3.5 h-3.5 text-slate-500" />
-                        <span>مفتاح API الخاص بحساب المنشأة في قيود (API-KEY) *</span>
+                        <span>{tr('مفتاح API الخاص بحساب المنشأة في قيود (API-KEY) *', 'Company Qoyod API-KEY *')}</span>
                       </span>
-                      <span className="text-[10px] text-slate-400 font-normal">من لوحة تحكم قيود &gt; الإعدادات &gt; مفاتيح API</span>
+                      <span className="text-[10px] text-slate-400 font-normal">{tr('من لوحة تحكم قيود > الإعدادات > مفاتيح API', 'Qoyod Dashboard > Settings > API Keys')}</span>
                     </label>
                     <div className="relative flex items-center">
                       <input
                         type={showApiKey ? 'text' : 'password'}
                         value={qConfig.apiKey || ''}
                         onChange={(e) => setQConfig({ ...qConfig, apiKey: e.target.value })}
-                        placeholder="أدخل مفتاح API-KEY هنا (مثال: 9a78f2bc904845b4b76e271...)"
+                        placeholder={tr('أدخل مفتاح API-KEY هنا', 'Enter the API-KEY here')}
                         className="w-full pl-10 pr-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-mono text-xs focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 font-bold"
                       />
                       <button
                         type="button"
                         onClick={() => setShowApiKey(!showApiKey)}
                         className="absolute left-2.5 text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
-                        title={showApiKey ? 'إخفاء' : 'إظهار'}
+                        title={showApiKey ? tr('إخفاء', 'Hide') : tr('إظهار', 'Show')}
                       >
                         {showApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                       </button>
@@ -1442,7 +1442,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
 
                   {/* Base URL */}
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">رابط خادم قيود (Base URL)</label>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">{tr('رابط خادم قيود (Base URL)', 'Qoyod Base URL')}</label>
                     <input
                       type="text"
                       value={qConfig.baseUrl || 'https://api.qoyod.com/2.0'}
@@ -1454,12 +1454,12 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
 
                   {/* Organization ID */}
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">معرف المنشأة في قيود (Organization ID)</label>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">{tr('معرف المنشأة في قيود (Organization ID)', 'Qoyod Organization ID')}</label>
                     <input
                       type="text"
                       value={qConfig.organizationId || ''}
                       onChange={(e) => setQConfig({ ...qConfig, organizationId: e.target.value })}
-                      placeholder="اختياري"
+                      placeholder={tr('اختياري', 'Optional')}
                       className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-mono text-xs focus:bg-white text-slate-800"
                     />
                   </div>
@@ -1468,8 +1468,8 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
                 {/* Auto Sync Toggle */}
                 <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 flex items-center justify-between">
                   <div>
-                    <div className="text-xs font-bold text-slate-900">المزامنة التلقائية عند اعتماد مسير الرواتب</div>
-                    <div className="text-[11px] text-slate-500 mt-0.5">ترحيل قيد اليومية آلياً إلى قيود فور اعتماد المسير الشهري من قبل المعتمدين</div>
+                    <div className="text-xs font-bold text-slate-900">{tr('المزامنة التلقائية عند اعتماد مسير الرواتب', 'Automatically sync approved payroll')}</div>
+                    <div className="text-[11px] text-slate-500 mt-0.5">{tr('ترحيل قيد اليومية آلياً إلى قيود فور اعتماد المسير الشهري من قبل المعتمدين', 'Post the payroll journal to Qoyod automatically after authorized approval')}</div>
                   </div>
                   <input
                     type="checkbox"
@@ -1489,7 +1489,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
                       className="px-4 py-2.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-xs"
                     >
                       <RefreshCw className={`w-3.5 h-3.5 ${isTestingQoyod ? 'animate-spin' : ''}`} />
-                      <span>اختبار الاتصال بالخادم</span>
+                      <span>{isTestingQoyod ? tr('جاري الفحص...', 'Validating...') : tr('فحص اكتمال الإعدادات', 'Validate settings')}</span>
                     </button>
 
                     <button
@@ -1499,7 +1499,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
                       className="px-4 py-2.5 bg-sky-600 hover:bg-sky-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-md cursor-pointer"
                     >
                       <Send className={`w-3.5 h-3.5 ${isSyncingQoyod ? 'animate-spin' : ''}`} />
-                      <span>{isSyncingQoyod ? 'جاري الترحيل...' : 'تجربة ترحيل قيد تجريبي لقيود'}</span>
+                      <span>{isSyncingQoyod ? tr('جاري الترحيل...', 'Posting...') : tr('ترحيل قيد تجريبي للتحقق الفعلي', 'Post test journal to verify connection')}</span>
                     </button>
                   </div>
 
@@ -1508,7 +1508,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
                     className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-md transition-all cursor-pointer flex items-center gap-2"
                   >
                     <Save className="w-4 h-4" />
-                    <span>حفظ إعدادات قيود للمنشأة</span>
+                    <span>{tr('حفظ إعدادات قيود للمنشأة', 'Save Qoyod settings')}</span>
                   </button>
                 </div>
 
@@ -1520,7 +1520,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <div className="text-xs text-slate-600 font-bold">
-                    حزمة بيانات قيد الرواتب المطابقة لتوثيق قيود 2.0 (Payload):
+                    {tr('حزمة بيانات قيد الرواتب المطابقة لتوثيق قيود 2.0 (Payload):', 'Payroll journal payload for Qoyod API 2.0:')}
                   </div>
                   <button
                     type="button"
@@ -1532,7 +1532,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
                     className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer"
                   >
                     {copiedJson ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-                    <span>{copiedJson ? 'تم النسخ' : 'نسخ كود JSON'}</span>
+                    <span>{copiedJson ? tr('تم النسخ', 'Copied') : tr('نسخ كود JSON', 'Copy JSON')}</span>
                   </button>
                 </div>
 
@@ -1547,7 +1547,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <div className="text-xs text-slate-600 font-bold">
-                    أمر cURL الجاهز للتشغيل في Terminal أو Postman:
+                    {tr('أمر cURL الجاهز للتشغيل في Terminal أو Postman:', 'Generated cURL command for Terminal or Postman:')}
                   </div>
                   <button
                     type="button"
@@ -1559,7 +1559,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
                     className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer"
                   >
                     {copiedCurl ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-                    <span>{copiedCurl ? 'تم النسخ' : 'نسخ أمر cURL'}</span>
+                    <span>{copiedCurl ? tr('تم النسخ', 'Copied') : tr('نسخ أمر cURL', 'Copy cURL')}</span>
                   </button>
                 </div>
 
