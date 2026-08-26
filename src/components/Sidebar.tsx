@@ -27,10 +27,10 @@ interface SidebarProps {
   onLogout?: () => void;
 }
 
-const ROLE_DISPLAY: Record<UserRole, { title: string }> = {
-  ADMIN: { title: 'مسؤول النظام الرئيسي' },
-  COMPANY_MANAGER: { title: 'المدير العام' },
-  OPERATIONS_MANAGER: { title: 'مدير العمليات' },
+const ROLE_DISPLAY: Record<UserRole, 'primarySystemAdmin' | 'generalManager' | 'operationsManager'> = {
+  ADMIN: 'primarySystemAdmin',
+  COMPANY_MANAGER: 'generalManager',
+  OPERATIONS_MANAGER: 'operationsManager',
 };
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -109,9 +109,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
   ];
 
   const visibleNavItems = navItems.filter(item => hasPermission(currentUser, TAB_PERMISSION[item.id]));
-  const roleTitle = ROLE_DISPLAY[activeRole]?.title || 'مستخدم النظام';
-  const displayName = currentUser?.name || (isAdmin ? 'مسؤول النظام' : 'المستخدم');
-  const avatarLetter = currentUser?.name ? currentUser.name.charAt(0) : 'م';
+  const roleTitle = t(ROLE_DISPLAY[activeRole] || 'systemUser');
+  const displayName = currentUser?.name || (isAdmin ? t('systemAdmin') : t('user'));
+  const avatarLetter = currentUser?.name ? currentUser.name.charAt(0) : (language === 'ar' ? 'م' : 'U');
 
   return (
     <aside className="w-64 bg-[#1e293b] text-white flex flex-col shadow-xl shrink-0 h-screen sticky top-0">
@@ -186,7 +186,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           {onLogout && (
             <button
               onClick={onLogout}
-              title="تسجيل الخروج"
+              title={t('logoutTitle')}
               className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-slate-700/50 rounded-lg transition-colors cursor-pointer"
             >
               <LogOut className="w-4 h-4" />
@@ -197,7 +197,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         {/* Attribution */}
         <div className="text-center pt-1">
           <p className="text-[10px] text-slate-400 font-medium">
-            تم التصميم بواسطة الأستاذ: <span className="text-emerald-400 font-bold">Shadi Nassef</span>
+            {t('designedBy')} <span className="text-emerald-400 font-bold">Shadi Nassef</span>
           </p>
         </div>
       </div>

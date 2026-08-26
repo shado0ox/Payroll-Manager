@@ -29,10 +29,10 @@ interface NavbarProps {
   onResetData?: () => void;
 }
 
-const ROLE_LABELS: Record<UserRole, { label: string; color: string }> = {
-  ADMIN: { label: 'مسؤول النظام', color: 'bg-purple-50 text-purple-700 border-purple-200' },
-  COMPANY_MANAGER: { label: 'المدير العام', color: 'bg-indigo-50 text-indigo-700 border-indigo-200' },
-  OPERATIONS_MANAGER: { label: 'مدير العمليات', color: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+const ROLE_LABELS: Record<UserRole, { key: 'systemAdmin' | 'generalManager' | 'operationsManager'; color: string }> = {
+  ADMIN: { key: 'systemAdmin', color: 'bg-purple-50 text-purple-700 border-purple-200' },
+  COMPANY_MANAGER: { key: 'generalManager', color: 'bg-indigo-50 text-indigo-700 border-indigo-200' },
+  OPERATIONS_MANAGER: { key: 'operationsManager', color: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
 };
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -82,7 +82,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         {onOpenDbModal && (
           <button
             onClick={onOpenDbModal}
-            title="فحص حالة قاعدة البيانات والنسخ الاحتياطي"
+            title={t('databaseStatusTitle')}
             className={`hidden lg:flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-bold border cursor-pointer transition-all ${
               dbStatus?.isChecking
                 ? 'bg-slate-50 border-slate-200 text-slate-600'
@@ -99,7 +99,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               <WifiOff className="w-3.5 h-3.5 text-amber-600" />
             )}
             <span className="text-[11px]">
-              {dbStatus?.isChecking ? (language === 'en' ? 'Database: Checking' : 'قاعدة البيانات: جاري الفحص') : dbStatus?.isCloudConnected ? t('dbConnected') : t('dbDisconnected')}
+              {dbStatus?.isChecking ? t('databaseChecking') : dbStatus?.isCloudConnected ? t('dbConnected') : t('dbDisconnected')}
             </span>
           </button>
         )}
@@ -115,7 +115,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         {onOpenDbModal && (
           <button
             onClick={onOpenDbModal}
-            title="حالة قاعدة البيانات"
+            title={t('databaseStatus')}
             className="lg:hidden p-2 text-amber-700 bg-amber-50 hover:bg-amber-100 rounded-lg border border-amber-200 transition-colors cursor-pointer"
           >
             <Database className="w-3.5 h-3.5" />
@@ -144,7 +144,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 {currentUser.name}
               </div>
               <div className="text-[10px] text-slate-500 font-medium">
-                {roleInfo.label}
+                {t(roleInfo.key)}
               </div>
             </div>
           </div>
@@ -153,7 +153,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         {/* Logout Button */}
         <button
           onClick={onLogout}
-          title="تسجيل الخروج من النظام"
+          title={t('logoutTitle')}
           className="flex items-center gap-1 px-3 py-2 text-rose-600 hover:text-rose-700 hover:bg-rose-50 rounded-lg border border-rose-200 text-xs font-bold transition-colors cursor-pointer"
         >
           <LogOut className="w-3.5 h-3.5" />
@@ -164,7 +164,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         {onResetData && (
           <button
             onClick={onResetData}
-            title="إعادة ضبط البيانات"
+            title={t('resetData')}
             className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg border border-slate-200 transition-colors cursor-pointer"
           >
             <RefreshCw className="w-3.5 h-3.5" />

@@ -68,12 +68,14 @@ import { DatabaseStatus, persistFullStateToDatabase } from './utils/databaseServ
 import { api } from './utils/api';
 import { WifiOff, Database, CheckCircle2, X } from 'lucide-react';
 import { synchronizeEmployeeBankDetails } from './utils/security';
+import { useLanguage } from './i18n/LanguageContext';
 
 const TAB_SESSION_KEY = 'masar_tab_session_v1';
 const LAST_ACTIVITY_KEY = 'masar_last_activity_v1';
 const IDLE_TIMEOUT_MS = 60 * 60 * 1000;
 
 export const App: React.FC = () => {
+  const { t } = useLanguage();
   // Initialize full application state
   const [state, setState] = useState(() => loadInitialState());
 
@@ -767,7 +769,7 @@ export const App: React.FC = () => {
 
   // If not logged in, show real Login View
   if (!authReady) {
-    return <div className="min-h-screen bg-slate-950 flex items-center justify-center text-white text-sm font-bold">جاري التحقق من الجلسة...</div>;
+    return <div className="min-h-screen bg-slate-950 flex items-center justify-center text-white text-sm font-bold">{t('checkingSession')}</div>;
   }
 
   if (!state.currentUser) {
@@ -810,9 +812,9 @@ export const App: React.FC = () => {
           <div className="bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-transparent border-b border-amber-200/80 px-6 py-2 flex items-center justify-between gap-3 text-xs text-amber-900 shrink-0">
             <div className="flex items-center gap-2.5 min-w-0">
               <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0 animate-pulse"></span>
-              <span className="font-bold shrink-0">إشعار قاعدة البيانات:</span>
+              <span className="font-bold shrink-0">{t('databaseNotice')}</span>
               <span className="text-slate-700 truncate font-medium">
-                تعذر الوصول إلى PostgreSQL — لن تُحفظ التعديلات الجديدة حتى عودة الاتصال. البيانات الموجودة على الخادم لم تُحذف.
+                {t('databaseUnavailable')}
               </span>
             </div>
             <div className="flex items-center gap-2 shrink-0">
@@ -820,11 +822,11 @@ export const App: React.FC = () => {
                 onClick={() => setIsDbModalOpen(true)}
                 className="px-2.5 py-1 bg-amber-100 hover:bg-amber-200 text-amber-900 rounded-lg text-[11px] font-bold transition-colors cursor-pointer"
               >
-                فحص الاتصال والنسخ الاحتياطي
+                {t('checkConnectionBackup')}
               </button>
               <button
                 onClick={() => setShowDbWarningBanner(false)}
-                title="إخفاء التنبيه"
+                title={t('hideNotice')}
                 className="p-1 text-slate-400 hover:text-slate-700 rounded-md cursor-pointer transition-colors"
               >
                 <X className="w-3.5 h-3.5" />

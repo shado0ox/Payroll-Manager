@@ -67,7 +67,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ defaultCompanyCode = '101'
             {t('payrollSystem')}
           </h1>
           <p className="text-xs sm:text-sm text-slate-400 mt-1 font-medium">
-            منظومة إدارة مسيرات الأجور والامتثال المالي
+            {t('loginSubtitle')}
           </p>
         </div>
 
@@ -96,7 +96,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ defaultCompanyCode = '101'
             {/* Company Code Input */}
             <div>
               <label className="block text-xs font-bold text-slate-300 mb-1.5">
-                رمز المنشأة / الشركة <span className="text-emerald-400 font-mono">(Company Code)</span>
+                {t('companyCodeLabel')}
               </label>
               
               <div className="relative">
@@ -104,7 +104,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ defaultCompanyCode = '101'
                   type="text"
                   value={companyInput}
                   onChange={(e) => setCompanyInput(e.target.value)}
-                  placeholder="أدخل رمز المنشأة (مثال: 101)"
+                  placeholder={t('companyCodePlaceholder')}
                   required
                   className="w-full pl-3 pr-10 py-2.5 bg-slate-900/80 border border-slate-700 rounded-xl text-white text-sm focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 transition-all font-mono"
                   dir="ltr"
@@ -184,11 +184,11 @@ export const LoginView: React.FC<LoginViewProps> = ({ defaultCompanyCode = '101'
         {/* Designer Attribution & System Info Footer */}
         <div className="text-center mt-6 space-y-1.5">
           <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-800/80 border border-slate-700 text-slate-300 text-xs font-semibold shadow-xs">
-            <span>تم التصميم والتطوير بواسطة الأستاذ:</span>
+            <span>{t('designedBy')}</span>
             <span className="text-emerald-400 font-bold">Shadi Nassef</span>
           </div>
           <div className="text-[11px] text-slate-500">
-            نظام مسار لإدارة الرواتب والأجور المتوافق مع نظام العمل السعودي ومنصة مدد
+            {t('loginFooter')}
           </div>
         </div>
 
