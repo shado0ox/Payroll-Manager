@@ -76,6 +76,7 @@ export interface Company {
   fiscalYearStartMonth: number;
   payrollCutoffDay: number; // e.g. 25th of month
   payrollPaymentDay: number; // e.g. 27th or last day of month
+  monthlyBudgetCap?: number; // approved expected monthly payroll budget
   workDaysPerMonth: number; // standard 30 days
   dailyWorkHours: number; // 8 hours
   workHoursPerDay?: number;

@@ -34,6 +34,7 @@ import {
 } from 'recharts';
 import { Company, Employee, PayrollRun, LoanSchedule, UserRole, NavigationTab } from '../types';
 import { formatSAR, formatNumber } from '../utils/payrollEngine';
+import { useLanguage } from '../i18n/LanguageContext';
 
 interface DashboardViewProps {
   company: Company;
@@ -112,10 +113,15 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   onViewEmployeeStatement,
   onOpenQoyodModal,
 }) => {
+  const { language } = useLanguage();
+  const tr = (ar: string, en: string) => language === 'ar' ? ar : en;
   const [chartViewMode, setChartViewMode] = useState<'total' | 'average'>('total');
 
   // Get current active or latest payroll run
-  const latestRun = payrollRuns.find(r => r.companyId === company.id) || payrollRuns[0];
+  const companyPayrollRuns = payrollRuns
+    .filter(r => r.companyId === company.id)
+    .sort((a, b) => b.periodMonth.localeCompare(a.periodMonth));
+  const latestRun = companyPayrollRuns[0];
   const companyEmployees = employees.filter(e => e.companyId === company.id);
 
   // Department Salary Distribution Aggregation
@@ -192,9 +198,15 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const totalNet = latestRun ? latestRun.totalNetSalaries : (totalGross - totalDeductions);
 
   // Monthly Budget calculations
-  const monthlyAllocatedBudget = company.monthlyBudgetCap || Math.max(100000, totalGross * 1.2);
-  const budgetUtilizationPercent = monthlyAllocatedBudget > 0 ? Math.min(100, Math.round((totalGross / monthlyAllocatedBudget) * 100)) : 0;
-  const remainingBudget = Math.max(0, monthlyAllocatedBudget - totalGross);
+  const monthlyAllocatedBudget = Math.max(0, Number(company.monthlyBudgetCap) || 0);
+  const rawBudgetUtilizationPercent = monthlyAllocatedBudget > 0 ? Math.round((totalGross / monthlyAllocatedBudget) * 100) : 0;
+  const budgetUtilizationPercent = Math.min(100, rawBudgetUtilizationPercent);
+  const remainingBudget = monthlyAllocatedBudget - totalGross;
+  const budgetPeriod = latestRun?.periodMonth || new Date().toISOString().slice(0, 7);
+  const budgetPeriodLabel = new Intl.DateTimeFormat(language === 'ar' ? 'ar-SA' : 'en-US', { month: 'long', year: 'numeric' })
+    .format(new Date(`${budgetPeriod}-01T12:00:00`));
+  const budgetIsConfigured = monthlyAllocatedBudget > 0;
+  const budgetIsExceeded = budgetIsConfigured && totalGross > monthlyAllocatedBudget;
 
   // Sample items for table display
   const tableItems = useMemo(() => {
@@ -413,39 +425,47 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       </section>
 
       {/* 3. Monthly Payroll Budget Visual Gauge & Indicators */}
-      <section className="bg-white p-6 rounded-xl border border-slate-200 shadow-xs">
+      <section data-no-translate className="bg-white p-6 rounded-xl border border-slate-200 shadow-xs">
         <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
           <div className="flex items-center gap-2.5">
             <div className="p-2 bg-emerald-50 text-emerald-600 rounded-lg border border-emerald-200/60">
               <Target className="w-5 h-5" />
             </div>
             <div>
-              <h4 className="font-bold text-slate-800 text-base">مؤشر ميزانية الرواتب الشهرية</h4>
-              <p className="text-xs text-slate-400">مراقبة سقف الميزانية والإنفاق الفعلي لشهر مايو 2024</p>
+              <h4 className="font-bold text-slate-800 text-base">{tr('مؤشر ميزانية الرواتب الشهرية', 'Monthly Payroll Budget')}</h4>
+              <p className="text-xs text-slate-400">
+                {tr('مقارنة ميزانية المنشأة مع', 'Company budget compared with')} {latestRun ? tr('المسير الفعلي لفترة', 'actual payroll for') : tr('الرواتب الثابتة التقديرية لفترة', 'estimated fixed payroll for')} {budgetPeriodLabel}
+              </p>
             </div>
           </div>
 
           {/* Status Badge */}
-          <div className="flex items-center gap-2 px-3 py-1.5 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-full text-xs font-semibold">
-            <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-            <span>ضمن النطاق الآمن المستهدف ({budgetUtilizationPercent}%)</span>
+          <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-semibold border ${!budgetIsConfigured ? 'bg-amber-50 border-amber-200 text-amber-800' : budgetIsExceeded ? 'bg-rose-50 border-rose-200 text-rose-800' : 'bg-emerald-50 border-emerald-200 text-emerald-800'}`}>
+            {budgetIsConfigured && !budgetIsExceeded ? <CheckCircle2 className="w-4 h-4 text-emerald-600" /> : <AlertTriangle className={`w-4 h-4 ${budgetIsExceeded ? 'text-rose-600' : 'text-amber-600'}`} />}
+            <span>
+              {!budgetIsConfigured
+                ? tr('الميزانية غير محددة في ملف المنشأة', 'Budget is not configured in Company Profile')
+                : budgetIsExceeded
+                  ? `${tr('تجاوز الميزانية', 'Budget exceeded')} (${rawBudgetUtilizationPercent}%)`
+                  : `${tr('ضمن الميزانية المحددة', 'Within the configured budget')} (${rawBudgetUtilizationPercent}%)`}
+            </span>
           </div>
         </div>
 
         {/* Progress Bar Gauge */}
         <div className="space-y-2 mb-6">
           <div className="flex justify-between items-center text-xs font-semibold">
-            <span className="text-slate-700">المصروف الفعلي: <strong className="text-emerald-600">{formatSAR(totalGross)}</strong></span>
-            <span className="text-slate-500">سقف الميزانية المعتمدة: <strong className="text-slate-800">{formatSAR(monthlyAllocatedBudget)}</strong></span>
+            <span className="text-slate-700">{latestRun ? tr('مصروف المسير الفعلي', 'Actual payroll spending') : tr('الرواتب الثابتة التقديرية', 'Estimated fixed payroll')}: <strong className={budgetIsExceeded ? 'text-rose-600' : 'text-emerald-600'}>{formatSAR(totalGross)}</strong></span>
+            <span className="text-slate-500">{tr('الميزانية المحددة في ملف المنشأة', 'Budget configured in Company Profile')}: <strong className="text-slate-800">{budgetIsConfigured ? formatSAR(monthlyAllocatedBudget) : '—'}</strong></span>
           </div>
           
           <div className="w-full bg-slate-100 h-4 rounded-full overflow-hidden p-0.5 border border-slate-200 flex">
             <div 
-              className="bg-gradient-to-l from-emerald-500 to-teal-600 h-full rounded-full transition-all duration-700 shadow-xs relative" 
+              className={`${budgetIsExceeded ? 'bg-gradient-to-l from-rose-500 to-red-600' : 'bg-gradient-to-l from-emerald-500 to-teal-600'} h-full rounded-full transition-all duration-700 shadow-xs relative`}
               style={{ width: `${budgetUtilizationPercent}%` }}
             >
               <span className="absolute right-2 top-0 bottom-0 flex items-center text-[10px] font-bold text-white">
-                {budgetUtilizationPercent}%
+                {budgetIsConfigured ? `${rawBudgetUtilizationPercent}%` : ''}
               </span>
             </div>
           </div>
@@ -454,21 +474,21 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         {/* 3 Metric Cards for Budget Details */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-4 border-t border-slate-100">
           <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200/80">
-            <p className="text-xs text-slate-500 font-medium">الميزانية التقديرية المخصصة</p>
-            <p className="text-lg font-bold text-slate-800 mt-1">{formatSAR(monthlyAllocatedBudget)}</p>
-            <p className="text-[11px] text-slate-400 mt-0.5">معتمدة من مجلس الإدارة</p>
+            <p className="text-xs text-slate-500 font-medium">{tr('الميزانية الشهرية المتوقعة', 'Expected monthly budget')}</p>
+            <p className="text-lg font-bold text-slate-800 mt-1">{budgetIsConfigured ? formatSAR(monthlyAllocatedBudget) : '—'}</p>
+            <p className="text-[11px] text-slate-400 mt-0.5">{tr('قابلة للتعديل من ملف المنشأة', 'Editable from Company Profile')}</p>
           </div>
 
           <div className="p-3.5 bg-emerald-50/50 rounded-xl border border-emerald-200/80">
-            <p className="text-xs text-emerald-800 font-medium">الإنفاق الفعلي الجاري</p>
+            <p className="text-xs text-emerald-800 font-medium">{latestRun ? tr('إنفاق المسير الفعلي', 'Actual payroll spending') : tr('إجمالي الرواتب التقديري', 'Estimated payroll total')}</p>
             <p className="text-lg font-bold text-emerald-700 mt-1">{formatSAR(totalGross)}</p>
-            <p className="text-[11px] text-emerald-600 font-medium mt-0.5">يمثل {budgetUtilizationPercent}% من المخصص</p>
+            <p className="text-[11px] text-emerald-600 font-medium mt-0.5">{budgetIsConfigured ? `${tr('يمثل', 'Represents')} ${rawBudgetUtilizationPercent}% ${tr('من الميزانية', 'of budget')}` : tr('حدد الميزانية لإظهار النسبة', 'Configure a budget to show utilization')}</p>
           </div>
 
           <div className="p-3.5 bg-blue-50/50 rounded-xl border border-blue-200/80">
-            <p className="text-xs text-blue-800 font-medium">الاحتياطي المتبقي بالميزانية</p>
-            <p className="text-lg font-bold text-blue-700 mt-1">{formatSAR(remainingBudget)}</p>
-            <p className="text-[11px] text-blue-600 font-medium mt-0.5">فائض مالي متاح للشهر الحالي</p>
+            <p className="text-xs text-blue-800 font-medium">{remainingBudget < 0 ? tr('تجاوز الميزانية', 'Budget overrun') : tr('المتبقي من الميزانية', 'Remaining budget')}</p>
+            <p className={`text-lg font-bold mt-1 ${remainingBudget < 0 ? 'text-rose-700' : 'text-blue-700'}`}>{budgetIsConfigured ? formatSAR(Math.abs(remainingBudget)) : '—'}</p>
+            <p className={`text-[11px] font-medium mt-0.5 ${remainingBudget < 0 ? 'text-rose-600' : 'text-blue-600'}`}>{budgetIsConfigured ? (remainingBudget < 0 ? tr('مبلغ التجاوز فوق السقف المحدد', 'Amount above the configured limit') : tr('المبلغ المتاح ضمن ميزانية الفترة', 'Available amount within the period budget')) : tr('لا توجد ميزانية محددة بعد', 'No budget configured yet')}</p>
           </div>
         </div>
       </section>
@@ -480,16 +500,15 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         <div className="lg:col-span-2 bg-white rounded-xl border border-slate-200 shadow-xs flex flex-col overflow-hidden">
           <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-white">
             <div>
-              <h4 className="font-bold text-slate-700 text-base">حالة تشغيل الرواتب الجارية</h4>
-              <p className="text-xs text-slate-400 mt-0.5">فترة شهر: {latestRun?.periodMonth || '2024-05'}</p>
+              <h4 className="font-bold text-slate-700 text-base">{tr('حالة تشغيل الرواتب الجارية', 'Current Payroll Status')}</h4>
+              <p className="text-xs text-slate-400 mt-0.5">{tr('فترة الشهر', 'Period')}: {budgetPeriodLabel}</p>
             </div>
             <div className="flex items-center gap-3">
-              <span className="text-xs text-slate-400 italic">آخر تحديث: منذ 10 دقائق</span>
               <button
                 onClick={() => onNavigate('payroll_runs')}
                 className="text-xs font-semibold text-emerald-600 hover:text-emerald-700 flex items-center gap-1 cursor-pointer"
               >
-                <span>فتح المسير الكامل</span>
+                <span>{tr('فتح المسير الكامل', 'Open full payroll')}</span>
                 <ArrowLeft className="w-3 h-3" />
               </button>
             </div>
