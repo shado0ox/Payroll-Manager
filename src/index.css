@@ -7,3 +7,31 @@ html[dir="ltr"] .space-x-reverse {
 html[dir="ltr"] .text-right {
   text-align: left;
 }
+
+.masar-login {
+  background: radial-gradient(circle at 18% 12%, rgba(16,185,129,.1), transparent 29rem), linear-gradient(145deg,#06101c 0%,#081421 52%,#07111d 100%);
+}
+.masar-grid {
+  opacity: .18;
+  background-image: linear-gradient(rgba(148,163,184,.09) 1px,transparent 1px),linear-gradient(90deg,rgba(148,163,184,.09) 1px,transparent 1px);
+  background-size: 54px 54px;
+  mask-image: linear-gradient(to bottom,black,transparent 85%);
+}
+.masar-login-card { box-shadow: inset 0 1px 0 rgba(255,255,255,.045),0 32px 80px rgba(0,0,0,.3); }
+.masar-currency-stage { opacity: .94; }
+.masar-orbit { position:absolute; border:1px solid rgba(52,211,153,.1); border-radius:9999px; transform:rotate(-17deg); }
+.masar-orbit-outer { width:570px; height:570px; left:-140px; bottom:-220px; }
+.masar-orbit-inner { width:390px; height:390px; left:-50px; bottom:-130px; border-style:dashed; }
+.masar-coin {
+  --coin-size:76px; position:absolute; display:flex; width:var(--coin-size); height:var(--coin-size); align-items:center; justify-content:center; border-radius:9999px;
+  border:1px solid rgba(110,231,183,.34); background:radial-gradient(circle at 32% 25%,rgba(255,255,255,.2),transparent 22%),linear-gradient(145deg,rgba(16,185,129,.3),rgba(6,78,59,.36));
+  box-shadow:inset 0 0 0 7px rgba(255,255,255,.035),0 18px 45px rgba(2,44,34,.36); color:#a7f3d0; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:23px; font-weight:900; backdrop-filter:blur(10px); animation:masar-float 7s ease-in-out infinite;
+}
+.masar-coin small { position:absolute; top:calc(100% + 8px); left:50%; width:max-content; transform:translateX(-50%); color:rgba(148,163,184,.62); font-family:inherit; font-size:9px; font-weight:600; letter-spacing:.04em; }
+.masar-coin-one { left:10%; bottom:27%; animation-delay:-1.2s; }
+.masar-coin-two { --coin-size:62px; left:30%; bottom:13%; animation-delay:-4.5s; }
+.masar-coin-three { --coin-size:68px; left:45%; bottom:33%; animation-delay:-2.7s; }
+.masar-coin-four { --coin-size:54px; left:17%; bottom:49%; animation-delay:-5.8s; }
+.masar-coin-five { --coin-size:48px; left:56%; bottom:17%; animation-delay:-.3s; opacity:.72; }
+@keyframes masar-float { 0%,100% { transform:translate3d(0,0,0) rotate(-3deg); } 50% { transform:translate3d(0,-18px,0) rotate(4deg); } }
+@media (prefers-reduced-motion:reduce) { .masar-coin { animation:none; } }
