@@ -835,7 +835,7 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
       {/* Add / Edit Employee Modal */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-white rounded-3xl max-w-2xl w-full shadow-2xl border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+          <div data-no-translate className="bg-white rounded-3xl max-w-2xl w-full shadow-2xl border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
             
             {/* Modal Header */}
             <div className="bg-slate-900 text-white p-5 flex items-center justify-between">
@@ -845,10 +845,12 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                 </div>
                 <div>
                   <h3 className="font-bold text-base">
-                    {editingEmployee ? 'تعديل بيانات الموظف وسلم الراتب' : 'إضافة موظف جديد للمنشأة'}
+                    {editingEmployee
+                      ? (language === 'ar' ? 'تعديل بيانات الموظف وسلم الراتب' : 'Edit employee and salary package')
+                      : (language === 'ar' ? 'إضافة موظف جديد للمنشأة' : 'Add a new employee')}
                   </h3>
                   <p className="text-xs text-slate-400">
-                    المنشأة: {company.nameAr}
+                    {language === 'ar' ? 'المنشأة' : 'Company'}: {language === 'ar' ? company.nameAr : (company.nameEn || company.nameAr)}
                   </p>
                 </div>
               </div>
@@ -867,11 +869,11 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
               <div>
                 <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider mb-3 flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                  <span>البيانات الشخصية والهوية</span>
+                  <span>{language === 'ar' ? 'البيانات الشخصية والهوية' : 'Personal details and identity'}</span>
                 </h4>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                   <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">الرقم الوظيفي *</label>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">{language === 'ar' ? 'الرقم الوظيفي *' : 'Employee number *'}</label>
                     <input
                       type="text"
                       required
@@ -882,7 +884,7 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">رقم الهوية الوطنية / الإقامة *</label>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">{language === 'ar' ? 'رقم الهوية الوطنية / الإقامة *' : 'National ID / Iqama *'}</label>
                     <input
                       type="text"
                       required
@@ -893,7 +895,7 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">الاسم الأول (بالعربي) *</label>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">{language === 'ar' ? 'الاسم الأول (بالعربي) *' : 'First name (Arabic) *'}</label>
                     <input
                       type="text"
                       required
@@ -904,7 +906,7 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">اسم العائلة (بالعربي) *</label>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">{language === 'ar' ? 'اسم العائلة (بالعربي) *' : 'Last name (Arabic) *'}</label>
                     <input
                       type="text"
                       required
@@ -915,7 +917,7 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">الجنسية *</label>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">{language === 'ar' ? 'الجنسية *' : 'Nationality *'}</label>
                     <select
                       value={formData.nationality || 'SAUDI'}
                       onChange={(e) => {
@@ -929,8 +931,8 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                       }}
                       className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-emerald-500/20"
                     >
-                      <option value="SAUDI">سعودي (خاضع لاشتراك التأمينات GOSI)</option>
-                      <option value="NON_SAUDI">غير سعودي (مخاطر مهنية فقط)</option>
+                      <option value="SAUDI">{language === 'ar' ? 'سعودي (خاضع لاشتراك التأمينات GOSI)' : 'Saudi (subject to GOSI)'}</option>
+                      <option value="NON_SAUDI">{language === 'ar' ? 'غير سعودي (مخاطر مهنية فقط)' : 'Non-Saudi (occupational hazards only)'}</option>
                     </select>
                   </div>
 
@@ -938,34 +940,34 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                     <div className="sm:col-span-2 grid grid-cols-1 sm:grid-cols-4 gap-3 p-3 rounded-2xl bg-emerald-50/60 border border-emerald-200">
                       <label className="sm:col-span-4 flex items-center gap-2 font-bold text-emerald-900">
                         <input type="checkbox" checked={formData.gosiEnabled !== false} onChange={(e) => setFormData({ ...formData, gosiEnabled: e.target.checked })} />
-                        تطبيق التأمينات الاجتماعية على الموظف
+                        {language === 'ar' ? 'تطبيق التأمينات الاجتماعية على الموظف' : 'Apply GOSI to this employee'}
                       </label>
                       <div>
-                      <label className="block text-xs font-semibold text-slate-700 mb-1">طريقة تحمل اشتراك GOSI</label>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">{language === 'ar' ? 'طريقة تحمل اشتراك GOSI' : 'GOSI payment method'}</label>
                       <select
                         disabled={formData.gosiEnabled === false}
                         value={formData.saudiGosiPaymentMode || 'SHARED'}
                         onChange={(e) => setFormData({ ...formData, saudiGosiPaymentMode: e.target.value as 'SHARED' | 'COMPANY_FULL' })}
                         className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white"
                       >
-                        <option value="SHARED">عادي: حصة على الموظف وحصة على الشركة</option>
-                        <option value="COMPANY_FULL">الشركة تتحمل الاشتراك كاملًا دون خصم الموظف</option>
+                        <option value="SHARED">{language === 'ar' ? 'عادي: حصة على الموظف وحصة على الشركة' : 'Shared: employee and employer contributions'}</option>
+                        <option value="COMPANY_FULL">{language === 'ar' ? 'الشركة تتحمل الاشتراك كاملًا دون خصم الموظف' : 'Company pays the full contribution'}</option>
                       </select>
                       </div>
                       <div>
-                        <label className="block text-xs font-semibold text-slate-700 mb-1">نسبة الموظف %</label>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">{language === 'ar' ? 'نسبة الموظف %' : 'Employee rate %'}</label>
                         <input type="number" min="0" max="100" step="0.01" disabled={formData.gosiEnabled === false} value={((formData.gosiEmployeeRate ?? company.calculationRules?.saudiGosiEmployeeRate ?? 0.0975) * 100)} onChange={(e) => setFormData({ ...formData, gosiEmployeeRate: Math.max(0, Number(e.target.value) || 0) / 100 })} className="w-full px-3 py-2 text-xs bg-white border border-slate-200 rounded-xl font-mono" />
                       </div>
                       <div>
-                        <label className="block text-xs font-semibold text-slate-700 mb-1">نسبة الشركة %</label>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">{language === 'ar' ? 'نسبة الشركة %' : 'Employer rate %'}</label>
                         <input type="number" min="0" max="100" step="0.01" disabled={formData.gosiEnabled === false} value={((formData.gosiEmployerRate ?? company.calculationRules?.saudiGosiEmployerRate ?? 0.1175) * 100)} onChange={(e) => setFormData({ ...formData, gosiEmployerRate: Math.max(0, Number(e.target.value) || 0) / 100 })} className="w-full px-3 py-2 text-xs bg-white border border-slate-200 rounded-xl font-mono" />
                       </div>
-                      <div className="text-[11px] text-emerald-800 self-end pb-2">تُطبق النسب على الأساسي + بدل السكن حتى الحد الأعلى للمنشأة.</div>
+                      <div className="text-[11px] text-emerald-800 self-end pb-2">{language === 'ar' ? 'تُطبق النسب على الأساسي + بدل السكن حتى الحد الأعلى للمنشأة.' : 'Rates apply to basic salary + housing allowance up to the company ceiling.'}</div>
                     </div>
                   )}
 
                   <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">الدولة</label>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">{language === 'ar' ? 'الدولة' : 'Country'}</label>
                     <input
                       type="text"
                       value={formData.country || ''}
@@ -980,16 +982,16 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
               <div className="pt-3 border-t border-slate-100">
                 <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider mb-3 flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full bg-blue-500" />
-                  <span>بيانات الوظيفة والتعيين</span>
+                  <span>{language === 'ar' ? 'بيانات الوظيفة والتعيين' : 'Employment details'}</span>
                 </h4>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
                   <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">القسم *</label>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">{language === 'ar' ? 'القسم *' : 'Department *'}</label>
                     <input
                       type="text"
                       list="company-departments-list"
                       required
-                      placeholder="اختر أو اكتب اسم القسم..."
+                      placeholder={language === 'ar' ? 'اختر أو اكتب اسم القسم...' : 'Select or enter a department...'}
                       value={formData.department || ''}
                       onChange={(e) => setFormData({ ...formData, department: e.target.value })}
                       className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white"
@@ -1015,7 +1017,7 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">المسمى الوظيفي *</label>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">{language === 'ar' ? 'المسمى الوظيفي *' : 'Job title *'}</label>
                     <input
                       type="text"
                       required
@@ -1026,20 +1028,20 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">مركز التكلفة *</label>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">{language === 'ar' ? 'مركز التكلفة *' : 'Cost center *'}</label>
                     <select
                       value={formData.costCenterId || ''}
                       onChange={(e) => setFormData({ ...formData, costCenterId: e.target.value })}
                       className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white"
                     >
                       {company.costCenters.map(cc => (
-                        <option key={cc.id} value={cc.id}>{cc.code} - {cc.nameAr}</option>
+                        <option key={cc.id} value={cc.id}>{cc.code} - {language === 'ar' ? cc.nameAr : (cc.nameEn || cc.nameAr)}</option>
                       ))}
                     </select>
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">تاريخ التعيين</label>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">{language === 'ar' ? 'تاريخ التعيين' : 'Hire date'}</label>
                     <input
                       type="date"
                       value={formData.hireDate || ''}
@@ -1049,7 +1051,7 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">بداية استحقاق الراتب</label>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">{language === 'ar' ? 'بداية استحقاق الراتب' : 'Salary eligibility start'}</label>
                     <input
                       type="date"
                       value={formData.salaryStartDate || ''}
@@ -1059,7 +1061,7 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">الحالة الوظيفية</label>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">{language === 'ar' ? 'الحالة الوظيفية' : 'Employment status'}</label>
                     <select
                       value={formData.status || 'ACTIVE'}
                       onChange={(e) => {
@@ -1073,11 +1075,11 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                       }}
                       className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white"
                     >
-                      <option value="ACTIVE">على رأس العمل (Active)</option>
-                      <option value="SUSPENDED">تعليق الراتب (Suspended)</option>
-                      <option value="ON_LEAVE">إجازة (On Leave)</option>
-                      <option value="TERMINATED">منتهي الخدمة (Terminated)</option>
-                      <option value="ABSCONDED">هروب — تعليق واستبعاد الراتب (Absconded)</option>
+                      <option value="ACTIVE">{language === 'ar' ? 'على رأس العمل' : 'Active'}</option>
+                      <option value="SUSPENDED">{language === 'ar' ? 'تعليق الراتب' : 'Suspended'}</option>
+                      <option value="ON_LEAVE">{language === 'ar' ? 'إجازة' : 'On leave'}</option>
+                      <option value="TERMINATED">{language === 'ar' ? 'منتهي الخدمة' : 'Terminated'}</option>
+                      <option value="ABSCONDED">{language === 'ar' ? 'هروب — تعليق واستبعاد الراتب' : 'Absconded — payroll suspended'}</option>
                     </select>
                   </div>
                 </div>
@@ -1086,12 +1088,12 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                 {formData.status === 'SUSPENDED' && (
                   <div className="mt-3 p-3 bg-amber-50 rounded-xl border border-amber-200 grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div className="sm:col-span-2">
-                      <label className="block text-xs font-bold text-amber-900 mb-1">سبب تعليق الراتب</label>
+                      <label className="block text-xs font-bold text-amber-900 mb-1">{language === 'ar' ? 'سبب تعليق الراتب' : 'Payroll suspension reason'}</label>
                       <input
                         type="text"
                         value={formData.suspensionReason || ''}
                         onChange={(e) => setFormData({ ...formData, suspensionReason: e.target.value })}
-                        placeholder="مثال: إجازة استثنائية بدون راتب، تحقيق إداري..."
+                        placeholder={language === 'ar' ? 'مثال: إجازة استثنائية بدون راتب، تحقيق إداري...' : 'Example: unpaid leave, internal investigation...'}
                         className="w-full px-3 py-1.5 text-xs bg-white border border-amber-300 rounded-lg"
                       />
                     </div>
@@ -1101,33 +1103,33 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                 {formData.status === 'TERMINATED' && (
                   <div className="mt-3 p-3 bg-blue-50 rounded-xl border border-blue-200 grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
-                      <label className="block text-xs font-bold text-blue-900 mb-1">سبب تصفية الراتب *</label>
+                      <label className="block text-xs font-bold text-blue-900 mb-1">{language === 'ar' ? 'سبب تصفية الراتب *' : 'Final settlement reason *'}</label>
                       <select required value={formData.employmentEndReason || ''} onChange={(e) => setFormData({ ...formData, employmentEndReason: e.target.value as Employee['employmentEndReason'] })} className="w-full px-3 py-2 text-xs bg-white border border-blue-300 rounded-lg">
-                        <option value="">-- اختر السبب --</option>
-                        <option value="SPONSOR_TRANSFER">نقل كفالة</option>
-                        <option value="FINAL_EXIT">خروج نهائي</option>
-                        <option value="OTHER">انتهاء خدمة آخر</option>
+                        <option value="">{language === 'ar' ? '-- اختر السبب --' : '-- Select reason --'}</option>
+                        <option value="SPONSOR_TRANSFER">{language === 'ar' ? 'نقل كفالة' : 'Sponsorship transfer'}</option>
+                        <option value="FINAL_EXIT">{language === 'ar' ? 'خروج نهائي' : 'Final exit'}</option>
+                        <option value="OTHER">{language === 'ar' ? 'انتهاء خدمة آخر' : 'Other termination'}</option>
                       </select>
                     </div>
                     <div>
-                      <label className="block text-xs font-bold text-blue-900 mb-1">تاريخ النقل / الخروج النهائي *</label>
+                      <label className="block text-xs font-bold text-blue-900 mb-1">{language === 'ar' ? 'تاريخ النقل / الخروج النهائي *' : 'Transfer / final-exit date *'}</label>
                       <input type="date" required value={formData.terminationDate || ''} onChange={(e) => setFormData({ ...formData, terminationDate: e.target.value })} className="w-full px-3 py-2 text-xs bg-white border border-blue-300 rounded-lg" />
                     </div>
-                    <p className="sm:col-span-2 text-[11px] text-blue-800">سيحسب المسير الراتب حتى هذا التاريخ شاملًا، ويستبعد الموظف من المسيرات التالية.</p>
+                    <p className="sm:col-span-2 text-[11px] text-blue-800">{language === 'ar' ? 'سيحسب المسير الراتب حتى هذا التاريخ شاملًا، ويستبعد الموظف من المسيرات التالية.' : 'Payroll will include salary through this date, then exclude the employee from subsequent runs.'}</p>
                   </div>
                 )}
 
                 {formData.status === 'ABSCONDED' && (
                   <div className="mt-3 p-3 bg-rose-50 rounded-xl border border-rose-200 grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
-                      <label className="block text-xs font-bold text-rose-900 mb-1">تاريخ تسجيل الهروب *</label>
+                      <label className="block text-xs font-bold text-rose-900 mb-1">{language === 'ar' ? 'تاريخ تسجيل الهروب *' : 'Absconding report date *'}</label>
                       <input type="date" required value={formData.terminationDate || ''} onChange={(e) => setFormData({ ...formData, terminationDate: e.target.value, employmentEndReason: 'ABSCONDED', suspensionReason: 'هروب' })} className="w-full px-3 py-2 text-xs bg-white border border-rose-300 rounded-lg" />
                     </div>
                     <div>
-                      <label className="block text-xs font-bold text-rose-900 mb-1">ملاحظات / مرجع البلاغ</label>
+                      <label className="block text-xs font-bold text-rose-900 mb-1">{language === 'ar' ? 'ملاحظات / مرجع البلاغ' : 'Notes / report reference'}</label>
                       <input type="text" value={formData.suspensionReason || ''} onChange={(e) => setFormData({ ...formData, suspensionReason: e.target.value })} className="w-full px-3 py-2 text-xs bg-white border border-rose-300 rounded-lg" />
                     </div>
-                    <p className="sm:col-span-2 text-[11px] text-rose-800">سيُنقل الموظف إلى قائمة العمالة الهاربة ويُستبعد راتبه بالكامل من أي مسير جديد.</p>
+                    <p className="sm:col-span-2 text-[11px] text-rose-800">{language === 'ar' ? 'سيُنقل الموظف إلى قائمة العمالة الهاربة ويُستبعد راتبه بالكامل من أي مسير جديد.' : 'The employee will move to the absconded list and be fully excluded from new payroll runs.'}</p>
                   </div>
                 )}
               </div>
@@ -1137,10 +1139,10 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                 <div className="flex items-center justify-between mb-3">
                   <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2">
                     <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                    <span>الحساب البنكي وحماية الأجور (WPS) وبيانات السويفت (SWIFT/BIC)</span>
+                    <span>{language === 'ar' ? 'الحساب البنكي وحماية الأجور (WPS) وبيانات السويفت (SWIFT/BIC)' : 'Bank account, WPS and SWIFT/BIC details'}</span>
                   </h4>
                   <span className="text-[10px] text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md font-semibold">
-                    مطابق لمعايير البنك المركزي السعودي (SAMA)
+                    {language === 'ar' ? 'مطابق لمعايير البنك المركزي السعودي (SAMA)' : 'SAMA compliant'}
                   </span>
                 </div>
 
@@ -1149,8 +1151,8 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                   {/* Bank Name */}
                   <div>
                     <div className="flex items-center justify-between mb-1">
-                      <label className="block text-xs font-semibold text-slate-700">اسم البنك *</label>
-                      <span className="text-[10px] text-slate-400">البنوك المعتمدة</span>
+                      <label className="block text-xs font-semibold text-slate-700">{language === 'ar' ? 'اسم البنك *' : 'Bank name *'}</label>
+                      <span className="text-[10px] text-slate-400">{language === 'ar' ? 'البنوك المعتمدة' : 'Approved banks'}</span>
                     </div>
                     <select
                       value={formData.bankCode || detectBankFromIBAN(formData.bankIban, company.bankDefinitions)?.code || getBankDefinitions(company.bankDefinitions).find(bank => bank.nameAr === formData.bankName || bank.nameEn === formData.bankName)?.ibanBankCode || ''}
@@ -1165,7 +1167,7 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                       }}
                       className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 font-medium"
                     >
-                      <option value="">-- اختر البنك --</option>
+                      <option value="">{language === 'ar' ? '-- اختر البنك --' : '-- Select bank --'}</option>
                       {getBankDefinitions(company.bankDefinitions).filter(b => b.isActive !== false).map(b => (
                         <option key={b.ibanBankCode} value={b.ibanBankCode}>
                           {language === 'en' ? b.nameEn || b.nameAr : b.nameAr} ({b.swiftCode})
@@ -1177,15 +1179,15 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                   {/* IBAN */}
                   <div>
                     <div className="flex items-center justify-between mb-1">
-                      <label className="block text-xs font-semibold text-slate-700">رقم الآيبان (IBAN) *</label>
+                      <label className="block text-xs font-semibold text-slate-700">{language === 'ar' ? 'رقم الآيبان (IBAN) *' : 'IBAN *'}</label>
                       {formData.bankIban && (
                         validateSaudiIBAN(formData.bankIban) ? (
                           <span className="text-[10px] text-emerald-600 font-bold flex items-center gap-0.5">
-                            <CheckCircle className="w-3 h-3" /> آيبان صحيح
+                            <CheckCircle className="w-3 h-3" /> {language === 'ar' ? 'آيبان صحيح' : 'Valid IBAN'}
                           </span>
                         ) : (
                           <span className="text-[10px] text-amber-600 font-semibold flex items-center gap-0.5">
-                            <AlertCircle className="w-3 h-3" /> آيبان غير مكتمل
+                            <AlertCircle className="w-3 h-3" /> {language === 'ar' ? 'آيبان غير مكتمل' : 'Incomplete IBAN'}
                           </span>
                         )
                       )}
@@ -1218,7 +1220,7 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                   {/* SWIFT / BIC Code */}
                   <div>
                     <div className="flex items-center justify-between mb-1">
-                      <label className="block text-xs font-semibold text-slate-700">رمز السويفت (SWIFT / BIC)</label>
+                      <label className="block text-xs font-semibold text-slate-700">{language === 'ar' ? 'رمز السويفت (SWIFT / BIC)' : 'SWIFT / BIC code'}</label>
                       <button
                         type="button"
                         onClick={() => {
@@ -1233,21 +1235,21 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                           if (code) {
                             setFormData({ ...formData, bankSwiftCode: code });
                           } else {
-                            alert('يرجى تحديد اسم البنك أو إدخال رقم آيبان سعودي صالح ليتم التوليد التلقائي لرمز السويفت');
+                            alert(language === 'ar' ? 'يرجى تحديد اسم البنك أو إدخال رقم آيبان سعودي صالح ليتم التوليد التلقائي لرمز السويفت' : 'Select a bank or enter a valid Saudi IBAN to generate the SWIFT code.');
                           }
                         }}
                         className="text-[10px] text-emerald-700 hover:text-emerald-800 font-bold flex items-center gap-0.5 cursor-pointer"
-                        title="توليد وتحديث رمز السويفت تلقائياً بناءً على البنك أو الآيبان"
+                        title={language === 'ar' ? 'توليد وتحديث رمز السويفت تلقائياً بناءً على البنك أو الآيبان' : 'Generate or update SWIFT from the bank or IBAN'}
                       >
                         <Sparkles className="w-2.5 h-2.5" />
-                        <span>توليد تلقائي</span>
+                        <span>{language === 'ar' ? 'توليد تلقائي' : 'Auto-generate'}</span>
                       </button>
                     </div>
 
                     <div className="relative">
                       <input
                         type="text"
-                        placeholder="مثال: RJHISARI أو NCBKSARI"
+                        placeholder={language === 'ar' ? 'مثال: RJHISARI أو NCBKSARI' : 'Example: RJHISARI or NCBKSARI'}
                         value={formData.bankSwiftCode || ''}
                         onChange={(e) => {
                           const swiftVal = e.target.value.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
@@ -1270,16 +1272,16 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                       {formData.bankSwiftCode ? (
                         validateSwiftCode(formData.bankSwiftCode) ? (
                           <span className="text-emerald-700 font-semibold flex items-center gap-1">
-                            <CheckCircle className="w-2.5 h-2.5" /> رمز سويفت قياسي معتمد (ISO 9362)
+                            <CheckCircle className="w-2.5 h-2.5" /> {language === 'ar' ? 'رمز سويفت قياسي معتمد (ISO 9362)' : 'Valid ISO 9362 SWIFT code'}
                           </span>
                         ) : (
                           <span className="text-amber-600 font-semibold flex items-center gap-1">
-                            <AlertCircle className="w-2.5 h-2.5" /> الصيغة القياسية: 8 أو 11 حرفاً ورقم
+                            <AlertCircle className="w-2.5 h-2.5" /> {language === 'ar' ? 'الصيغة القياسية: 8 أو 11 حرفاً ورقم' : 'Standard format: 8 or 11 letters/digits'}
                           </span>
                         )
                       ) : (
                         <span className="text-slate-400">
-                          يتولد تلقائياً من رقم الآيبان والبنك
+                          {language === 'ar' ? 'يتولد تلقائياً من رقم الآيبان والبنك' : 'Generated automatically from IBAN and bank'}
                         </span>
                       )}
                       <span className="text-slate-400 font-mono">
@@ -1295,11 +1297,11 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
               <div className="pt-3 border-t border-slate-100">
                 <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider mb-3 flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full bg-indigo-500" />
-                  <span>سلم الرواتب والبدلات الثابتة (بالريال السعودي)</span>
+                  <span>{language === 'ar' ? 'سلم الرواتب والبدلات الثابتة (بالريال السعودي)' : 'Salary and fixed allowances (SAR)'}</span>
                 </h4>
                 <div className="grid grid-cols-1 sm:grid-cols-5 gap-3.5">
                   <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">الراتب الأساسي *</label>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">{language === 'ar' ? 'الراتب الأساسي *' : 'Basic salary *'}</label>
                     <input
                       type="number"
                       required
@@ -1318,7 +1320,7 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">بدل السكن</label>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">{language === 'ar' ? 'بدل السكن' : 'Housing allowance'}</label>
                     <input
                       type="number"
                       min="0"
@@ -1336,7 +1338,7 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">بدل النقل</label>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">{language === 'ar' ? 'بدل النقل' : 'Transport allowance'}</label>
                     <input
                       type="number"
                       min="0"
@@ -1354,7 +1356,7 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">بدلات أخرى ثابتة</label>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">{language === 'ar' ? 'بدلات أخرى ثابتة' : 'Other fixed allowances'}</label>
                     <input
                       type="number"
                       min="0"
@@ -1372,7 +1374,7 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">بدلات أخرى غير خاضعة لـ GOSI</label>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">{language === 'ar' ? 'بدلات أخرى غير خاضعة لـ GOSI' : 'Other non-GOSI allowances'}</label>
                     <input
                       type="number"
                       min="0"
@@ -1392,7 +1394,7 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
 
                 {/* Total Gross Display */}
                 <div className="mt-3 p-3 bg-emerald-50 rounded-xl border border-emerald-200 flex items-center justify-between">
-                  <span className="text-xs font-bold text-emerald-900">إجمالي الراتب الشهري الثابت:</span>
+                  <span className="text-xs font-bold text-emerald-900">{language === 'ar' ? 'إجمالي الراتب الشهري الثابت:' : 'Total fixed monthly salary:'}</span>
                   <span className="text-sm font-extrabold text-emerald-800 font-mono">
                     {formatSAR(
                       (formData.salaryPackage?.baseSalary || 0) +
@@ -1412,13 +1414,15 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                   onClick={() => setIsModalOpen(false)}
                   className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl"
                 >
-                  إلغاء
+                  {language === 'ar' ? 'إلغاء' : 'Cancel'}
                 </button>
                 <button
                   type="submit"
                   className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-md transition-all cursor-pointer"
                 >
-                  {editingEmployee ? 'حفظ التعديلات' : 'إضافة الموظف الآن'}
+                  {editingEmployee
+                    ? (language === 'ar' ? 'حفظ التعديلات' : 'Save changes')
+                    : (language === 'ar' ? 'إضافة الموظف الآن' : 'Add employee')}
                 </button>
               </div>
 
