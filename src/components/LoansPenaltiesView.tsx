@@ -15,6 +15,7 @@ import {
 import { Company, Employee, LoanSchedule, PenaltyRecord, UserRole } from '../types';
 import { formatSAR } from '../utils/payrollEngine';
 import { SearchableEmployeeSelect } from './SearchableEmployeeSelect';
+import { useLanguage } from '../i18n/LanguageContext';
 
 interface LoansPenaltiesViewProps {
   company: Company;
@@ -43,6 +44,10 @@ export const LoansPenaltiesView: React.FC<LoansPenaltiesViewProps> = ({
   onCancelPenalty,
   onDeletePenalty,
 }) => {
+  const { language } = useLanguage();
+  const tr = (ar: string, en: string) => language === 'ar' ? ar : en;
+  const today = new Date().toISOString().slice(0, 10);
+  const currentPeriod = today.slice(0, 7);
   const [activeTab, setActiveTab] = useState<'loans' | 'penalties'>('loans');
   const [isLoanModalOpen, setIsLoanModalOpen] = useState(false);
   const [isPenaltyModalOpen, setIsPenaltyModalOpen] = useState(false);
@@ -67,16 +72,16 @@ export const LoansPenaltiesView: React.FC<LoansPenaltiesViewProps> = ({
     totalAmount: 10000,
     monthlyInstallment: 1000,
     totalInstallments: 10,
-    startDate: '2026-08',
-    reason: 'سلفة شخصية طارئة',
+    startDate: currentPeriod,
+    reason: '',
   });
 
   // New Penalty Form
   const [penaltyForm, setPenaltyForm] = useState({
     employeeId: companyEmployees[0]?.id || '',
-    periodMonth: '2026-08',
-    date: '2026-08-15',
-    reason: 'مخالفة لائحة تنظيم العمل الداخلية',
+    periodMonth: currentPeriod,
+    date: today,
+    reason: '',
     amount: 200,
   });
 
@@ -155,17 +160,17 @@ export const LoansPenaltiesView: React.FC<LoansPenaltiesViewProps> = ({
     .reduce((sum, l) => sum + l.monthlyInstallment, 0);
 
   return (
-    <div className="space-y-6">
+    <div data-no-translate className="space-y-6">
       
       {/* Top Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-xl sm:text-2xl font-bold text-slate-900 flex items-center gap-2">
             <Receipt className="w-6 h-6 text-emerald-600" />
-            <span>السلف والأقساط والجزاءات الإدارية</span>
+            <span>{tr('السلف والأقساط والجزاءات الإدارية', 'Loans, Installments & Penalties')}</span>
           </h1>
           <p className="text-xs text-slate-500 mt-1">
-            جدولة أقساط سلف الموظفين، ضبط حد الاستقطاع (33%)، وتسجيل الخصومات الإدارية
+            {tr('جدولة أقساط سلف الموظفين، ضبط حد الاستقطاع (33%)، وتسجيل الخصومات الإدارية', 'Schedule employee loan installments, monitor the 33% deduction limit, and record administrative deductions')}
           </p>
         </div>
 
@@ -176,7 +181,7 @@ export const LoansPenaltiesView: React.FC<LoansPenaltiesViewProps> = ({
               className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
             >
               <Plus className="w-4 h-4" />
-              <span>إضافة سلفة جديدة</span>
+              <span>{tr('إضافة سلفة جديدة', 'Add loan')}</span>
             </button>
           ) : (
             <button
@@ -184,7 +189,7 @@ export const LoansPenaltiesView: React.FC<LoansPenaltiesViewProps> = ({
               className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
             >
               <Plus className="w-4 h-4" />
-              <span>تسجيل جزاء / خصم إداري</span>
+              <span>{tr('تسجيل جزاء / خصم إداري', 'Add penalty / deduction')}</span>
             </button>
           )}
         </div>
@@ -193,23 +198,23 @@ export const LoansPenaltiesView: React.FC<LoansPenaltiesViewProps> = ({
       {/* KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
-          <div className="text-xs text-slate-500 font-semibold">إجمالي أرصدة السلف القائمة</div>
+          <div className="text-xs text-slate-500 font-semibold">{tr('إجمالي أرصدة السلف القائمة', 'Total outstanding loan balances')}</div>
           <div className="text-xl font-bold text-slate-900 mt-1">{formatSAR(totalActiveLoansAmount)}</div>
-          <div className="text-[10px] text-slate-400">ذمم مدينة لموظفي المنشأة</div>
+          <div className="text-[10px] text-slate-400">{tr('ذمم مدينة لموظفي المنشأة', 'Employee receivables')}</div>
         </div>
 
         <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
-          <div className="text-xs text-slate-500 font-semibold">استقطاع الأقساط الشهري المتوقع</div>
+          <div className="text-xs text-slate-500 font-semibold">{tr('استقطاع الأقساط الشهري المتوقع', 'Expected monthly installment deductions')}</div>
           <div className="text-xl font-bold text-emerald-700 mt-1">{formatSAR(totalMonthlyDeductionExpected)}</div>
-          <div className="text-[10px] text-slate-400">يُخصم شهرياً عبر مسير الرواتب</div>
+          <div className="text-[10px] text-slate-400">{tr('يُخصم شهرياً عبر مسير الرواتب', 'Deducted through monthly payroll')}</div>
         </div>
 
         <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
-          <div className="text-xs text-slate-500 font-semibold">عدد الموظفين المستفيدين من السلف</div>
+          <div className="text-xs text-slate-500 font-semibold">{tr('عدد الموظفين المستفيدين من السلف', 'Employees with active loans')}</div>
           <div className="text-xl font-bold text-blue-700 mt-1">
-            {companyLoans.filter(l => l.status === 'ACTIVE').length} موظف
+            {companyLoans.filter(l => l.status === 'ACTIVE').length} {tr('موظف', 'employees')}
           </div>
-          <div className="text-[10px] text-slate-400">سلف سارية المفعول</div>
+          <div className="text-[10px] text-slate-400">{tr('سلف سارية المفعول', 'Active loan schedules')}</div>
         </div>
       </div>
 
@@ -223,7 +228,7 @@ export const LoansPenaltiesView: React.FC<LoansPenaltiesViewProps> = ({
               : 'text-slate-600 hover:bg-slate-100'
           }`}
         >
-          جدول سلف وأقساط الموظفين ({companyLoans.length})
+          {tr('جدول سلف وأقساط الموظفين', 'Employee loans & installments')} ({companyLoans.length})
         </button>
 
         <button
@@ -234,7 +239,7 @@ export const LoansPenaltiesView: React.FC<LoansPenaltiesViewProps> = ({
               : 'text-slate-600 hover:bg-slate-100'
           }`}
         >
-          سجل الجزاءات والخصومات ({companyPenalties.length})
+          {tr('سجل الجزاءات والخصومات', 'Penalties & deductions')} ({companyPenalties.length})
         </button>
       </div>
 
@@ -245,22 +250,22 @@ export const LoansPenaltiesView: React.FC<LoansPenaltiesViewProps> = ({
             <table className="w-full text-right text-xs">
               <thead>
                 <tr className="bg-slate-50 text-slate-500 font-bold border-b border-slate-200">
-                  <th className="py-3 px-4">الموظف</th>
-                  <th className="py-3 px-4">مبلغ السلفة الإجمالي</th>
-                  <th className="py-3 px-4">القسط الشهري</th>
-                  <th className="py-3 px-4">الأقساط (المتبقي / الإجمالي)</th>
-                  <th className="py-3 px-4">الرصيد المتبقي</th>
-                  <th className="py-3 px-4">تاريخ البداية</th>
-                  <th className="py-3 px-4">السبب</th>
-                  <th className="py-3 px-4">الحالة</th>
-                  <th className="py-3 px-4 text-center">الإجراء</th>
+                  <th className="py-3 px-4">{tr('الموظف', 'Employee')}</th>
+                  <th className="py-3 px-4">{tr('مبلغ السلفة الإجمالي', 'Total loan amount')}</th>
+                  <th className="py-3 px-4">{tr('القسط الشهري', 'Monthly installment')}</th>
+                  <th className="py-3 px-4">{tr('الأقساط (المتبقي / الإجمالي)', 'Installments (remaining / total)')}</th>
+                  <th className="py-3 px-4">{tr('الرصيد المتبقي', 'Remaining balance')}</th>
+                  <th className="py-3 px-4">{tr('تاريخ البداية', 'Start period')}</th>
+                  <th className="py-3 px-4">{tr('السبب', 'Reason')}</th>
+                  <th className="py-3 px-4">{tr('الحالة', 'Status')}</th>
+                  <th className="py-3 px-4 text-center">{tr('الإجراء', 'Action')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {companyLoans.length === 0 ? (
                   <tr>
                     <td colSpan={9} className="py-12 text-center text-slate-400">
-                      لا توجد سلف مسجلة حالياً
+                      {tr('لا توجد سلف مسجلة حالياً', 'No loans recorded')}
                     </td>
                   </tr>
                 ) : (
@@ -269,13 +274,13 @@ export const LoansPenaltiesView: React.FC<LoansPenaltiesViewProps> = ({
                     return (
                       <tr key={loan.id} className="hover:bg-slate-50">
                         <td className="py-3 px-4">
-                          <div className="font-bold text-slate-900">{emp ? `${emp.firstNameAr} ${emp.lastNameAr}` : 'موظف'}</div>
+                          <div className="font-bold text-slate-900">{emp ? (language === 'en' && (emp.firstNameEn || emp.lastNameEn) ? `${emp.firstNameEn || ''} ${emp.lastNameEn || ''}`.trim() : `${emp.firstNameAr} ${emp.lastNameAr}`) : tr('موظف', 'Employee')}</div>
                           <div className="text-[10px] text-slate-400">{emp?.employeeNo} - {emp?.department}</div>
                         </td>
 
                         <td className="py-3 px-4 font-bold text-slate-900">{formatSAR(loan.totalAmount)}</td>
                         <td className="py-3 px-4 font-semibold text-rose-700">{formatSAR(loan.monthlyInstallment)}</td>
-                        <td className="py-3 px-4 font-mono font-bold text-slate-700">{loan.remainingInstallments} من {loan.totalInstallments}</td>
+                        <td className="py-3 px-4 font-mono font-bold text-slate-700">{loan.remainingInstallments} {tr('من', 'of')} {loan.totalInstallments}</td>
                         <td className="py-3 px-4 font-extrabold text-amber-800 font-mono">{formatSAR(loan.remainingAmount)}</td>
                         <td className="py-3 px-4 font-mono text-slate-600">{loan.startDate}</td>
                         <td className="py-3 px-4 text-slate-600">{loan.reason}</td>
@@ -283,32 +288,32 @@ export const LoansPenaltiesView: React.FC<LoansPenaltiesViewProps> = ({
                         <td className="py-3 px-4">
                           {loan.status === 'ACTIVE' ? (
                             <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-bold border border-emerald-200">
-                              سارية الخصم
+                              {tr('سارية الخصم', 'Active')}
                             </span>
                           ) : (
                             <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 text-[10px] font-bold">
-                              موقوفة / مسددة
+                              {tr('موقوفة / مسددة', 'Paused / settled')}
                             </span>
                           )}
                         </td>
 
                         <td className="py-3 px-4 text-center">
                           <div className="flex items-center justify-center gap-2">
-                          <button onClick={() => openEditLoan(loan)} className="text-blue-700" title="تعديل السلفة"><Edit3 className="w-4 h-4" /></button>
-                          <button onClick={() => { if (confirm('حذف السلفة نهائيًا وإزالة أقساطها من المسير القادم؟')) onDeleteLoan(loan.id); }} className="text-rose-700" title="حذف السلفة"><Trash2 className="w-4 h-4" /></button>
+                          <button onClick={() => openEditLoan(loan)} className="text-blue-700" title={tr('تعديل السلفة', 'Edit loan')}><Edit3 className="w-4 h-4" /></button>
+                          <button onClick={() => { if (confirm(tr('حذف السلفة نهائيًا وإزالة أقساطها من المسير القادم؟', 'Permanently delete this loan and remove its installments from future payroll?'))) onDeleteLoan(loan.id); }} className="text-rose-700" title={tr('حذف السلفة', 'Delete loan')}><Trash2 className="w-4 h-4" /></button>
                           {loan.status === 'ACTIVE' ? (
                             <button
                               onClick={() => onUpdateLoanStatus(loan.id, 'PAUSED')}
                               className="text-[11px] font-semibold text-amber-700 hover:text-amber-800"
                             >
-                              إيقاف مؤقت
+                              {tr('إيقاف مؤقت', 'Pause')}
                             </button>
                           ) : (
                             <button
                               onClick={() => onUpdateLoanStatus(loan.id, 'ACTIVE')}
                               className="text-[11px] font-semibold text-emerald-700 hover:text-emerald-800"
                             >
-                              تفعيل الخصم
+                              {tr('تفعيل الخصم', 'Resume deductions')}
                             </button>
                           )}
                           </div>
@@ -328,13 +333,13 @@ export const LoansPenaltiesView: React.FC<LoansPenaltiesViewProps> = ({
             <table className="w-full text-right text-xs">
               <thead>
                 <tr className="bg-slate-50 text-slate-500 font-bold border-b border-slate-200">
-                  <th className="py-3 px-4">الموظف</th>
-                  <th className="py-3 px-4">فترة الراتب</th>
-                  <th className="py-3 px-4">تاريخ الواقعة</th>
-                  <th className="py-3 px-4">سبب الجزاء / المخالفة</th>
-                  <th className="py-3 px-4">مبلغ الخصم</th>
-                  <th className="py-3 px-4">التطبيق في المسير</th>
-                  <th className="py-3 px-4 text-center">الإجراء</th>
+                  <th className="py-3 px-4">{tr('الموظف', 'Employee')}</th>
+                  <th className="py-3 px-4">{tr('فترة الراتب', 'Payroll period')}</th>
+                  <th className="py-3 px-4">{tr('تاريخ الواقعة', 'Incident date')}</th>
+                  <th className="py-3 px-4">{tr('سبب الجزاء / المخالفة', 'Penalty / violation reason')}</th>
+                  <th className="py-3 px-4">{tr('مبلغ الخصم', 'Deduction amount')}</th>
+                  <th className="py-3 px-4">{tr('التطبيق في المسير', 'Payroll application')}</th>
+                  <th className="py-3 px-4 text-center">{tr('الإجراء', 'Action')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -343,7 +348,7 @@ export const LoansPenaltiesView: React.FC<LoansPenaltiesViewProps> = ({
                   return (
                     <tr key={pen.id} className="hover:bg-slate-50">
                       <td className="py-3 px-4">
-                        <div className="font-bold text-slate-900">{emp ? `${emp.firstNameAr} ${emp.lastNameAr}` : 'موظف'}</div>
+                        <div className="font-bold text-slate-900">{emp ? (language === 'en' && (emp.firstNameEn || emp.lastNameEn) ? `${emp.firstNameEn || ''} ${emp.lastNameEn || ''}`.trim() : `${emp.firstNameAr} ${emp.lastNameAr}`) : tr('موظف', 'Employee')}</div>
                         <div className="text-[10px] text-slate-400">{emp?.jobTitle}</div>
                       </td>
                       <td className="py-3 px-4 font-mono font-bold">{pen.periodMonth}</td>
@@ -352,13 +357,13 @@ export const LoansPenaltiesView: React.FC<LoansPenaltiesViewProps> = ({
                       <td className="py-3 px-4 font-bold text-rose-700">{formatSAR(pen.amount)}</td>
                       <td className="py-3 px-4">
                         <span className={`px-2 py-0.5 rounded-md font-bold text-[10px] border ${pen.appliedInPayroll ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-slate-100 text-slate-600 border-slate-200'}`}>
-                          {pen.appliedInPayroll ? 'مطبق بالمسير' : 'ملغى'}
+                          {pen.appliedInPayroll ? tr('مطبق بالمسير', 'Applied') : tr('ملغى', 'Cancelled')}
                         </span>
                       </td>
                       <td className="py-3 px-4"><div className="flex justify-center gap-2">
-                        <button onClick={() => openEditPenalty(pen)} className="text-blue-700" title="تعديل الخصم"><Edit3 className="w-4 h-4" /></button>
-                        {pen.appliedInPayroll && <button onClick={() => { if (confirm('إلغاء هذا الخصم وإزالة أثره من المسير؟')) onCancelPenalty(pen.id); }} className="text-amber-700" title="التراجع عن الخصم"><RotateCcw className="w-4 h-4" /></button>}
-                        <button onClick={() => { if (confirm('حذف الجزاء/الخصم نهائيًا؟')) onDeletePenalty(pen.id); }} className="text-rose-700" title="حذف نهائي"><Trash2 className="w-4 h-4" /></button>
+                        <button onClick={() => openEditPenalty(pen)} className="text-blue-700" title={tr('تعديل الخصم', 'Edit deduction')}><Edit3 className="w-4 h-4" /></button>
+                        {pen.appliedInPayroll && <button onClick={() => { if (confirm(tr('إلغاء هذا الخصم وإزالة أثره من المسير؟', 'Cancel this deduction and remove its payroll impact?'))) onCancelPenalty(pen.id); }} className="text-amber-700" title={tr('التراجع عن الخصم', 'Undo deduction')}><RotateCcw className="w-4 h-4" /></button>}
+                        <button onClick={() => { if (confirm(tr('حذف الجزاء/الخصم نهائيًا؟', 'Permanently delete this penalty / deduction?'))) onDeletePenalty(pen.id); }} className="text-rose-700" title={tr('حذف نهائي', 'Delete permanently')}><Trash2 className="w-4 h-4" /></button>
                       </div></td>
                     </tr>
                   );
@@ -372,12 +377,12 @@ export const LoansPenaltiesView: React.FC<LoansPenaltiesViewProps> = ({
       {/* Add Loan Modal */}
       {isLoanModalOpen && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-lg w-full shadow-2xl border border-slate-200 p-6 space-y-4">
-            <h3 className="text-sm font-bold text-slate-900">إضافة سلفة جديدة لموظف</h3>
+          <div data-no-translate className="bg-white rounded-3xl max-w-lg w-full shadow-2xl border border-slate-200 p-6 space-y-4">
+            <h3 className="text-sm font-bold text-slate-900">{editingLoan ? tr('تعديل السلفة وجدول الأقساط', 'Edit Loan & Installments') : tr('إضافة سلفة جديدة لموظف', 'Add Employee Loan')}</h3>
 
             <form onSubmit={handleSaveLoan} className="space-y-3.5 text-xs">
               <div>
-                <label className="block font-semibold text-slate-700 mb-1">الموظف المستفيد *</label>
+                <label className="block font-semibold text-slate-700 mb-1">{tr('الموظف المستفيد *', 'Employee *')}</label>
                 <SearchableEmployeeSelect
                   required
                   employees={companyEmployees}
@@ -388,7 +393,7 @@ export const LoansPenaltiesView: React.FC<LoansPenaltiesViewProps> = ({
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block font-semibold text-slate-700 mb-1">إجمالي مبلغ السلفة (SAR) *</label>
+                  <label className="block font-semibold text-slate-700 mb-1">{tr('إجمالي مبلغ السلفة (SAR) *', 'Total loan amount (SAR) *')}</label>
                   <input
                     type="number"
                     required
@@ -400,7 +405,7 @@ export const LoansPenaltiesView: React.FC<LoansPenaltiesViewProps> = ({
                       setLoanForm({ 
                         ...loanForm, 
                         totalAmount: total,
-                        monthlyInstallment: Math.round(total / (loanForm.totalInstallments || 1))
+                        monthlyInstallment: Math.round((total / (loanForm.totalInstallments || 1)) * 100) / 100
                       });
                     }}
                     className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold"
@@ -408,7 +413,7 @@ export const LoansPenaltiesView: React.FC<LoansPenaltiesViewProps> = ({
                 </div>
 
                 <div>
-                  <label className="block font-semibold text-slate-700 mb-1">عدد أشهر السداد *</label>
+                  <label className="block font-semibold text-slate-700 mb-1">{tr('عدد أشهر السداد *', 'Repayment months *')}</label>
                   <input
                     type="number"
                     required
@@ -420,7 +425,7 @@ export const LoansPenaltiesView: React.FC<LoansPenaltiesViewProps> = ({
                       setLoanForm({ 
                         ...loanForm, 
                         totalInstallments: inst,
-                        monthlyInstallment: Math.round(loanForm.totalAmount / inst)
+                        monthlyInstallment: Math.round((loanForm.totalAmount / inst) * 100) / 100
                       });
                     }}
                     className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl"
@@ -429,12 +434,12 @@ export const LoansPenaltiesView: React.FC<LoansPenaltiesViewProps> = ({
               </div>
 
               <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-200 flex items-center justify-between">
-                <span className="font-semibold text-emerald-900">القسط الشهري المحسوب:</span>
+                <span className="font-semibold text-emerald-900">{tr('القسط الشهري المحسوب:', 'Calculated monthly installment:')}</span>
                 <span className="font-bold text-emerald-800 text-sm">{formatSAR(loanForm.monthlyInstallment)}</span>
               </div>
 
               <div>
-                <label className="block font-semibold text-slate-700 mb-1">سبب السلفة</label>
+                <label className="block font-semibold text-slate-700 mb-1">{tr('سبب السلفة', 'Loan reason')}</label>
                 <input
                   type="text"
                   required
@@ -450,13 +455,13 @@ export const LoansPenaltiesView: React.FC<LoansPenaltiesViewProps> = ({
                   onClick={() => { setIsLoanModalOpen(false); setEditingLoan(null); }}
                   className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-xl"
                 >
-                  إلغاء
+                  {tr('إلغاء', 'Cancel')}
                 </button>
                 <button
                   type="submit"
                   className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold"
                 >
-                  اعتماد وجدولة السلفة
+                  {editingLoan ? tr('حفظ تعديلات السلفة', 'Save loan changes') : tr('اعتماد وجدولة السلفة', 'Create loan schedule')}
                 </button>
               </div>
             </form>
@@ -467,12 +472,12 @@ export const LoansPenaltiesView: React.FC<LoansPenaltiesViewProps> = ({
       {/* Add Penalty Modal */}
       {isPenaltyModalOpen && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-lg w-full shadow-2xl border border-slate-200 p-6 space-y-4">
-            <h3 className="text-sm font-bold text-slate-900">تسجيل جزاء إداري على موظف</h3>
+          <div data-no-translate className="bg-white rounded-3xl max-w-lg w-full shadow-2xl border border-slate-200 p-6 space-y-4">
+            <h3 className="text-sm font-bold text-slate-900">{editingPenalty ? tr('تعديل الجزاء / الخصم', 'Edit Penalty / Deduction') : tr('تسجيل جزاء إداري على موظف', 'Add Employee Penalty')}</h3>
 
             <form onSubmit={handleSavePenalty} className="space-y-3.5 text-xs">
               <div>
-                <label className="block font-semibold text-slate-700 mb-1">الموظف *</label>
+                <label className="block font-semibold text-slate-700 mb-1">{tr('الموظف *', 'Employee *')}</label>
                 <SearchableEmployeeSelect
                   required
                   employees={companyEmployees}
@@ -483,7 +488,7 @@ export const LoansPenaltiesView: React.FC<LoansPenaltiesViewProps> = ({
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block font-semibold text-slate-700 mb-1">مبلغ الخصم (SAR) *</label>
+                  <label className="block font-semibold text-slate-700 mb-1">{tr('مبلغ الخصم (SAR) *', 'Deduction amount (SAR) *')}</label>
                   <input
                     type="number"
                     required
@@ -496,7 +501,7 @@ export const LoansPenaltiesView: React.FC<LoansPenaltiesViewProps> = ({
                 </div>
 
                 <div>
-                  <label className="block font-semibold text-slate-700 mb-1">تاريخ المخالفة</label>
+                  <label className="block font-semibold text-slate-700 mb-1">{tr('تاريخ المخالفة', 'Incident date')}</label>
                   <input
                     type="date"
                     value={penaltyForm.date}
@@ -507,11 +512,11 @@ export const LoansPenaltiesView: React.FC<LoansPenaltiesViewProps> = ({
               </div>
 
               <div>
-                <label className="block font-semibold text-slate-700 mb-1">سبب الجزاء الإداري *</label>
+                <label className="block font-semibold text-slate-700 mb-1">{tr('سبب الجزاء الإداري *', 'Penalty reason *')}</label>
                 <input
                   type="text"
                   required
-                  placeholder="مخالفة لائحة الدوام / تلف ممتلكات..."
+                  placeholder={tr('مخالفة لائحة الدوام / تلف ممتلكات...', 'Attendance violation / property damage...')}
                   value={penaltyForm.reason}
                   onChange={(e) => setPenaltyForm({ ...penaltyForm, reason: e.target.value })}
                   className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl"
@@ -524,13 +529,13 @@ export const LoansPenaltiesView: React.FC<LoansPenaltiesViewProps> = ({
                   onClick={() => { setIsPenaltyModalOpen(false); setEditingPenalty(null); }}
                   className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-xl"
                 >
-                  إلغاء
+                  {tr('إلغاء', 'Cancel')}
                 </button>
                 <button
                   type="submit"
                   className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-bold"
                 >
-                  تطبيق الجزاء في المسير
+                  {editingPenalty ? tr('حفظ تعديلات الخصم', 'Save deduction changes') : tr('تطبيق الجزاء في المسير', 'Apply penalty to payroll')}
                 </button>
               </div>
             </form>
