@@ -126,6 +126,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
   onDeleteAllCompanyEmployees,
 }) => {
   const { language } = useLanguage();
+  const tr = (ar: string, en: string) => language === 'ar' ? ar : en;
   const [activeSubTab, setActiveSubTab] = useState<ProfileSubTab>('details');
   const [saveSuccessMessage, setSaveSuccessMessage] = useState<string | null>(null);
   const [isDeleteEmployeesModalOpen, setIsDeleteEmployeesModalOpen] = useState(false);
@@ -238,11 +239,11 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
     if (e) e.preventDefault();
     const dataToSave = customData || formData;
     if (!dataToSave.nameAr?.trim()) {
-      alert('يرجى إدخال اسم المنشأة بالعربية');
+      alert(tr('يرجى إدخال اسم المنشأة بالعربية', 'Enter the company name in Arabic.'));
       return;
     }
     if (!dataToSave.crNumber?.trim()) {
-      alert('يرجى إدخال رقم السجل التجاري');
+      alert(tr('يرجى إدخال رقم السجل التجاري', 'Enter the commercial registration number.'));
       return;
     }
 
@@ -255,18 +256,18 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
     }));
     const invalidBank = bankDefinitions.find(bank => !/^\d{2}$/.test(bank.ibanBankCode) || !bank.nameAr || !validateSwiftCode(bank.swiftCode));
     if (invalidBank) {
-      alert('راجع تعريفات البنوك: كود IBAN يجب أن يكون رقمين، واسم البنك مطلوب، وSWIFT يجب أن يكون 8 أو 11 خانة صحيحة.');
+      alert(tr('راجع تعريفات البنوك: كود IBAN يجب أن يكون رقمين، واسم البنك مطلوب، وSWIFT يجب أن يكون 8 أو 11 خانة صحيحة.', 'Review bank definitions: the IBAN bank code must be two digits, the bank name is required, and SWIFT must contain 8 or 11 valid characters.'));
       return;
     }
     if (new Set(bankDefinitions.map(bank => bank.ibanBankCode)).size !== bankDefinitions.length) {
-      alert('لا يمكن تكرار كود IBAN لأكثر من بنك.');
+      alert(tr('لا يمكن تكرار كود IBAN لأكثر من بنك.', 'The same IBAN bank code cannot be assigned to more than one bank.'));
       return;
     }
 
     const normalizedCompany = { ...dataToSave, bankDefinitions };
     setFormData(normalizedCompany);
     onUpdateCompany(normalizedCompany);
-    setSaveSuccessMessage('تم تطبيق وحفظ كافة الإعدادات والسياسات للمنشأة بنجاح');
+    setSaveSuccessMessage(tr('تم تطبيق وحفظ كافة الإعدادات والسياسات للمنشأة بنجاح', 'Company settings and policies were saved successfully.'));
     setTimeout(() => {
       setSaveSuccessMessage(null);
     }, 4000);
@@ -277,7 +278,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
     const file = e.target.files?.[0];
     if (file) {
       if (file.size > 2 * 1024 * 1024) {
-        alert('حجم الصورة كبير جداً، الحد الأقصى المسموح به هو 2 ميجابايت.');
+        alert(tr('حجم الصورة كبير جداً، الحد الأقصى المسموح به هو 2 ميجابايت.', 'The image is too large. Maximum size is 2 MB.'));
         return;
       }
       const reader = new FileReader();
@@ -507,7 +508,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
   };
 
   return (
-    <div className="space-y-6">
+    <div data-no-translate className="space-y-6">
       
       {/* Top Banner & Company Header */}
       <div className="bg-white rounded-2xl p-6 border border-slate-200/80 shadow-sm">
@@ -527,10 +528,10 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
                 className="absolute inset-0 bg-black/50 text-white opacity-0 group-hover:opacity-100 transition-opacity rounded-2xl flex flex-col items-center justify-center text-[10px] font-bold cursor-pointer"
-                title="تغيير الشعار"
+                title={tr('تغيير الشعار', 'Change logo')}
               >
                 <Upload className="w-4 h-4 mb-0.5" />
-                <span>تغيير</span>
+                <span>{tr('تغيير', 'Change')}</span>
               </button>
               <input
                 ref={fileInputRef}
@@ -545,17 +546,17 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
             <div className="min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
                 <h2 className="text-xl font-black text-slate-900 tracking-tight">
-                  {formData.nameAr || 'ملف المنشأة'}
+                  {(language === 'ar' ? formData.nameAr : (formData.nameEn || formData.nameAr)) || tr('ملف المنشأة', 'Company Profile')}
                 </h2>
                 <span className="px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-xs font-mono font-bold">
-                  كود: {formData.companyCode}
+                  {tr('كود', 'Code')}: {formData.companyCode}
                 </span>
                 <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 text-xs font-semibold">
-                  سجل تجاري: {formData.crNumber}
+                  {tr('سجل تجاري', 'CR')}: {formData.crNumber}
                 </span>
               </div>
               <p className="text-xs text-slate-500 font-medium mt-1">
-                {formData.nameEn || 'Company Profile & Organizational Structure'} | {companyEmployees.length} موظف مسجل | {companyUsers.length} مستخدم مفوض
+                {language === 'ar' ? (formData.nameEn || 'Company Profile & Organizational Structure') : formData.nameAr} | {companyEmployees.length} {tr('موظف مسجل', 'registered employees')} | {companyUsers.length} {tr('مستخدم مفوض', 'authorized users')}
               </p>
             </div>
           </div>
@@ -568,7 +569,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
               className="inline-flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-600/20 transition-all cursor-pointer"
             >
               <Save className="w-4 h-4" />
-              <span>حفظ تعديلات المنشأة</span>
+              <span>{tr('حفظ تعديلات المنشأة', 'Save company changes')}</span>
             </button>
           </div>
 
@@ -598,7 +599,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
             }`}
           >
             <Building2 className="w-4 h-4" />
-            <span>البيانات الأساسية والحكومية</span>
+            <span>{tr('البيانات الأساسية والحكومية', 'Company & government details')}</span>
           </button>
 
           <button
@@ -610,7 +611,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
             }`}
           >
             <CreditCard className="w-4 h-4" />
-            <span>الحساب البنكي والسويفت (WPS)</span>
+            <span>{tr('الحساب البنكي والسويفت (WPS)', 'Banking & SWIFT (WPS)')}</span>
           </button>
 
           {hasPermission(currentUser, 'MANAGE_JOURNALS') && <button
@@ -622,7 +623,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
             }`}
           >
             <Sparkles className="w-4 h-4 text-sky-400" />
-            <span>تكامل برنامج قيود (Qoyod API)</span>
+            <span>{tr('تكامل برنامج قيود (Qoyod API)', 'Qoyod integration (API)')}</span>
           </button>}
 
           {hasPermission(currentUser, 'MANAGE_USERS') && <button
@@ -634,7 +635,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
             }`}
           >
             <Users className="w-4 h-4" />
-            <span>المستخدمون المفوضون ({companyUsers.length})</span>
+            <span>{tr('المستخدمون المفوضون', 'Authorized users')} ({companyUsers.length})</span>
           </button>}
 
           <button
@@ -646,7 +647,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
             }`}
           >
             <FolderTree className="w-4 h-4" />
-            <span>الأقسام الإدارية ({departmentsList.length})</span>
+            <span>{tr('الأقسام الإدارية', 'Departments')} ({departmentsList.length})</span>
           </button>
 
           <button
@@ -658,7 +659,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
             }`}
           >
             <Layers className="w-4 h-4" />
-            <span>مراكز التكلفة ({formData.costCenters?.length || 0})</span>
+            <span>{tr('مراكز التكلفة', 'Cost centers')} ({formData.costCenters?.length || 0})</span>
           </button>
 
           <button
@@ -670,7 +671,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
             }`}
           >
             <Sliders className="w-4 h-4" />
-            <span>قواعد الاحتساب والتأمينات (GOSI)</span>
+            <span>{tr('قواعد الاحتساب والتأمينات (GOSI)', 'Calculation rules & GOSI')}</span>
           </button>
 
           <button
@@ -682,7 +683,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
             }`}
           >
             <Settings2 className="w-4 h-4" />
-            <span>شجرة الحسابات</span>
+            <span>{tr('شجرة الحسابات', 'Chart of accounts')}</span>
           </button>
 
           {hasPermission(currentUser, 'MANAGE_EMPLOYEES') && (
@@ -695,7 +696,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
               }`}
             >
               <AlertCircle className="w-4 h-4" />
-              <span>إدارة البيانات الحساسة</span>
+              <span>{tr('إدارة البيانات الحساسة', 'Sensitive data')}</span>
             </button>
           )}
         </div>
@@ -706,31 +707,31 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
         <div className="bg-white rounded-2xl p-6 border border-slate-200/80 shadow-sm space-y-6">
           <div className="flex items-center justify-between border-b border-slate-100 pb-3">
             <div>
-              <h3 className="text-sm font-bold text-slate-900">بيانات التسجيل الحكومي والمنشأة</h3>
-              <p className="text-xs text-slate-500">تعديل بيانات السجل التجاري، الرقم الضريبي، واشتراك التأمينات الاجتماعية</p>
+              <h3 className="text-sm font-bold text-slate-900">{tr('بيانات التسجيل الحكومي والمنشأة', 'Company and government registration')}</h3>
+              <p className="text-xs text-slate-500">{tr('تعديل بيانات السجل التجاري، الرقم الضريبي، واشتراك التأمينات الاجتماعية', 'Manage commercial registration, VAT and GOSI registration details')}</p>
             </div>
             <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
-              متوافق مع وزارة الموارد البشرية وهيئة الزكاة والضريبة والجمارك (ZATCA)
+              {tr('متوافق مع وزارة الموارد البشرية وهيئة الزكاة والضريبة والجمارك (ZATCA)', 'MHRSD and ZATCA compliant')}
             </span>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
             {/* Arabic Name */}
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">اسم المنشأة الرسمي بالعربية *</label>
+              <label className="block text-xs font-bold text-slate-700 mb-1">{tr('اسم المنشأة الرسمي بالعربية *', 'Official company name in Arabic *')}</label>
               <input
                 type="text"
                 required
                 value={formData.nameAr}
                 onChange={(e) => setFormData({ ...formData, nameAr: e.target.value })}
                 className="w-full px-3.5 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:border-emerald-500 font-semibold text-slate-900"
-                placeholder="مثال: شركة التقنية المتقدمة المحدودة"
+                placeholder={tr('مثال: شركة التقنية المتقدمة المحدودة', 'Example: شركة التقنية المتقدمة المحدودة')}
               />
             </div>
 
             {/* English Name */}
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">اسم المنشأة بالإنجليزية (English Name)</label>
+              <label className="block text-xs font-bold text-slate-700 mb-1">{tr('اسم المنشأة بالإنجليزية (English Name)', 'Company name in English')}</label>
               <input
                 type="text"
                 value={formData.nameEn || ''}
@@ -743,7 +744,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
 
             {/* Company Code */}
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">رمز المنشأة الداخلي (Company Code) *</label>
+              <label className="block text-xs font-bold text-slate-700 mb-1">{tr('رمز المنشأة الداخلي (Company Code) *', 'Internal company code *')}</label>
               <input
                 type="text"
                 required
@@ -757,15 +758,15 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
             {/* Commercial Registration (CR) */}
             <div>
               <div className="flex items-center justify-between mb-1">
-                <label className="block text-xs font-bold text-slate-700">رقم السجل التجاري (C.R. Number) *</label>
+                <label className="block text-xs font-bold text-slate-700">{tr('رقم السجل التجاري (C.R. Number) *', 'Commercial registration number *')}</label>
                 {formData.crNumber && (
                   validateSaudiCR(formData.crNumber) ? (
                     <span className="text-[10px] text-emerald-600 font-bold flex items-center gap-0.5">
-                      <CheckCircle2 className="w-3 h-3" /> سجل صحيح (10 أرقام)
+                      <CheckCircle2 className="w-3 h-3" /> {tr('سجل صحيح (10 أرقام)', 'Valid CR (10 digits)')}
                     </span>
                   ) : (
                     <span className="text-[10px] text-amber-600 font-semibold flex items-center gap-0.5">
-                      <AlertCircle className="w-3 h-3" /> 10 أرقام
+                      <AlertCircle className="w-3 h-3" /> {tr('10 أرقام', '10 digits')}
                     </span>
                   )
                 )}
@@ -784,15 +785,15 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
             {/* Tax Number (VAT) */}
             <div>
               <div className="flex items-center justify-between mb-1">
-                <label className="block text-xs font-bold text-slate-700">الرقم الضريبي (VAT / Tax No) *</label>
+                <label className="block text-xs font-bold text-slate-700">{tr('الرقم الضريبي (VAT / Tax No) *', 'VAT number *')}</label>
                 {formData.taxNumber && (
                   validateSaudiTaxNumber(formData.taxNumber) ? (
                     <span className="text-[10px] text-emerald-600 font-bold flex items-center gap-0.5">
-                      <CheckCircle2 className="w-3 h-3" /> رقم ضريبي صحيح
+                      <CheckCircle2 className="w-3 h-3" /> {tr('رقم ضريبي صحيح', 'Valid VAT number')}
                     </span>
                   ) : (
                     <span className="text-[10px] text-amber-600 font-semibold flex items-center gap-0.5">
-                      <AlertCircle className="w-3 h-3" /> 15 رقماً يبدأ وينتهي بـ 3
+                      <AlertCircle className="w-3 h-3" /> {tr('15 رقماً يبدأ وينتهي بـ 3', '15 digits, starting and ending with 3')}
                     </span>
                   )
                 )}
@@ -810,7 +811,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
 
             {/* GOSI Establishment Number */}
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">رقم اشتراك التأمينات الاجتماعية (GOSI No) *</label>
+              <label className="block text-xs font-bold text-slate-700 mb-1">{tr('رقم اشتراك التأمينات الاجتماعية (GOSI No) *', 'GOSI establishment number *')}</label>
               <input
                 type="text"
                 required
@@ -823,21 +824,21 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
 
             {/* Currency */}
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">العملة الأساسية</label>
+              <label className="block text-xs font-bold text-slate-700 mb-1">{tr('العملة الأساسية', 'Base currency')}</label>
               <select
                 value={formData.currency}
                 onChange={(e) => setFormData({ ...formData, currency: e.target.value })}
                 className="w-full px-3.5 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white font-semibold text-slate-900"
               >
-                <option value="SAR">ريال سعودي (SAR - ر.س)</option>
-                <option value="USD">دولار أمريكي (USD - $)</option>
-                <option value="AED">درهم إماراتي (AED)</option>
+                <option value="SAR">{tr('ريال سعودي (SAR - ر.س)', 'Saudi Riyal (SAR)')}</option>
+                <option value="USD">{tr('دولار أمريكي (USD - $)', 'US Dollar (USD)')}</option>
+                <option value="AED">{tr('درهم إماراتي (AED)', 'UAE Dirham (AED)')}</option>
               </select>
             </div>
 
             {/* Timezone */}
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">المنطقة الزمنية</label>
+              <label className="block text-xs font-bold text-slate-700 mb-1">{tr('المنطقة الزمنية', 'Time zone')}</label>
               <input
                 type="text"
                 value={formData.timezone}
@@ -848,16 +849,16 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
 
             {/* Fiscal Year Start */}
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">شهر بداية السنة المالية</label>
+              <label className="block text-xs font-bold text-slate-700 mb-1">{tr('شهر بداية السنة المالية', 'Fiscal year starting month')}</label>
               <select
                 value={formData.fiscalYearStartMonth}
                 onChange={(e) => setFormData({ ...formData, fiscalYearStartMonth: parseInt(e.target.value, 10) || 1 })}
                 className="w-full px-3.5 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white font-semibold text-slate-900"
               >
-                <option value={1}>يناير (January - 01)</option>
-                <option value={4}>أبريل (April - 04)</option>
-                <option value={7}>يوليو (July - 07)</option>
-                <option value={10}>أكتوبر (October - 10)</option>
+                <option value={1}>{tr('يناير', 'January')} (01)</option>
+                <option value={4}>{tr('أبريل', 'April')} (04)</option>
+                <option value={7}>{tr('يوليو', 'July')} (07)</option>
+                <option value={10}>{tr('أكتوبر', 'October')} (10)</option>
               </select>
             </div>
           </div>
@@ -873,8 +874,8 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
                 )}
               </div>
               <div>
-                <h4 className="text-xs font-bold text-slate-800">شعار المنشأة المعتمد (Company Logo)</h4>
-                <p className="text-[11px] text-slate-500">يظهر في التقارير الرسمية، قسائم الرواتب، وكشوفات حماية الأجور</p>
+                <h4 className="text-xs font-bold text-slate-800">{tr('شعار المنشأة المعتمد (Company Logo)', 'Approved company logo')}</h4>
+                <p className="text-[11px] text-slate-500">{tr('يظهر في التقارير الرسمية، قسائم الرواتب، وكشوفات حماية الأجور', 'Displayed on official reports, payslips and WPS files')}</p>
               </div>
             </div>
 
@@ -885,7 +886,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
                 className="px-3 py-2 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-sm"
               >
                 <Upload className="w-3.5 h-3.5" />
-                <span>رفع شعار جديد</span>
+                <span>{tr('رفع شعار جديد', 'Upload new logo')}</span>
               </button>
               {formData.logo && (
                 <button
@@ -894,7 +895,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
                   className="px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
-                  <span>إزالة</span>
+                  <span>{tr('إزالة', 'Remove')}</span>
                 </button>
               )}
             </div>
@@ -907,7 +908,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
               className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-md transition-all cursor-pointer flex items-center gap-2"
             >
               <Save className="w-4 h-4" />
-              <span>حفظ البيانات الأساسية</span>
+              <span>{tr('حفظ البيانات الأساسية', 'Save basic details')}</span>
             </button>
           </div>
         </div>
@@ -918,22 +919,22 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
         <div className="bg-white rounded-2xl p-6 border border-slate-200/80 shadow-sm space-y-6">
           <div className="flex items-center justify-between border-b border-slate-100 pb-3">
             <div>
-              <h3 className="text-sm font-bold text-slate-900">الحساب البنكي وبيانات نظام حماية الأجور (WPS)</h3>
-              <p className="text-xs text-slate-500">الحساب البنكي المعتمد لصرف رواتب المنشأة ورموز السويفت (SWIFT/BIC)</p>
+              <h3 className="text-sm font-bold text-slate-900">{tr('الحساب البنكي وبيانات نظام حماية الأجور (WPS)', 'Bank account and Wage Protection System (WPS)')}</h3>
+              <p className="text-xs text-slate-500">{tr('الحساب البنكي المعتمد لصرف رواتب المنشأة ورموز السويفت (SWIFT/BIC)', 'Approved payroll account and SWIFT/BIC settings')}</p>
             </div>
             <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
-              معتمد من البنك المركزي السعودي (SAMA)
+              {tr('معتمد من البنك المركزي السعودي (SAMA)', 'SAMA compliant')}
             </span>
           </div>
 
           <div className="rounded-2xl border border-emerald-200 bg-emerald-50/40 overflow-hidden">
             <div className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-emerald-200">
-              <div><h4 className="text-sm font-black text-slate-900">تعريفات البنوك وSWIFT للموظفين</h4><p className="text-[11px] text-slate-600 mt-1">يُحدد البنك تلقائيًا من الرقمين الخامس والسادس في IBAN ويُطبّق SWIFT هنا على كل موظفي البنك.</p></div>
-              <button type="button" onClick={() => setFormData({ ...formData, bankDefinitions: [...(formData.bankDefinitions || []), { ibanBankCode: '', nameAr: '', nameEn: '', swiftCode: '', isActive: true }] })} className="px-3 py-2 bg-emerald-600 text-white rounded-xl text-xs font-bold flex items-center gap-1.5"><Plus className="w-3.5 h-3.5" /> إضافة بنك</button>
+              <div><h4 className="text-sm font-black text-slate-900">{tr('تعريفات البنوك وSWIFT للموظفين', 'Employee bank and SWIFT definitions')}</h4><p className="text-[11px] text-slate-600 mt-1">{tr('يُحدد البنك تلقائيًا من الرقمين الخامس والسادس في IBAN ويُطبّق SWIFT هنا على كل موظفي البنك.', 'The bank is detected from IBAN digits 5–6, and its SWIFT code is applied to every employee using that bank.')}</p></div>
+              <button type="button" onClick={() => setFormData({ ...formData, bankDefinitions: [...(formData.bankDefinitions || []), { ibanBankCode: '', nameAr: '', nameEn: '', swiftCode: '', isActive: true }] })} className="px-3 py-2 bg-emerald-600 text-white rounded-xl text-xs font-bold flex items-center gap-1.5"><Plus className="w-3.5 h-3.5" /> {tr('إضافة بنك', 'Add bank')}</button>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full min-w-[760px] text-xs">
-                <thead className="bg-white/80 text-slate-600"><tr><th className="p-2 text-right">كود IBAN</th><th className="p-2 text-right">اسم البنك بالعربي</th><th className="p-2 text-right">الاسم بالإنجليزي</th><th className="p-2 text-right">SWIFT / BIC</th><th className="p-2 text-center">نشط</th><th className="p-2"></th></tr></thead>
+                <thead className="bg-white/80 text-slate-600"><tr><th className="p-2 text-start">{tr('كود IBAN', 'IBAN code')}</th><th className="p-2 text-start">{tr('اسم البنك بالعربي', 'Arabic bank name')}</th><th className="p-2 text-start">{tr('الاسم بالإنجليزي', 'English name')}</th><th className="p-2 text-start">SWIFT / BIC</th><th className="p-2 text-center">{tr('نشط', 'Active')}</th><th className="p-2"></th></tr></thead>
                 <tbody className="divide-y divide-emerald-100">
                   {(formData.bankDefinitions || []).map((bank, index) => {
                     const updateBank = (changes: Partial<CompanyBankDefinition>) => setFormData({ ...formData, bankDefinitions: (formData.bankDefinitions || []).map((item, itemIndex) => itemIndex === index ? { ...item, ...changes } : item) });
@@ -943,7 +944,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
                       <td className="p-2"><input value={bank.nameEn} onChange={event => updateBank({ nameEn: event.target.value })} className="w-full px-2 py-1.5 border border-slate-200 rounded-lg" dir="ltr" /></td>
                       <td className="p-2"><input value={bank.swiftCode} onChange={event => updateBank({ swiftCode: event.target.value.replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, 11) })} className="w-36 px-2 py-1.5 border border-slate-200 rounded-lg font-mono" dir="ltr" /></td>
                       <td className="p-2 text-center"><input type="checkbox" checked={bank.isActive !== false} onChange={event => updateBank({ isActive: event.target.checked })} className="accent-emerald-600" /></td>
-                      <td className="p-2 text-center"><button type="button" onClick={() => setFormData({ ...formData, bankDefinitions: (formData.bankDefinitions || []).filter((_, itemIndex) => itemIndex !== index) })} className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-lg" title="حذف تعريف البنك"><Trash2 className="w-4 h-4" /></button></td>
+                      <td className="p-2 text-center"><button type="button" onClick={() => setFormData({ ...formData, bankDefinitions: (formData.bankDefinitions || []).filter((_, itemIndex) => itemIndex !== index) })} className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-lg" title={tr('حذف تعريف البنك', 'Delete bank definition')}><Trash2 className="w-4 h-4" /></button></td>
                     </tr>;
                   })}
                 </tbody>
@@ -955,8 +956,8 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
             {/* Bank Name */}
             <div>
               <div className="flex items-center justify-between mb-1">
-                <label className="block text-xs font-bold text-slate-700">بنك صرف الرواتب للمنشأة *</label>
-                <span className="text-[10px] text-slate-400">قائمة البنوك السعودية</span>
+                <label className="block text-xs font-bold text-slate-700">{tr('بنك صرف الرواتب للمنشأة *', 'Company payroll bank *')}</label>
+                <span className="text-[10px] text-slate-400">{tr('قائمة البنوك السعودية', 'Saudi banks')}</span>
               </div>
               <select
                 value={formData.bankCode || detectBankFromIBAN(formData.bankIban || '', formData.bankDefinitions)?.code || getBankDefinitions(formData.bankDefinitions).find(bank => bank.nameAr === formData.bankName || bank.nameEn === formData.bankName)?.ibanBankCode || ''}
@@ -971,7 +972,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
                 }}
                 className="w-full px-3.5 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:border-emerald-500 font-semibold text-slate-900"
               >
-                <option value="">-- اختر البنك --</option>
+                <option value="">{tr('-- اختر البنك --', '-- Select bank --')}</option>
                 {getBankDefinitions(formData.bankDefinitions).filter(b => b.isActive !== false).map(b => (
                   <option key={b.ibanBankCode} value={b.ibanBankCode}>
                     {language === 'en' ? b.nameEn || b.nameAr : b.nameAr} ({b.swiftCode})
@@ -983,15 +984,15 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
             {/* IBAN */}
             <div>
               <div className="flex items-center justify-between mb-1">
-                <label className="block text-xs font-bold text-slate-700">رقم الآيبان البنكي للمنشأة (IBAN) *</label>
+                <label className="block text-xs font-bold text-slate-700">{tr('رقم الآيبان البنكي للمنشأة (IBAN) *', 'Company IBAN *')}</label>
                 {formData.bankIban && (
                   validateSaudiIBAN(formData.bankIban) ? (
                     <span className="text-[10px] text-emerald-600 font-bold flex items-center gap-0.5">
-                      <CheckCircle2 className="w-3 h-3" /> آيبان صحيح
+                      <CheckCircle2 className="w-3 h-3" /> {tr('آيبان صحيح', 'Valid IBAN')}
                     </span>
                   ) : (
                     <span className="text-[10px] text-amber-600 font-semibold flex items-center gap-0.5">
-                      <AlertCircle className="w-3 h-3" /> 24 خانة تبدأ بـ SA
+                      <AlertCircle className="w-3 h-3" /> {tr('24 خانة تبدأ بـ SA', '24 characters starting with SA')}
                     </span>
                   )
                 )}
@@ -1020,7 +1021,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
             {/* SWIFT / BIC */}
             <div>
               <div className="flex items-center justify-between mb-1">
-                <label className="block text-xs font-bold text-slate-700">رمز السويفت (SWIFT / BIC Code)</label>
+                <label className="block text-xs font-bold text-slate-700">{tr('رمز السويفت (SWIFT / BIC Code)', 'SWIFT / BIC code')}</label>
                 <button
                   type="button"
                   onClick={() => {
@@ -1035,13 +1036,13 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
                     if (code) {
                       setFormData({ ...formData, bankSwiftCode: code });
                     } else {
-                      alert('يرجى تحديد البنك أو إدخال رقم الآيبان لتوليد رمز السويفت');
+                      alert(tr('يرجى تحديد البنك أو إدخال رقم الآيبان لتوليد رمز السويفت', 'Select a bank or enter an IBAN to generate the SWIFT code.'));
                     }
                   }}
                   className="text-[10px] text-emerald-700 hover:text-emerald-800 font-bold flex items-center gap-0.5 cursor-pointer"
                 >
                   <Sparkles className="w-2.5 h-2.5" />
-                  <span>توليد تلقائي</span>
+                  <span>{tr('توليد تلقائي', 'Auto-generate')}</span>
                 </button>
               </div>
               <input
@@ -1057,28 +1058,28 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
                 {formData.bankSwiftCode ? (
                   validateSwiftCode(formData.bankSwiftCode) ? (
                     <span className="text-emerald-700 font-semibold flex items-center gap-1">
-                      <CheckCircle2 className="w-2.5 h-2.5" /> معتمد قياسياً (ISO 9362)
+                      <CheckCircle2 className="w-2.5 h-2.5" /> {tr('معتمد قياسياً (ISO 9362)', 'Valid ISO 9362 code')}
                     </span>
                   ) : (
                     <span className="text-amber-600 font-semibold flex items-center gap-1">
-                      <AlertCircle className="w-2.5 h-2.5" /> التنسيق القياسي: 8 إلى 11 حرفاً
+                      <AlertCircle className="w-2.5 h-2.5" /> {tr('التنسيق القياسي: 8 إلى 11 حرفاً', 'Standard format: 8–11 characters')}
                     </span>
                   )
                 ) : (
-                  <span className="text-slate-400">يتولد تلقائياً من رقم الآيبان</span>
+                  <span className="text-slate-400">{tr('يتولد تلقائياً من رقم الآيبان', 'Generated automatically from the IBAN')}</span>
                 )}
                 <span className="text-slate-400 font-mono">{(formData.bankSwiftCode || '').length}/11</span>
               </div>
             </div>
 
             {[
-              ['bankCustomerCode', 'اسم العميل / كود العميل لدى البنك', 'مثال: P0030694'],
-              ['bankAgreementCode', 'رمز اتفاقية الرواتب', 'مثال: P0030694'],
-              ['bankFundingAccount', 'حساب التمويل', 'رقم حساب تمويل الرواتب'],
-              ['bankBranchCode', 'رقم فرع البنك', 'مثال: 326'],
-              ['laborOfficeEstablishmentNo', 'رقم المنشأة في مكتب العمل', 'مثال: 4-2005115'],
-              ['chamberOfCommerceNo', 'رقم المنشأة في الغرفة التجارية', 'رقم العضوية/المنشأة'],
-              ['bankPayrollCode', 'رمز البنك المختصر في ملف الرواتب', 'مثال: RIBL'],
+              ['bankCustomerCode', tr('اسم العميل / كود العميل لدى البنك', 'Bank customer name / code'), tr('مثال: P0030694', 'Example: P0030694')],
+              ['bankAgreementCode', tr('رمز اتفاقية الرواتب', 'Payroll agreement code'), tr('مثال: P0030694', 'Example: P0030694')],
+              ['bankFundingAccount', tr('حساب التمويل', 'Funding account'), tr('رقم حساب تمويل الرواتب', 'Payroll funding account number')],
+              ['bankBranchCode', tr('رقم فرع البنك', 'Bank branch number'), tr('مثال: 326', 'Example: 326')],
+              ['laborOfficeEstablishmentNo', tr('رقم المنشأة في مكتب العمل', 'Labor Office establishment number'), tr('مثال: 4-2005115', 'Example: 4-2005115')],
+              ['chamberOfCommerceNo', tr('رقم المنشأة في الغرفة التجارية', 'Chamber of Commerce number'), tr('رقم العضوية/المنشأة', 'Membership / establishment number')],
+              ['bankPayrollCode', tr('رمز البنك المختصر في ملف الرواتب', 'Payroll file bank code'), tr('مثال: RIBL', 'Example: RIBL')],
             ].map(([field, label, placeholder]) => (
               <div key={field}>
                 <label className="block text-xs font-bold text-slate-700 mb-1">{label}</label>
@@ -1095,7 +1096,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
 
             {/* Payroll Cut-off Day */}
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">يوم إقفال مسير الرواتب الشهري (Cut-off Day)</label>
+              <label className="block text-xs font-bold text-slate-700 mb-1">{tr('يوم إقفال مسير الرواتب الشهري (Cut-off Day)', 'Monthly payroll cut-off day')}</label>
               <div className="flex items-center gap-2">
                 <input
                   type="number"
@@ -1105,13 +1106,13 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
                   onChange={(e) => setFormData({ ...formData, payrollCutoffDay: parseInt(e.target.value, 10) || 25 })}
                   className="w-full px-3.5 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white font-mono font-bold text-slate-900"
                 />
-                <span className="text-xs text-slate-500 font-medium whitespace-nowrap">من كل شهر ميلادي</span>
+                <span className="text-xs text-slate-500 font-medium whitespace-nowrap">{tr('من كل شهر ميلادي', 'of each month')}</span>
               </div>
             </div>
 
             {/* Payroll Payment Day */}
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">يوم تحويل وصرف الرواتب (Payment Day)</label>
+              <label className="block text-xs font-bold text-slate-700 mb-1">{tr('يوم تحويل وصرف الرواتب (Payment Day)', 'Payroll payment day')}</label>
               <div className="flex items-center gap-2">
                 <input
                   type="number"
@@ -1121,21 +1122,21 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
                   onChange={(e) => setFormData({ ...formData, payrollPaymentDay: parseInt(e.target.value, 10) || 27 })}
                   className="w-full px-3.5 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white font-mono font-bold text-slate-900"
                 />
-                <span className="text-xs text-slate-500 font-medium whitespace-nowrap">من كل شهر ميلادي</span>
+                <span className="text-xs text-slate-500 font-medium whitespace-nowrap">{tr('من كل شهر ميلادي', 'of each month')}</span>
               </div>
             </div>
 
             {/* Work days per month */}
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">أيام العمل المعيارية شهرياً لحساب أجر اليوم</label>
+              <label className="block text-xs font-bold text-slate-700 mb-1">{tr('أيام العمل المعيارية شهرياً لحساب أجر اليوم', 'Standard monthly workdays for daily-rate calculation')}</label>
               <select
                 value={formData.workDaysPerMonth}
                 onChange={(e) => setFormData({ ...formData, workDaysPerMonth: parseInt(e.target.value, 10) || 30 })}
                 className="w-full px-3.5 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white font-semibold text-slate-900"
               >
-                <option value={30}>30 يوماً (المعيار الشائع لنظام العمل السعودي)</option>
-                <option value={26}>26 يوماً (خصم يوم الراحة الأسبوعية)</option>
-                <option value={22}>22 يوماً (الدوام 5 أيام أسبوعياً)</option>
+                <option value={30}>{tr('30 يوماً (المعيار الشائع لنظام العمل السعودي)', '30 days (common Saudi Labor Law basis)')}</option>
+                <option value={26}>{tr('26 يوماً (خصم يوم الراحة الأسبوعية)', '26 days (excluding weekly rest days)')}</option>
+                <option value={22}>{tr('22 يوماً (الدوام 5 أيام أسبوعياً)', '22 days (five-day workweek)')}</option>
               </select>
             </div>
           </div>
@@ -1147,7 +1148,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
               className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-md transition-all cursor-pointer flex items-center gap-2"
             >
               <Save className="w-4 h-4" />
-              <span>حفظ الإعدادات البنكية ومسيرات الرواتب</span>
+              <span>{tr('حفظ الإعدادات البنكية ومسيرات الرواتب', 'Save banking and payroll settings')}</span>
             </button>
           </div>
         </div>
