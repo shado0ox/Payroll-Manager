@@ -57,6 +57,7 @@ import {
 import { generatePayrollJournalBatch, generatePaymentJournalBatch } from '../utils/accountingEngine';
 import { exportBankPayrollXlsx } from '../utils/bankExcelExport';
 import { hasPermission } from '../utils/permissions';
+import { useLanguage } from '../i18n/LanguageContext';
 
 interface PayrollRunsViewProps {
   company: Company;
@@ -72,11 +73,11 @@ interface PayrollRunsViewProps {
   onOpenQoyodModal: () => void;
 }
 
-const STATUS_CONFIG: Record<PayrollRunStatus, { label: string; bg: string; text: string; border: string }> = {
-  DRAFT: { label: 'مسودة (Draft)', bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-200' },
-  UNDER_REVIEW: { label: 'قيد المراجعة والتدقيق', bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200' },
-  APPROVED: { label: 'معتمد من الإدارة (Approved)', bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200' },
-  POSTED: { label: 'مرحل ومقفل محاسبياً (Posted)', bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-200' },
+const STATUS_CONFIG: Record<PayrollRunStatus, { labelAr: string; labelEn: string; bg: string; text: string; border: string }> = {
+  DRAFT: { labelAr: 'مسودة', labelEn: 'Draft', bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-200' },
+  UNDER_REVIEW: { labelAr: 'قيد المراجعة والتدقيق', labelEn: 'Under Review', bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200' },
+  APPROVED: { labelAr: 'معتمد من الإدارة', labelEn: 'Approved', bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200' },
+  POSTED: { labelAr: 'مرحل ومقفل محاسبياً', labelEn: 'Posted & Locked', bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-200' },
 };
 
 const PAYMENT_STATUS_CONFIG: Record<PaymentBatchStatus, { label: string; classes: string }> = {
@@ -113,12 +114,15 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
   onViewEmployeeStatement,
   onOpenQoyodModal,
 }) => {
+  const { language } = useLanguage();
+  const tr = (ar: string, en: string) => language === 'ar' ? ar : en;
+  const currentPeriod = new Date().toISOString().slice(0, 7);
   const companyRuns = useMemo(() => {
     return payrollRuns.filter(r => r.companyId === company.id);
   }, [payrollRuns, company.id]);
 
   const [selectedPeriod, setSelectedPeriod] = useState<string>(
-    companyRuns[0]?.periodMonth || '2026-08'
+    companyRuns[0]?.periodMonth || currentPeriod
   );
 
   const [searchTerm, setSearchTerm] = useState('');
@@ -344,7 +348,7 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
   // Execute full payroll calculation engine
   const handleRecalculate = () => {
     if (currentRun?.paymentBatches?.some(batch => batch.status === 'PAID')) {
-      alert('لا يمكن إعادة احتساب المسير بعد تسجيل دفعة محولة. ألغِ حالة التحويل أو أنشئ تسوية مستقلة.');
+      alert(tr('لا يمكن إعادة احتساب المسير بعد تسجيل دفعة محولة. ألغِ حالة التحويل أو أنشئ تسوية مستقلة.', 'Payroll cannot be recalculated after a paid batch. Reverse the payment or create a separate settlement.'));
       return;
     }
     setIsCalculating(true);
@@ -405,7 +409,7 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
         companyId: company.id,
         periodMonth: selectedPeriod,
         startDate: `${selectedPeriod}-01`,
-        endDate: `${selectedPeriod}-30`,
+        endDate: `${selectedPeriod}-${String(new Date(Date.UTC(Number(selectedPeriod.slice(0, 4)), Number(selectedPeriod.slice(5, 7)), 0)).getUTCDate()).padStart(2, '0')}`,
         status: currentRun?.status || 'DRAFT',
         createdAt: currentRun?.createdAt || new Date().toISOString(),
         calculatedAt: new Date().toISOString(),
@@ -442,16 +446,16 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
     if (!currentRun) return;
     const permission = newStatus === 'APPROVED' ? 'APPROVE_PAYROLL' : newStatus === 'POSTED' ? 'POST_PAYROLL' : 'MANAGE_PAYROLL';
     if (!hasPermission({ role: activeRole, permissions } as any, permission)) {
-      alert('ليس لديك الصلاحية المطلوبة لتنفيذ هذه المرحلة.');
+      alert(tr('ليس لديك الصلاحية المطلوبة لتنفيذ هذه المرحلة.', 'You do not have permission to perform this action.'));
       return;
     }
     const updated: PayrollRun = {
       ...currentRun,
       status: newStatus,
       approvedAt: newStatus === 'APPROVED' ? new Date().toISOString() : currentRun.approvedAt,
-      approvedBy: newStatus === 'APPROVED' ? 'المدير العام' : currentRun.approvedBy,
+      approvedBy: newStatus === 'APPROVED' ? tr('المدير العام', 'General Manager') : currentRun.approvedBy,
       postedAt: newStatus === 'POSTED' ? new Date().toISOString() : currentRun.postedAt,
-      postedBy: newStatus === 'POSTED' ? 'عبدالله الغامدي (المدير المالي)' : currentRun.postedBy,
+      postedBy: newStatus === 'POSTED' ? tr('المدير المالي', 'Finance Manager') : currentRun.postedBy,
     };
     onSavePayrollRun(updated);
   };
@@ -460,19 +464,19 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
   const handleReverseApproval = () => {
     if (!currentRun || currentRun.status !== 'APPROVED' || !canReversePosting) return;
     if (currentRun.paymentBatches?.some(batch => batch.status === 'PAID')) {
-      alert('لا يمكن فتح المسير بعد تسجيل دفعة مدفوعة. ألغِ إثبات السداد أولًا.');
+      alert(tr('لا يمكن فتح المسير بعد تسجيل دفعة مدفوعة. ألغِ إثبات السداد أولًا.', 'Payroll cannot be reopened after a paid batch. Reverse the payment first.'));
       return;
     }
-    if (!window.confirm('هل تريد التراجع عن اعتماد المسير وفتحه للتعديل؟')) return;
+    if (!window.confirm(tr('هل تريد التراجع عن اعتماد المسير وفتحه للتعديل؟', 'Reverse payroll approval and reopen it for editing?'))) return;
     onSavePayrollRun({ ...currentRun, status: 'UNDER_REVIEW', approvedAt: undefined, approvedBy: undefined });
   };
   const handleReversePosting = () => {
     if (!currentRun || currentRun.status !== 'POSTED' || !canReversePosting) return;
     if (currentRun.paymentBatches?.some(batch => batch.status === 'PAID')) {
-      alert('لا يمكن التراجع عن الترحيل بعد تسجيل دفعة محولة. يجب عمل تسوية أو إلغاء إثبات السداد أولًا.');
+      alert(tr('لا يمكن التراجع عن الترحيل بعد تسجيل دفعة محولة. يجب عمل تسوية أو إلغاء إثبات السداد أولًا.', 'Posting cannot be reversed after a paid batch. Create a settlement or reverse the payment first.'));
       return;
     }
-    if (!window.confirm('هل تريد التراجع عن ترحيل المسير وفتحه للتعديل؟')) return;
+    if (!window.confirm(tr('هل تريد التراجع عن ترحيل المسير وفتحه للتعديل؟', 'Reverse payroll posting and reopen it for editing?'))) return;
     onSavePayrollRun({ ...currentRun, status: 'UNDER_REVIEW', approvedAt: undefined, approvedBy: undefined, postedAt: undefined, postedBy: undefined });
   };
 
@@ -480,7 +484,7 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
   const totalWarnings = currentRun?.items.reduce((s, i) => s + i.warningFlags.length, 0) || 0;
 
   return (
-    <div className="space-y-6">
+    <div data-no-translate className="space-y-6">
       
       {/* Top Header & Period Selector */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
@@ -488,16 +492,16 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
           <div className="flex items-center gap-3">
             <h1 className="text-xl sm:text-2xl font-bold text-slate-900 flex items-center gap-2">
               <Banknote className="w-6 h-6 text-emerald-600" />
-              <span>دورة الرواتب الشهرية والمسيرات</span>
+              <span>{tr('دورة الرواتب الشهرية والمسيرات', 'Monthly Payroll Runs')}</span>
             </h1>
             {currentRun && (
               <span className={`text-xs px-3 py-1 rounded-full font-bold border ${STATUS_CONFIG[currentRun.status].bg} ${STATUS_CONFIG[currentRun.status].text} ${STATUS_CONFIG[currentRun.status].border}`}>
-                {STATUS_CONFIG[currentRun.status].label}
+                {language === 'ar' ? STATUS_CONFIG[currentRun.status].labelAr : STATUS_CONFIG[currentRun.status].labelEn}
               </span>
             )}
           </div>
           <p className="text-xs text-slate-500 mt-1">
-            احتساب الاستحقاقات، التأمينات (GOSI)، خصومات الحضور، الأقساط، والاعتماد الإداري والمحاسبي
+            {tr('احتساب الاستحقاقات، التأمينات (GOSI)، خصومات الحضور، الأقساط، والاعتماد الإداري والمحاسبي', 'Calculate earnings, GOSI, attendance deductions, installments, approval and accounting posting')}
           </p>
         </div>
 
@@ -512,10 +516,9 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
               onChange={(e) => { setSelectedPeriod(e.target.value); setSelectedPaymentEmployeeIds([]); }}
               className="bg-transparent text-xs font-bold text-slate-800 border-none focus:ring-0 cursor-pointer"
             >
-              <option value="2026-08">أغسطس 2026 (الشهر الحالي)</option>
-              <option value="2026-07">يوليو 2026 (الشهر السابق)</option>
-              <option value="2026-06">يونيو 2026</option>
-              <option value="2026-09">سبتمبر 2026 (فترة جديدة)</option>
+              {Array.from(new Set([selectedPeriod, ...companyRuns.map(run => run.periodMonth), ...[-2, -1, 0, 1].map(offset => { const date = new Date(); date.setMonth(date.getMonth() + offset); return date.toISOString().slice(0, 7); })])).sort().reverse().map(period => (
+                <option key={period} value={period}>{new Intl.DateTimeFormat(language === 'ar' ? 'ar-SA' : 'en-US', { month: 'long', year: 'numeric' }).format(new Date(`${period}-01T12:00:00`))}</option>
+              ))}
             </select>
           </div>
 
@@ -526,14 +529,14 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
             className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-2 cursor-pointer"
           >
             <Play className={`w-3.5 h-3.5 ${isCalculating ? 'animate-spin' : ''}`} />
-            <span>{isCalculating ? 'جاري الحساب...' : 'إعادة احتساب المسير آلياً'}</span>
+            <span>{isCalculating ? tr('جاري الحساب...', 'Calculating...') : tr('إعادة احتساب المسير آلياً', 'Recalculate payroll')}</span>
           </button>
 
           {/* Performance Benchmark Tag */}
           {calcSpeedMs !== null && (
             <span className="hidden sm:inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
               <Zap className="w-3 h-3 text-emerald-600" />
-              <span>تم في {calcSpeedMs} مللي ثانية ({companyEmployees.length} موظف)</span>
+              <span>{tr('تم في', 'Completed in')} {calcSpeedMs} ms ({companyEmployees.length} {tr('موظف', 'employees')})</span>
             </span>
           )}
         </div>
@@ -544,51 +547,51 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
           
           <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-xs">
-            <div className="text-[11px] font-semibold text-slate-500">إجمالي الرواتب الأساسية</div>
+            <div className="text-[11px] font-semibold text-slate-500">{tr('إجمالي الرواتب الأساسية', 'Total basic salaries')}</div>
             <div className="text-sm sm:text-base font-extrabold text-slate-900 mt-0.5">
               {formatSAR(currentRun.totalBaseSalaries)}
             </div>
-            <div className="text-[10px] text-slate-400">لـ {currentRun.employeesCount} موظف</div>
+            <div className="text-[10px] text-slate-400">{currentRun.employeesCount} {tr('موظف', 'employees')}</div>
           </div>
 
           <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-xs">
-            <div className="text-[11px] font-semibold text-slate-500">إجمالي البدلات والإضافي</div>
+            <div className="text-[11px] font-semibold text-slate-500">{tr('إجمالي البدلات والإضافي', 'Total allowances & overtime')}</div>
             <div className="text-sm sm:text-base font-extrabold text-slate-900 mt-0.5">
               {formatSAR(currentRun.totalAllowances + currentRun.totalOvertime)}
             </div>
-            <div className="text-[10px] text-slate-400">سكن، نقل، عمل إضافي</div>
+            <div className="text-[10px] text-slate-400">{tr('سكن، نقل، عمل إضافي', 'Housing, transport, overtime')}</div>
           </div>
 
           <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-xs">
-            <div className="text-[11px] font-semibold text-slate-500">إجمالي المستحق (Gross)</div>
+            <div className="text-[11px] font-semibold text-slate-500">{tr('إجمالي المستحق (Gross)', 'Total gross pay')}</div>
             <div className="text-sm sm:text-base font-extrabold text-slate-900 mt-0.5">
               {formatSAR(currentRun.totalGrossSalaries)}
             </div>
-            <div className="text-[10px] text-slate-400">قبل الاستقطاعات</div>
+            <div className="text-[10px] text-slate-400">{tr('قبل الاستقطاعات', 'Before deductions')}</div>
           </div>
 
           <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-xs">
-            <div className="text-[11px] font-semibold text-slate-500">إجمالي الاستقطاعات</div>
+            <div className="text-[11px] font-semibold text-slate-500">{tr('إجمالي الاستقطاعات', 'Total deductions')}</div>
             <div className="text-sm sm:text-base font-extrabold text-rose-700 mt-0.5">
               {formatSAR(currentRun.totalDeductions)}
             </div>
-            <div className="text-[10px] text-slate-400">تأمينات، سلف، غياب، تأخير</div>
+            <div className="text-[10px] text-slate-400">{tr('تأمينات، سلف، غياب، تأخير', 'GOSI, loans, absence, lateness')}</div>
           </div>
 
           <div className="bg-emerald-50/70 p-3.5 rounded-2xl border border-emerald-200 shadow-xs">
-            <div className="text-[11px] font-bold text-emerald-900">صافي المستحق (Net)</div>
+            <div className="text-[11px] font-bold text-emerald-900">{tr('صافي المستحق (Net)', 'Net pay')}</div>
             <div className="text-sm sm:text-base font-black text-emerald-800 mt-0.5 font-mono">
               {formatSAR(currentRun.totalNetSalaries)}
             </div>
-            <div className="text-[10px] text-emerald-700">لتحويل البنك (WPS)</div>
+            <div className="text-[10px] text-emerald-700">{tr('لتحويل البنك (WPS)', 'For bank transfer (WPS)')}</div>
           </div>
 
           <div className="bg-purple-50/70 p-3.5 rounded-2xl border border-purple-200 shadow-xs">
-            <div className="text-[11px] font-bold text-purple-900">إجمالي تكلفة المنشأة</div>
+            <div className="text-[11px] font-bold text-purple-900">{tr('إجمالي تكلفة المنشأة', 'Total company cost')}</div>
             <div className="text-sm sm:text-base font-black text-purple-800 mt-0.5 font-mono">
               {formatSAR(currentRun.totalCompanyCost)}
             </div>
-            <div className="text-[10px] text-purple-700">تتضمن حصة التأمينات</div>
+            <div className="text-[10px] text-purple-700">{tr('تتضمن حصة التأمينات', 'Including employer GOSI')}</div>
           </div>
 
         </div>
@@ -597,19 +600,19 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
       {currentRun && (
         <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-xs">
           <div className="flex items-center justify-between mb-3">
-            <div><h3 className="text-sm font-black text-slate-900">ملخص الإضافات والخصومات قبل الاعتماد</h3><p className="text-[11px] text-slate-500">يتحدث تلقائيًا بعد إعادة احتساب المسير أو تعديل موظف.</p></div>
-            <span className={`px-2.5 py-1 rounded-lg text-[10px] font-bold ${currentRun.status === 'APPROVED' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>{currentRun.status === 'APPROVED' ? 'معتمد — جاهز للدفع' : 'غير معتمد'}</span>
+            <div><h3 className="text-sm font-black text-slate-900">{tr('ملخص الإضافات والخصومات قبل الاعتماد', 'Pre-approval Earnings & Deductions')}</h3><p className="text-[11px] text-slate-500">{tr('يتحدث تلقائيًا بعد إعادة احتساب المسير أو تعديل موظف.', 'Updates automatically after recalculation or employee adjustment.')}</p></div>
+            <span className={`px-2.5 py-1 rounded-lg text-[10px] font-bold ${currentRun.status === 'APPROVED' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>{currentRun.status === 'APPROVED' ? tr('معتمد — جاهز للدفع', 'Approved — ready for payment') : tr('غير معتمد', 'Not approved')}</span>
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2 text-center">
             {[
-              ['إجمالي الإضافات', currentRun.totalGrossSalaries - currentRun.totalBaseSalaries, 'text-emerald-700'],
-              ['غياب/إجازة', currentRun.totalAbsenceDeductions, 'text-rose-700'],
-              ['تأخير', currentRun.totalDelayDeductions, 'text-rose-700'],
-              ['تأمينات الموظف', currentRun.totalGosiEmployee, 'text-rose-700'],
-              ['أقساط السلف', currentRun.totalLoanDeductions, 'text-rose-700'],
-              ['جزاءات وخصومات', currentRun.totalPenalties, 'text-rose-700'],
-              ['خصومات أخرى', Math.max(0, currentRun.totalDeductions - currentRun.totalAbsenceDeductions - currentRun.totalDelayDeductions - currentRun.totalGosiEmployee - currentRun.totalLoanDeductions - currentRun.totalPenalties), 'text-rose-700'],
-              ['صافي الرواتب', currentRun.totalNetSalaries, 'text-emerald-800'],
+              [tr('إجمالي الإضافات', 'Total additions'), currentRun.totalGrossSalaries - currentRun.totalBaseSalaries, 'text-emerald-700'],
+              [tr('غياب/إجازة', 'Absence / leave'), currentRun.totalAbsenceDeductions, 'text-rose-700'],
+              [tr('تأخير', 'Lateness'), currentRun.totalDelayDeductions, 'text-rose-700'],
+              [tr('تأمينات الموظف', 'Employee GOSI'), currentRun.totalGosiEmployee, 'text-rose-700'],
+              [tr('أقساط السلف', 'Loan installments'), currentRun.totalLoanDeductions, 'text-rose-700'],
+              [tr('جزاءات وخصومات', 'Penalties & deductions'), currentRun.totalPenalties, 'text-rose-700'],
+              [tr('خصومات أخرى', 'Other deductions'), Math.max(0, currentRun.totalDeductions - currentRun.totalAbsenceDeductions - currentRun.totalDelayDeductions - currentRun.totalGosiEmployee - currentRun.totalLoanDeductions - currentRun.totalPenalties), 'text-rose-700'],
+              [tr('صافي الرواتب', 'Net salaries'), currentRun.totalNetSalaries, 'text-emerald-800'],
             ].map(([label, amount, color]) => <div key={String(label)} className="rounded-xl bg-slate-50 border border-slate-100 p-2"><div className="text-[10px] text-slate-500">{label}</div><div className={`text-xs font-black mt-1 ${color}`}>{formatSAR(Number(amount))}</div></div>)}
           </div>
         </div>
@@ -621,7 +624,7 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
           
           {/* Approval Workflow Buttons */}
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs font-bold text-slate-700 ml-2">مراحل الاعتماد:</span>
+            <span className="text-xs font-bold text-slate-700 ml-2">{tr('مراحل الاعتماد:', 'Approval workflow:')}</span>
 
             {currentRun.status === 'DRAFT' && (
               <button
@@ -629,7 +632,7 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
                 className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition-all shadow-xs flex items-center gap-1.5"
               >
                 <Send className="w-3.5 h-3.5" />
-                <span>إرسال للمراجعة والتدقيق</span>
+                <span>{tr('إرسال للمراجعة والتدقيق', 'Submit for review')}</span>
               </button>
             )}
 
@@ -640,7 +643,7 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
                 className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white text-xs font-bold rounded-xl transition-all shadow-xs flex items-center gap-1.5"
               >
                 <CheckCircle2 className="w-3.5 h-3.5" />
-                <span>اعتماد المدير العام</span>
+                <span>{tr('اعتماد المدير العام', 'General manager approval')}</span>
               </button>
             )}
 
@@ -651,9 +654,9 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
                 className="px-3.5 py-1.5 bg-purple-600 hover:bg-purple-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white text-xs font-bold rounded-xl transition-all shadow-xs flex items-center gap-1.5"
               >
                 <Lock className="w-3.5 h-3.5" />
-                <span>{closeOutstandingAmount > 0 || underSettlementAmount > 0 ? 'عالِج المدفوع والمعلق والتسويات قبل الإقفال' : 'إقفال وترحيل المسير بعد المعالجة'}</span>
+                <span>{closeOutstandingAmount > 0 || underSettlementAmount > 0 ? tr('عالِج المدفوع والمعلق والتسويات قبل الإقفال', 'Resolve payments, holds and settlements before posting') : tr('إقفال وترحيل المسير بعد المعالجة', 'Close and post payroll')}</span>
               </button>
-              {canReversePosting && <button type="button" onClick={handleReverseApproval} className="px-3 py-1.5 rounded-xl bg-amber-50 text-amber-800 border border-amber-200 text-xs font-bold flex items-center gap-1.5"><RotateCcw className="w-3.5 h-3.5" /> التراجع عن الاعتماد والتعديل</button>}
+              {canReversePosting && <button type="button" onClick={handleReverseApproval} className="px-3 py-1.5 rounded-xl bg-amber-50 text-amber-800 border border-amber-200 text-xs font-bold flex items-center gap-1.5"><RotateCcw className="w-3.5 h-3.5" /> {tr('التراجع عن الاعتماد والتعديل', 'Reverse approval and edit')}</button>}
               </>
             )}
 
@@ -661,11 +664,11 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
               <>
                 <div className="flex items-center gap-2 text-xs font-bold text-purple-800 bg-purple-50 px-3 py-1.5 rounded-xl border border-purple-200">
                   <CheckCircle2 className="w-4 h-4 text-purple-600" />
-                  <span>تم إقفال وترحيل مسير هذا الشهر بنجاح</span>
+                  <span>{tr('تم إقفال وترحيل مسير هذا الشهر بنجاح', 'This payroll has been closed and posted')}</span>
                 </div>
                 {canReversePosting && (
                   <button type="button" onClick={handleReversePosting} className="px-3 py-1.5 rounded-xl bg-amber-50 text-amber-800 border border-amber-200 text-xs font-bold flex items-center gap-1.5">
-                    <RotateCcw className="w-3.5 h-3.5" /> التراجع عن الترحيل
+                    <RotateCcw className="w-3.5 h-3.5" /> {tr('التراجع عن الترحيل', 'Reverse posting')}
                   </button>
                 )}
               </>
@@ -677,10 +680,10 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
             <button
               onClick={() => exportPayrollSheetCsv(currentRun, company)}
               className="px-3 py-1.5 bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all"
-              title="تصدير مسير الرواتب المفصل بصيغة Excel"
+              title={tr('تصدير مسير الرواتب المفصل بصيغة Excel', 'Export detailed payroll in Excel format')}
             >
               <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
-              <span>مسير الرواتب Excel</span>
+              <span>{tr('مسير الرواتب Excel', 'Payroll Excel')}</span>
             </button>
 
             <button
@@ -689,28 +692,28 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
                 exportQoyodJournalCsv(batch, company);
               }}
               className="px-3 py-1.5 bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all"
-              title="تصدير ملف قيد اليومية المتوافق مع نموذج استيراد قيود"
+              title={tr('تصدير ملف قيد اليومية المتوافق مع نموذج استيراد قيود', 'Export journal file compatible with Qoyod import')}
             >
               <Layers className="w-3.5 h-3.5 text-sky-600" />
-              <span>قيد قيود CSV</span>
+              <span>{tr('قيد قيود CSV', 'Qoyod Journal CSV')}</span>
             </button>
 
             <button
               onClick={() => exportWpsBankCsv(currentRun, company, currentRun.items.filter(item => (item.entitlementStatus || 'PAYABLE') === 'PAYABLE' && !committedEmployeeIds.has(item.employeeId)).map(item => item.employeeId))}
               className="px-3 py-1.5 bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all"
-              title="تصدير المستحقين غير المعلقين وغير المدرجين في دفعة فقط"
+              title={tr('تصدير المستحقين غير المعلقين وغير المدرجين في دفعة فقط', 'Export only payable employees not already included in a batch')}
             >
               <DollarSign className="w-3.5 h-3.5 text-indigo-600" />
-              <span>ملف حماية الأجور (WPS)</span>
+              <span>{tr('ملف حماية الأجور (WPS)', 'WPS File')}</span>
             </button>
 
             <button
               onClick={() => exportGosiReportCsv(currentRun, company)}
               className="px-3 py-1.5 bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all"
-              title="تصدير جدول اشتراكات التأمينات الاجتماعية GOSI"
+              title={tr('تصدير جدول اشتراكات التأمينات الاجتماعية GOSI', 'Export GOSI contributions report')}
             >
               <ShieldCheck className="w-3.5 h-3.5 text-blue-600" />
-              <span>تقرير التأمينات (GOSI)</span>
+              <span>{tr('تقرير التأمينات (GOSI)', 'GOSI Report')}</span>
             </button>
           </div>
 
