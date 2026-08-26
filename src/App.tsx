@@ -64,7 +64,7 @@ import { AuditLogsView } from './components/AuditLogsView';
 import { EmployeeStatementModal } from './components/EmployeeStatementModal';
 import { QoyodIntegrationModal } from './components/QoyodIntegrationModal';
 import { DatabaseStatusModal } from './components/DatabaseStatusModal';
-import { DatabaseStatus, persistFullStateToDatabase, calculateStorageSize } from './utils/databaseService';
+import { DatabaseStatus, persistFullStateToDatabase } from './utils/databaseService';
 import { api } from './utils/api';
 import { WifiOff, Database, CheckCircle2, X } from 'lucide-react';
 import { synchronizeEmployeeBankDetails } from './utils/security';
@@ -124,12 +124,14 @@ export const App: React.FC = () => {
 
   // Database Connection Status State
   const [dbStatus, setDbStatus] = useState<DatabaseStatus>(() => ({
-    isLocalConnected: true,
-    isCloudConnected: false, // Disconnected from cloud
-    lastSavedAt: new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' }),
-    saveCount: 1,
-    engine: window.indexedDB ? 'INDEXED_DB' : 'LOCAL_STORAGE',
-    storageSizeKb: calculateStorageSize(),
+    isLocalConnected: false,
+    isCloudConnected: false,
+    isChecking: true,
+    cloudEndpoint: '/api/state',
+    lastSavedAt: null,
+    saveCount: 0,
+    engine: 'POSTGRESQL',
+    storageSizeKb: 0,
     recordSummary: {
       companies: state.companies.length,
       employees: state.employees.length,
@@ -145,6 +147,21 @@ export const App: React.FC = () => {
     lastError: null,
   }));
 
+  // Check the real server endpoint; /api/health verifies PostgreSQL with SELECT 1.
+  useEffect(() => {
+    if (!state.currentUser) return;
+    let cancelled = false;
+    setDbStatus(prev => ({ ...prev, isChecking: true }));
+    api.health()
+      .then(() => {
+        if (!cancelled) setDbStatus(prev => ({ ...prev, isCloudConnected: true, isChecking: false, lastError: null }));
+      })
+      .catch((error: any) => {
+        if (!cancelled) setDbStatus(prev => ({ ...prev, isCloudConnected: false, isChecking: false, lastError: error?.message || 'تعذر الاتصال بقاعدة البيانات' }));
+      });
+    return () => { cancelled = true; };
+  }, [state.currentUser?.id]);
+
   // Debounced central PostgreSQL persistence for authenticated sessions.
   useEffect(() => {
     if (!state.currentUser) return;
@@ -152,9 +169,14 @@ export const App: React.FC = () => {
       try {
         await api.saveState(state);
         const status = await persistFullStateToDatabase(state);
-        setDbStatus({ ...status, isCloudConnected: true, cloudEndpoint: '/api/state', lastError: null });
+        setDbStatus({ ...status, lastError: null });
       } catch (error: any) {
-        setDbStatus(prev => ({ ...prev, isCloudConnected: false, lastError: error?.message || 'تعذر الحفظ المركزي' }));
+        try {
+          await api.health();
+          setDbStatus(prev => ({ ...prev, isCloudConnected: true, isChecking: false, lastError: `تعذر حفظ آخر تعديل: ${error?.message || 'خطأ غير معروف'}` }));
+        } catch {
+          setDbStatus(prev => ({ ...prev, isCloudConnected: false, isChecking: false, lastError: error?.message || 'تعذر الاتصال بقاعدة البيانات' }));
+        }
       }
     }, 750);
     return () => window.clearTimeout(timer);
@@ -784,13 +806,13 @@ export const App: React.FC = () => {
         />
 
         {/* Database Status Notification Banner (Shows when cloud DB is disconnected) */}
-        {!dbStatus.isCloudConnected && showDbWarningBanner && (
+        {!dbStatus.isChecking && !dbStatus.isCloudConnected && showDbWarningBanner && (
           <div className="bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-transparent border-b border-amber-200/80 px-6 py-2 flex items-center justify-between gap-3 text-xs text-amber-900 shrink-0">
             <div className="flex items-center gap-2.5 min-w-0">
               <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0 animate-pulse"></span>
               <span className="font-bold shrink-0">إشعار قاعدة البيانات:</span>
               <span className="text-slate-700 truncate font-medium">
-                قاعدة البيانات السحابية غير متصلة — يتم الحفظ والتخزين محلياً بأمان على جهازك (IndexedDB / Local Storage).
+                تعذر الوصول إلى PostgreSQL — لن تُحفظ التعديلات الجديدة حتى عودة الاتصال. البيانات الموجودة على الخادم لم تُحذف.
               </span>
             </div>
             <div className="flex items-center gap-2 shrink-0">

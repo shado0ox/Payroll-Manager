@@ -84,18 +84,22 @@ export const Navbar: React.FC<NavbarProps> = ({
             onClick={onOpenDbModal}
             title="فحص حالة قاعدة البيانات والنسخ الاحتياطي"
             className={`hidden lg:flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-bold border cursor-pointer transition-all ${
-              dbStatus?.isCloudConnected
+              dbStatus?.isChecking
+                ? 'bg-slate-50 border-slate-200 text-slate-600'
+                : dbStatus?.isCloudConnected
                 ? 'bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100'
                 : 'bg-amber-50 border-amber-200 text-amber-800 hover:bg-amber-100'
             }`}
           >
-            {dbStatus?.isCloudConnected ? (
+            {dbStatus?.isChecking ? (
+              <RefreshCw className="w-3.5 h-3.5 animate-spin text-slate-500" />
+            ) : dbStatus?.isCloudConnected ? (
               <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
             ) : (
               <WifiOff className="w-3.5 h-3.5 text-amber-600" />
             )}
             <span className="text-[11px]">
-              {dbStatus?.isCloudConnected ? t('dbConnected') : t('dbDisconnected')}
+              {dbStatus?.isChecking ? (language === 'en' ? 'Database: Checking' : 'قاعدة البيانات: جاري الفحص') : dbStatus?.isCloudConnected ? t('dbConnected') : t('dbDisconnected')}
             </span>
           </button>
         )}

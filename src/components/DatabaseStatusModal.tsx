@@ -8,11 +8,8 @@ import {
   Download, 
   Upload, 
   Server, 
-  HardDrive, 
   ShieldCheck, 
-  Wifi, 
   WifiOff, 
-  Cpu,
   Layers,
   Activity
 } from 'lucide-react';
@@ -37,12 +34,6 @@ export const DatabaseStatusModal: React.FC<DatabaseStatusModalProps> = ({
   const [isPinging, setIsPinging] = useState(false);
   const [pingResult, setPingResult] = useState<{ status: 'HEALTHY' | 'ERROR'; latencyMs: number; message: string } | null>(null);
   
-  // Custom Cloud DB Endpoint testing state
-  const [customEndpoint, setCustomEndpoint] = useState('https://api.database.internal/v1');
-  const [customApiKey, setCustomApiKey] = useState('');
-  const [isTestingCloud, setIsTestingCloud] = useState(false);
-  const [cloudTestError, setCloudTestError] = useState<string | null>(null);
-
   if (!isOpen) return null;
 
   const handlePing = async () => {
@@ -83,17 +74,6 @@ export const DatabaseStatusModal: React.FC<DatabaseStatusModalProps> = ({
     reader.readAsText(file);
   };
 
-  const handleTestCloudConnection = (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsTestingCloud(true);
-    setCloudTestError(null);
-
-    setTimeout(() => {
-      setIsTestingCloud(false);
-      setCloudTestError('تنبيه: تعذر الاتصال بخادم قاعدة البيانات السحابية (ERR_CONNECTION_REFUSED) - قاعدة البيانات السحابية غير مرتبطة حالياً. النظام مستمر بالحفظ المحلي الآمن.');
-    }, 1200);
-  };
-
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fadeIn">
       <div className="bg-white rounded-3xl max-w-2xl w-full p-6 sm:p-8 shadow-2xl border border-slate-100 animate-scaleUp overflow-y-auto max-h-[90vh]">
@@ -106,13 +86,13 @@ export const DatabaseStatusModal: React.FC<DatabaseStatusModalProps> = ({
             </div>
             <div>
               <h3 className="text-lg font-black text-slate-900 flex items-center gap-2">
-                <span>حالة قاعدة البيانات ومزامنة التخزين</span>
+                <span>حالة قاعدة بيانات PostgreSQL</span>
                 <span className="text-xs px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-bold">
                   v2.0 Active
                 </span>
               </h3>
               <p className="text-xs text-slate-500 font-medium">
-                فحص الاتصال بقاعدة البيانات، النسخ الاحتياطي، وحالة التخزين المحلي والسحابي
+                فحص مباشر للخادم وحالة آخر مزامنة ونسخ البيانات الاحتياطي
               </p>
             </div>
           </div>
@@ -125,18 +105,18 @@ export const DatabaseStatusModal: React.FC<DatabaseStatusModalProps> = ({
         </div>
 
         {/* Database Status Warning / Alert Banner */}
-        {!dbStatus.isCloudConnected && (
+        {!dbStatus.isChecking && !dbStatus.isCloudConnected && (
           <div className="mb-5 p-4 bg-amber-50/90 border border-amber-200 rounded-2xl flex items-start gap-3 text-amber-900 shadow-xs">
             <div className="p-2 rounded-xl bg-amber-100 text-amber-700 shrink-0 mt-0.5">
               <WifiOff className="w-5 h-5" />
             </div>
             <div className="text-xs space-y-1">
               <div className="font-bold flex items-center gap-2">
-                <span>تنبيه: قاعدة البيانات السحابية غير متصلة (Offline Mode)</span>
-                <span className="px-2 py-0.5 bg-amber-200 text-amber-900 rounded-md font-mono text-[10px]">غير مرتبط</span>
+                <span>تعذر الوصول إلى قاعدة بيانات PostgreSQL</span>
+                <span className="px-2 py-0.5 bg-amber-200 text-amber-900 rounded-md font-mono text-[10px]">غير متصل</span>
               </div>
               <p className="text-amber-800 leading-relaxed font-medium">
-                النظام يعمل حالياً في وضع الحفظ المحلي المتكامل (IndexedDB + Storage). يتم حفظ كافة العمليات والتعديلات تلقائياً على جهازك دون فقدان أي بيانات.
+                لن تُحفظ التعديلات الجديدة حتى عودة الاتصال. لا توجد نسخة محلية من بيانات الرواتب، والبيانات الموجودة على الخادم لم تُحذف.
               </p>
             </div>
           </div>
@@ -145,41 +125,40 @@ export const DatabaseStatusModal: React.FC<DatabaseStatusModalProps> = ({
         {/* Real-time Connection Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 mb-5">
           
-          {/* Local DB Status Card */}
+          {/* PostgreSQL connection */}
           <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 flex flex-col justify-between">
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-2">
-                <HardDrive className="w-4 h-4 text-emerald-600" />
-                <span className="text-xs font-bold text-slate-800">قاعدة البيانات المحلية</span>
+                <Server className="w-4 h-4 text-emerald-600" />
+                <span className="text-xs font-bold text-slate-800">PostgreSQL</span>
               </div>
-              <span className="flex items-center gap-1.5 text-[11px] font-bold text-emerald-700 bg-emerald-100/80 px-2 py-0.5 rounded-md">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                <span>متصلة ونشطة</span>
+              <span className={`flex items-center gap-1.5 text-[11px] font-bold px-2 py-0.5 rounded-md ${dbStatus.isChecking ? 'text-slate-600 bg-slate-200' : dbStatus.isCloudConnected ? 'text-emerald-700 bg-emerald-100/80' : 'text-rose-700 bg-rose-100'}`}>
+                <span className={`w-2 h-2 rounded-full ${dbStatus.isChecking ? 'bg-slate-400 animate-pulse' : dbStatus.isCloudConnected ? 'bg-emerald-500' : 'bg-rose-500'}`}></span>
+                <span>{dbStatus.isChecking ? 'جاري الفحص' : dbStatus.isCloudConnected ? 'متصلة ونشطة' : 'غير متصلة'}</span>
               </span>
             </div>
             <div className="space-y-1 text-[11px] text-slate-600 font-medium">
               <div>المحرك: <strong className="text-slate-900 font-mono">{dbStatus.engine}</strong></div>
-              <div>حجم البيانات التقديري: <strong className="text-slate-900 font-mono">{dbStatus.storageSizeKb} KB</strong></div>
-              <div>آخر عملية حفظ ناجحة: <strong className="text-slate-900 font-mono">{dbStatus.lastSavedAt || 'مباشر'}</strong></div>
+              <div>واجهة الاتصال: <strong className="text-slate-900 font-mono">{dbStatus.cloudEndpoint || '/api/state'}</strong></div>
+              <div>آخر حفظ ناجح: <strong className="text-slate-900 font-mono">{dbStatus.lastSavedAt || 'لم يُسجل بعد'}</strong></div>
             </div>
           </div>
 
-          {/* Cloud DB Status Card */}
+          {/* Persistence details */}
           <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 flex flex-col justify-between">
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-2">
-                <Server className="w-4 h-4 text-amber-600" />
-                <span className="text-xs font-bold text-slate-800">قاعدة البيانات السحابية</span>
+                <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                <span className="text-xs font-bold text-slate-800">سياسة حفظ البيانات</span>
               </div>
-              <span className="flex items-center gap-1.5 text-[11px] font-bold text-amber-700 bg-amber-100/80 px-2 py-0.5 rounded-md">
-                <span className="w-2 h-2 rounded-full bg-amber-500"></span>
-                <span>غير متصلة</span>
+              <span className="flex items-center gap-1.5 text-[11px] font-bold text-emerald-700 bg-emerald-100/80 px-2 py-0.5 rounded-md">
+                <span>مركزي وآمن</span>
               </span>
             </div>
             <div className="space-y-1 text-[11px] text-slate-600 font-medium">
-              <div>الحالة: <strong className="text-amber-800">بانتظار الربط السحابي</strong></div>
-              <div>المزامنة المباشرة: <strong className="text-slate-700">محلية فقط (Local Only)</strong></div>
-              <div>الأمان والموثوقية: <strong className="text-emerald-700">مفعلة محلياً 100%</strong></div>
+              <div>المصدر الأساسي: <strong className="text-slate-900">قاعدة بيانات الخادم</strong></div>
+              <div>التخزين داخل المتصفح: <strong className="text-emerald-700">معطل للبيانات الحساسة</strong></div>
+              <div>آخر خطأ: <strong className={dbStatus.lastError ? 'text-rose-700' : 'text-emerald-700'}>{dbStatus.lastError || 'لا يوجد'}</strong></div>
             </div>
           </div>
 
@@ -254,60 +233,6 @@ export const DatabaseStatusModal: React.FC<DatabaseStatusModalProps> = ({
             <span>{pingResult.message}</span>
           </div>
         )}
-
-        {/* Cloud Database Connection Settings Form */}
-        <div className="pt-4 border-t border-slate-100">
-          <h4 className="text-xs font-bold text-slate-900 mb-2 flex items-center gap-2">
-            <Server className="w-4 h-4 text-slate-600" />
-            <span>إعدادات ربط خادم قاعدة بيانات سحابية خارجية (Optional API Link)</span>
-          </h4>
-          
-          <form onSubmit={handleTestCloudConnection} className="space-y-3">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label className="block text-[11px] font-bold text-slate-700 mb-1">رابط خادم قاعدة البيانات (Endpoint URL)</label>
-                <input
-                  type="url"
-                  value={customEndpoint}
-                  onChange={(e) => setCustomEndpoint(e.target.value)}
-                  placeholder="https://api.database.com"
-                  className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white font-mono"
-                  dir="ltr"
-                />
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-bold text-slate-700 mb-1">مفتاح المصادقة (API Secret Key)</label>
-                <input
-                  type="password"
-                  value={customApiKey}
-                  onChange={(e) => setCustomApiKey(e.target.value)}
-                  placeholder="••••••••••••••••"
-                  className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white font-mono"
-                  dir="ltr"
-                />
-              </div>
-            </div>
-
-            {cloudTestError && (
-              <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs font-bold text-rose-700 flex items-start gap-2">
-                <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
-                <span>{cloudTestError}</span>
-              </div>
-            )}
-
-            <div className="flex justify-end gap-2 pt-1">
-              <button
-                type="submit"
-                disabled={isTestingCloud}
-                className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs font-bold cursor-pointer transition-all flex items-center gap-2"
-              >
-                <Wifi className={`w-3.5 h-3.5 ${isTestingCloud ? 'animate-pulse' : ''}`} />
-                <span>{isTestingCloud ? 'جاري فحص الاتصال بالخادم...' : 'اختبار اتصال قاعدة البيانات السحابية'}</span>
-              </button>
-            </div>
-          </form>
-        </div>
 
       </div>
     </div>

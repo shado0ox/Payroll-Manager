@@ -1,12 +1,14 @@
-import { AppState, saveCompanies, saveEmployees, savePayrollRuns, saveAttendance, saveLoans, savePenalties, saveLeaves, saveJournals, saveAuditLogs, saveUsers, saveQoyodConfig } from './storage';
+import { AppState } from './storage';
+import { api } from './api';
 
 export interface DatabaseStatus {
   isLocalConnected: boolean;
   isCloudConnected: boolean;
+  isChecking: boolean;
   cloudEndpoint?: string;
   lastSavedAt: string | null;
   saveCount: number;
-  engine: 'INDEXED_DB' | 'LOCAL_STORAGE';
+  engine: 'POSTGRESQL';
   storageSizeKb: number;
   recordSummary: {
     companies: number;
@@ -97,22 +99,23 @@ export function calculateStorageSize(): number {
   return Math.round(totalBytes / 1024);
 }
 
-// Persist entire application state to Local & IndexedDB database
+// Builds a status snapshot after the API has successfully saved to PostgreSQL.
 export async function persistFullStateToDatabase(state: AppState): Promise<DatabaseStatus> {
   try {
     // PostgreSQL is the only persistence layer. Never mirror payroll/PII in browser storage.
     if (window.indexedDB) indexedDB.deleteDatabase(DB_NAME);
 
-    const sizeKb = calculateStorageSize();
     const now = new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
     return {
-      isLocalConnected: true,
-      isCloudConnected: false, // Cloud DB is not connected
+      isLocalConnected: false,
+      isCloudConnected: true,
+      isChecking: false,
+      cloudEndpoint: '/api/state',
       lastSavedAt: now,
       saveCount: (state.auditLogs?.length || 0) + 1,
-      engine: window.indexedDB ? 'INDEXED_DB' : 'LOCAL_STORAGE',
-      storageSizeKb: sizeKb,
+      engine: 'POSTGRESQL',
+      storageSizeKb: 0,
       recordSummary: {
         companies: state.companies.length,
         employees: state.employees.length,
@@ -132,9 +135,10 @@ export async function persistFullStateToDatabase(state: AppState): Promise<Datab
     return {
       isLocalConnected: false,
       isCloudConnected: false,
+      isChecking: false,
       lastSavedAt: null,
       saveCount: 0,
-      engine: 'LOCAL_STORAGE',
+      engine: 'POSTGRESQL',
       storageSizeKb: 0,
       recordSummary: {
         companies: state.companies.length,
@@ -157,28 +161,14 @@ export async function persistFullStateToDatabase(state: AppState): Promise<Datab
 export async function pingDatabase(): Promise<{ status: 'HEALTHY' | 'ERROR'; latencyMs: number; message: string }> {
   const start = performance.now();
   try {
-    const testKey = `ping_test_${Date.now()}`;
-    const testPayload = { test: true, timestamp: new Date().toISOString() };
-
-    // Test localStorage
-    localStorage.setItem(testKey, JSON.stringify(testPayload));
-    const retrieved = localStorage.getItem(testKey);
-    localStorage.removeItem(testKey);
-
-    if (!retrieved) {
-      throw new Error('فشل التحقق من صحة القراءة والكتابة في قاعدة البيانات المحلية');
-    }
-
-    // Test IndexedDB if available
-    if (window.indexedDB) {
-      await saveToIndexedDB(testKey, testPayload);
-    }
+    const result = await api.health();
+    if (result.status !== 'ok') throw new Error('استجابة فحص الصحة غير صحيحة');
 
     const latency = Math.round(performance.now() - start);
     return {
       status: 'HEALTHY',
       latencyMs: latency,
-      message: `قاعدة البيانات المحلية تعمل بكفاءة عالية (استجابة: ${latency}ms) والبيانات محفوظة ومؤمنة.`
+      message: `الاتصال بخادم PostgreSQL يعمل بنجاح (زمن الاستجابة: ${latency}ms).`
     };
   } catch (err: any) {
     const latency = Math.round(performance.now() - start);
