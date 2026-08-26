@@ -88,22 +88,28 @@ interface CompanyProfileViewProps {
 
 type ProfileSubTab = 'details' | 'banking' | 'qoyod' | 'users' | 'departments' | 'cost_centers' | 'policies' | 'accounts' | 'danger';
 
-const ROLE_INFO: Record<UserRole, { labelAr: string; descAr: string; color: string; badgeBg: string }> = {
+const ROLE_INFO: Record<UserRole, { labelAr: string; labelEn: string; descAr: string; descEn: string; color: string; badgeBg: string }> = {
   ADMIN: { 
     labelAr: 'مسؤول النظام (Admin)', 
+    labelEn: 'System Administrator',
     descAr: 'صلاحيات كاملة وغير مقيدة على جميع الشركات والعمليات والحسابات',
+    descEn: 'Full unrestricted access to all companies, operations, and accounts',
     color: 'text-purple-700 border-purple-200',
     badgeBg: 'bg-purple-50 text-purple-700'
   },
   COMPANY_MANAGER: { 
     labelAr: 'المدير العام للمنشأة',
+    labelEn: 'General Manager',
     descAr: 'إدارة تشغيلية ومالية للمنشأة دون إضافة أو حذف الشركات، بصلاحيات قابلة للتخصيص',
+    descEn: 'Operational and financial company management with customizable permissions, excluding company creation and deletion',
     color: 'text-indigo-700 border-indigo-200',
     badgeBg: 'bg-indigo-50 text-indigo-700'
   },
   OPERATIONS_MANAGER: {
     labelAr: 'مدير العمليات',
+    labelEn: 'Operations Manager',
     descAr: 'إدارة الموظفين والرواتب والخصومات والإجازات والسلف وأوامر الدفع دون اعتماد الرواتب',
+    descEn: 'Manage employees, payroll, deductions, leave, loans and payment orders without payroll approval',
     color: 'text-emerald-700 border-emerald-200',
     badgeBg: 'bg-emerald-50 text-emerald-700'
   },
@@ -319,19 +325,19 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
     setUserFormError(null);
 
     if (!userFormData.username?.trim() || !userFormData.name?.trim()) {
-      setUserFormError('يرجى إدخال اسم المستخدم والاسم الكامل');
+      setUserFormError(tr('يرجى إدخال اسم المستخدم والاسم الكامل', 'Enter the username and full name.'));
       return;
     }
 
     if ((!editingUser || userFormData.password) && !isStrongPassword(userFormData.password || '')) {
-      setUserFormError(passwordPolicyMessage);
+      setUserFormError(language === 'ar' ? passwordPolicyMessage : 'Password must contain at least 8 characters, including uppercase, lowercase, number, and symbol.');
       return;
     }
 
     // Check duplicate username
     const duplicate = users.find(u => u.username.toLowerCase() === userFormData.username?.trim().toLowerCase() && u.id !== editingUser?.id);
     if (duplicate) {
-      setUserFormError('اسم المستخدم هذا مسجل مسبقاً في النظام، يرجى اختيار اسم مستخدم آخر');
+      setUserFormError(tr('اسم المستخدم هذا مسجل مسبقاً في النظام، يرجى اختيار اسم مستخدم آخر', 'This username already exists. Choose another username.'));
       return;
     }
 
@@ -1578,8 +1584,8 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
         <div className="bg-white rounded-2xl p-6 border border-slate-200/80 shadow-sm space-y-6">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-slate-100 pb-4">
             <div>
-              <h3 className="text-sm font-bold text-slate-900">المستخدمون المفوضون لإدارة منشأة {formData.nameAr}</h3>
-              <p className="text-xs text-slate-500">إضافة وتعيين مستخدمين وصلاحيات الدخول الخاصة بهذه المنشأة</p>
+              <h3 className="text-sm font-bold text-slate-900">{tr('المستخدمون المفوضون لإدارة منشأة', 'Authorized users for')} {language === 'ar' ? formData.nameAr : (formData.nameEn || formData.nameAr)}</h3>
+              <p className="text-xs text-slate-500">{tr('إضافة وتعيين مستخدمين وصلاحيات الدخول الخاصة بهذه المنشأة', 'Add users and assign access permissions for this company')}</p>
             </div>
             <button
               type="button"
@@ -1587,7 +1593,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
               className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center gap-2 cursor-pointer shadow-sm self-start"
             >
               <Plus className="w-4 h-4" />
-              <span>إضافة مستخدم جديد للمنشأة</span>
+              <span>{tr('إضافة مستخدم جديد للمنشأة', 'Add company user')}</span>
             </button>
           </div>
 
@@ -1615,7 +1621,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
                         <div className="flex items-center gap-1.5">
                           <h4 className="text-xs font-bold text-slate-900 truncate">{u.name}</h4>
                           {isCurrentUser && (
-                            <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-blue-100 text-blue-700">أنت</span>
+                            <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-blue-100 text-blue-700">{tr('أنت', 'You')}</span>
                           )}
                         </div>
                         <p className="text-[11px] text-slate-500 font-mono">@{u.username}</p>
@@ -1623,37 +1629,37 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
                     </div>
 
                     <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold border ${roleData.badgeBg} ${roleData.color}`}>
-                      {roleData.labelAr.split(' ')[0]}
+                      {language === 'ar' ? roleData.labelAr.split(' ')[0] : roleData.labelEn}
                     </span>
                   </div>
 
                   <div className="space-y-1 text-[11px] text-slate-600 bg-slate-50/70 p-2.5 rounded-xl border border-slate-100 mb-3">
                     <div className="flex items-center justify-between">
-                      <span className="text-slate-400">البريد:</span>
+                      <span className="text-slate-400">{tr('البريد:', 'Email:')}</span>
                       <span className="font-medium truncate max-w-[150px]">{u.email || '—'}</span>
                     </div>
                     <div className="flex items-center justify-between">
-                      <span className="text-slate-400">الهاتف:</span>
+                      <span className="text-slate-400">{tr('الهاتف:', 'Phone:')}</span>
                       <span className="font-mono">{u.phone || '—'}</span>
                     </div>
                     <div className="flex items-center justify-between">
-                      <span className="text-slate-400">الحالة:</span>
+                      <span className="text-slate-400">{tr('الحالة:', 'Status:')}</span>
                       <span className={`font-bold ${u.isActive ? 'text-emerald-700' : 'text-slate-400'}`}>
-                        {u.isActive ? 'مفعل ونشط' : 'معطل مؤقتاً'}
+                        {u.isActive ? tr('مفعل ونشط', 'Active') : tr('معطل مؤقتاً', 'Temporarily disabled')}
                       </span>
                     </div>
                   </div>
 
                   <div className="flex items-center justify-between pt-2 border-t border-slate-100">
                     <div className="text-[10px] text-slate-400">
-                      الدور: <span className="font-bold text-slate-700">{roleData.labelAr.split(' (')[0]}</span>
+                      {tr('الدور', 'Role')}: <span className="font-bold text-slate-700">{language === 'ar' ? roleData.labelAr.split(' (')[0] : roleData.labelEn}</span>
                     </div>
                     <div className="flex items-center gap-1.5">
                       <button
                         type="button"
                         onClick={() => handleOpenEditUser(u)}
                         className="p-1.5 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg text-xs"
-                        title="تعديل المستخدم"
+                        title={tr('تعديل المستخدم', 'Edit user')}
                       >
                         <Edit className="w-3.5 h-3.5" />
                       </button>
@@ -1661,12 +1667,12 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
                         <button
                           type="button"
                           onClick={() => {
-                            if (confirm(`هل أنت متأكد من حذف المستخدم (${u.name})؟`)) {
+                            if (confirm(tr(`هل أنت متأكد من حذف المستخدم (${u.name})؟`, `Delete user (${u.name})?`))) {
                               onDeleteUser(u.id);
                             }
                           }}
                           className="p-1.5 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-lg text-xs"
-                          title="حذف المستخدم"
+                          title={tr('حذف المستخدم', 'Delete user')}
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
@@ -2142,27 +2148,27 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
         <div className="bg-white rounded-2xl p-6 border border-slate-200/80 shadow-sm space-y-6">
           <div className="flex items-center justify-between border-b border-slate-100 pb-3">
             <div>
-              <h3 className="text-sm font-bold text-slate-900">ربط شجرة الحسابات المحاسبية لقيود الرواتب</h3>
-              <p className="text-xs text-slate-500">أرقام الحسابات في النظام المحاسبي (تكامل برنامج قيود والأنظمة المحاسبية)</p>
+              <h3 className="text-sm font-bold text-slate-900">{tr('ربط شجرة الحسابات المحاسبية لقيود الرواتب', 'Payroll Chart of Accounts Mapping')}</h3>
+              <p className="text-xs text-slate-500">{tr('أرقام الحسابات في النظام المحاسبي (تكامل برنامج قيود والأنظمة المحاسبية)', 'Map payroll accounts for Qoyod and other accounting integrations')}</p>
             </div>
             <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
-              متوافق مع معايير المحاسبة الدولية IFRS
+              {tr('متوافق مع معايير المحاسبة الدولية IFRS', 'IFRS-ready mapping')}
             </span>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {Object.entries({
-              salariesExpenseAccount: 'حساب مصروف الرواتب الأساسية',
-              housingAllowanceAccount: 'حساب مصروف بدل السكن',
-              transportAllowanceAccount: 'حساب مصروف بدل النقل',
-              overtimeExpenseAccount: 'حساب مصروف العمل الإضافي',
-              otherAllowancesExpenseAccount: 'حساب مصروف البدلات الأخرى',
-              gosiEmployerExpenseAccount: 'حساب مصروف مساهمة المنشأة في التأمينات',
-              salariesPayableAccount: 'حساب الرواتب المستحقة (التزامات)',
-              gosiPayableAccount: 'حساب التأمينات الاجتماعية المستحقة',
-              employeeAdvancesAccount: 'حساب سلف الموظفين (أصول متداولة)',
-              penaltiesPayableAccount: 'حساب الجزاءات والخصومات',
-              bankAccount: 'حساب البنك / النقدية للصرف',
+              salariesExpenseAccount: tr('حساب مصروف الرواتب الأساسية', 'Basic salaries expense account'),
+              housingAllowanceAccount: tr('حساب مصروف بدل السكن', 'Housing allowance expense account'),
+              transportAllowanceAccount: tr('حساب مصروف بدل النقل', 'Transport allowance expense account'),
+              overtimeExpenseAccount: tr('حساب مصروف العمل الإضافي', 'Overtime expense account'),
+              otherAllowancesExpenseAccount: tr('حساب مصروف البدلات الأخرى', 'Other allowances expense account'),
+              gosiEmployerExpenseAccount: tr('حساب مصروف مساهمة المنشأة في التأمينات', 'Employer GOSI expense account'),
+              salariesPayableAccount: tr('حساب الرواتب المستحقة (التزامات)', 'Salaries payable account'),
+              gosiPayableAccount: tr('حساب التأمينات الاجتماعية المستحقة', 'GOSI payable account'),
+              employeeAdvancesAccount: tr('حساب سلف الموظفين (أصول متداولة)', 'Employee advances account'),
+              penaltiesPayableAccount: tr('حساب الجزاءات والخصومات', 'Penalties and deductions account'),
+              bankAccount: tr('حساب البنك / النقدية للصرف', 'Payroll bank / cash account'),
             }).map(([key, label]) => (
               <div key={key}>
                 <label className="block text-xs font-bold text-slate-700 mb-1">{label}</label>
@@ -2189,7 +2195,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
               className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-md transition-all cursor-pointer flex items-center gap-2"
             >
               <Save className="w-4 h-4" />
-              <span>حفظ دليل الحسابات</span>
+              <span>{tr('حفظ دليل الحسابات', 'Save account mapping')}</span>
             </button>
           </div>
         </div>
@@ -2203,16 +2209,16 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
               <AlertCircle className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="text-sm font-bold text-rose-900">منطقة الخطر وإدارة البيانات الحساسة</h3>
-              <p className="text-xs text-rose-700 mt-1">العمليات في هذا القسم نهائية وتؤثر على بيانات المنشأة الحالية فقط.</p>
+              <h3 className="text-sm font-bold text-rose-900">{tr('منطقة الخطر وإدارة البيانات الحساسة', 'Danger Zone and Sensitive Data')}</h3>
+              <p className="text-xs text-rose-700 mt-1">{tr('العمليات في هذا القسم نهائية وتؤثر على بيانات المنشأة الحالية فقط.', 'Actions in this section are permanent and affect the current company only.')}</p>
             </div>
           </div>
 
           <div className="rounded-2xl border border-rose-200 bg-rose-50/60 p-5 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
             <div>
-              <h4 className="text-sm font-black text-slate-900">مسح جميع موظفي المنشأة</h4>
+              <h4 className="text-sm font-black text-slate-900">{tr('مسح جميع موظفي المنشأة', 'Delete All Company Employees')}</h4>
               <p className="text-xs text-slate-600 mt-1 max-w-3xl leading-6">
-                سيتم حذف {companyEmployees.length} موظفًا من منشأة {formData.nameAr}، مع سجلات الحضور والإجازات والسلف والجزاءات ومسيرات الرواتب والقيود المرتبطة بهم. لن تُحذف المنشأة أو إعداداتها أو حساب المدير.
+                {tr(`سيتم حذف ${companyEmployees.length} موظفًا من منشأة ${formData.nameAr}، مع سجلات الحضور والإجازات والسلف والجزاءات ومسيرات الرواتب والقيود المرتبطة بهم. لن تُحذف المنشأة أو إعداداتها أو حساب المدير.`, `${companyEmployees.length} employees and their attendance, leave, loans, penalties, payroll and journal records will be deleted from ${formData.nameEn || formData.nameAr}. The company, settings and administrator account will remain.`)}
               </p>
             </div>
             <button
@@ -2222,7 +2228,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
               className="px-5 py-2.5 bg-rose-700 hover:bg-rose-800 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
             >
               <Trash2 className="w-4 h-4" />
-              مسح جميع الموظفين ({companyEmployees.length})
+              {tr('مسح جميع الموظفين', 'Delete all employees')} ({companyEmployees.length})
             </button>
           </div>
         </div>
@@ -2230,13 +2236,13 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
 
       {isDeleteEmployeesModalOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm">
-          <div className="bg-white rounded-3xl max-w-lg w-full shadow-2xl border border-rose-200 overflow-hidden">
+          <div data-no-translate className="bg-white rounded-3xl max-w-lg w-full shadow-2xl border border-rose-200 overflow-hidden">
             <div className="bg-rose-700 text-white p-5 flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <AlertCircle className="w-6 h-6" />
                 <div>
-                  <h3 className="font-black">تأكيد مسح جميع الموظفين</h3>
-                  <p className="text-xs text-rose-100">هذه العملية لا يمكن التراجع عنها من داخل النظام</p>
+                  <h3 className="font-black">{tr('تأكيد مسح جميع الموظفين', 'Confirm Employee Deletion')}</h3>
+                  <p className="text-xs text-rose-100">{tr('هذه العملية لا يمكن التراجع عنها من داخل النظام', 'This action cannot be undone from within the system')}</p>
                 </div>
               </div>
               <button type="button" onClick={() => setIsDeleteEmployeesModalOpen(false)} className="p-1.5 hover:bg-white/10 rounded-lg cursor-pointer"><X className="w-5 h-5" /></button>
@@ -2244,22 +2250,22 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
 
             <div className="p-6 space-y-4">
               <div className="rounded-xl bg-rose-50 border border-rose-200 p-4 text-xs text-rose-900 leading-6">
-                سيتم حذف <b>{companyEmployees.length} موظفًا</b> وكل معاملاتهم المرتبطة من منشأة <b>{formData.nameAr}</b>. تأكد من وجود نسخة احتياطية إذا كانت هناك بيانات مهمة.
+                {tr('سيتم حذف', 'This will delete')} <b>{companyEmployees.length} {tr('موظفًا', 'employees')}</b> {tr('وكل معاملاتهم المرتبطة من منشأة', 'and all linked transactions from')} <b>{language === 'ar' ? formData.nameAr : (formData.nameEn || formData.nameAr)}</b>. {tr('تأكد من وجود نسخة احتياطية إذا كانت هناك بيانات مهمة.', 'Ensure a backup exists if the data is important.')}
               </div>
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1.5">اكتب «حذف جميع الموظفين» للتأكيد:</label>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">{tr('اكتب «حذف جميع الموظفين» للتأكيد:', 'Type “DELETE ALL EMPLOYEES” to confirm:')}</label>
                 <input
                   autoFocus
                   value={deleteEmployeesConfirmation}
                   onChange={event => setDeleteEmployeesConfirmation(event.target.value)}
                   className="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl text-sm font-bold focus:outline-none focus:border-rose-500 focus:ring-2 focus:ring-rose-500/15"
-                  placeholder="حذف جميع الموظفين"
+                  placeholder={tr('حذف جميع الموظفين', 'DELETE ALL EMPLOYEES')}
                 />
               </div>
             </div>
 
             <div className="p-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-2">
-              <button type="button" onClick={() => setIsDeleteEmployeesModalOpen(false)} className="px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold cursor-pointer">إلغاء</button>
+              <button type="button" onClick={() => setIsDeleteEmployeesModalOpen(false)} className="px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold cursor-pointer">{tr('إلغاء', 'Cancel')}</button>
               <button
                 type="button"
                 disabled={!deleteEmployeesConfirmationValid}
@@ -2268,11 +2274,11 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
                   onDeleteAllCompanyEmployees?.(formData.id);
                   setIsDeleteEmployeesModalOpen(false);
                   setDeleteEmployeesConfirmation('');
-                  setSaveSuccessMessage(`تم مسح جميع موظفي المنشأة (${companyEmployees.length}) والبيانات المرتبطة بهم`);
+                  setSaveSuccessMessage(tr(`تم مسح جميع موظفي المنشأة (${companyEmployees.length}) والبيانات المرتبطة بهم`, `All company employees (${companyEmployees.length}) and linked records were deleted.`));
                 }}
                 className="px-5 py-2 bg-rose-700 hover:bg-rose-800 text-white rounded-xl text-xs font-black cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
               >
-                حذف نهائي
+                {tr('حذف نهائي', 'Delete permanently')}
               </button>
             </div>
           </div>
@@ -2284,7 +2290,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
       {/* ========================================================================= */}
       {isUserModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
-          <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-slate-100 animate-scaleUp">
+          <div data-no-translate className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-slate-100 animate-scaleUp">
             <div className="flex items-center justify-between border-b border-slate-100 pb-4 mb-4">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-2xl bg-emerald-50 text-emerald-700 flex items-center justify-center border border-emerald-200">
@@ -2292,9 +2298,9 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
                 </div>
                 <div>
                   <h3 className="text-base font-bold text-slate-900">
-                    {editingUser ? 'تعديل بيانات المستخدم' : 'إضافة مستخدم جديد للمنشأة'}
+                    {editingUser ? tr('تعديل بيانات المستخدم', 'Edit User') : tr('إضافة مستخدم جديد للمنشأة', 'Add Company User')}
                   </h3>
-                  <p className="text-xs text-slate-500">منشأة: {formData.nameAr}</p>
+                  <p className="text-xs text-slate-500">{tr('منشأة', 'Company')}: {language === 'ar' ? formData.nameAr : (formData.nameEn || formData.nameAr)}</p>
                 </div>
               </div>
               <button 
@@ -2315,19 +2321,19 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
             <form onSubmit={handleSaveUserSubmit} className="space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">الاسم الكامل *</label>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">{tr('الاسم الكامل *', 'Full name *')}</label>
                   <input
                     type="text"
                     required
                     value={userFormData.name || ''}
                     onChange={(e) => setUserFormData({ ...userFormData, name: e.target.value })}
                     className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white"
-                    placeholder="مثال: خالد محمد السالم"
+                    placeholder={tr('مثال: خالد محمد السالم', 'Example: Khalid Al Salem')}
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">اسم المستخدم (Username) *</label>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">{tr('اسم المستخدم (Username) *', 'Username *')}</label>
                   <input
                     type="text"
                     required
@@ -2341,7 +2347,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
 
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">
-                    {editingUser ? 'كلمة المرور (اتركه فارغاً للإبقاء عليها)' : 'كلمة المرور *'}
+                    {editingUser ? tr('كلمة المرور (اتركه فارغاً للإبقاء عليها)', 'Password (leave blank to keep current)') : tr('كلمة المرور *', 'Password *')}
                   </label>
                   <input
                     type="password"
@@ -2354,7 +2360,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">الدور والصلاحية *</label>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">{tr('الدور والصلاحية *', 'Role and permissions *')}</label>
                   <select
                     value={userFormData.role || 'OPERATIONS_MANAGER'}
                     onChange={(e) => setUserFormData({ ...userFormData, role: e.target.value as UserRole })}
@@ -2362,14 +2368,14 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
                   >
                     {Object.entries(ROLE_INFO).filter(([key]) => key !== 'ADMIN' && (activeRole === 'ADMIN' || key === 'OPERATIONS_MANAGER')).map(([key, info]) => (
                       <option key={key} value={key}>
-                        {info.labelAr}
+                        {language === 'ar' ? info.labelAr : info.labelEn}
                       </option>
                     ))}
                   </select>
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">البريد الإلكتروني</label>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">{tr('البريد الإلكتروني', 'Email')}</label>
                   <input
                     type="email"
                     value={userFormData.email || ''}
@@ -2381,7 +2387,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">رقم الهاتف</label>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">{tr('رقم الهاتف', 'Phone number')}</label>
                   <input
                     type="text"
                     value={userFormData.phone || ''}
@@ -2402,7 +2408,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
                   className="rounded text-emerald-600 focus:ring-emerald-500 w-4 h-4 cursor-pointer"
                 />
                 <label htmlFor="userActiveCheck" className="text-xs font-bold text-slate-700 cursor-pointer">
-                  حساب نشط ومسموح له بتسجيل الدخول
+                  {tr('حساب نشط ومسموح له بتسجيل الدخول', 'Active account allowed to sign in')}
                 </label>
               </div>
 
@@ -2412,13 +2418,13 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
                   onClick={() => setIsUserModalOpen(false)}
                   className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl"
                 >
-                  إلغاء
+                  {tr('إلغاء', 'Cancel')}
                 </button>
                 <button
                   type="submit"
                   className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-md cursor-pointer"
                 >
-                  {editingUser ? 'حفظ التعديلات' : 'إضافة المستخدم'}
+                  {editingUser ? tr('حفظ التعديلات', 'Save changes') : tr('إضافة المستخدم', 'Add user')}
                 </button>
               </div>
             </form>
