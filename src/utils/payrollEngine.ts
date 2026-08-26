@@ -43,7 +43,25 @@ export function calculateEmployeePayrollItem(input: EmployeeCalculationInput): P
   };
 
   const isSuspended = employee.status === 'SUSPENDED';
+  const isAbsconded = employee.status === 'ABSCONDED';
   const isTerminated = employee.status === 'TERMINATED';
+
+  const salaryDivisor = company.workDaysPerMonth || rules.workDaysDivisor || 30;
+  const periodStart = `${input.periodMonth}-01`;
+  const [periodYear, periodMonthNumber] = input.periodMonth.split('-').map(Number);
+  const calendarLastDay = new Date(Date.UTC(periodYear, periodMonthNumber, 0)).getUTCDate();
+  const periodEnd = `${input.periodMonth}-${String(calendarLastDay).padStart(2, '0')}`;
+  const salaryStart = employee.salaryStartDate || employee.hireDate || periodStart;
+  const salaryEnd = isTerminated ? employee.terminationDate : undefined;
+  let payableDays = salaryDivisor;
+  if (salaryStart > periodEnd || (salaryEnd && salaryEnd < periodStart) || isSuspended || isAbsconded) {
+    payableDays = 0;
+  } else {
+    const startDay = salaryStart.startsWith(input.periodMonth) ? Math.min(Number(salaryStart.slice(-2)), salaryDivisor) : 1;
+    const endDay = salaryEnd?.startsWith(input.periodMonth) ? Math.min(Number(salaryEnd.slice(-2)), salaryDivisor) : salaryDivisor;
+    payableDays = Math.max(0, endDay - startDay + 1);
+  }
+  const salaryProrationFactor = payableDays / salaryDivisor;
 
   // Base Package
   const baseSalary = employee.salaryPackage.baseSalary || 0;
@@ -67,7 +85,7 @@ export function calculateEmployeePayrollItem(input: EmployeeCalculationInput): P
   } else {
     dailyBaseAmount = baseSalary;
   }
-  const dailyRate = dailyBaseAmount / (company.workDaysPerMonth || rules.workDaysDivisor || 30);
+  const dailyRate = dailyBaseAmount / salaryDivisor;
   const hourlyRate = dailyRate / (company.workHoursPerDay || rules.hourlyRateDivisor || 8);
   const minuteRate = hourlyRate / 60;
 
@@ -79,10 +97,20 @@ export function calculateEmployeePayrollItem(input: EmployeeCalculationInput): P
   let weekendOvertimeHours = 0;
 
   attendanceRecords.forEach((record) => {
+    const recordStart = record.date;
+    const recordEnd = record.endDate || record.date;
+    const servicePeriodStart = salaryStart > periodStart ? salaryStart : periodStart;
+    const servicePeriodEnd = salaryEnd && salaryEnd < periodEnd ? salaryEnd : periodEnd;
+    const overlapStart = recordStart > servicePeriodStart ? recordStart : servicePeriodStart;
+    const overlapEnd = recordEnd < servicePeriodEnd ? recordEnd : servicePeriodEnd;
+    const overlappedDays = overlapStart <= overlapEnd
+      ? Math.floor((Date.parse(`${overlapEnd}T00:00:00Z`) - Date.parse(`${overlapStart}T00:00:00Z`)) / 86400000) + 1
+      : 0;
+    if (overlappedDays <= 0) return;
     if (record.absence) {
-      totalAbsenceDays += 1;
+      totalAbsenceDays += overlappedDays;
     } else if (record.unpaidLeave) {
-      totalUnpaidLeaveDays += 1;
+      totalUnpaidLeaveDays += overlappedDays;
     } else {
       if (record.delayMinutes > 0) {
         if (record.delayMinutes > rules.delayGracePeriodMinutes) {
@@ -131,7 +159,7 @@ export function calculateEmployeePayrollItem(input: EmployeeCalculationInput): P
   let gosiEmployerShare = 0;
 
   // GOSI base is base + housing, capped at 45,000 SAR
-  const gosiBaseRaw = baseSalary + housingAllowance;
+  const gosiBaseRaw = (baseSalary + housingAllowance) * salaryProrationFactor;
   const gosiSubjectAmount = Math.min(gosiBaseRaw, rules.saudiGosiMaxCap || 45000);
 
   const gosiEnabled = employee.gosiEnabled !== false;
@@ -155,13 +183,13 @@ export function calculateEmployeePayrollItem(input: EmployeeCalculationInput): P
   }
 
   // If employee is suspended or terminated, handle accordingly
-  let effectiveBaseSalary = baseSalary;
-  let effectiveHousing = housingAllowance;
-  let effectiveTransport = transportAllowance;
-  let effectiveOtherFixed = otherFixedAllowances;
-  let effectiveNonGosiOther = nonGosiOtherAllowances;
+  let effectiveBaseSalary = baseSalary * salaryProrationFactor;
+  let effectiveHousing = housingAllowance * salaryProrationFactor;
+  let effectiveTransport = transportAllowance * salaryProrationFactor;
+  let effectiveOtherFixed = otherFixedAllowances * salaryProrationFactor;
+  let effectiveNonGosiOther = nonGosiOtherAllowances * salaryProrationFactor;
 
-  if (isSuspended) {
+  if (isSuspended || isAbsconded) {
     // Suspension: 0 base payout unless specific allowance rule
     effectiveBaseSalary = 0;
     effectiveHousing = 0;
@@ -170,7 +198,7 @@ export function calculateEmployeePayrollItem(input: EmployeeCalculationInput): P
     effectiveNonGosiOther = 0;
   }
 
-  const totalOtherAllowances = effectiveOtherFixed + effectiveNonGosiOther + customAllowancesSum;
+  const totalOtherAllowances = effectiveOtherFixed + effectiveNonGosiOther + (customAllowancesSum * salaryProrationFactor);
   const bonuses = 0;
 
   const totalGrossSalary = roundAmount(
@@ -190,6 +218,14 @@ export function calculateEmployeePayrollItem(input: EmployeeCalculationInput): P
   const warningFlags: string[] = [];
   if (isSuspended) {
     warningFlags.push('الموظف في حالة تعليق راتب');
+  }
+  if (isAbsconded) {
+    warningFlags.push('عامل هارب — الراتب معلق ومستبعد من المسير');
+  }
+  if (isTerminated && employee.terminationDate?.startsWith(input.periodMonth)) {
+    const reason = employee.employmentEndReason === 'SPONSOR_TRANSFER' ? 'نقل كفالة'
+      : employee.employmentEndReason === 'FINAL_EXIT' ? 'خروج نهائي' : 'انتهاء خدمة';
+    warningFlags.push(`تصفية ${reason} حتى ${employee.terminationDate} (${payableDays} يوم)`);
   }
   if (!employee.bankIban || employee.bankIban.trim().length < 15) {
     warningFlags.push('رقم الآيبان (IBAN) مفقود أو غير مكتمل');
@@ -229,6 +265,10 @@ export function calculateEmployeePayrollItem(input: EmployeeCalculationInput): P
     overtimeHours: totalOvertimeHours,
     bonuses,
     totalGrossSalary,
+    payableDays,
+    salaryProrationFactor,
+    settlementDate: isTerminated ? employee.terminationDate : undefined,
+    settlementReason: isTerminated ? employee.employmentEndReason : undefined,
 
     delayMinutes: totalDelayMinutes,
     delayDeduction,
@@ -253,7 +293,7 @@ export function calculateEmployeePayrollItem(input: EmployeeCalculationInput): P
     manualAddition: 0,
     manualDeduction: 0,
 
-    isSuspended,
+    isSuspended: isSuspended || isAbsconded,
     warningFlags,
   };
 }

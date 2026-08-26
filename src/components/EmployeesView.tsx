@@ -220,10 +220,20 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
       alert('يرجى تعبئة الحقول الإلزامية');
       return;
     }
+    if ((formData.status === 'TERMINATED' || formData.status === 'ABSCONDED') && !formData.terminationDate) {
+      alert('يرجى تحديد تاريخ النقل أو الخروج النهائي أو الهروب');
+      return;
+    }
+    if (formData.status === 'TERMINATED' && !formData.employmentEndReason) {
+      alert('يرجى تحديد سبب تصفية الراتب');
+      return;
+    }
 
     // Standardize SWIFT code uppercase
     const processedForm = {
       ...formData,
+      employmentEndReason: formData.status === 'ABSCONDED' ? 'ABSCONDED' as const : formData.employmentEndReason,
+      suspensionReason: formData.status === 'ABSCONDED' ? (formData.suspensionReason || 'هروب') : formData.suspensionReason,
       bankSwiftCode: formData.bankSwiftCode ? formData.bankSwiftCode.trim().toUpperCase() : ''
     };
 
@@ -541,12 +551,23 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
             <option value="SUSPENDED">معلق الراتب (موقوف)</option>
             <option value="ON_LEAVE">في إجازة</option>
             <option value="TERMINATED">منتهي الخدمة</option>
+            <option value="ABSCONDED">العمالة الهاربة</option>
           </select>
         </div>
 
       </div>
 
       {/* Employees Table */}
+      {companyEmployees.some(emp => emp.status === 'ABSCONDED') && (
+        <button
+          type="button"
+          onClick={() => setSelectedStatus(selectedStatus === 'ABSCONDED' ? 'ALL' : 'ABSCONDED')}
+          className={`w-full rounded-2xl border px-4 py-3 flex items-center justify-between text-xs font-bold transition-colors ${selectedStatus === 'ABSCONDED' ? 'bg-rose-100 border-rose-300 text-rose-900' : 'bg-rose-50 border-rose-200 text-rose-800 hover:bg-rose-100'}`}
+        >
+          <span>قائمة العمالة الهاربة — الرواتب معلقة ومستبعدة من المسير</span>
+          <span className="px-2 py-1 rounded-full bg-white border border-rose-200 font-mono">{companyEmployees.filter(emp => emp.status === 'ABSCONDED').length}</span>
+        </button>
+      )}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden w-full">
         <table className="w-full text-right text-xs table-fixed divide-y divide-slate-100">
           <thead>
@@ -578,6 +599,7 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                   (emp.salaryPackage.otherFixedAllowances || 0);
 
                 const isSuspended = emp.status === 'SUSPENDED';
+                const isAbsconded = emp.status === 'ABSCONDED';
                 const resolvedBank = detectBankFromIBAN(emp.bankIban, company.bankDefinitions);
                 const displayBankName = resolvedBank ? (language === 'en' ? resolvedBank.nameEn || resolvedBank.nameAr : resolvedBank.nameAr) : emp.bankName;
                 const displaySwift = resolvedBank?.swiftCode || emp.bankSwiftCode;
@@ -660,7 +682,11 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
 
                     {/* Status */}
                     <td className="py-3 px-1.5 text-center">
-                      {isSuspended ? (
+                      {isAbsconded ? (
+                        <span className="px-1.5 py-0.5 rounded-full bg-rose-100 text-rose-800 text-[9px] font-bold border border-rose-200 block text-center" title={emp.suspensionReason}>
+                          هارب
+                        </span>
+                      ) : isSuspended ? (
                         <span className="px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[9px] font-bold border border-amber-200 block text-center" title={emp.suspensionReason}>
                           موقوف
                         </span>
@@ -1035,13 +1061,22 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                     <label className="block text-xs font-semibold text-slate-700 mb-1">الحالة الوظيفية</label>
                     <select
                       value={formData.status || 'ACTIVE'}
-                      onChange={(e) => setFormData({ ...formData, status: e.target.value as EmploymentStatus })}
+                      onChange={(e) => {
+                        const status = e.target.value as EmploymentStatus;
+                        setFormData({
+                          ...formData,
+                          status,
+                          employmentEndReason: status === 'ABSCONDED' ? 'ABSCONDED' : (status === 'TERMINATED' ? formData.employmentEndReason : undefined),
+                          terminationDate: status === 'TERMINATED' || status === 'ABSCONDED' ? formData.terminationDate : undefined,
+                        });
+                      }}
                       className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white"
                     >
                       <option value="ACTIVE">على رأس العمل (Active)</option>
                       <option value="SUSPENDED">تعليق الراتب (Suspended)</option>
                       <option value="ON_LEAVE">إجازة (On Leave)</option>
                       <option value="TERMINATED">منتهي الخدمة (Terminated)</option>
+                      <option value="ABSCONDED">هروب — تعليق واستبعاد الراتب (Absconded)</option>
                     </select>
                   </div>
                 </div>
@@ -1059,6 +1094,39 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                         className="w-full px-3 py-1.5 text-xs bg-white border border-amber-300 rounded-lg"
                       />
                     </div>
+                  </div>
+                )}
+
+                {formData.status === 'TERMINATED' && (
+                  <div className="mt-3 p-3 bg-blue-50 rounded-xl border border-blue-200 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-bold text-blue-900 mb-1">سبب تصفية الراتب *</label>
+                      <select required value={formData.employmentEndReason || ''} onChange={(e) => setFormData({ ...formData, employmentEndReason: e.target.value as Employee['employmentEndReason'] })} className="w-full px-3 py-2 text-xs bg-white border border-blue-300 rounded-lg">
+                        <option value="">-- اختر السبب --</option>
+                        <option value="SPONSOR_TRANSFER">نقل كفالة</option>
+                        <option value="FINAL_EXIT">خروج نهائي</option>
+                        <option value="OTHER">انتهاء خدمة آخر</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-blue-900 mb-1">تاريخ النقل / الخروج النهائي *</label>
+                      <input type="date" required value={formData.terminationDate || ''} onChange={(e) => setFormData({ ...formData, terminationDate: e.target.value })} className="w-full px-3 py-2 text-xs bg-white border border-blue-300 rounded-lg" />
+                    </div>
+                    <p className="sm:col-span-2 text-[11px] text-blue-800">سيحسب المسير الراتب حتى هذا التاريخ شاملًا، ويستبعد الموظف من المسيرات التالية.</p>
+                  </div>
+                )}
+
+                {formData.status === 'ABSCONDED' && (
+                  <div className="mt-3 p-3 bg-rose-50 rounded-xl border border-rose-200 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-bold text-rose-900 mb-1">تاريخ تسجيل الهروب *</label>
+                      <input type="date" required value={formData.terminationDate || ''} onChange={(e) => setFormData({ ...formData, terminationDate: e.target.value, employmentEndReason: 'ABSCONDED', suspensionReason: 'هروب' })} className="w-full px-3 py-2 text-xs bg-white border border-rose-300 rounded-lg" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-rose-900 mb-1">ملاحظات / مرجع البلاغ</label>
+                      <input type="text" value={formData.suspensionReason || ''} onChange={(e) => setFormData({ ...formData, suspensionReason: e.target.value })} className="w-full px-3 py-2 text-xs bg-white border border-rose-300 rounded-lg" />
+                    </div>
+                    <p className="sm:col-span-2 text-[11px] text-rose-800">سيُنقل الموظف إلى قائمة العمالة الهاربة ويُستبعد راتبه بالكامل من أي مسير جديد.</p>
                   </div>
                 )}
               </div>

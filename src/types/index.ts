@@ -137,7 +137,8 @@ export interface ChartOfAccountsMap {
   bankAccount: string; // ح/ البنك
 }
 
-export type EmploymentStatus = 'ACTIVE' | 'SUSPENDED' | 'ON_LEAVE' | 'TERMINATED';
+export type EmploymentStatus = 'ACTIVE' | 'SUSPENDED' | 'ON_LEAVE' | 'TERMINATED' | 'ABSCONDED';
+export type EmploymentEndReason = 'SPONSOR_TRANSFER' | 'FINAL_EXIT' | 'ABSCONDED' | 'OTHER';
 export type NationalityType = 'SAUDI' | 'NON_SAUDI';
 
 export interface SalaryComponent {
@@ -180,6 +181,7 @@ export interface Employee {
   hireDate: string; // YYYY-MM-DD
   salaryStartDate: string; // YYYY-MM-DD
   terminationDate?: string;
+  employmentEndReason?: EmploymentEndReason;
   status: EmploymentStatus;
   suspensionStartDate?: string;
   suspensionEndDate?: string;
@@ -202,6 +204,8 @@ export interface AttendanceRecord {
   employeeId: string;
   periodMonth: string; // YYYY-MM
   date: string;
+  endDate?: string;
+  daysCount?: number;
   delayMinutes: number;
   absence: boolean;
   unpaidLeave: boolean;
@@ -276,6 +280,10 @@ export interface PayrollRunItem {
   overtimeHours: number;
   bonuses: number;
   totalGrossSalary: number;
+  payableDays?: number;
+  salaryProrationFactor?: number;
+  settlementDate?: string;
+  settlementReason?: EmploymentEndReason;
 
   // Deductions
   delayMinutes: number;

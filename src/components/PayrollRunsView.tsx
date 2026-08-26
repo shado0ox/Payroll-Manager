@@ -351,8 +351,18 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
     const startTime = performance.now();
 
     setTimeout(() => {
-      const runItems: PayrollRunItem[] = companyEmployees.map(emp => {
-        const empAtt = attendance.filter(a => a.employeeId === emp.id && a.periodMonth === selectedPeriod);
+      const runItems: PayrollRunItem[] = companyEmployees
+        .filter(emp => {
+          if (emp.status === 'ABSCONDED') return false;
+          if (emp.salaryStartDate && emp.salaryStartDate.slice(0, 7) > selectedPeriod) return false;
+          if (emp.status === 'TERMINATED') return Boolean(emp.terminationDate && selectedPeriod <= emp.terminationDate.slice(0, 7));
+          return true;
+        })
+        .map(emp => {
+        const monthStart = `${selectedPeriod}-01`;
+        const [year, month] = selectedPeriod.split('-').map(Number);
+        const monthEnd = `${selectedPeriod}-${String(new Date(Date.UTC(year, month, 0)).getUTCDate()).padStart(2, '0')}`;
+        const empAtt = attendance.filter(a => a.employeeId === emp.id && a.date <= monthEnd && (a.endDate || a.date) >= monthStart);
         const empLoans = loans.filter(l => l.employeeId === emp.id);
         const empPens = penalties.filter(p => p.employeeId === emp.id && p.periodMonth === selectedPeriod && p.appliedInPayroll !== false);
 

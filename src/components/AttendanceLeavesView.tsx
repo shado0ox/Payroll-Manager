@@ -85,40 +85,32 @@ export const AttendanceLeavesView: React.FC<AttendanceLeavesViewProps> = ({
   }, [employees, company.id]);
 
   const companyAttendance = useMemo(() => {
-    return attendance.filter(a => a.companyId === company.id && a.periodMonth === selectedPeriod);
+    const monthStart = `${selectedPeriod}-01`;
+    const [year, month] = selectedPeriod.split('-').map(Number);
+    const monthEnd = `${selectedPeriod}-${String(new Date(Date.UTC(year, month, 0)).getUTCDate()).padStart(2, '0')}`;
+    return attendance.filter(a => a.companyId === company.id && a.date <= monthEnd && (a.endDate || a.date) >= monthStart);
   }, [attendance, company.id, selectedPeriod]);
 
   const companyLeaves = useMemo(() => {
     return leaves.filter(l => l.companyId === company.id);
   }, [leaves, company.id]);
 
-  // Handle manual attendance/absence save across single or multiple days
+  // A date range is one auditable transaction; payroll expands its day count at calculation time.
   const handleSaveAttendance = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newAttendance.employeeId || !startDate) return;
 
-    const dateList = getDatesInRange(startDate, endDate || startDate);
-
-    if (dateList.length <= 1) {
-      const record: AttendanceRecord = {
-        ...newAttendance as AttendanceRecord,
-        id: editingAttendanceId || `att-${Date.now()}`,
-        date: startDate,
-        periodMonth: startDate.substring(0, 7) || selectedPeriod,
-      };
-      onAddAttendance(record);
-    } else {
-      const records: AttendanceRecord[] = dateList.map((dt, idx) => ({
-        ...newAttendance as AttendanceRecord,
-        id: `att-${Date.now()}-${idx}`,
-        date: dt,
-        periodMonth: dt.substring(0, 7) || selectedPeriod,
-        notes: newAttendance.notes 
-          ? `${newAttendance.notes} (يوم ${idx + 1} من ${dateList.length})` 
-          : `غياب فترة (${startDate} إلى ${endDate})`,
-      }));
-      onBulkImportAttendance(records);
-    }
+    const effectiveEndDate = endDate || startDate;
+    const record: AttendanceRecord = {
+      ...newAttendance as AttendanceRecord,
+      id: editingAttendanceId || `att-${Date.now()}`,
+      date: startDate,
+      endDate: effectiveEndDate,
+      daysCount: getDatesInRange(startDate, effectiveEndDate).length,
+      periodMonth: startDate.substring(0, 7) || selectedPeriod,
+      notes: newAttendance.notes || (effectiveEndDate !== startDate ? `غياب فترة (${startDate} إلى ${effectiveEndDate})` : ''),
+    };
+    onAddAttendance(record);
 
     setIsAttendanceModalOpen(false);
     setEditingAttendanceId(null);
@@ -128,7 +120,7 @@ export const AttendanceLeavesView: React.FC<AttendanceLeavesViewProps> = ({
     setEditingAttendanceId(record.id);
     setNewAttendance(record);
     setStartDate(record.date);
-    setEndDate(record.date);
+    setEndDate(record.endDate || record.date);
     setIsAttendanceModalOpen(true);
   };
 
@@ -234,7 +226,7 @@ export const AttendanceLeavesView: React.FC<AttendanceLeavesViewProps> = ({
                       </td>
 
                       <td className="py-2.5 px-2 font-semibold text-slate-700 font-mono text-[11px]">
-                        {rec.date}
+                        {rec.endDate && rec.endDate !== rec.date ? `${rec.date} ← ${rec.endDate}` : rec.date}
                       </td>
 
                       <td className="py-2.5 px-2 text-center">
@@ -250,7 +242,7 @@ export const AttendanceLeavesView: React.FC<AttendanceLeavesViewProps> = ({
                       <td className="py-2.5 px-2 text-center">
                         {rec.absence ? (
                           <span className="inline-block font-bold text-rose-700 bg-rose-50 px-2 py-0.5 rounded-md border border-rose-200 text-[10px] whitespace-nowrap">
-                            غياب كامل
+                            {rec.daysCount && rec.daysCount > 1 ? `${rec.daysCount} أيام غياب` : 'غياب كامل'}
                           </span>
                         ) : (
                           <span className="text-slate-300">-</span>
@@ -455,7 +447,7 @@ export const AttendanceLeavesView: React.FC<AttendanceLeavesViewProps> = ({
                   <div className="flex items-center gap-1.5 text-[11px] text-rose-600 font-medium pt-1">
                     <span>💡</span>
                     <span>
-                      سيتم تسجيل {selectedDaysCount} حركات غياب متتالية لحساب خصم كل يوم تلقائياً في مسير الرواتب.
+                      سيتم تسجيل فترة الغياب كعملية واحدة، ويحتسب المسير {selectedDaysCount} أيام تلقائياً.
                     </span>
                   </div>
                 )}
