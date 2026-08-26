@@ -15,6 +15,7 @@ import {
 import { Company, UserAccount, NavigationTab, UserRole } from '../types';
 import { DatabaseStatus } from '../utils/databaseService';
 import { useLanguage } from '../i18n/LanguageContext';
+import { isDeveloperAccount } from '../utils/permissions';
 
 interface NavbarProps {
   companies: Company[];
@@ -49,6 +50,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 }) => {
   const { language, toggleLanguage, t } = useLanguage();
   const roleInfo = currentUser ? ROLE_LABELS[currentUser.role] : ROLE_LABELS.ADMIN;
+  const canViewDatabaseStatus = isDeveloperAccount(currentUser);
 
   return (
     <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-6 sm:px-8 shadow-xs shrink-0 z-20">
@@ -79,7 +81,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         </div>
 
         {/* Database Connection Pill */}
-        {onOpenDbModal && (
+        {canViewDatabaseStatus && onOpenDbModal && (
           <button
             onClick={onOpenDbModal}
             title={t('databaseStatusTitle')}
@@ -112,7 +114,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         </button>
         
         {/* Database Icon for small screens */}
-        {onOpenDbModal && (
+        {canViewDatabaseStatus && onOpenDbModal && (
           <button
             onClick={onOpenDbModal}
             title={t('databaseStatus')}
