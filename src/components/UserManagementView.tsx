@@ -38,22 +38,28 @@ interface UserManagementViewProps {
   onDeleteUser: (userId: string) => void;
 }
 
-const ROLE_INFO: Record<UserRole, { labelAr: string; descAr: string; color: string; badgeBg: string }> = {
+const ROLE_INFO: Record<UserRole, { labelAr: string; labelEn: string; descAr: string; descEn: string; color: string; badgeBg: string }> = {
   ADMIN: {
     labelAr: 'مسؤول النظام (Admin)',
+    labelEn: 'System Administrator',
     descAr: 'صلاحيات كاملة وغير مقيدة في إدارة النظام، المستخدمين، الشركات، والبيانات المالية',
+    descEn: 'Full unrestricted access to system administration, users, companies, and financial data',
     color: 'text-purple-700',
     badgeBg: 'bg-purple-50 border-purple-200 text-purple-700',
   },
   COMPANY_MANAGER: {
     labelAr: 'المدير العام (General Manager)',
+    labelEn: 'General Manager',
     descAr: 'إدارة تشغيلية ومالية واعتماد الرواتب دون إضافة أو حذف الشركات، مع صلاحيات قابلة للتخصيص',
+    descEn: 'Operational and financial management with payroll approval, excluding company creation and deletion; permissions are customizable',
     color: 'text-indigo-700',
     badgeBg: 'bg-indigo-50 border-indigo-200 text-indigo-700',
   },
   OPERATIONS_MANAGER: {
     labelAr: 'مدير العمليات (Operations Manager)',
+    labelEn: 'Operations Manager',
     descAr: 'إدارة الموظفين والحضور والإجازات والسلف والخصومات والمسيرات وأوامر الدفع دون اعتماد الرواتب',
+    descEn: 'Manage employees, attendance, leave, loans, deductions, payroll runs, and payment orders without payroll approval',
     color: 'text-emerald-700',
     badgeBg: 'bg-emerald-50 border-emerald-200 text-emerald-700',
   },
@@ -159,12 +165,12 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
 
     const cleanUsername = formData.username.trim().toLowerCase();
     if (!cleanUsername) {
-      setFormError('يرجى إدخال اسم المستخدم');
+      setFormError(language === 'ar' ? 'يرجى إدخال اسم المستخدم' : 'Please enter a username');
       return;
     }
 
     if ((!editingUser || formData.password) && !isStrongPassword(formData.password)) {
-      setFormError(passwordPolicyMessage);
+      setFormError(language === 'ar' ? passwordPolicyMessage : 'Password must be at least 8 characters and include uppercase, lowercase, number, and symbol.');
       return;
     }
 
@@ -173,7 +179,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
       u => u.username.toLowerCase() === cleanUsername && u.id !== editingUser?.id
     );
     if (isDuplicate) {
-      setFormError('اسم المستخدم هذا مستخدم بالفعل، يرجى اختيار اسم مستخدم آخر');
+      setFormError(language === 'ar' ? 'اسم المستخدم هذا مستخدم بالفعل، يرجى اختيار اسم مستخدم آخر' : 'This username is already in use. Choose another username.');
       return;
     }
 
@@ -185,7 +191,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
       email: formData.email || `${cleanUsername}@masar.sa`,
       phone: formData.phone,
       role: formData.role,
-      avatar: formData.name ? formData.name.charAt(0) : 'م',
+      avatar: formData.name ? formData.name.charAt(0) : (language === 'ar' ? 'م' : 'U'),
       companyIds: formData.companyIds.length > 0 ? formData.companyIds : ['comp-1'],
       permissions: formData.permissions.filter(permission => permission !== 'MANAGE_COMPANIES'),
       employeeId: formData.employeeId || undefined,
@@ -221,16 +227,16 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
     <div className="space-y-6">
       
       {/* Header & Stats */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-6 rounded-2xl border border-slate-200 shadow-xs">
+      <div data-no-translate className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-6 rounded-2xl border border-slate-200 shadow-xs">
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="text-xl font-bold text-slate-900">إدارة المستخدمين والصلاحيات</h1>
+            <h1 className="text-xl font-bold text-slate-900">{language === 'ar' ? 'إدارة المستخدمين والصلاحيات' : 'Users & Permissions'}</h1>
             <span className="px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-xs font-bold border border-emerald-200">
-              مسؤول النظام
+              {language === 'ar' ? 'مسؤول النظام' : 'System Administration'}
             </span>
           </div>
           <p className="text-xs text-slate-500 mt-1">
-            إنشاء حسابات الموظفين والمسؤولين وتعيين الأدوار والصلاحيات وتحديد كلمات المرور
+            {language === 'ar' ? 'إنشاء حسابات الموظفين والمسؤولين وتعيين الأدوار والصلاحيات وتحديد كلمات المرور' : 'Create accounts, assign roles and permissions, and manage passwords'}
           </p>
         </div>
 
@@ -239,16 +245,16 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
           className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-xl font-bold text-sm shadow-xs transition-colors cursor-pointer shrink-0"
         >
           <UserPlus className="w-4 h-4" />
-          <span>إضافة مستخدم جديد</span>
+          <span>{language === 'ar' ? 'إضافة مستخدم جديد' : 'Add User'}</span>
         </button>
       </div>
 
       {/* Metrics Row */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div data-no-translate className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         
         <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex items-center justify-between">
           <div>
-            <p className="text-xs font-medium text-slate-500">إجمالي الحسابات</p>
+            <p className="text-xs font-medium text-slate-500">{language === 'ar' ? 'إجمالي الحسابات' : 'Total accounts'}</p>
             <h3 className="text-2xl font-black text-slate-900 mt-1">{users.length}</h3>
           </div>
           <div className="p-3 bg-slate-100 rounded-xl text-slate-600">
@@ -258,7 +264,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
 
         <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex items-center justify-between">
           <div>
-            <p className="text-xs font-medium text-slate-500">الحسابات النشطة</p>
+            <p className="text-xs font-medium text-slate-500">{language === 'ar' ? 'الحسابات النشطة' : 'Active accounts'}</p>
             <h3 className="text-2xl font-black text-emerald-600 mt-1">{activeCount}</h3>
           </div>
           <div className="p-3 bg-emerald-50 rounded-xl text-emerald-600">
@@ -268,7 +274,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
 
         <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex items-center justify-between">
           <div>
-            <p className="text-xs font-medium text-slate-500">مسؤولي النظام (Admins)</p>
+            <p className="text-xs font-medium text-slate-500">{language === 'ar' ? 'مسؤولي النظام (Admins)' : 'System administrators'}</p>
             <h3 className="text-2xl font-black text-purple-600 mt-1">{adminCount}</h3>
           </div>
           <div className="p-3 bg-purple-50 rounded-xl text-purple-600">
@@ -279,7 +285,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
       </div>
 
       {/* Search & Filters */}
-      <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex flex-wrap items-center gap-3">
+      <div data-no-translate className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex flex-wrap items-center gap-3">
         
         <div className="relative flex-1 min-w-[200px]">
           <Search className="w-4 h-4 text-slate-400 absolute right-3 top-3" />
@@ -287,7 +293,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
             type="text"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="بحث بالاسم، اسم المستخدم، أو البريد الإلكتروني..."
+            placeholder={language === 'ar' ? 'بحث بالاسم، اسم المستخدم، أو البريد الإلكتروني...' : 'Search by name, username, or email...'}
             className="w-full pl-3 pr-9 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:bg-white focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-colors"
           />
         </div>
@@ -296,48 +302,48 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
         <select
           value={roleFilter}
           onChange={(e) => setRoleFilter(e.target.value)}
-          aria-label="تصفية حسب الدور"
+          aria-label={language === 'ar' ? 'تصفية حسب الدور' : 'Filter by role'}
           className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-700 focus:bg-white focus:outline-none focus:border-emerald-500 cursor-pointer"
         >
-          <option value="ALL">جميع الأدوار والصلاحيات</option>
-          <option value="ADMIN">مسؤول النظام (Admin)</option>
-          <option value="COMPANY_MANAGER">المدير العام</option>
-          <option value="OPERATIONS_MANAGER">مدير العمليات</option>
+          <option value="ALL">{language === 'ar' ? 'جميع الأدوار والصلاحيات' : 'All roles and permissions'}</option>
+          <option value="ADMIN">{language === 'ar' ? 'مسؤول النظام (Admin)' : 'System Administrator'}</option>
+          <option value="COMPANY_MANAGER">{language === 'ar' ? 'المدير العام' : 'General Manager'}</option>
+          <option value="OPERATIONS_MANAGER">{language === 'ar' ? 'مدير العمليات' : 'Operations Manager'}</option>
         </select>
 
         {/* Status Filter */}
         <select
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value)}
-          aria-label="تصفية حسب الحالة"
+          aria-label={language === 'ar' ? 'تصفية حسب الحالة' : 'Filter by status'}
           className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-700 focus:bg-white focus:outline-none focus:border-emerald-500 cursor-pointer"
         >
-          <option value="ALL">جميع الحالات</option>
-          <option value="ACTIVE">نشط فقط</option>
-          <option value="INACTIVE">معطل فقط</option>
+          <option value="ALL">{language === 'ar' ? 'جميع الحالات' : 'All statuses'}</option>
+          <option value="ACTIVE">{language === 'ar' ? 'نشط فقط' : 'Active only'}</option>
+          <option value="INACTIVE">{language === 'ar' ? 'معطل فقط' : 'Inactive only'}</option>
         </select>
 
       </div>
 
       {/* Users Table */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden w-full">
+      <div data-no-translate className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden w-full">
         <table className="w-full text-right text-xs table-fixed divide-y divide-slate-100">
           <thead>
             <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold text-[11px]">
-              <th className="py-3 px-3 w-[22%] font-bold">المستخدم والاسم</th>
-              <th className="py-3 px-2 w-[16%] font-bold">اسم الدخول (Username)</th>
-              <th className="py-3 px-2 w-[18%] font-bold">الدور والصلاحية</th>
-              <th className="py-3 px-2 w-[18%] font-bold">البريد والهاتف</th>
-              <th className="py-3 px-2 w-[12%] font-bold">الموظف المرتبط</th>
-              <th className="py-3 px-1.5 w-[6%] text-center font-bold">الحالة</th>
-              <th className="py-3 px-2 w-[8%] text-center font-bold">الإجراءات</th>
+              <th className="py-3 px-3 w-[22%] font-bold">{language === 'ar' ? 'المستخدم والاسم' : 'User & Name'}</th>
+              <th className="py-3 px-2 w-[16%] font-bold">{language === 'ar' ? 'اسم الدخول (Username)' : 'Username'}</th>
+              <th className="py-3 px-2 w-[18%] font-bold">{language === 'ar' ? 'الدور والصلاحية' : 'Role & Access'}</th>
+              <th className="py-3 px-2 w-[18%] font-bold">{language === 'ar' ? 'البريد والهاتف' : 'Email & Phone'}</th>
+              <th className="py-3 px-2 w-[12%] font-bold">{language === 'ar' ? 'الموظف المرتبط' : 'Linked Employee'}</th>
+              <th className="py-3 px-1.5 w-[6%] text-center font-bold">{language === 'ar' ? 'الحالة' : 'Status'}</th>
+              <th className="py-3 px-2 w-[8%] text-center font-bold">{language === 'ar' ? 'الإجراءات' : 'Actions'}</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 bg-white">
             {filteredUsers.length === 0 ? (
               <tr>
                 <td colSpan={7} className="py-12 text-center text-slate-400">
-                  لا يوجد مستخدمين مطابقين للبحث
+                  {language === 'ar' ? 'لا يوجد مستخدمين مطابقين للبحث' : 'No users match the selected filters'}
                 </td>
               </tr>
             ) : (
@@ -358,10 +364,10 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
                         </div>
                         <div className="min-w-0 truncate">
                           <div className="font-bold text-slate-900 truncate">
-                            {user.name} {isSelf && <span className="text-[10px] text-emerald-600 font-normal">(أنت)</span>}
+                            {user.name} {isSelf && <span className="text-[10px] text-emerald-600 font-normal">{language === 'ar' ? '(أنت)' : '(You)'}</span>}
                           </div>
                           <div className="text-[10px] text-slate-400 truncate">
-                            أنشئ: {new Date(user.createdAt).toLocaleDateString('ar-SA')}
+                            {language === 'ar' ? 'أنشئ:' : 'Created:'} {new Date(user.createdAt).toLocaleDateString(language === 'ar' ? 'ar-SA' : 'en-GB')}
                           </div>
                         </div>
                       </div>
@@ -375,7 +381,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
                     {/* Role */}
                     <td className="py-3 px-2 truncate">
                       <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold border ${roleMeta.badgeBg}`}>
-                        {roleMeta.labelAr}
+                        {language === 'ar' ? roleMeta.labelAr : roleMeta.labelEn}
                       </span>
                     </td>
 
@@ -399,7 +405,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
                           </div>
                         </div>
                       ) : (
-                        <span className="text-slate-400 text-[10px]">غير مرتبط</span>
+                        <span className="text-slate-400 text-[10px]">{language === 'ar' ? 'غير مرتبط' : 'Not linked'}</span>
                       )}
                     </td>
 
@@ -407,11 +413,11 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
                     <td className="py-3 px-1.5 text-center">
                       {user.isActive ? (
                         <span className="px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[9px] font-bold border border-emerald-200 block text-center">
-                          نشط
+                          {language === 'ar' ? 'نشط' : 'Active'}
                         </span>
                       ) : (
                         <span className="px-1.5 py-0.5 rounded-full bg-rose-50 text-rose-700 text-[9px] font-bold border border-rose-200 block text-center">
-                          معطل
+                          {language === 'ar' ? 'معطل' : 'Inactive'}
                         </span>
                       )}
                     </td>
@@ -423,7 +429,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
                         {/* Edit */}
                         {!isMasterAdmin && <button
                           onClick={() => handleOpenEdit(user)}
-                          title="تعديل بيانات المستخدم وكلمة المرور"
+                          title={language === 'ar' ? 'تعديل بيانات المستخدم وكلمة المرور' : 'Edit user details and password'}
                           className="p-1.5 text-slate-600 hover:bg-slate-100 hover:text-slate-900 rounded-lg transition-colors cursor-pointer"
                         >
                           <Edit className="w-3.5 h-3.5" />
@@ -436,7 +442,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
                               if (isSelf) return;
                               onDeleteUser(user.id);
                             }}
-                            title="حذف المستخدم"
+                            title={language === 'ar' ? 'حذف المستخدم' : 'Delete user'}
                             className="p-1.5 text-rose-500 hover:bg-rose-50 hover:text-rose-700 rounded-lg transition-colors cursor-pointer"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
@@ -455,17 +461,17 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
       </div>
 
       {/* Role Matrix Guide */}
-      <div className="bg-slate-900 text-white rounded-2xl p-6 border border-slate-800 shadow-md">
+      <div data-no-translate className="bg-slate-900 text-white rounded-2xl p-6 border border-slate-800 shadow-md">
         <div className="flex items-center gap-2 mb-4">
           <Shield className="w-5 h-5 text-emerald-400" />
-          <h3 className="font-bold text-sm text-white">دليل الأدوار والصلاحيات في النظام</h3>
+          <h3 className="font-bold text-sm text-white">{language === 'ar' ? 'دليل الأدوار والصلاحيات في النظام' : 'System Roles & Permissions Guide'}</h3>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
           {Object.entries(ROLE_INFO).map(([key, info]) => (
             <div key={key} className="p-3 bg-slate-800/80 rounded-xl border border-slate-700/60">
-              <div className="font-bold text-xs text-emerald-300 mb-1">{info.labelAr}</div>
-              <p className="text-[11px] text-slate-300 leading-relaxed">{info.descAr}</p>
+              <div className="font-bold text-xs text-emerald-300 mb-1">{language === 'ar' ? info.labelAr : info.labelEn}</div>
+              <p className="text-[11px] text-slate-300 leading-relaxed">{language === 'ar' ? info.descAr : info.descEn}</p>
             </div>
           ))}
         </div>
@@ -473,17 +479,17 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
 
       {/* Add / Edit User Modal */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
+        <div data-no-translate className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
           <div className="bg-white rounded-3xl max-w-lg w-full shadow-2xl border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
             
             {/* Modal Header */}
             <div className="px-6 py-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
               <div>
                 <h3 className="font-bold text-base text-slate-900">
-                  {editingUser ? 'تعديل بيانات المستخدم' : 'إنشاء حساب مستخدم جديد'}
+                  {editingUser ? (language === 'ar' ? 'تعديل بيانات المستخدم' : 'Edit User') : (language === 'ar' ? 'إنشاء حساب مستخدم جديد' : 'Create User Account')}
                 </h3>
                 <p className="text-xs text-slate-500">
-                  حدد بيانات الدخول والدور المطلوب والصلاحيات
+                  {language === 'ar' ? 'حدد بيانات الدخول والدور المطلوب والصلاحيات' : 'Enter login details and select the required role and permissions'}
                 </p>
               </div>
               <button
@@ -507,14 +513,14 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
               {/* Link to existing employee (optional helper) */}
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">
-                  ربط بحساب موظف حالي (اختياري)
+                  {language === 'ar' ? 'ربط بحساب موظف حالي (اختياري)' : 'Link to an existing employee (optional)'}
                 </label>
                 <SearchableEmployeeSelect
                   employees={employees}
                   value={formData.employeeId}
                   onChange={handleEmployeeSelect}
                   allowEmpty
-                  emptyLabel="بدون ربط (حساب إداري مستقل)"
+                  emptyLabel={language === 'ar' ? 'بدون ربط (حساب إداري مستقل)' : 'No link (independent admin account)'}
                 />
               </div>
 
@@ -523,14 +529,14 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
                 {/* Username */}
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">
-                    اسم المستخدم للدخول <span className="text-rose-500">*</span>
+                    {language === 'ar' ? 'اسم المستخدم للدخول' : 'Username'} <span className="text-rose-500">*</span>
                   </label>
                   <input
                     type="text"
                     required
                     value={formData.username}
                     onChange={(e) => setFormData({ ...formData, username: e.target.value })}
-                    placeholder="مثال: ahmed_hr"
+                    placeholder={language === 'ar' ? 'مثال: ahmed_hr' : 'Example: ahmed_hr'}
                     className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 font-mono focus:bg-white focus:outline-none focus:border-emerald-500"
                     dir="ltr"
                   />
@@ -539,7 +545,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
                 {/* Password */}
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">
-                    كلمة المرور <span className="text-rose-500">*</span>
+                    {language === 'ar' ? 'كلمة المرور' : 'Password'} <span className="text-rose-500">*</span>
                   </label>
                   <div className="relative">
                     <input
@@ -547,7 +553,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
                       required
                       value={formData.password}
                       onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                      placeholder="كلمة المرور"
+                      placeholder={language === 'ar' ? 'كلمة المرور' : 'Password'}
                       className="w-full pl-8 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 font-mono focus:bg-white focus:outline-none focus:border-emerald-500"
                       dir="ltr"
                     />
@@ -566,14 +572,14 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
               {/* Full Name */}
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">
-                  الاسم الكامل <span className="text-rose-500">*</span>
+                  {language === 'ar' ? 'الاسم الكامل' : 'Full name'} <span className="text-rose-500">*</span>
                 </label>
                 <input
                   type="text"
                   required
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  placeholder="مثال: أحمد محمد علي"
+                  placeholder={language === 'ar' ? 'مثال: أحمد محمد علي' : 'Example: Ahmed Ali'}
                   className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:bg-white focus:outline-none focus:border-emerald-500"
                 />
               </div>
@@ -582,7 +588,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">
-                    البريد الإلكتروني
+                    {language === 'ar' ? 'البريد الإلكتروني' : 'Email address'}
                   </label>
                   <input
                     type="email"
@@ -596,7 +602,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
 
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">
-                    رقم الجوال
+                    {language === 'ar' ? 'رقم الجوال' : 'Mobile number'}
                   </label>
                   <input
                     type="text"
@@ -612,7 +618,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
               {/* Role Selection */}
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">
-                  الدور والصلاحيات في النظام <span className="text-rose-500">*</span>
+                  {language === 'ar' ? 'الدور والصلاحيات في النظام' : 'System role and permissions'} <span className="text-rose-500">*</span>
                 </label>
                 <select
                   value={formData.role}
@@ -622,17 +628,17 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
                   }}
                   className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:bg-white focus:outline-none focus:border-emerald-500 cursor-pointer"
                 >
-                  {currentUser?.role === 'ADMIN' && <option value="COMPANY_MANAGER">المدير العام - دون إدارة الشركات</option>}
-                  <option value="OPERATIONS_MANAGER">مدير العمليات - جميع العمليات دون اعتماد الرواتب</option>
+                  {currentUser?.role === 'ADMIN' && <option value="COMPANY_MANAGER">{language === 'ar' ? 'المدير العام - دون إدارة الشركات' : 'General Manager — no company administration'}</option>}
+                  <option value="OPERATIONS_MANAGER">{language === 'ar' ? 'مدير العمليات - جميع العمليات دون اعتماد الرواتب' : 'Operations Manager — all operations without payroll approval'}</option>
                 </select>
                 <p className="text-[11px] text-slate-500 mt-1">
-                  {ROLE_INFO[formData.role]?.descAr}
+                  {language === 'ar' ? ROLE_INFO[formData.role]?.descAr : ROLE_INFO[formData.role]?.descEn}
                 </p>
               </div>
 
               <fieldset className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
-                <legend className="px-2 text-xs font-black text-slate-800">تخصيص ما يمكن للمستخدم استخدامه</legend>
-                <p className="text-[11px] text-slate-500 mb-3">يمكن تعديل الصلاحيات الافتراضية للدور. إضافة وحذف الشركات متاحة لمسؤول النظام الرئيسي فقط.</p>
+                <legend className="px-2 text-xs font-black text-slate-800">{language === 'ar' ? 'تخصيص ما يمكن للمستخدم استخدامه' : 'Customize User Access'}</legend>
+                <p className="text-[11px] text-slate-500 mb-3">{language === 'ar' ? 'يمكن تعديل الصلاحيات الافتراضية للدور. إضافة وحذف الشركات متاحة لمسؤول النظام الرئيسي فقط.' : 'Default role permissions can be customized. Adding or deleting companies is restricted to the primary system administrator.'}</p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   {ALL_PERMISSIONS.filter(permission => permission !== 'MANAGE_COMPANIES').map(permission => (
                     <label key={permission} className="flex items-center gap-2 rounded-xl bg-white border border-slate-200 px-3 py-2 cursor-pointer">
@@ -663,7 +669,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
                     className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
                   />
                   <span className="text-xs font-bold text-slate-800">
-                    حساب نشط ومفعل لتسجيل الدخول
+                    {language === 'ar' ? 'حساب نشط ومفعل لتسجيل الدخول' : 'Active account enabled for sign-in'}
                   </span>
                 </label>
               </div>
@@ -675,13 +681,13 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
                   onClick={() => setIsModalOpen(false)}
                   className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-colors cursor-pointer"
                 >
-                  إلغاء
+                  {language === 'ar' ? 'إلغاء' : 'Cancel'}
                 </button>
                 <button
                   type="submit"
                   className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer"
                 >
-                  {editingUser ? 'حفظ التعديلات' : 'إنشاء المستخدم'}
+                  {editingUser ? (language === 'ar' ? 'حفظ التعديلات' : 'Save Changes') : (language === 'ar' ? 'إنشاء المستخدم' : 'Create User')}
                 </button>
               </div>
 

@@ -442,17 +442,17 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
     <div className="space-y-6">
       
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div data-no-translate className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-xl sm:text-2xl font-bold text-slate-900 flex items-center gap-2.5">
             <Users className="w-6 h-6 text-emerald-600" />
-            <span>سجل الموظفين ومكونات الرواتب</span>
+            <span>{language === 'ar' ? 'سجل الموظفين ومكونات الرواتب' : 'Employee Register & Salary Components'}</span>
             <span className="text-xs px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 font-bold border border-slate-200">
-              {filteredEmployees.length} من {companyEmployees.length} موظف
+              {language === 'ar' ? `${filteredEmployees.length} من ${companyEmployees.length} موظف` : `${filteredEmployees.length} of ${companyEmployees.length} employees`}
             </span>
           </h1>
           <p className="text-xs text-slate-500 mt-1">
-            إدارة بيانات الموظفين، الحسابات البنكية (IBAN)، سلم الرواتب والبدلات، وحالات تعليق الرواتب
+            {language === 'ar' ? 'إدارة بيانات الموظفين، الحسابات البنكية (IBAN)، سلم الرواتب والبدلات، وحالات تعليق الرواتب' : 'Manage employee records, bank accounts (IBAN), salaries, allowances, and payroll suspension statuses'}
           </p>
         </div>
 
@@ -470,7 +470,7 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
             className="px-3.5 py-2 bg-white text-emerald-700 hover:bg-emerald-50 border border-emerald-200 rounded-xl text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
           >
             <Upload className="w-4 h-4" />
-            <span>{isParsingImport ? 'جاري قراءة الملف...' : 'استيراد موظفين'}</span>
+            <span>{isParsingImport ? (language === 'ar' ? 'جاري قراءة الملف...' : 'Reading file...') : (language === 'ar' ? 'استيراد موظفين' : 'Import Employees')}</span>
           </button>
 
           <button
@@ -478,7 +478,7 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
             className="px-3.5 py-2 bg-white text-slate-700 hover:bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer"
           >
             <Download className="w-4 h-4 text-slate-500" />
-            <span>تصدير Excel/CSV</span>
+            <span>{language === 'ar' ? 'تصدير Excel/CSV' : 'Export Excel/CSV'}</span>
           </button>
 
           <button
@@ -486,7 +486,7 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
             className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-2 cursor-pointer"
           >
             <UserPlus className="w-4 h-4" />
-            <span>إضافة موظف جديد</span>
+            <span>{language === 'ar' ? 'إضافة موظف جديد' : 'Add Employee'}</span>
           </button>
         </div>
       </div>
@@ -498,14 +498,14 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
       )}
 
       {/* Filter and Search Bar */}
-      <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+      <div data-no-translate className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
         
         {/* Search */}
         <div className="relative">
           <Search className="w-4 h-4 text-slate-400 absolute right-3 top-3" />
           <input
             type="text"
-            placeholder="بحث بالاسم، الرقم الوظيفي، الهوية، الآيبان..."
+            placeholder={language === 'ar' ? 'بحث بالاسم، الرقم الوظيفي، الهوية، الآيبان...' : 'Search by name, employee number, ID, or IBAN...'}
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="w-full pr-9 pl-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all"
@@ -519,7 +519,7 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
             onChange={(e) => setSelectedDept(e.target.value)}
             className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
           >
-            <option value="ALL">جميع الأقسام ({departments.length})</option>
+            <option value="ALL">{language === 'ar' ? `جميع الأقسام (${departments.length})` : `All departments (${departments.length})`}</option>
             {departments.map(d => (
               <option key={d} value={d}>{d}</option>
             ))}
@@ -533,9 +533,9 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
             onChange={(e) => setSelectedNationality(e.target.value)}
             className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
           >
-            <option value="ALL">جميع الجنسيات (تأمينات GOSI)</option>
-            <option value="SAUDI">سعودي (خاضع لنسبة التأمينات 9.75%/11.75%)</option>
-            <option value="NON_SAUDI">غير سعودي (مخاطر مهنية 2%)</option>
+            <option value="ALL">{language === 'ar' ? 'جميع الجنسيات (تأمينات GOSI)' : 'All nationalities (GOSI)'}</option>
+            <option value="SAUDI">{language === 'ar' ? 'سعودي (خاضع لنسبة التأمينات 9.75%/11.75%)' : 'Saudi (GOSI 9.75% / 11.75%)'}</option>
+            <option value="NON_SAUDI">{language === 'ar' ? 'غير سعودي (مخاطر مهنية 2%)' : 'Non-Saudi (2% occupational hazard)'}</option>
           </select>
         </div>
 
@@ -546,12 +546,12 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
             onChange={(e) => setSelectedStatus(e.target.value)}
             className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
           >
-            <option value="ALL">جميع الحالات الوظيفية</option>
-            <option value="ACTIVE">على رأس العمل (نشط)</option>
-            <option value="SUSPENDED">معلق الراتب (موقوف)</option>
-            <option value="ON_LEAVE">في إجازة</option>
-            <option value="TERMINATED">منتهي الخدمة</option>
-            <option value="ABSCONDED">العمالة الهاربة</option>
+            <option value="ALL">{language === 'ar' ? 'جميع الحالات الوظيفية' : 'All employment statuses'}</option>
+            <option value="ACTIVE">{language === 'ar' ? 'على رأس العمل (نشط)' : 'Active'}</option>
+            <option value="SUSPENDED">{language === 'ar' ? 'معلق الراتب (موقوف)' : 'Salary suspended'}</option>
+            <option value="ON_LEAVE">{language === 'ar' ? 'في إجازة' : 'On leave'}</option>
+            <option value="TERMINATED">{language === 'ar' ? 'منتهي الخدمة' : 'Terminated'}</option>
+            <option value="ABSCONDED">{language === 'ar' ? 'العمالة الهاربة' : 'Absconded workers'}</option>
           </select>
         </div>
 
@@ -560,34 +560,35 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
       {/* Employees Table */}
       {companyEmployees.some(emp => emp.status === 'ABSCONDED') && (
         <button
+          data-no-translate
           type="button"
           onClick={() => setSelectedStatus(selectedStatus === 'ABSCONDED' ? 'ALL' : 'ABSCONDED')}
           className={`w-full rounded-2xl border px-4 py-3 flex items-center justify-between text-xs font-bold transition-colors ${selectedStatus === 'ABSCONDED' ? 'bg-rose-100 border-rose-300 text-rose-900' : 'bg-rose-50 border-rose-200 text-rose-800 hover:bg-rose-100'}`}
         >
-          <span>قائمة العمالة الهاربة — الرواتب معلقة ومستبعدة من المسير</span>
+          <span>{language === 'ar' ? 'قائمة العمالة الهاربة — الرواتب معلقة ومستبعدة من المسير' : 'Absconded Workers — Salaries Suspended and Excluded from Payroll'}</span>
           <span className="px-2 py-1 rounded-full bg-white border border-rose-200 font-mono">{companyEmployees.filter(emp => emp.status === 'ABSCONDED').length}</span>
         </button>
       )}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden w-full">
+      <div data-no-translate className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden w-full">
         <table className="w-full text-right text-xs table-fixed divide-y divide-slate-100">
           <thead>
             <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold text-[11px]">
-              <th className="py-3 px-2.5 w-[16%] font-bold">الرقم والموظف</th>
-              <th className="py-3 px-2 w-[11%] font-bold">الهوية / الإقامة</th>
-              <th className="py-3 px-2 w-[13%] font-bold">القسم والمسمى</th>
-              <th className="py-3 px-2 w-[10%] font-bold">الجنسية والتأمينات</th>
-              <th className="py-3 px-2 w-[12%] font-bold">الحساب (IBAN)</th>
-              <th className="py-3 px-2 w-[13%] font-bold">الأساسي والبدلات</th>
-              <th className="py-3 px-2 w-[8%] font-bold">إجمالي الراتب</th>
-              <th className="py-3 px-1.5 w-[7%] text-center font-bold">الحالة</th>
-              <th className="py-3 px-2 w-[10%] text-center font-bold">الإجراءات</th>
+              <th className="py-3 px-2.5 w-[16%] font-bold">{language === 'ar' ? 'الرقم والموظف' : 'Employee & Number'}</th>
+              <th className="py-3 px-2 w-[11%] font-bold">{language === 'ar' ? 'الهوية / الإقامة' : 'ID / Iqama'}</th>
+              <th className="py-3 px-2 w-[13%] font-bold">{language === 'ar' ? 'القسم والمسمى' : 'Department & Job'}</th>
+              <th className="py-3 px-2 w-[10%] font-bold">{language === 'ar' ? 'الجنسية والتأمينات' : 'Nationality & GOSI'}</th>
+              <th className="py-3 px-2 w-[12%] font-bold">{language === 'ar' ? 'الحساب (IBAN)' : 'Bank Account (IBAN)'}</th>
+              <th className="py-3 px-2 w-[13%] font-bold">{language === 'ar' ? 'الأساسي والبدلات' : 'Salary & Allowances'}</th>
+              <th className="py-3 px-2 w-[8%] font-bold">{language === 'ar' ? 'إجمالي الراتب' : 'Gross Salary'}</th>
+              <th className="py-3 px-1.5 w-[7%] text-center font-bold">{language === 'ar' ? 'الحالة' : 'Status'}</th>
+              <th className="py-3 px-2 w-[10%] text-center font-bold">{language === 'ar' ? 'الإجراءات' : 'Actions'}</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 bg-white">
             {filteredEmployees.length === 0 ? (
               <tr>
                 <td colSpan={9} className="py-12 text-center text-slate-400">
-                  لا توجد بيانات موظفين مطابقة لمعايير البحث
+                  {language === 'ar' ? 'لا توجد بيانات موظفين مطابقة لمعايير البحث' : 'No employees match the selected filters'}
                 </td>
               </tr>
             ) : (
@@ -617,14 +618,14 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                       </div>
                       {!!emp.dataWarnings?.length && (
                         <div className="text-[9px] text-amber-700 font-semibold flex items-center gap-1 mt-0.5" title={emp.dataWarnings.join(' • ')}>
-                          <AlertCircle className="w-3 h-3" /> بيانات تحتاج استكمال
+                          <AlertCircle className="w-3 h-3" /> {language === 'ar' ? 'بيانات تحتاج استكمال' : 'Incomplete data'}
                         </div>
                       )}
                     </td>
 
                     {/* National ID / Iqama */}
                     <td className="py-3 px-2 font-mono text-slate-600 truncate">
-                      {emp.nationalIdOrIqama || <span className="text-amber-600 font-sans">غير مكتملة</span>}
+                      {emp.nationalIdOrIqama || <span className="text-amber-600 font-sans">{language === 'ar' ? 'غير مكتملة' : 'Incomplete'}</span>}
                     </td>
 
                     {/* Dept & Job */}
@@ -668,10 +669,10 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                     {/* Salary Breakdown */}
                     <td className="py-3 px-2">
                       <div className="font-bold text-slate-800 whitespace-nowrap">
-                        أساسي: {formatSAR(emp.salaryPackage.baseSalary)}
+                        {language === 'ar' ? 'أساسي:' : 'Basic:'} {formatSAR(emp.salaryPackage.baseSalary)}
                       </div>
                       <div className="text-[9px] text-slate-500 whitespace-nowrap">
-                        سكن: {formatSAR(emp.salaryPackage.housingAllowance)} | نقل: {formatSAR(emp.salaryPackage.transportAllowance)}
+                        {language === 'ar' ? 'سكن:' : 'Housing:'} {formatSAR(emp.salaryPackage.housingAllowance)} | {language === 'ar' ? 'نقل:' : 'Transport:'} {formatSAR(emp.salaryPackage.transportAllowance)}
                       </div>
                     </td>
 
@@ -684,19 +685,19 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                     <td className="py-3 px-1.5 text-center">
                       {isAbsconded ? (
                         <span className="px-1.5 py-0.5 rounded-full bg-rose-100 text-rose-800 text-[9px] font-bold border border-rose-200 block text-center" title={emp.suspensionReason}>
-                          هارب
+                          {language === 'ar' ? 'هارب' : 'Absconded'}
                         </span>
                       ) : isSuspended ? (
                         <span className="px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[9px] font-bold border border-amber-200 block text-center" title={emp.suspensionReason}>
-                          موقوف
+                          {language === 'ar' ? 'موقوف' : 'Suspended'}
                         </span>
                       ) : emp.status === 'ACTIVE' ? (
                         <span className="px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[9px] font-bold border border-emerald-200 block text-center">
-                          نشط
+                          {language === 'ar' ? 'نشط' : 'Active'}
                         </span>
                       ) : (
                         <span className="px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-600 text-[9px] font-semibold block text-center">
-                          {emp.status}
+                          {emp.status === 'ON_LEAVE' ? (language === 'ar' ? 'في إجازة' : 'On leave') : emp.status === 'TERMINATED' ? (language === 'ar' ? 'منتهي' : 'Terminated') : emp.status}
                         </span>
                       )}
                     </td>
@@ -708,7 +709,7 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                         {/* Payslip & Statement button */}
                         <button
                           onClick={() => handleStatement(emp)}
-                          title="كشف حساب الموظف وقسيمة الراتب"
+                          title={language === 'ar' ? 'كشف حساب الموظف وقسيمة الراتب' : 'Employee statement and payslip'}
                           className="p-1 text-emerald-600 hover:bg-emerald-50 hover:text-emerald-700 rounded-lg transition-colors cursor-pointer shrink-0"
                         >
                           <FileText className="w-3.5 h-3.5" />
@@ -717,7 +718,7 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                         {/* Edit */}
                         <button
                           onClick={() => handleOpenEdit(emp)}
-                          title="تعديل بيانات الموظف والراتب"
+                          title={language === 'ar' ? 'تعديل بيانات الموظف والراتب' : 'Edit employee and salary'}
                           className="p-1 text-slate-600 hover:bg-slate-100 hover:text-slate-900 rounded-lg transition-colors cursor-pointer shrink-0"
                         >
                           <Edit className="w-3.5 h-3.5" />
@@ -728,7 +729,7 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                           onClick={() => {
                             if (onDeleteEmployee) onDeleteEmployee(emp.id);
                           }}
-                          title="حذف الموظف"
+                          title={language === 'ar' ? 'حذف الموظف' : 'Delete employee'}
                           className="p-1 text-rose-500 hover:bg-rose-50 hover:text-rose-700 rounded-lg transition-colors cursor-pointer shrink-0"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
