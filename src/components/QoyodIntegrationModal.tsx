@@ -258,7 +258,7 @@ export const QoyodIntegrationModal: React.FC<QoyodIntegrationModalProps> = ({
                 <div>{syncSuccess}</div>
                 {lastResponse && (
                   <div className="text-[11px] font-mono text-emerald-700 font-normal">
-                    Qoyod Entry ID: #{lastResponse.id} | Total Debit: {lastResponse.total_debit} SAR | Total Credit: {lastResponse.total_credit} SAR
+                    Qoyod Entry ID: #{lastResponse.id} | Total Debit: {Number(lastResponse.total_debit || 0).toLocaleString('en-US')} SR | Total Credit: {Number(lastResponse.total_credit || 0).toLocaleString('en-US')} SR
                   </div>
                 )}
               </div>
@@ -355,7 +355,7 @@ export const QoyodIntegrationModal: React.FC<QoyodIntegrationModalProps> = ({
                 <div className="text-slate-700">
                   <span className="font-bold block">{tr('إجراءات المزامنة والترحيل المباشر:', 'Synchronization and direct posting:')}</span>
                   <span className="text-[11px] text-slate-500">
-                    {tr('القيد المستهدف:', 'Target journal:')} {activeBatch?.batchNumber || tr('لا يوجد قيد', 'No journal')} ({activeBatch?.lines.length || 0} {tr('أسطر محاسبية - إجمالي:', 'lines - total:')} {activeBatch?.totalDebit.toLocaleString() || 0} SAR)
+                    {tr('القيد المستهدف:', 'Target journal:')} {activeBatch?.batchNumber || tr('لا يوجد قيد', 'No journal')} ({activeBatch?.lines.length || 0} {tr('أسطر محاسبية - إجمالي:', 'lines - total:')} {(activeBatch?.totalDebit || 0).toLocaleString('en-US')} SR)
                   </span>
                 </div>
 
@@ -492,11 +492,11 @@ export const QoyodIntegrationModal: React.FC<QoyodIntegrationModalProps> = ({
                 </div>
                 <div className="p-2.5 bg-emerald-50 rounded-xl border border-emerald-200">
                   <span className="text-[10px] text-emerald-600 block">{tr('إجمالي المدين', 'Total Debit')}</span>
-                  <span className="font-bold text-emerald-800 font-mono text-sm">{lastResponse.total_debit} SAR</span>
+                  <span className="font-bold text-emerald-800 font-mono text-sm">{Number(lastResponse.total_debit || 0).toLocaleString('en-US')} SR</span>
                 </div>
                 <div className="p-2.5 bg-emerald-50 rounded-xl border border-emerald-200">
                   <span className="text-[10px] text-emerald-600 block">{tr('إجمالي الدائن', 'Total Credit')}</span>
-                  <span className="font-bold text-emerald-800 font-mono text-sm">{lastResponse.total_credit} SAR</span>
+                  <span className="font-bold text-emerald-800 font-mono text-sm">{Number(lastResponse.total_credit || 0).toLocaleString('en-US')} SR</span>
                 </div>
               </div>
             </div>

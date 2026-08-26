@@ -175,7 +175,7 @@ export const EmployeeStatementModal: React.FC<EmployeeStatementModalProps> = ({
                 <div className="border border-slate-200 rounded-2xl overflow-hidden">
                   <div className="bg-emerald-50 px-4 py-2.5 font-bold text-xs text-emerald-900 border-b border-emerald-100 flex items-center justify-between">
                     <span>{tr('الاستحقاقات والبدلات', 'Earnings & Allowances')}</span>
-                    <span>{tr('المبلغ', 'Amount')} (SAR)</span>
+                    <span>{tr('المبلغ', 'Amount')} (SR)</span>
                   </div>
                   <div className="p-3 space-y-2 text-xs">
                     <div className="flex items-center justify-between text-slate-700">
@@ -214,7 +214,7 @@ export const EmployeeStatementModal: React.FC<EmployeeStatementModalProps> = ({
                 <div className="border border-slate-200 rounded-2xl overflow-hidden">
                   <div className="bg-rose-50 px-4 py-2.5 font-bold text-xs text-rose-900 border-b border-rose-100 flex items-center justify-between">
                     <span>{tr('الاستقطاعات والخصومات', 'Deductions')}</span>
-                    <span>{tr('المبلغ', 'Amount')} (SAR)</span>
+                    <span>{tr('المبلغ', 'Amount')} (SR)</span>
                   </div>
                   <div className="p-3 space-y-2 text-xs">
                     <div className="flex items-center justify-between text-slate-700">

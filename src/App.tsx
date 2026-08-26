@@ -484,26 +484,26 @@ export const App: React.FC = () => {
       });
 
       let auditAction = `${tr('تحديث مسير الرواتب', 'Updated payroll run')} (${run.status})`;
-      let auditDetails = `${tr('مسير فترة', 'Payroll period')} ${run.periodMonth} - ${tr('إجمالي الصافي:', 'Total net:')} ${run.totalNetSalaries.toLocaleString()} SAR`;
+      let auditDetails = `${tr('مسير فترة', 'Payroll period')} ${run.periodMonth} - ${tr('إجمالي الصافي:', 'Total net:')} ${run.totalNetSalaries.toLocaleString('en-US')} SR`;
 
       if (previousRun?.status === 'POSTED' && run.status === 'UNDER_REVIEW') {
         auditAction = tr('التراجع عن ترحيل مسير الرواتب', 'Reversed payroll posting');
-        auditDetails = `${tr('تم فتح المسير المرحل للتعديل وإعادة الاعتماد:', 'Posted payroll reopened for editing and reapproval:')} ${run.periodMonth} - ${run.totalNetSalaries.toLocaleString()} SAR`;
+        auditDetails = `${tr('تم فتح المسير المرحل للتعديل وإعادة الاعتماد:', 'Posted payroll reopened for editing and reapproval:')} ${run.periodMonth} - ${run.totalNetSalaries.toLocaleString('en-US')} SR`;
       } else if (previousRun?.status === 'APPROVED' && run.status === 'UNDER_REVIEW') {
         auditAction = tr('التراجع عن اعتماد مسير الرواتب', 'Reversed payroll approval');
-        auditDetails = `${tr('تم فتح المسير للتعديل وإعادة الاعتماد:', 'Payroll reopened for editing and reapproval:')} ${run.periodMonth} - ${run.totalNetSalaries.toLocaleString()} SAR`;
+        auditDetails = `${tr('تم فتح المسير للتعديل وإعادة الاعتماد:', 'Payroll reopened for editing and reapproval:')} ${run.periodMonth} - ${run.totalNetSalaries.toLocaleString('en-US')} SR`;
       } else if (entitlementChangedItem) {
         auditAction = tr('تغيير حالة استحقاق راتب موظف', 'Changed employee salary entitlement');
         auditDetails = `${entitlementChangedItem.employeeName} (${entitlementChangedItem.employeeNo}) - ${tr('الحالة:', 'Status:')} ${entitlementChangedItem.entitlementStatus || 'PAYABLE'} - ${entitlementChangedItem.entitlementReason || tr('بدون سبب', 'No reason')}`;
       } else if (adjustedItem) {
         auditAction = tr('تعديل إضافات وخصومات موظف في المسير', 'Changed employee payroll adjustments');
-        auditDetails = `${adjustedItem.employeeName} (${adjustedItem.employeeNo}) - ${tr('إضافة', 'Addition')} ${(adjustedItem.manualAddition || 0).toLocaleString()} - ${tr('خصم', 'Deduction')} ${(adjustedItem.manualDeduction || 0).toLocaleString()} SAR - ${adjustedItem.adjustmentNotes || tr('بدون ملاحظات', 'No notes')}`;
+        auditDetails = `${adjustedItem.employeeName} (${adjustedItem.employeeNo}) - ${tr('إضافة', 'Addition')} ${(adjustedItem.manualAddition || 0).toLocaleString('en-US')} - ${tr('خصم', 'Deduction')} ${(adjustedItem.manualDeduction || 0).toLocaleString('en-US')} SR - ${adjustedItem.adjustmentNotes || tr('بدون ملاحظات', 'No notes')}`;
       } else if (createdBatch) {
         auditAction = tr('إنشاء دفعة تحويل رواتب', 'Created salary transfer batch');
-        auditDetails = `${createdBatch.batchNumber} - ${createdBatch.employeesCount} ${tr('موظف', 'employees')} - ${createdBatch.totalAmount.toLocaleString()} SAR - ${tr('الحالة:', 'Status:')} ${createdBatch.status}`;
+        auditDetails = `${createdBatch.batchNumber} - ${createdBatch.employeesCount} ${tr('موظف', 'employees')} - ${createdBatch.totalAmount.toLocaleString('en-US')} SR - ${tr('الحالة:', 'Status:')} ${createdBatch.status}`;
       } else if (changedBatch) {
         auditAction = tr('تحديث حالة دفعة تحويل رواتب', 'Updated salary transfer batch status');
-        auditDetails = `${changedBatch.batchNumber} - ${tr('الحالة الجديدة:', 'New status:')} ${changedBatch.status} - ${changedBatch.totalAmount.toLocaleString()} SAR`;
+        auditDetails = `${changedBatch.batchNumber} - ${tr('الحالة الجديدة:', 'New status:')} ${changedBatch.status} - ${changedBatch.totalAmount.toLocaleString('en-US')} SR`;
       }
 
       const log: AuditLog = {

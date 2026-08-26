@@ -393,7 +393,7 @@ export const LoansPenaltiesView: React.FC<LoansPenaltiesViewProps> = ({
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block font-semibold text-slate-700 mb-1">{tr('إجمالي مبلغ السلفة (SAR) *', 'Total loan amount (SAR) *')}</label>
+                  <label className="block font-semibold text-slate-700 mb-1">{tr('إجمالي مبلغ السلفة (SR) *', 'Total loan amount (SR) *')}</label>
                   <input
                     type="number"
                     required
@@ -488,7 +488,7 @@ export const LoansPenaltiesView: React.FC<LoansPenaltiesViewProps> = ({
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block font-semibold text-slate-700 mb-1">{tr('مبلغ الخصم (SAR) *', 'Deduction amount (SAR) *')}</label>
+                  <label className="block font-semibold text-slate-700 mb-1">{tr('مبلغ الخصم (SR) *', 'Deduction amount (SR) *')}</label>
                   <input
                     type="number"
                     required

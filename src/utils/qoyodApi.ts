@@ -19,8 +19,8 @@ export function buildQoyodJournalPayload(batch: JournalBatch, company: Company):
         account_id: accountId,
         amount: Number(line.debit.toFixed(2)),
         comment: line.descriptionAr 
-          ? `${line.descriptionAr} (${line.debit.toFixed(2)} ر.س)`
-          : `مدين ${line.debit.toFixed(2)} ريال - ${line.accountNameAr || ''}`,
+          ? `${line.descriptionAr} (${line.debit.toFixed(2)} SR)`
+          : `مدين ${line.debit.toFixed(2)} SR - ${line.accountNameAr || ''}`,
       });
     }
 
@@ -29,8 +29,8 @@ export function buildQoyodJournalPayload(batch: JournalBatch, company: Company):
         account_id: accountId,
         amount: Number(line.credit.toFixed(2)),
         comment: line.descriptionAr 
-          ? `${line.descriptionAr} (${line.credit.toFixed(2)} ر.س)`
-          : `دائن ${line.credit.toFixed(2)} ريال - ${line.accountNameAr || ''}`,
+          ? `${line.descriptionAr} (${line.credit.toFixed(2)} SR)`
+          : `دائن ${line.credit.toFixed(2)} SR - ${line.accountNameAr || ''}`,
       });
     }
   });
@@ -95,7 +95,7 @@ export async function sendJournalEntryToQoyod(
       const data: QoyodJournalEntryResponse = await response.json();
       return {
         success: true,
-        message: `تم إنشاء وترحيل قيد اليومية بنجاح في برنامج قيود برقم مرجعي: (ID: ${data.id}) بقيمة إجمالية ${data.total_debit || batch.totalDebit} ر.س`,
+        message: `تم إنشاء وترحيل قيد اليومية بنجاح في برنامج قيود برقم مرجعي: (ID: ${data.id}) بقيمة إجمالية ${data.total_debit || batch.totalDebit} SR`,
         responseData: data,
         curlCommand,
       };

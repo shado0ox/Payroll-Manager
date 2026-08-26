@@ -78,7 +78,7 @@ export const AuditLogsView: React.FC<AuditLogsViewProps> = ({ logs }) => {
                 filteredLogs.map((log) => (
                   <tr key={log.id} className="hover:bg-slate-50">
                     <td className="py-3 px-4 font-mono text-slate-600">
-                      {new Date(log.timestamp).toLocaleString(language === 'ar' ? 'ar-SA' : 'en-GB')}
+                      {new Date(log.timestamp).toLocaleString('en-GB')}
                     </td>
                     <td className="py-3 px-4 font-semibold text-slate-900">
                       {log.userName}

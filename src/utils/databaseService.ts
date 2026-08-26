@@ -105,7 +105,7 @@ export async function persistFullStateToDatabase(state: AppState): Promise<Datab
     // PostgreSQL is the only persistence layer. Never mirror payroll/PII in browser storage.
     if (window.indexedDB) indexedDB.deleteDatabase(DB_NAME);
 
-    const now = new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const now = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
     return {
       isLocalConnected: false,

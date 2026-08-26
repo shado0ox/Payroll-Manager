@@ -1297,7 +1297,7 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
               <div className="pt-3 border-t border-slate-100">
                 <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider mb-3 flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full bg-indigo-500" />
-                  <span>{language === 'ar' ? 'سلم الرواتب والبدلات الثابتة (بالريال السعودي)' : 'Salary and fixed allowances (SAR)'}</span>
+                  <span>{language === 'ar' ? 'سلم الرواتب والبدلات الثابتة (SR)' : 'Salary and fixed allowances (SR)'}</span>
                 </h4>
                 <div className="grid grid-cols-1 sm:grid-cols-5 gap-3.5">
                   <div>

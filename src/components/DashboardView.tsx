@@ -64,14 +64,14 @@ const CustomBarTooltip = ({ active, payload, label }: any) => {
                 <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: entry.color }} />
                 <span>{entry.name}:</span>
               </span>
-              <span className="font-semibold text-white">{formatNumber(entry.value)} SAR</span>
+              <span className="font-semibold text-white">{formatNumber(entry.value)} SR</span>
             </div>
           ))}
           {payload.length > 1 && (
             <div className="pt-1.5 mt-1.5 border-t border-slate-700/80 flex justify-between font-bold text-emerald-400">
               <span>{tr('الإجمالي:', 'Total:')}</span>
               <span>
-                {formatNumber(payload.reduce((sum: number, p: any) => sum + (Number(p.value) || 0), 0))} SAR
+                {formatNumber(payload.reduce((sum: number, p: any) => sum + (Number(p.value) || 0), 0))} SR
               </span>
             </div>
           )}
@@ -95,7 +95,7 @@ const CustomPieTooltip = ({ active, payload }: any) => {
         </div>
         <div className="flex justify-between text-slate-300">
           <span>{tr('المبلغ:', 'Amount:')}</span>
-          <span className="font-bold text-white">{formatNumber(data.value)} SAR</span>
+          <span className="font-bold text-white">{formatNumber(data.value)} SR</span>
         </div>
         <div className="flex justify-between text-slate-300 mt-1">
           <span>{tr('النسبة:', 'Percentage:')}</span>
@@ -266,7 +266,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
         {/* Total Gross / Entitlements */}
         <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-xs hover:border-slate-300 transition-all">
-          <p className="text-slate-500 text-sm font-medium">{tr('إجمالي المستحقات', 'Gross Earnings')} (SAR)</p>
+          <p className="text-slate-500 text-sm font-medium">{tr('إجمالي المستحقات', 'Gross Earnings')} (SR)</p>
           <h3 className="text-3xl font-bold text-slate-800 mt-1 tracking-tight">
             {formatNumber(totalGross)}
           </h3>
@@ -419,7 +419,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none text-center">
                 <span className="text-[10px] text-slate-400 font-semibold">{tr('إجمالي الكتلة', 'Total Payroll')}</span>
                 <span className="text-sm font-bold text-slate-800">{formatNumber(totalGross)}</span>
-                <span className="text-[9px] text-slate-400">SAR</span>
+                <span className="text-[9px] text-slate-400">SR</span>
               </div>
             </div>
           </div>

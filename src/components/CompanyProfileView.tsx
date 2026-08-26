@@ -836,7 +836,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
                 onChange={(e) => setFormData({ ...formData, currency: e.target.value })}
                 className="w-full px-3.5 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white font-semibold text-slate-900"
               >
-                <option value="SAR">{tr('ريال سعودي (SAR - ر.س)', 'Saudi Riyal (SAR)')}</option>
+                <option value="SAR">{tr('ريال سعودي (SR)', 'Saudi Riyal (SR)')}</option>
                 <option value="USD">{tr('دولار أمريكي (USD - $)', 'US Dollar (USD)')}</option>
                 <option value="AED">{tr('درهم إماراتي (AED)', 'UAE Dirham (AED)')}</option>
               </select>
@@ -1850,7 +1850,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
                 <p className="text-[11px] text-slate-600 mt-1">{tr('تُستخدم في لوحة التحكم لمقارنة الميزانية المحددة بالمسير الفعلي لأحدث فترة. اتركها صفراً إذا لم تعتمد ميزانية بعد.', 'Used by the dashboard to compare the configured budget with the latest actual payroll. Leave it at zero if no budget has been approved.')}</p>
               </div>
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">{tr('سقف الميزانية الشهرية (ر.س)', 'Monthly budget limit (SAR)')}</label>
+                <label className="block text-xs font-bold text-slate-700 mb-1">{tr('سقف الميزانية الشهرية (SR)', 'Monthly budget limit (SR)')}</label>
                 <input
                   type="number"
                   min="0"
@@ -2084,7 +2084,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
                   })}
                   className="w-full px-3.5 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white font-mono font-bold text-slate-900"
                 />
-                <span className="text-xs font-bold text-slate-600">{tr('ريال سعودي', 'SAR')}</span>
+                <span className="text-xs font-bold text-slate-600">SR</span>
               </div>
             </div>
 
@@ -2124,7 +2124,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
                 className="w-full px-3.5 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white font-semibold text-slate-900"
               >
                 <option value="2">{tr('منزلتين عشريتين (هللات - 0.00)', 'Two decimal places (halalas - 0.00)')}</option>
-                <option value="0">{tr('أقرب ريال صحيح (بدون كسور)', 'Nearest whole SAR (no decimals)')}</option>
+                <option value="0">{tr('أقرب رقم صحيح (بدون كسور)', 'Nearest whole number (no decimals)')}</option>
                 <option value="3">{tr('ثلاث منازل عشرية (0.000)', 'Three decimal places (0.000)')}</option>
               </select>
             </div>

@@ -304,16 +304,15 @@ export function roundAmount(val: number, decimals: number = 2): number {
 }
 
 export function formatSAR(val: number): string {
-  return new Intl.NumberFormat('ar-SA', {
-    style: 'currency',
-    currency: 'SAR',
+  const formatted = new Intl.NumberFormat('en-US', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }).format(val || 0);
+  return `${formatted} SR`;
 }
 
 export function formatNumber(val: number, decimals: number = 2): string {
-  return new Intl.NumberFormat('ar-SA', {
+  return new Intl.NumberFormat('en-US', {
     minimumFractionDigits: decimals,
     maximumFractionDigits: decimals,
   }).format(val || 0);

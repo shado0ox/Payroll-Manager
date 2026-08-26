@@ -367,7 +367,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
                             {user.name} {isSelf && <span className="text-[10px] text-emerald-600 font-normal">{language === 'ar' ? '(أنت)' : '(You)'}</span>}
                           </div>
                           <div className="text-[10px] text-slate-400 truncate">
-                            {language === 'ar' ? 'أنشئ:' : 'Created:'} {new Date(user.createdAt).toLocaleDateString(language === 'ar' ? 'ar-SA' : 'en-GB')}
+                            {language === 'ar' ? 'أنشئ:' : 'Created:'} {new Date(user.createdAt).toLocaleDateString('en-GB')}
                           </div>
                         </div>
                       </div>
