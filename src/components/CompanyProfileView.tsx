@@ -391,7 +391,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
   const handleSaveDeptSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!deptFormData.nameAr?.trim()) {
-      alert('يرجى إدخال اسم القسم بالعربية');
+      alert(tr('يرجى إدخال اسم القسم بالعربية', 'Enter the department name in Arabic.'));
       return;
     }
 
@@ -424,11 +424,11 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
   const handleDeleteDept = (dept: DepartmentInfo) => {
     const assignedCount = companyEmployees.filter(e => e.department === dept.nameAr).length;
     if (assignedCount > 0) {
-      if (!confirm(`يوجد ${assignedCount} موظفاً مرتبطين بهذا القسم (${dept.nameAr}). هل أنت متأكد من حذف القسم من ملف المنشأة؟`)) {
+      if (!confirm(tr(`يوجد ${assignedCount} موظفاً مرتبطين بهذا القسم (${dept.nameAr}). هل أنت متأكد من حذف القسم من ملف المنشأة؟`, `${assignedCount} employees are assigned to this department (${dept.nameEn || dept.nameAr}). Delete it from the Company Profile?`))) {
         return;
       }
     } else {
-      if (!confirm(`هل أنت متأكد من حذف القسم (${dept.nameAr})؟`)) return;
+      if (!confirm(tr(`هل أنت متأكد من حذف القسم (${dept.nameAr})؟`, `Delete department (${dept.nameEn || dept.nameAr})?`))) return;
     }
 
     const updatedDepts = departmentsList.filter(d => d.id !== dept.id);
@@ -460,7 +460,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
   const handleSaveCostCenterSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!costCenterFormData.nameAr?.trim() || !costCenterFormData.code?.trim()) {
-      alert('يرجى إدخال رمز واسم مركز التكلفة');
+      alert(tr('يرجى إدخال رمز واسم مركز التكلفة', 'Enter the cost center code and name.'));
       return;
     }
 
@@ -491,11 +491,11 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
   const handleDeleteCostCenter = (cc: CostCenter) => {
     const assignedCount = companyEmployees.filter(e => e.costCenterId === cc.id).length;
     if (assignedCount > 0) {
-      if (!confirm(`يوجد ${assignedCount} موظفاً مسجلين على مركز التكلفة (${cc.nameAr}). هل تريد بالتأكيد حذفه؟`)) {
+      if (!confirm(tr(`يوجد ${assignedCount} موظفاً مسجلين على مركز التكلفة (${cc.nameAr}). هل تريد بالتأكيد حذفه؟`, `${assignedCount} employees are assigned to cost center (${cc.nameEn || cc.nameAr}). Delete it?`))) {
         return;
       }
     } else {
-      if (!confirm(`هل أنت متأكد من حذف مركز التكلفة (${cc.nameAr})؟`)) return;
+      if (!confirm(tr(`هل أنت متأكد من حذف مركز التكلفة (${cc.nameAr})؟`, `Delete cost center (${cc.nameEn || cc.nameAr})?`))) return;
     }
 
     const updatedCC = (formData.costCenters || []).filter(c => c.id !== cc.id);
@@ -1685,8 +1685,8 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
         <div className="bg-white rounded-2xl p-6 border border-slate-200/80 shadow-sm space-y-6">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-slate-100 pb-4">
             <div>
-              <h3 className="text-sm font-bold text-slate-900">الهيكل الإداري والأقسام لمنشأة {formData.nameAr}</h3>
-              <p className="text-xs text-slate-500">إضافة وتعديل الأقسام وتعيين مدراء الإدارات وربط الموظفين</p>
+              <h3 className="text-sm font-bold text-slate-900">{tr('الهيكل الإداري والأقسام لمنشأة', 'Departments and organizational structure for')} {language === 'ar' ? formData.nameAr : (formData.nameEn || formData.nameAr)}</h3>
+              <p className="text-xs text-slate-500">{tr('إضافة وتعديل الأقسام وتعيين مدراء الإدارات وربط الموظفين', 'Add and edit departments, assign department heads, and view linked employees')}</p>
             </div>
             <button
               type="button"
@@ -1694,7 +1694,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
               className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center gap-2 cursor-pointer shadow-sm self-start"
             >
               <Plus className="w-4 h-4" />
-              <span>إضافة قسم جديد</span>
+              <span>{tr('إضافة قسم جديد', 'Add department')}</span>
             </button>
           </div>
 
@@ -1709,8 +1709,8 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
                       <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-700 font-mono text-[10px] font-bold">
                         {dept.code}
                       </span>
-                      <h4 className="text-sm font-bold text-slate-900 mt-1">{dept.nameAr}</h4>
-                      {dept.nameEn && <p className="text-[11px] text-slate-400 font-medium" dir="ltr">{dept.nameEn}</p>}
+                      <h4 className="text-sm font-bold text-slate-900 mt-1">{language === 'ar' ? dept.nameAr : (dept.nameEn || dept.nameAr)}</h4>
+                      {(language === 'ar' ? dept.nameEn : dept.nameAr) && <p className="text-[11px] text-slate-400 font-medium" dir={language === 'ar' ? 'ltr' : 'rtl'}>{language === 'ar' ? dept.nameEn : dept.nameAr}</p>}
                     </div>
 
                     <div className="flex items-center gap-1">
@@ -1718,7 +1718,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
                         type="button"
                         onClick={() => handleOpenEditDept(dept)}
                         className="p-1.5 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg"
-                        title="تعديل القسم"
+                        title={tr('تعديل القسم', 'Edit department')}
                       >
                         <Edit className="w-3.5 h-3.5" />
                       </button>
@@ -1726,7 +1726,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
                         type="button"
                         onClick={() => handleDeleteDept(dept)}
                         className="p-1.5 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-lg"
-                        title="حذف القسم"
+                        title={tr('حذف القسم', 'Delete department')}
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
@@ -1734,20 +1734,20 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
                   </div>
 
                   <p className="text-[11px] text-slate-500 line-clamp-2 mb-3 min-h-[32px]">
-                    {dept.description || 'لا يوجد وصف إضافي للقسم'}
+                    {dept.description || tr('لا يوجد وصف إضافي للقسم', 'No department description')}
                   </p>
 
                   <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
                     <div className="text-slate-600">
-                      <span className="text-[11px] text-slate-400 block">مدير / رئيس القسم:</span>
-                      <span className="font-bold text-[11px] text-slate-800">{dept.headName || 'غير محدد'}</span>
+                      <span className="text-[11px] text-slate-400 block">{tr('مدير / رئيس القسم:', 'Department head:')}</span>
+                      <span className="font-bold text-[11px] text-slate-800">{dept.headName || tr('غير محدد', 'Not assigned')}</span>
                     </div>
 
                     <div className="text-left">
-                      <span className="text-[11px] text-slate-400 block">الموظفين:</span>
+                      <span className="text-[11px] text-slate-400 block">{tr('الموظفين:', 'Employees:')}</span>
                       <span className="inline-flex items-center gap-1 font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md text-[11px]">
                         <Users className="w-3 h-3" />
-                        {assignedEmployees.length} موظف
+                        {assignedEmployees.length} {tr('موظف', 'employees')}
                       </span>
                     </div>
                   </div>
@@ -1763,8 +1763,8 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
         <div className="bg-white rounded-2xl p-6 border border-slate-200/80 shadow-sm space-y-6">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-slate-100 pb-4">
             <div>
-              <h3 className="text-sm font-bold text-slate-900">مراكز التكلفة المحاسبية (Cost Centers)</h3>
-              <p className="text-xs text-slate-500">توزيع مصاريف الرواتب والمخصصات على مراكز التكلفة المختلفة لترحيل القيود بدقة</p>
+              <h3 className="text-sm font-bold text-slate-900">{tr('مراكز التكلفة المحاسبية (Cost Centers)', 'Accounting Cost Centers')}</h3>
+              <p className="text-xs text-slate-500">{tr('توزيع مصاريف الرواتب والمخصصات على مراكز التكلفة المختلفة لترحيل القيود بدقة', 'Allocate payroll expenses and provisions to cost centers for accurate journal posting')}</p>
             </div>
             <button
               type="button"
@@ -1772,7 +1772,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
               className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center gap-2 cursor-pointer shadow-sm self-start"
             >
               <Plus className="w-4 h-4" />
-              <span>إضافة مركز تكلفة جديد</span>
+              <span>{tr('إضافة مركز تكلفة جديد', 'Add cost center')}</span>
             </button>
           </div>
 
@@ -1787,8 +1787,8 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
                       <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-800 font-mono text-[10px] font-bold border border-emerald-200">
                         {cc.code}
                       </span>
-                      <h4 className="text-sm font-bold text-slate-900 mt-1">{cc.nameAr}</h4>
-                      {cc.nameEn && <p className="text-[11px] text-slate-400 font-medium" dir="ltr">{cc.nameEn}</p>}
+                      <h4 className="text-sm font-bold text-slate-900 mt-1">{language === 'ar' ? cc.nameAr : (cc.nameEn || cc.nameAr)}</h4>
+                      {(language === 'ar' ? cc.nameEn : cc.nameAr) && <p className="text-[11px] text-slate-400 font-medium" dir={language === 'ar' ? 'ltr' : 'rtl'}>{language === 'ar' ? cc.nameEn : cc.nameAr}</p>}
                     </div>
 
                     <div className="flex items-center gap-1">
@@ -1796,7 +1796,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
                         type="button"
                         onClick={() => handleOpenEditCostCenter(cc)}
                         className="p-1.5 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg"
-                        title="تعديل مركز التكلفة"
+                        title={tr('تعديل مركز التكلفة', 'Edit cost center')}
                       >
                         <Edit className="w-3.5 h-3.5" />
                       </button>
@@ -1804,7 +1804,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
                         type="button"
                         onClick={() => handleDeleteCostCenter(cc)}
                         className="p-1.5 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-lg"
-                        title="حذف مركز التكلفة"
+                        title={tr('حذف مركز التكلفة', 'Delete cost center')}
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
@@ -1812,9 +1812,9 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
                   </div>
 
                   <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
-                    <span className="text-[11px] text-slate-400">الموظفين المنسوبين للمركز:</span>
+                    <span className="text-[11px] text-slate-400">{tr('الموظفين المنسوبين للمركز:', 'Employees assigned to center:')}</span>
                     <span className="font-bold text-slate-800 bg-slate-100 px-2.5 py-0.5 rounded-lg text-[11px]">
-                      {assignedEmpCount} موظف
+                      {assignedEmpCount} {tr('موظف', 'employees')}
                     </span>
                   </div>
                 </div>
@@ -2431,7 +2431,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
       {/* ========================================================================= */}
       {isDeptModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
-          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-100 animate-scaleUp">
+          <div data-no-translate className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-100 animate-scaleUp">
             <div className="flex items-center justify-between border-b border-slate-100 pb-4 mb-4">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-2xl bg-emerald-50 text-emerald-700 flex items-center justify-center border border-emerald-200">
@@ -2439,9 +2439,9 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
                 </div>
                 <div>
                   <h3 className="text-base font-bold text-slate-900">
-                    {editingDept ? 'تعديل بيانات القسم' : 'إضافة قسم إداري جديد'}
+                    {editingDept ? tr('تعديل بيانات القسم', 'Edit Department') : tr('إضافة قسم إداري جديد', 'Add Department')}
                   </h3>
-                  <p className="text-xs text-slate-500">منشأة: {formData.nameAr}</p>
+                  <p className="text-xs text-slate-500">{tr('منشأة', 'Company')}: {language === 'ar' ? formData.nameAr : (formData.nameEn || formData.nameAr)}</p>
                 </div>
               </div>
               <button 
@@ -2454,7 +2454,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
 
             <form onSubmit={handleSaveDeptSubmit} className="space-y-3.5">
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">رمز القسم (Code) *</label>
+                <label className="block text-xs font-bold text-slate-700 mb-1">{tr('رمز القسم (Code) *', 'Department code *')}</label>
                 <input
                   type="text"
                   required
@@ -2466,19 +2466,19 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">اسم القسم بالعربية *</label>
+                <label className="block text-xs font-bold text-slate-700 mb-1">{tr('اسم القسم بالعربية *', 'Department name in Arabic *')}</label>
                 <input
                   type="text"
                   required
                   value={deptFormData.nameAr || ''}
                   onChange={(e) => setDeptFormData({ ...deptFormData, nameAr: e.target.value })}
                   className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white font-semibold"
-                  placeholder="تقنية المعلومات والتطوير"
+                  placeholder={tr('تقنية المعلومات والتطوير', 'تقنية المعلومات والتطوير')}
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">اسم القسم بالإنجليزية</label>
+                <label className="block text-xs font-bold text-slate-700 mb-1">{tr('اسم القسم بالإنجليزية', 'Department name in English')}</label>
                 <input
                   type="text"
                   value={deptFormData.nameEn || ''}
@@ -2490,24 +2490,24 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">اسم مدير / رئيس القسم</label>
+                <label className="block text-xs font-bold text-slate-700 mb-1">{tr('اسم مدير / رئيس القسم', 'Department head name')}</label>
                 <input
                   type="text"
                   value={deptFormData.headName || ''}
                   onChange={(e) => setDeptFormData({ ...deptFormData, headName: e.target.value })}
                   className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white"
-                  placeholder="المهندس / خالد أحمد"
+                  placeholder={tr('المهندس / خالد أحمد', 'Department head')}
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">وصف واختصاصات القسم</label>
+                <label className="block text-xs font-bold text-slate-700 mb-1">{tr('وصف واختصاصات القسم', 'Department description and responsibilities')}</label>
                 <textarea
                   rows={2}
                   value={deptFormData.description || ''}
                   onChange={(e) => setDeptFormData({ ...deptFormData, description: e.target.value })}
                   className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white resize-none"
-                  placeholder="مهام ومسؤوليات هذا القسم..."
+                  placeholder={tr('مهام ومسؤوليات هذا القسم...', 'Department duties and responsibilities...')}
                 />
               </div>
 
@@ -2517,13 +2517,13 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
                   onClick={() => setIsDeptModalOpen(false)}
                   className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl"
                 >
-                  إلغاء
+                  {tr('إلغاء', 'Cancel')}
                 </button>
                 <button
                   type="submit"
                   className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-md cursor-pointer"
                 >
-                  {editingDept ? 'حفظ التعديلات' : 'إضافة القسم'}
+                  {editingDept ? tr('حفظ التعديلات', 'Save changes') : tr('إضافة القسم', 'Add department')}
                 </button>
               </div>
             </form>
@@ -2536,7 +2536,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
       {/* ========================================================================= */}
       {isCostCenterModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
-          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-100 animate-scaleUp">
+          <div data-no-translate className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-100 animate-scaleUp">
             <div className="flex items-center justify-between border-b border-slate-100 pb-4 mb-4">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-2xl bg-emerald-50 text-emerald-700 flex items-center justify-center border border-emerald-200">
@@ -2544,9 +2544,9 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
                 </div>
                 <div>
                   <h3 className="text-base font-bold text-slate-900">
-                    {editingCostCenter ? 'تعديل مركز التكلفة' : 'إضافة مركز تكلفة جديد'}
+                    {editingCostCenter ? tr('تعديل مركز التكلفة', 'Edit Cost Center') : tr('إضافة مركز تكلفة جديد', 'Add Cost Center')}
                   </h3>
-                  <p className="text-xs text-slate-500">منشأة: {formData.nameAr}</p>
+                  <p className="text-xs text-slate-500">{tr('منشأة', 'Company')}: {language === 'ar' ? formData.nameAr : (formData.nameEn || formData.nameAr)}</p>
                 </div>
               </div>
               <button 
@@ -2559,31 +2559,31 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
 
             <form onSubmit={handleSaveCostCenterSubmit} className="space-y-3.5">
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">رمز مركز التكلفة (Code) *</label>
+                <label className="block text-xs font-bold text-slate-700 mb-1">{tr('رمز مركز التكلفة (Code) *', 'Cost center code *')}</label>
                 <input
                   type="text"
                   required
                   value={costCenterFormData.code || ''}
                   onChange={(e) => setCostCenterFormData({ ...costCenterFormData, code: e.target.value.toUpperCase() })}
                   className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white font-mono font-bold"
-                  placeholder="CC-100 أو CC-SALES"
+                  placeholder="CC-100 / CC-SALES"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">اسم مركز التكلفة بالعربية *</label>
+                <label className="block text-xs font-bold text-slate-700 mb-1">{tr('اسم مركز التكلفة بالعربية *', 'Cost center name in Arabic *')}</label>
                 <input
                   type="text"
                   required
                   value={costCenterFormData.nameAr || ''}
                   onChange={(e) => setCostCenterFormData({ ...costCenterFormData, nameAr: e.target.value })}
                   className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white font-semibold"
-                  placeholder="المبيعات والتسويق"
+                  placeholder={tr('المبيعات والتسويق', 'المبيعات والتسويق')}
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">الاسم بالإنجليزية</label>
+                <label className="block text-xs font-bold text-slate-700 mb-1">{tr('الاسم بالإنجليزية', 'Name in English')}</label>
                 <input
                   type="text"
                   value={costCenterFormData.nameEn || ''}
@@ -2600,13 +2600,13 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
                   onClick={() => setIsCostCenterModalOpen(false)}
                   className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl"
                 >
-                  إلغاء
+                  {tr('إلغاء', 'Cancel')}
                 </button>
                 <button
                   type="submit"
                   className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-md cursor-pointer"
                 >
-                  {editingCostCenter ? 'حفظ التعديلات' : 'إضافة المركز'}
+                  {editingCostCenter ? tr('حفظ التعديلات', 'Save changes') : tr('إضافة المركز', 'Add cost center')}
                 </button>
               </div>
             </form>
