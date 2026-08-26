@@ -51,6 +51,8 @@ const PIE_COLORS = ['#10b981', '#0ea5e9', '#f59e0b', '#8b5cf6', '#ec4899'];
 
 // Custom CustomTooltip for Recharts in Arabic RTL
 const CustomBarTooltip = ({ active, payload, label }: any) => {
+  const { language } = useLanguage();
+  const tr = (ar: string, en: string) => language === 'ar' ? ar : en;
   if (active && payload && payload.length) {
     return (
       <div className="bg-slate-900/95 backdrop-blur-md text-white p-3.5 rounded-xl shadow-xl border border-slate-700/80 text-xs z-50 text-right min-w-[190px]">
@@ -62,14 +64,14 @@ const CustomBarTooltip = ({ active, payload, label }: any) => {
                 <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: entry.color }} />
                 <span>{entry.name}:</span>
               </span>
-              <span className="font-semibold text-white">{formatNumber(entry.value)} ر.س</span>
+              <span className="font-semibold text-white">{formatNumber(entry.value)} SAR</span>
             </div>
           ))}
           {payload.length > 1 && (
             <div className="pt-1.5 mt-1.5 border-t border-slate-700/80 flex justify-between font-bold text-emerald-400">
-              <span>الإجمالي:</span>
+              <span>{tr('الإجمالي:', 'Total:')}</span>
               <span>
-                {formatNumber(payload.reduce((sum: number, p: any) => sum + (Number(p.value) || 0), 0))} ر.س
+                {formatNumber(payload.reduce((sum: number, p: any) => sum + (Number(p.value) || 0), 0))} SAR
               </span>
             </div>
           )}
@@ -81,6 +83,8 @@ const CustomBarTooltip = ({ active, payload, label }: any) => {
 };
 
 const CustomPieTooltip = ({ active, payload }: any) => {
+  const { language } = useLanguage();
+  const tr = (ar: string, en: string) => language === 'ar' ? ar : en;
   if (active && payload && payload.length) {
     const data = payload[0];
     return (
@@ -90,11 +94,11 @@ const CustomPieTooltip = ({ active, payload }: any) => {
           <span className="font-bold text-slate-100">{data.name}</span>
         </div>
         <div className="flex justify-between text-slate-300">
-          <span>المبلغ:</span>
-          <span className="font-bold text-white">{formatNumber(data.value)} ر.س</span>
+          <span>{tr('المبلغ:', 'Amount:')}</span>
+          <span className="font-bold text-white">{formatNumber(data.value)} SAR</span>
         </div>
         <div className="flex justify-between text-slate-300 mt-1">
-          <span>النسبة:</span>
+          <span>{tr('النسبة:', 'Percentage:')}</span>
           <span className="font-bold text-emerald-400">{data.payload.percentage}%</span>
         </div>
       </div>
@@ -116,6 +120,16 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const { language } = useLanguage();
   const tr = (ar: string, en: string) => language === 'ar' ? ar : en;
   const [chartViewMode, setChartViewMode] = useState<'total' | 'average'>('total');
+  const payrollReadiness = useMemo(() => {
+    const activeEmployees = employees.filter(employee => employee.employmentStatus === 'ACTIVE');
+    if (!activeEmployees.length) return 0;
+    const ready = activeEmployees.filter(employee =>
+      Number(employee.baseSalary) > 0 &&
+      Boolean(employee.bankName) &&
+      /^SA\d{22}$/.test((employee.bankIban || '').replace(/\s/g, ''))
+    ).length;
+    return Math.round((ready / activeEmployees.length) * 100);
+  }, [employees]);
 
   // Get current active or latest payroll run
   const companyPayrollRuns = payrollRuns
@@ -130,7 +144,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     const deptMap: Record<string, { basic: number; allowances: number; count: number; name: string }> = {};
 
     companyEmployees.forEach((emp) => {
-      const deptName = emp.department || 'عام';
+      const deptName = emp.department || tr('عام', 'General');
       if (!deptMap[deptName]) {
         deptMap[deptName] = { basic: 0, allowances: 0, count: 0, name: deptName };
       }
@@ -146,11 +160,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
     return Object.values(deptMap).map(d => ({
       name: d.name,
-      'الراتب الأساسي': chartViewMode === 'total' ? Math.round(d.basic) : Math.round(d.basic / Math.max(1, d.count)),
-      'البدلات والمزايا': chartViewMode === 'total' ? Math.round(d.allowances) : Math.round(d.allowances / Math.max(1, d.count)),
+      basic: chartViewMode === 'total' ? Math.round(d.basic) : Math.round(d.basic / Math.max(1, d.count)),
+      allowances: chartViewMode === 'total' ? Math.round(d.allowances) : Math.round(d.allowances / Math.max(1, d.count)),
       count: d.count,
     }));
-  }, [companyEmployees, chartViewMode]);
+  }, [companyEmployees, chartViewMode, language]);
 
   // Salary Structure / Allowances vs. Basic Salary Data
   const salaryStructureData = useMemo(() => {
@@ -171,20 +185,20 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
     if (grandTotal === 0) {
       return [
-        { name: 'الراتب الأساسي', value: 0, percentage: '0.0', fill: '#10b981' },
-        { name: 'بدل السكن', value: 0, percentage: '0.0', fill: '#0ea5e9' },
-        { name: 'بدل النقل', value: 0, percentage: '0.0', fill: '#f59e0b' },
-        { name: 'بدلات أخرى ومكافآت', value: 0, percentage: '0.0', fill: '#8b5cf6' },
+        { name: tr('الراتب الأساسي', 'Basic Salary'), value: 0, percentage: '0.0', fill: '#10b981' },
+        { name: tr('بدل السكن', 'Housing Allowance'), value: 0, percentage: '0.0', fill: '#0ea5e9' },
+        { name: tr('بدل النقل', 'Transport Allowance'), value: 0, percentage: '0.0', fill: '#f59e0b' },
+        { name: tr('بدلات أخرى ومكافآت', 'Other Allowances & Bonuses'), value: 0, percentage: '0.0', fill: '#8b5cf6' },
       ];
     }
 
     return [
-      { name: 'الراتب الأساسي', value: Math.round(totalBasic), percentage: ((totalBasic / grandTotal) * 100).toFixed(1), fill: '#10b981' },
-      { name: 'بدل السكن', value: Math.round(totalHousing), percentage: ((totalHousing / grandTotal) * 100).toFixed(1), fill: '#0ea5e9' },
-      { name: 'بدل النقل', value: Math.round(totalTransport), percentage: ((totalTransport / grandTotal) * 100).toFixed(1), fill: '#f59e0b' },
-      { name: 'بدلات أخرى ومكافآت', value: Math.round(totalOther), percentage: ((totalOther / grandTotal) * 100).toFixed(1), fill: '#8b5cf6' },
+      { name: tr('الراتب الأساسي', 'Basic Salary'), value: Math.round(totalBasic), percentage: ((totalBasic / grandTotal) * 100).toFixed(1), fill: '#10b981' },
+      { name: tr('بدل السكن', 'Housing Allowance'), value: Math.round(totalHousing), percentage: ((totalHousing / grandTotal) * 100).toFixed(1), fill: '#0ea5e9' },
+      { name: tr('بدل النقل', 'Transport Allowance'), value: Math.round(totalTransport), percentage: ((totalTransport / grandTotal) * 100).toFixed(1), fill: '#f59e0b' },
+      { name: tr('بدلات أخرى ومكافآت', 'Other Allowances & Bonuses'), value: Math.round(totalOther), percentage: ((totalOther / grandTotal) * 100).toFixed(1), fill: '#8b5cf6' },
     ];
-  }, [companyEmployees]);
+  }, [companyEmployees, language]);
 
   // Monthly Budget Metrics
   const totalEmployeesCount = companyEmployees.length;
@@ -241,45 +255,45 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         
         {/* Total Employees */}
         <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-xs hover:border-slate-300 transition-all">
-          <p className="text-slate-500 text-sm font-medium">إجمالي الموظفين</p>
+          <p className="text-slate-500 text-sm font-medium">{tr('إجمالي الموظفين', 'Total Employees')}</p>
           <h3 className="text-3xl font-bold text-slate-800 mt-1 tracking-tight">
             {formatNumber(totalEmployeesCount)}
           </h3>
           <p className="text-xs text-slate-400 mt-2 font-medium">
-            {totalEmployeesCount > 0 ? `${totalEmployeesCount} موظف مسجل بالمنشأة` : 'لا يوجد موظفون مضافون بعد'}
+            {totalEmployeesCount > 0 ? `${totalEmployeesCount} ${tr('موظف مسجل بالمنشأة', 'employees registered')}` : tr('لا يوجد موظفون مضافون بعد', 'No employees have been added.')}
           </p>
         </div>
 
         {/* Total Gross / Entitlements */}
         <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-xs hover:border-slate-300 transition-all">
-          <p className="text-slate-500 text-sm font-medium">إجمالي المستحقات (SAR)</p>
+          <p className="text-slate-500 text-sm font-medium">{tr('إجمالي المستحقات', 'Gross Earnings')} (SAR)</p>
           <h3 className="text-3xl font-bold text-slate-800 mt-1 tracking-tight">
             {formatNumber(totalGross)}
           </h3>
           <p className="text-xs text-slate-400 mt-2">
-            شامل البدلات الثابتة
+            {tr('شامل البدلات الثابتة', 'Includes fixed allowances')}
           </p>
         </div>
 
         {/* Deductions & Absences */}
         <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-xs hover:border-slate-300 transition-all">
-          <p className="text-slate-500 text-sm font-medium">الاستقطاعات والغياب</p>
+          <p className="text-slate-500 text-sm font-medium">{tr('الاستقطاعات والغياب', 'Deductions & Absence')}</p>
           <h3 className="text-3xl font-bold text-rose-600 mt-1 tracking-tight">
             {formatNumber(totalDeductions)}
           </h3>
           <p className="text-xs text-rose-500 mt-2 font-medium">
-            تشمل تأمينات ومخالفات
+            {tr('تشمل تأمينات ومخالفات', 'Includes GOSI and penalties')}
           </p>
         </div>
 
         {/* Net Salaries */}
         <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-xs hover:border-slate-300 transition-all">
-          <p className="text-slate-500 text-sm font-medium">صافي الرواتب</p>
+          <p className="text-slate-500 text-sm font-medium">{tr('صافي الرواتب', 'Net Payroll')}</p>
           <h3 className="text-3xl font-bold text-emerald-600 mt-1 tracking-tight">
             {formatNumber(totalNet)}
           </h3>
           <p className="text-xs text-slate-400 mt-2">
-            جاهز للتحويل البنكي
+            {tr('جاهز للتحويل البنكي', 'Ready for bank transfer')}
           </p>
         </div>
 
@@ -294,9 +308,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             <div>
               <div className="flex items-center gap-2">
                 <BarChart3 className="w-5 h-5 text-emerald-600" />
-                <h4 className="font-bold text-slate-800 text-base">توزيع كتلة الرواتب حسب القسم</h4>
+                <h4 className="font-bold text-slate-800 text-base">{tr('توزيع كتلة الرواتب حسب القسم', 'Payroll Distribution by Department')}</h4>
               </div>
-              <p className="text-xs text-slate-400 mt-0.5">مقارنة الرواتب الأساسية والبدلات عبر الأقسام التشغيلية</p>
+              <p className="text-xs text-slate-400 mt-0.5">{tr('مقارنة الرواتب الأساسية والبدلات عبر الأقسام التشغيلية', 'Compare basic salaries and allowances across departments.')}</p>
             </div>
 
             {/* Toggle View: Total vs Average */}
@@ -309,7 +323,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     : 'text-slate-500 hover:text-slate-800'
                 }`}
               >
-                إجمالي القسم
+                {tr('إجمالي القسم', 'Department Total')}
               </button>
               <button
                 onClick={() => setChartViewMode('average')}
@@ -319,7 +333,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     : 'text-slate-500 hover:text-slate-800'
                 }`}
               >
-                متوسط الموظف
+                {tr('متوسط الموظف', 'Employee Average')}
               </button>
             </div>
           </div>
@@ -356,12 +370,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   wrapperStyle={{ paddingBottom: '16px', fontSize: '12px' }}
                 />
                 <Bar 
-                  dataKey="الراتب الأساسي" 
+                  dataKey="basic"
+                  name={tr('الراتب الأساسي', 'Basic Salary')}
                   fill="#10b981" 
                   radius={[4, 4, 0, 0]} 
                 />
                 <Bar 
-                  dataKey="البدلات والمزايا" 
+                  dataKey="allowances"
+                  name={tr('البدلات والمزايا', 'Allowances & Benefits')}
                   fill="#0ea5e9" 
                   radius={[4, 4, 0, 0]} 
                 />
@@ -375,9 +391,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           <div>
             <div className="flex items-center gap-2 mb-1">
               <PieChartIcon className="w-5 h-5 text-sky-600" />
-              <h4 className="font-bold text-slate-800 text-base">هيكل الأجور والبدلات</h4>
+              <h4 className="font-bold text-slate-800 text-base">{tr('هيكل الأجور والبدلات', 'Salary & Allowance Structure')}</h4>
             </div>
-            <p className="text-xs text-slate-400">نسبة البدلات مقابل الراتب الأساسي</p>
+            <p className="text-xs text-slate-400">{tr('نسبة البدلات مقابل الراتب الأساسي', 'Allowances compared with basic salary')}</p>
 
             {/* Donut Chart */}
             <div className="h-52 w-full relative mt-2" dir="ltr">
@@ -401,9 +417,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               </ResponsiveContainer>
               {/* Centered Total Label inside Donut */}
               <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none text-center">
-                <span className="text-[10px] text-slate-400 font-semibold">إجمالي الكتلة</span>
+                <span className="text-[10px] text-slate-400 font-semibold">{tr('إجمالي الكتلة', 'Total Payroll')}</span>
                 <span className="text-sm font-bold text-slate-800">{formatNumber(totalGross)}</span>
-                <span className="text-[9px] text-slate-400">ر.س</span>
+                <span className="text-[9px] text-slate-400">SAR</span>
               </div>
             </div>
           </div>
@@ -518,13 +534,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             <table className="w-full text-right border-collapse">
               <thead className="bg-slate-50 sticky top-0">
                 <tr className="text-slate-500 text-xs uppercase tracking-wider border-b border-slate-200">
-                  <th className="p-4 font-semibold">الموظف</th>
-                  <th className="p-4 font-semibold">الراتب الأساسي</th>
-                  <th className="p-4 font-semibold">بدلات</th>
-                  <th className="p-4 font-semibold">خصومات</th>
-                  <th className="p-4 font-semibold">الصافي</th>
-                  <th className="p-4 font-semibold text-center">الحالة</th>
-                  <th className="p-4 font-semibold text-center">الإجراء</th>
+                  <th className="p-4 font-semibold">{tr('الموظف', 'Employee')}</th>
+                  <th className="p-4 font-semibold">{tr('الراتب الأساسي', 'Basic Salary')}</th>
+                  <th className="p-4 font-semibold">{tr('بدلات', 'Allowances')}</th>
+                  <th className="p-4 font-semibold">{tr('خصومات', 'Deductions')}</th>
+                  <th className="p-4 font-semibold">{tr('الصافي', 'Net')}</th>
+                  <th className="p-4 font-semibold text-center">{tr('الحالة', 'Status')}</th>
+                  <th className="p-4 font-semibold text-center">{tr('الإجراء', 'Action')}</th>
                 </tr>
               </thead>
               <tbody className="text-sm text-slate-600 divide-y divide-slate-100">
@@ -538,7 +554,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                       <td className="p-4 font-medium text-slate-800">
                         <div>{item.employeeNameAr}</div>
                         <span className="text-[10px] text-slate-400">
-                          رقم وظيفي: {item.employeeNo}
+                          {tr('رقم وظيفي:', 'Employee No.:')} {item.employeeNo}
                         </span>
                       </td>
                       <td className="p-4 font-medium text-slate-700">
@@ -556,15 +572,15 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                       <td className="p-4 text-center">
                         {isApproved ? (
                           <span className="px-2.5 py-1 bg-emerald-100 text-emerald-700 rounded-full text-[10px] font-bold">
-                            معتمد
+                            {tr('معتمد', 'Approved')}
                           </span>
                         ) : isUnderReview ? (
                           <span className="px-2.5 py-1 bg-yellow-100 text-yellow-700 rounded-full text-[10px] font-bold">
-                            قيد المراجعة
+                            {tr('قيد المراجعة', 'Under Review')}
                           </span>
                         ) : (
                           <span className="px-2.5 py-1 bg-slate-100 text-slate-600 rounded-full text-[10px] font-bold">
-                            مسودة
+                            {tr('مسودة', 'Draft')}
                           </span>
                         )}
                       </td>
@@ -572,7 +588,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                         {emp && onViewEmployeeStatement ? (
                           <button
                             onClick={() => onViewEmployeeStatement(emp)}
-                            title="معاينة قسيمة الراتب"
+                            title={tr('معاينة قسيمة الراتب', 'View Payslip')}
                             className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors cursor-pointer"
                           >
                             <FileText className="w-4 h-4" />
@@ -594,24 +610,23 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           
           {/* Qoyod Integration Card */}
           <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-xs">
-            <h4 className="font-bold text-slate-700 mb-4 text-base">تكامل نظام قيود (Qoyod)</h4>
+            <h4 className="font-bold text-slate-700 mb-4 text-base">{tr('تكامل نظام قيود', 'Qoyod Integration')}</h4>
             <div className="space-y-3">
               <div className="flex justify-between items-center p-3 bg-slate-50 rounded-lg border border-slate-100">
-                <span className="text-sm text-slate-600 font-medium">ربط API</span>
+                <span className="text-sm text-slate-600 font-medium">API</span>
                 <span className="text-xs font-bold text-emerald-600 flex items-center gap-1">
-                  <span>نشط</span>
-                  <span>✓</span>
+                  <span>{tr('من إعدادات المنشأة', 'Company settings')}</span>
                 </span>
               </div>
               <div className="flex justify-between items-center p-3 bg-slate-50 rounded-lg border border-slate-100">
-                <span className="text-sm text-slate-600 font-medium">مزامنة القيود</span>
-                <span className="text-xs font-bold text-slate-500">مجدولة غداً</span>
+                <span className="text-sm text-slate-600 font-medium">{tr('مزامنة القيود', 'Journal Synchronization')}</span>
+                <span className="text-xs font-bold text-slate-500">{tr('حسب الاعتماد', 'On approval')}</span>
               </div>
               <button
                 onClick={onOpenQoyodModal}
                 className="w-full py-2.5 bg-slate-800 hover:bg-slate-900 text-white font-medium rounded-lg text-sm transition-colors shadow-xs cursor-pointer mt-2"
               >
-                إرسال القيود يدوياً الآن
+                {tr('فتح إعدادات قيود والترحيل', 'Open Qoyod Settings & Posting')}
               </button>
             </div>
           </div>
@@ -619,16 +634,16 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           {/* Compliance Card */}
           <div className="bg-[#1e293b] p-6 rounded-xl text-white shadow-lg relative overflow-hidden">
             <div className="relative z-10">
-              <h4 className="font-bold text-base mb-1 text-white">مؤشر الامتثال</h4>
-              <p className="text-xs text-slate-400 mb-4">التزام الشركة بقواعد العمل والتأمينات</p>
+              <h4 className="font-bold text-base mb-1 text-white">{tr('جاهزية بيانات الرواتب', 'Payroll Data Readiness')}</h4>
+              <p className="text-xs text-slate-400 mb-4">{tr('نسبة الموظفين النشطين المكتملة رواتبهم وبياناتهم البنكية', 'Active employees with complete salary and bank details')}</p>
               
               <div className="w-full bg-slate-700/80 h-2.5 rounded-full mb-3 overflow-hidden">
-                <div className="bg-emerald-500 h-full rounded-full transition-all duration-500" style={{ width: '94%' }} />
+                <div className="bg-emerald-500 h-full rounded-full transition-all duration-500" style={{ width: `${payrollReadiness}%` }} />
               </div>
               
               <div className="flex justify-between text-xs font-medium">
-                <span className="text-emerald-400 font-bold">94% مكتمل</span>
-                <span className="text-slate-400">6% ملاحظات</span>
+                <span className="text-emerald-400 font-bold">{payrollReadiness}% {tr('مكتمل', 'complete')}</span>
+                <span className="text-slate-400">{100 - payrollReadiness}% {tr('يحتاج استكمال', 'incomplete')}</span>
               </div>
             </div>
 

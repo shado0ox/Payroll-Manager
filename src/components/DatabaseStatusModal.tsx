@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { AppState } from '../utils/storage';
 import { DatabaseStatus, pingDatabase, exportDatabaseBackup } from '../utils/databaseService';
+import { useLanguage } from '../i18n/LanguageContext';
 
 interface DatabaseStatusModalProps {
   isOpen: boolean;
@@ -31,6 +32,8 @@ export const DatabaseStatusModal: React.FC<DatabaseStatusModalProps> = ({
   dbStatus,
   onRestoreState,
 }) => {
+  const { language } = useLanguage();
+  const tr = (ar: string, en: string) => language === 'ar' ? ar : en;
   const [isPinging, setIsPinging] = useState(false);
   const [pingResult, setPingResult] = useState<{ status: 'HEALTHY' | 'ERROR'; latencyMs: number; message: string } | null>(null);
   
@@ -62,13 +65,13 @@ export const DatabaseStatusModal: React.FC<DatabaseStatusModalProps> = ({
         const parsed = JSON.parse(content);
         if (parsed.state && parsed.state.companies && parsed.state.employees) {
           onRestoreState(parsed.state);
-          alert('تم استعادة نسخة قاعدة البيانات بنجاح!');
+          alert(tr('تم استعادة نسخة قاعدة البيانات بنجاح!', 'Database backup restored successfully.'));
           onClose();
         } else {
-          alert('ملف النسخة الاحتياطية غير متوافق أو تالف.');
+          alert(tr('ملف النسخة الاحتياطية غير متوافق أو تالف.', 'The backup file is incompatible or corrupted.'));
         }
       } catch (err: any) {
-        alert(`فشل استيراد النسخة الاحتياطية: ${err?.message || 'خطأ في قراءة الملف'}`);
+        alert(`${tr('فشل استيراد النسخة الاحتياطية:', 'Backup import failed:')} ${err?.message || tr('خطأ في قراءة الملف', 'Could not read the file')}`);
       }
     };
     reader.readAsText(file);
@@ -86,13 +89,13 @@ export const DatabaseStatusModal: React.FC<DatabaseStatusModalProps> = ({
             </div>
             <div>
               <h3 className="text-lg font-black text-slate-900 flex items-center gap-2">
-                <span>حالة قاعدة بيانات PostgreSQL</span>
+                <span>{tr('حالة قاعدة بيانات PostgreSQL', 'PostgreSQL Database Status')}</span>
                 <span className="text-xs px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-bold">
                   v2.0 Active
                 </span>
               </h3>
               <p className="text-xs text-slate-500 font-medium">
-                فحص مباشر للخادم وحالة آخر مزامنة ونسخ البيانات الاحتياطي
+                {tr('فحص مباشر للخادم وحالة آخر مزامنة ونسخ البيانات الاحتياطي', 'Live server health, last synchronization, and database backup status.')}
               </p>
             </div>
           </div>
@@ -112,11 +115,11 @@ export const DatabaseStatusModal: React.FC<DatabaseStatusModalProps> = ({
             </div>
             <div className="text-xs space-y-1">
               <div className="font-bold flex items-center gap-2">
-                <span>تعذر الوصول إلى قاعدة بيانات PostgreSQL</span>
-                <span className="px-2 py-0.5 bg-amber-200 text-amber-900 rounded-md font-mono text-[10px]">غير متصل</span>
+                <span>{tr('تعذر الوصول إلى قاعدة بيانات PostgreSQL', 'PostgreSQL is unreachable')}</span>
+                <span className="px-2 py-0.5 bg-amber-200 text-amber-900 rounded-md font-mono text-[10px]">{tr('غير متصل', 'Disconnected')}</span>
               </div>
               <p className="text-amber-800 leading-relaxed font-medium">
-                لن تُحفظ التعديلات الجديدة حتى عودة الاتصال. لا توجد نسخة محلية من بيانات الرواتب، والبيانات الموجودة على الخادم لم تُحذف.
+                {tr('لن تُحفظ التعديلات الجديدة حتى عودة الاتصال. لا توجد نسخة محلية من بيانات الرواتب، والبيانات الموجودة على الخادم لم تُحذف.', 'New changes will not be saved until the connection returns. Payroll data is not stored locally, and existing server data has not been deleted.')}
               </p>
             </div>
           </div>
@@ -134,13 +137,13 @@ export const DatabaseStatusModal: React.FC<DatabaseStatusModalProps> = ({
               </div>
               <span className={`flex items-center gap-1.5 text-[11px] font-bold px-2 py-0.5 rounded-md ${dbStatus.isChecking ? 'text-slate-600 bg-slate-200' : dbStatus.isCloudConnected ? 'text-emerald-700 bg-emerald-100/80' : 'text-rose-700 bg-rose-100'}`}>
                 <span className={`w-2 h-2 rounded-full ${dbStatus.isChecking ? 'bg-slate-400 animate-pulse' : dbStatus.isCloudConnected ? 'bg-emerald-500' : 'bg-rose-500'}`}></span>
-                <span>{dbStatus.isChecking ? 'جاري الفحص' : dbStatus.isCloudConnected ? 'متصلة ونشطة' : 'غير متصلة'}</span>
+                <span>{dbStatus.isChecking ? tr('جاري الفحص', 'Checking') : dbStatus.isCloudConnected ? tr('متصلة ونشطة', 'Connected') : tr('غير متصلة', 'Disconnected')}</span>
               </span>
             </div>
             <div className="space-y-1 text-[11px] text-slate-600 font-medium">
-              <div>المحرك: <strong className="text-slate-900 font-mono">{dbStatus.engine}</strong></div>
-              <div>واجهة الاتصال: <strong className="text-slate-900 font-mono">{dbStatus.cloudEndpoint || '/api/state'}</strong></div>
-              <div>آخر حفظ ناجح: <strong className="text-slate-900 font-mono">{dbStatus.lastSavedAt || 'لم يُسجل بعد'}</strong></div>
+              <div>{tr('المحرك:', 'Engine:')} <strong className="text-slate-900 font-mono">{dbStatus.engine}</strong></div>
+              <div>{tr('واجهة الاتصال:', 'Endpoint:')} <strong className="text-slate-900 font-mono">{dbStatus.cloudEndpoint || '/api/state'}</strong></div>
+              <div>{tr('آخر حفظ ناجح:', 'Last successful save:')} <strong className="text-slate-900 font-mono">{dbStatus.lastSavedAt || tr('لم يُسجل بعد', 'Not recorded yet')}</strong></div>
             </div>
           </div>
 
@@ -149,16 +152,16 @@ export const DatabaseStatusModal: React.FC<DatabaseStatusModalProps> = ({
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-2">
                 <ShieldCheck className="w-4 h-4 text-emerald-600" />
-                <span className="text-xs font-bold text-slate-800">سياسة حفظ البيانات</span>
+                <span className="text-xs font-bold text-slate-800">{tr('سياسة حفظ البيانات', 'Data Storage Policy')}</span>
               </div>
               <span className="flex items-center gap-1.5 text-[11px] font-bold text-emerald-700 bg-emerald-100/80 px-2 py-0.5 rounded-md">
-                <span>مركزي وآمن</span>
+                <span>{tr('مركزي وآمن', 'Centralized & Secure')}</span>
               </span>
             </div>
             <div className="space-y-1 text-[11px] text-slate-600 font-medium">
-              <div>المصدر الأساسي: <strong className="text-slate-900">قاعدة بيانات الخادم</strong></div>
-              <div>التخزين داخل المتصفح: <strong className="text-emerald-700">معطل للبيانات الحساسة</strong></div>
-              <div>آخر خطأ: <strong className={dbStatus.lastError ? 'text-rose-700' : 'text-emerald-700'}>{dbStatus.lastError || 'لا يوجد'}</strong></div>
+              <div>{tr('المصدر الأساسي:', 'Primary source:')} <strong className="text-slate-900">{tr('قاعدة بيانات الخادم', 'Server database')}</strong></div>
+              <div>{tr('التخزين داخل المتصفح:', 'Browser storage:')} <strong className="text-emerald-700">{tr('معطل للبيانات الحساسة', 'Disabled for sensitive data')}</strong></div>
+              <div>{tr('آخر خطأ:', 'Last error:')} <strong className={dbStatus.lastError ? 'text-rose-700' : 'text-emerald-700'}>{dbStatus.lastError || tr('لا يوجد', 'None')}</strong></div>
             </div>
           </div>
 
@@ -168,24 +171,24 @@ export const DatabaseStatusModal: React.FC<DatabaseStatusModalProps> = ({
         <div className="mb-5 p-4 rounded-2xl bg-slate-50 border border-slate-200">
           <h4 className="text-xs font-bold text-slate-800 mb-3 flex items-center gap-2">
             <Layers className="w-4 h-4 text-emerald-600" />
-            <span>إحصائيات السجلات المحفوظة في قاعدة البيانات</span>
+            <span>{tr('إحصائيات السجلات المحفوظة في قاعدة البيانات', 'Database Record Statistics')}</span>
           </h4>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-center">
             <div className="p-2 bg-white rounded-xl border border-slate-200 shadow-2xs">
               <div className="text-base font-black text-slate-900 font-mono">{state.companies.length}</div>
-              <div className="text-[10px] font-bold text-slate-500">شركات مسجلة</div>
+              <div className="text-[10px] font-bold text-slate-500">{tr('شركات مسجلة', 'Companies')}</div>
             </div>
             <div className="p-2 bg-white rounded-xl border border-slate-200 shadow-2xs">
               <div className="text-base font-black text-slate-900 font-mono">{state.employees.length}</div>
-              <div className="text-[10px] font-bold text-slate-500">سجلات موظفين</div>
+              <div className="text-[10px] font-bold text-slate-500">{tr('سجلات موظفين', 'Employee Records')}</div>
             </div>
             <div className="p-2 bg-white rounded-xl border border-slate-200 shadow-2xs">
               <div className="text-base font-black text-slate-900 font-mono">{state.payrollRuns.length}</div>
-              <div className="text-[10px] font-bold text-slate-500">مسيرات رواتب</div>
+              <div className="text-[10px] font-bold text-slate-500">{tr('مسيرات رواتب', 'Payroll Runs')}</div>
             </div>
             <div className="p-2 bg-white rounded-xl border border-slate-200 shadow-2xs">
               <div className="text-base font-black text-slate-900 font-mono">{state.attendance.length}</div>
-              <div className="text-[10px] font-bold text-slate-500">حركات حضور</div>
+              <div className="text-[10px] font-bold text-slate-500">{tr('حركات حضور', 'Attendance Records')}</div>
             </div>
           </div>
         </div>
@@ -199,7 +202,7 @@ export const DatabaseStatusModal: React.FC<DatabaseStatusModalProps> = ({
             className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-all cursor-pointer shadow-xs"
           >
             <Activity className={`w-4 h-4 ${isPinging ? 'animate-spin' : 'text-emerald-400'}`} />
-            <span>{isPinging ? 'جاري فحص الاستجابة...' : 'فحص استجابة قاعدة البيانات (Ping)'}</span>
+            <span>{isPinging ? tr('جاري فحص الاستجابة...', 'Checking response...') : tr('فحص استجابة قاعدة البيانات (Ping)', 'Ping Database')}</span>
           </button>
 
           <button
@@ -208,12 +211,12 @@ export const DatabaseStatusModal: React.FC<DatabaseStatusModalProps> = ({
             className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all cursor-pointer shadow-xs"
           >
             <Download className="w-4 h-4" />
-            <span>تصدير نسخة احتياطية (JSON)</span>
+            <span>{tr('تصدير نسخة احتياطية (JSON)', 'Export Backup (JSON)')}</span>
           </button>
 
           <label className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl text-xs font-bold transition-all cursor-pointer border border-slate-200">
             <Upload className="w-4 h-4" />
-            <span>استعادة نسخة</span>
+            <span>{tr('استعادة نسخة', 'Restore Backup')}</span>
             <input type="file" accept=".json" onChange={handleImportBackup} className="hidden" />
           </label>
         </div>

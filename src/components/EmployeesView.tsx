@@ -654,7 +654,7 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                         <div className="text-[10px] text-slate-500 font-mono truncate" title={emp.bankIban}>
                           {emp.bankIban.slice(0, 6)}...{emp.bankIban.slice(-4)}
                         </div>
-                      ) : <div className="text-[9px] text-amber-600 font-semibold">IBAN غير مكتمل</div>}
+                      ) : <div className="text-[9px] text-amber-600 font-semibold">{language === 'ar' ? 'IBAN غير مكتمل' : 'Incomplete IBAN'}</div>}
                       {displaySwift ? (
                         <div className="text-[9px] text-emerald-700 font-mono font-semibold truncate" title={`رمز السويفت: ${displaySwift}`}>
                           SWIFT: {displaySwift}

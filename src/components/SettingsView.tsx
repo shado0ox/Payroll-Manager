@@ -56,22 +56,28 @@ interface SettingsViewProps {
   onSelectCompany?: (companyId: string) => void;
 }
 
-const ROLE_INFO: Record<UserRole, { labelAr: string; descAr: string; color: string; badgeBg: string }> = {
+const ROLE_INFO: Record<UserRole, { labelAr: string; labelEn: string; descAr: string; descEn: string; color: string; badgeBg: string }> = {
   ADMIN: {
     labelAr: 'مسؤول النظام (Admin)',
+    labelEn: 'System Administrator',
     descAr: 'صلاحيات كاملة وغير مقيدة في إدارة النظام، المستخدمين، والشركات',
+    descEn: 'Full access to system, user, and company administration',
     color: 'text-purple-700',
     badgeBg: 'bg-purple-50 border-purple-200 text-purple-700',
   },
   COMPANY_MANAGER: {
     labelAr: 'المدير العام',
+    labelEn: 'General Manager',
     descAr: 'إدارة تشغيلية ومالية دون صلاحية إضافة أو حذف الشركات',
+    descEn: 'Operational and financial management without adding or deleting companies',
     color: 'text-indigo-700',
     badgeBg: 'bg-indigo-50 border-indigo-200 text-indigo-700',
   },
   OPERATIONS_MANAGER: {
     labelAr: 'مدير العمليات',
+    labelEn: 'Operations Manager',
     descAr: 'إدارة الموظفين والرواتب والإجازات والسلف والخصومات وأوامر الدفع دون الاعتماد',
+    descEn: 'Manage employees, payroll, leave, loans, deductions, and payment orders without approval authority',
     color: 'text-emerald-700',
     badgeBg: 'bg-emerald-50 border-emerald-200 text-emerald-700',
   },
@@ -92,6 +98,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   onSelectCompany,
 }) => {
   const { language } = useLanguage();
+  const tr = (ar: string, en: string) => language === 'ar' ? ar : en;
   const [searchTerm, setSearchTerm] = useState('');
 
   // Modals state
@@ -183,7 +190,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     }
 
     if (file.size > 3 * 1024 * 1024) {
-      alert('حجم الصورة كبير، يرجى اختيار صورة أقل من 3 ميجابايت لضمان سرعة المعالجة');
+      alert(tr('حجم الصورة كبير، يرجى اختيار صورة أقل من 3 ميجابايت لضمان سرعة المعالجة', 'The image is too large. Choose an image smaller than 3 MB.'));
       return;
     }
 
@@ -366,7 +373,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     setUserFormError(null);
 
     if (!userFormData.username.trim() || !userFormData.name.trim()) {
-      setUserFormError('يرجى ملء اسم المستخدم والاسم الكامل');
+      setUserFormError(tr('يرجى ملء اسم المستخدم والاسم الكامل', 'Enter the username and full name.'));
       return;
     }
     if ((!editingUser || userFormData.password) && !isStrongPassword(userFormData.password)) {
@@ -380,7 +387,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       (u) => u.username.toLowerCase() === cleanUsername && (!editingUser || u.id !== editingUser.id)
     );
     if (existing) {
-      setUserFormError(`اسم المستخدم "${userFormData.username}" مسجل مسبقاً، يرجى اختيار اسم مستخدم آخر`);
+      setUserFormError(`${tr('اسم المستخدم مسجل مسبقاً، يرجى اختيار اسم مستخدم آخر:', 'Username already exists. Choose another username:')} ${userFormData.username}`);
       return;
     }
 
@@ -436,13 +443,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         <div>
           <h1 className="text-xl sm:text-2xl font-bold text-slate-900 flex items-center gap-2.5">
             <Building2 className="w-6 h-6 text-emerald-600" />
-            <span>إدارة الشركات ومستخدمي المنشآت</span>
+            <span>{tr('إدارة الشركات ومستخدمي المنشآت', 'Companies & Authorized Users')}</span>
             <span className="text-xs px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 font-bold border border-emerald-200">
-              {companies.length} منشآت مسجلة
+              {companies.length} {tr('منشآت مسجلة', 'registered companies')}
             </span>
           </h1>
           <p className="text-xs text-slate-500 mt-1">
-            إدارة المنشآت القائمة في النظام، تعديل البيانات الرسمية، وإضافة وتعيين المستخدمين وصلاحيات الدخول لكل شركة
+            {tr('إدارة المنشآت القائمة في النظام وتعديل البيانات الرسمية وتعيين المستخدمين وصلاحيات الدخول لكل شركة', 'Manage companies, official records, authorized users, and access permissions.')}
           </p>
         </div>
 
@@ -452,7 +459,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-2 cursor-pointer"
           >
             <Plus className="w-4 h-4" />
-            <span>إضافة منشأة / شركة جديدة</span>
+            <span>{tr('إضافة منشأة / شركة جديدة', 'Add New Company')}</span>
           </button>
         </div>
       </div>
@@ -463,7 +470,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           <Search className="w-4 h-4 text-slate-400 absolute right-3.5 top-3" />
           <input
             type="text"
-            placeholder="بحث برمز الشركة (مثل 101)، اسم المنشأة، السجل التجاري، أو الرقم الضريبي..."
+            placeholder={tr('بحث برمز الشركة أو اسم المنشأة أو السجل التجاري أو الرقم الضريبي...', 'Search by company code, name, C.R., or VAT number...')}
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="w-full pr-10 pl-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all font-medium"
@@ -474,7 +481,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             onClick={() => setSearchTerm('')}
             className="text-xs text-slate-400 hover:text-slate-600 px-2 py-1"
           >
-            مسح
+            {tr('مسح', 'Clear')}
           </button>
         )}
       </div>
@@ -515,41 +522,41 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     <div>
                       <div className="flex items-center gap-2">
                         <h2 className="text-base font-bold text-slate-900">
-                          {comp.nameAr}
+                          {language === 'ar' ? comp.nameAr : comp.nameEn || comp.nameAr}
                         </h2>
                         {isCurrentActive && (
                           <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-md border border-emerald-200">
-                            المنشأة الحالية
+                            {tr('المنشأة الحالية', 'Current Company')}
                           </span>
                         )}
                       </div>
                       <p className="text-xs text-slate-400 mt-0.5 font-medium">
-                        {comp.nameEn}
+                        {language === 'ar' ? comp.nameEn : comp.nameAr}
                       </p>
                     </div>
                   </div>
 
                   <span className="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 text-[11px] font-mono font-bold border border-slate-200">
-                    كود: {comp.companyCode || '101'}
+                    {tr('كود:', 'Code:')} {comp.companyCode || '101'}
                   </span>
                 </div>
 
                 {/* Company Specs Grid */}
                 <div className="grid grid-cols-2 gap-2.5 mt-4 text-xs bg-slate-50/80 p-3 rounded-xl border border-slate-100">
                   <div>
-                    <span className="text-slate-400 text-[11px] block">السجل التجاري (C.R):</span>
+                    <span className="text-slate-400 text-[11px] block">{tr('السجل التجاري', 'Commercial Registration')} (C.R.):</span>
                     <span className="font-mono font-bold text-slate-800">{comp.crNumber}</span>
                   </div>
                   <div>
-                    <span className="text-slate-400 text-[11px] block">الرقم الضريبي (VAT):</span>
+                    <span className="text-slate-400 text-[11px] block">{tr('الرقم الضريبي', 'VAT Number')}:</span>
                     <span className="font-mono font-bold text-slate-800">{comp.taxNumber}</span>
                   </div>
                   <div>
-                    <span className="text-slate-400 text-[11px] block">اشتراك التأمينات (GOSI):</span>
+                    <span className="text-slate-400 text-[11px] block">{tr('اشتراك التأمينات', 'GOSI Registration')}:</span>
                     <span className="font-mono font-bold text-slate-800">{comp.gosiEstablishmentNo}</span>
                   </div>
                   <div>
-                    <span className="text-slate-400 text-[11px] block">بنك مسير الرواتب:</span>
+                    <span className="text-slate-400 text-[11px] block">{tr('بنك مسير الرواتب:', 'Payroll Bank:')}</span>
                     <span className="font-semibold text-slate-800 truncate block">{comp.bankName || 'مصرف الراجحي'}</span>
                   </div>
                 </div>
@@ -557,12 +564,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 {/* IBAN & SWIFT */}
                 <div className="mt-2 text-xs bg-slate-50 px-3 py-2 rounded-xl border border-slate-100 space-y-1">
                   <div className="flex items-center justify-between">
-                    <span className="text-slate-400 text-[11px]">الآيبان البنكي:</span>
+                    <span className="text-slate-400 text-[11px]">{tr('الآيبان البنكي:', 'Bank IBAN:')}</span>
                     <span className="font-mono font-bold text-slate-700 text-[11px] dir-ltr">{comp.bankIban}</span>
                   </div>
                   {comp.bankSwiftCode && (
                     <div className="flex items-center justify-between pt-1 border-t border-slate-200/60">
-                      <span className="text-slate-400 text-[10px]">رمز السويفت SWIFT/BIC:</span>
+                      <span className="text-slate-400 text-[10px]">SWIFT/BIC:</span>
                       <span className="font-mono font-bold text-emerald-700 text-[11px] dir-ltr">{comp.bankSwiftCode}</span>
                     </div>
                   )}
@@ -574,19 +581,19 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 <div className="bg-white p-2.5 rounded-xl border border-slate-200/70">
                   <div className="text-[11px] text-slate-500 font-semibold flex items-center justify-center gap-1">
                     <Users className="w-3.5 h-3.5 text-emerald-600" />
-                    <span>المستخدمون المفوّضون</span>
+                    <span>{tr('المستخدمون المفوّضون', 'Authorized Users')}</span>
                   </div>
-                  <div className="text-base font-black text-slate-800 mt-1">{compUsers.length} مستخدمين</div>
-                  <div className="text-[10px] text-slate-400 mt-0.5">صلاحيات إدارة المنشأة</div>
+                  <div className="text-base font-black text-slate-800 mt-1">{compUsers.length} {tr('مستخدمين', 'users')}</div>
+                  <div className="text-[10px] text-slate-400 mt-0.5">{tr('صلاحيات إدارة المنشأة', 'Company access permissions')}</div>
                 </div>
 
                 <div className="bg-white p-2.5 rounded-xl border border-slate-200/70">
                   <div className="text-[11px] text-slate-500 font-semibold flex items-center justify-center gap-1">
                     <Briefcase className="w-3.5 h-3.5 text-blue-600" />
-                    <span>موظفو المنشأة</span>
+                    <span>{tr('موظفو المنشأة', 'Company Employees')}</span>
                   </div>
-                  <div className="text-base font-black text-slate-800 mt-1">{compEmployees.length} موظف</div>
-                  <div className="text-[10px] text-slate-400 mt-0.5">تُدار بقسم الموظفين الخاص</div>
+                  <div className="text-base font-black text-slate-800 mt-1">{compEmployees.length} {tr('موظف', 'employees')}</div>
+                  <div className="text-[10px] text-slate-400 mt-0.5">{tr('تُدار بقسم الموظفين الخاص', 'Managed in the Employees section')}</div>
                 </div>
               </div>
 
@@ -598,7 +605,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
                   >
                     <UserPlus className="w-3.5 h-3.5" />
-                    <span>إضافة مستخدم</span>
+                    <span>{tr('إضافة مستخدم', 'Add User')}</span>
                   </button>
 
                   <button
@@ -606,7 +613,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
                   >
                     <Users className="w-3.5 h-3.5 text-slate-500" />
-                    <span>مستخدمو المنشأة ({compUsers.length})</span>
+                    <span>{tr('مستخدمو المنشأة', 'Company Users')} ({compUsers.length})</span>
                   </button>
                 </div>
 
@@ -616,14 +623,14 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     className="px-3 py-1.5 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-xl text-xs font-semibold transition-all flex items-center gap-1 cursor-pointer"
                   >
                     <Edit3 className="w-3.5 h-3.5 text-slate-500" />
-                    <span>تعديل</span>
+                    <span>{tr('تعديل', 'Edit')}</span>
                   </button>
 
                   {companies.length > 1 && onDeleteCompany && (
                     <button
                       onClick={() => onDeleteCompany(comp.id)}
                       className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all cursor-pointer"
-                      title="حذف المنشأة"
+                      title={tr('حذف المنشأة', 'Delete Company')}
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
@@ -647,10 +654,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 </div>
                 <div>
                   <h3 className="text-lg font-bold text-slate-900">
-                    {editingCompany ? 'تعديل بيانات المنشأة / الشركة' : 'إضافة شركة أو منشأة جديدة'}
+                    {editingCompany ? tr('تعديل بيانات المنشأة / الشركة', 'Edit Company') : tr('إضافة شركة أو منشأة جديدة', 'Add New Company')}
                   </h3>
                   <p className="text-xs text-slate-500">
-                    أدخل البيانات القانونية والمالية للمنشأة وكود الدخول
+                    {tr('أدخل البيانات القانونية والمالية للمنشأة وكود الدخول', 'Enter the company legal, financial, and login information.')}
                   </p>
                 </div>
               </div>
@@ -667,7 +674,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
                 <div>
                   <label className="block font-bold text-slate-700 mb-1">
-                    رمز المنشأة (Company Code) *
+                    {tr('رمز المنشأة', 'Company Code')} *
                   </label>
                   <input
                     type="text"
@@ -675,27 +682,27 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     value={companyForm.companyCode || ''}
                     onChange={(e) => setCompanyForm({ ...companyForm, companyCode: e.target.value })}
                     className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-mono font-bold text-emerald-700"
-                    placeholder="مثال: 101 أو 102"
+                    placeholder={tr('مثال: 101 أو 102', 'Example: 101 or 102')}
                   />
-                  <span className="text-[10px] text-slate-400 mt-0.5 block">يُستخدم في شاشة تسجيل الدخول</span>
+                  <span className="text-[10px] text-slate-400 mt-0.5 block">{tr('يُستخدم في شاشة تسجيل الدخول', 'Used on the sign-in screen')}</span>
                 </div>
 
                 <div className="sm:col-span-2">
-                  <label className="block font-bold text-slate-700 mb-1">اسم المنشأة بالعربية *</label>
+                  <label className="block font-bold text-slate-700 mb-1">{tr('اسم المنشأة بالعربية', 'Arabic Company Name')} *</label>
                   <input
                     type="text"
                     required
                     value={companyForm.nameAr || ''}
                     onChange={(e) => setCompanyForm({ ...companyForm, nameAr: e.target.value })}
                     className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800"
-                    placeholder="مثال: شركة الرؤية للتطوير والاستثمار"
+                    placeholder={tr('مثال: شركة الرؤية للتطوير والاستثمار', 'Example: شركة الرؤية للتطوير والاستثمار')}
                   />
                 </div>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                 <div>
-                  <label className="block font-bold text-slate-700 mb-1">اسم المنشأة بالإنجليزية</label>
+                  <label className="block font-bold text-slate-700 mb-1">{tr('اسم المنشأة بالإنجليزية', 'English Company Name')}</label>
                   <input
                     type="text"
                     value={companyForm.nameEn || ''}
@@ -706,7 +713,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 </div>
 
                 <div>
-                  <label className="block font-bold text-slate-700 mb-1">رقم السجل التجاري (CR Number) *</label>
+                  <label className="block font-bold text-slate-700 mb-1">{tr('رقم السجل التجاري', 'Commercial Registration Number')} *</label>
                   <input
                     type="text"
                     required
@@ -718,7 +725,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 </div>
 
                 <div>
-                  <label className="block font-bold text-slate-700 mb-1">الرقم الضريبي (VAT) *</label>
+                  <label className="block font-bold text-slate-700 mb-1">{tr('الرقم الضريبي', 'VAT Number')} *</label>
                   <input
                     type="text"
                     required
@@ -730,7 +737,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 </div>
 
                 <div>
-                  <label className="block font-bold text-slate-700 mb-1">اشتراك التأمينات (GOSI Est. No) *</label>
+                  <label className="block font-bold text-slate-700 mb-1">{tr('اشتراك التأمينات', 'GOSI Establishment Number')} *</label>
                   <input
                     type="text"
                     required
@@ -743,8 +750,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
                 <div>
                   <div className="flex items-center justify-between mb-1">
-                    <label className="block font-bold text-slate-700">بنك صرف الرواتب (حماية الأجور)</label>
-                    <span className="text-[10px] text-slate-400">البنوك السعودية المعتمدة</span>
+                    <label className="block font-bold text-slate-700">{tr('بنك صرف الرواتب (حماية الأجور)', 'Payroll Bank (WPS)')}</label>
+                    <span className="text-[10px] text-slate-400">{tr('البنوك السعودية المعتمدة', 'Saudi Banks')}</span>
                   </div>
                   <select
                     value={companyForm.bankCode || detectBankFromIBAN(companyForm.bankIban || '', companyForm.bankDefinitions)?.code || getBankDefinitions(companyForm.bankDefinitions).find(bank => bank.nameAr === companyForm.bankName || bank.nameEn === companyForm.bankName)?.ibanBankCode || ''}
@@ -759,7 +766,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     }}
                     className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-medium focus:bg-white"
                   >
-                    <option value="">-- اختر البنك --</option>
+                    <option value="">-- {tr('اختر البنك', 'Select Bank')} --</option>
                     {getBankDefinitions(companyForm.bankDefinitions).map(b => (
                       <option key={b.ibanBankCode} value={b.ibanBankCode}>
                         {language === 'en' ? b.nameEn || b.nameAr : b.nameAr} ({b.swiftCode})
@@ -770,15 +777,15 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
                 <div>
                   <div className="flex items-center justify-between mb-1">
-                    <label className="block font-bold text-slate-700">رقم الآيبان البنكي للمنشأة (IBAN) *</label>
+                    <label className="block font-bold text-slate-700">{tr('رقم الآيبان البنكي للمنشأة', 'Company IBAN')} *</label>
                     {companyForm.bankIban && (
                       validateSaudiIBAN(companyForm.bankIban) ? (
                         <span className="text-[10px] text-emerald-600 font-bold flex items-center gap-0.5">
-                          <CheckCircle2 className="w-3 h-3" /> آيبان صحيح
+                          <CheckCircle2 className="w-3 h-3" /> {tr('آيبان صحيح', 'Valid IBAN')}
                         </span>
                       ) : (
                         <span className="text-[10px] text-amber-600 font-semibold flex items-center gap-0.5">
-                          <AlertCircle className="w-3 h-3" /> آيبان غير مكتمل
+                          <AlertCircle className="w-3 h-3" /> {tr('آيبان غير مكتمل', 'Incomplete IBAN')}
                         </span>
                       )
                     )}
@@ -810,7 +817,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
                 <div>
                   <div className="flex items-center justify-between mb-1">
-                    <label className="block font-bold text-slate-700">رمز السويفت (SWIFT / BIC)</label>
+                    <label className="block font-bold text-slate-700">SWIFT / BIC</label>
                     <button
                       type="button"
                       onClick={() => {
@@ -829,7 +836,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                       className="text-[10px] text-emerald-700 hover:text-emerald-800 font-bold flex items-center gap-0.5"
                     >
                       <Sparkles className="w-2.5 h-2.5" />
-                      <span>توليد تلقائي</span>
+                      <span>{tr('توليد تلقائي', 'Auto-generate')}</span>
                     </button>
                   </div>
                   <input
@@ -841,7 +848,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                         ? 'border-emerald-300 focus:border-emerald-500 text-emerald-900'
                         : 'border-slate-200 focus:border-emerald-500'
                     }`}
-                    placeholder="مثال: RJHISARI"
+                    placeholder={tr('مثال: RJHISARI', 'Example: RJHISARI')}
                     dir="ltr"
                     maxLength={11}
                   />
@@ -849,11 +856,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     <div className="mt-1 text-[10px]">
                       {validateSwiftCode(companyForm.bankSwiftCode) ? (
                         <span className="text-emerald-700 font-semibold flex items-center gap-1">
-                          <CheckCircle2 className="w-2.5 h-2.5" /> معتمد قياسياً (ISO 9362)
+                          <CheckCircle2 className="w-2.5 h-2.5" /> {tr('معتمد قياسياً', 'Valid')} (ISO 9362)
                         </span>
                       ) : (
                         <span className="text-amber-600 font-semibold flex items-center gap-1">
-                          <AlertCircle className="w-2.5 h-2.5" /> التنسيق القياسي: 8 إلى 11 حرفاً ورقم
+                          <AlertCircle className="w-2.5 h-2.5" /> {tr('التنسيق القياسي: 8 إلى 11 حرفاً ورقم', 'Standard format: 8 or 11 letters/digits')}
                         </span>
                       )}
                     </div>
@@ -866,10 +873,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <ImageIcon className="w-4 h-4 text-emerald-600" />
-                    <span className="font-bold text-slate-800 text-xs">شعار المنشأة / اللوجو (Company Logo)</span>
+                    <span className="font-bold text-slate-800 text-xs">{tr('شعار المنشأة', 'Company Logo')}</span>
                   </div>
                   <span className="text-[10px] text-slate-500 font-medium">
-                    {companyForm.logo ? 'شعار مخصص مفعل' : 'الشعار الافتراضي مفعل'}
+                    {companyForm.logo ? tr('شعار مخصص مفعل', 'Custom logo active') : tr('الشعار الافتراضي مفعل', 'Default logo active')}
                   </span>
                 </div>
 
@@ -881,14 +888,14 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                         <div className="w-16 h-16 rounded-xl bg-white border-2 border-emerald-500/30 p-1 flex items-center justify-center shadow-xs overflow-hidden">
                           <img 
                             src={companyForm.logo} 
-                            alt="شعار المنشأة" 
+                            alt={tr('شعار المنشأة', 'Company Logo')}
                             className="w-full h-full object-contain" 
                           />
                         </div>
                         <button
                           type="button"
                           onClick={() => setCompanyForm({ ...companyForm, logo: undefined })}
-                          title="حذف الشعار واستعادة الافتراضي"
+                          title={tr('حذف الشعار واستعادة الافتراضي', 'Remove logo and restore default')}
                           className="absolute -top-1.5 -right-1.5 p-1 bg-rose-500 text-white rounded-full shadow-xs hover:bg-rose-600 transition-all cursor-pointer"
                         >
                           <X className="w-3 h-3" />
@@ -900,7 +907,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                       </div>
                     )}
                     <span className="text-[9px] text-slate-500 font-medium">
-                      {companyForm.logo ? 'معاينة الشعار المخصص' : 'الشعار الافتراضي'}
+                      {companyForm.logo ? tr('معاينة الشعار المخصص', 'Custom logo preview') : tr('الشعار الافتراضي', 'Default logo')}
                     </span>
                   </div>
 
@@ -920,7 +927,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                         className="px-3 py-1.5 bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 rounded-lg font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs"
                       >
                         <Upload className="w-3.5 h-3.5" />
-                        <span>رفع صورة شعار من الجهاز</span>
+                        <span>{tr('رفع صورة شعار من الجهاز', 'Upload Logo')}</span>
                       </button>
 
                       {companyForm.logo && (
@@ -930,7 +937,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                           className="px-3 py-1.5 bg-slate-100 text-slate-600 hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200 border border-slate-200 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer"
                         >
                           <RotateCcw className="w-3.5 h-3.5" />
-                          <span>استعادة الشعار الافتراضي</span>
+                          <span>{tr('استعادة الشعار الافتراضي', 'Restore Default Logo')}</span>
                         </button>
                       )}
                     </div>
@@ -940,13 +947,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                         type="text"
                         value={companyForm.logo || ''}
                         onChange={(e) => setCompanyForm({ ...companyForm, logo: e.target.value.trim() || undefined })}
-                        placeholder="أو الصق رابط صورة الشعار مباشرة (URL)"
+                        placeholder={tr('أو الصق رابط صورة الشعار مباشرة (URL)', 'Or paste a direct logo URL')}
                         className="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-[11px] font-mono focus:bg-white focus:outline-none focus:border-emerald-500"
                         dir="ltr"
                       />
                     </div>
                     <p className="text-[10px] text-slate-400">
-                      يدعم صيغ الصور (PNG, JPG, SVG, WebP). في حالة عدم الرفع يتم تفعيل الشعار الافتراضي تلقائياً.
+                      {tr('يدعم صيغ الصور (PNG, JPG, SVG, WebP). في حالة عدم الرفع يتم تفعيل الشعار الافتراضي تلقائياً.', 'Supports PNG, JPG, SVG, and WebP. The default logo is used when none is uploaded.')}
                     </p>
                   </div>
                 </div>
@@ -958,14 +965,14 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   onClick={() => setIsCompanyModalOpen(false)}
                   className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-semibold cursor-pointer"
                 >
-                  إلغاء
+                  {tr('إلغاء', 'Cancel')}
                 </button>
                 <button
                   type="submit"
                   className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold shadow-xs flex items-center gap-1.5 cursor-pointer"
                 >
                   <Save className="w-4 h-4" />
-                  <span>{editingCompany ? 'حفظ التعديلات' : 'إضافة المنشأة'}</span>
+                  <span>{editingCompany ? tr('حفظ التعديلات', 'Save Changes') : tr('إضافة المنشأة', 'Add Company')}</span>
                 </button>
               </div>
             </form>
@@ -985,11 +992,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 </div>
                 <div>
                   <h3 className="text-base sm:text-lg font-bold text-slate-900">
-                    {editingUser ? 'تعديل بيانات المستخدم' : 'إضافة مستخدم جديد للمنشأة'}
+                    {editingUser ? tr('تعديل بيانات المستخدم', 'Edit User') : tr('إضافة مستخدم جديد للمنشأة', 'Add Company User')}
                   </h3>
                   {targetCompanyForUser && (
                     <p className="text-xs text-emerald-700 font-semibold mt-0.5">
-                      المنشأة: {targetCompanyForUser.nameAr} (كود: {targetCompanyForUser.companyCode || '101'})
+                      {tr('المنشأة:', 'Company:')} {language === 'ar' ? targetCompanyForUser.nameAr : targetCompanyForUser.nameEn || targetCompanyForUser.nameAr} ({tr('كود:', 'Code:')} {targetCompanyForUser.companyCode || '101'})
                     </p>
                   )}
                 </div>
@@ -1014,7 +1021,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               {/* Username & Password */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block font-bold text-slate-700 mb-1">اسم المستخدم (Username) *</label>
+                  <label className="block font-bold text-slate-700 mb-1">{tr('اسم المستخدم', 'Username')} *</label>
                   <input
                     type="text"
                     required
@@ -1027,7 +1034,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 </div>
 
                 <div>
-                  <label className="block font-bold text-slate-700 mb-1">كلمة المرور (Password) *</label>
+                  <label className="block font-bold text-slate-700 mb-1">{tr('كلمة المرور', 'Password')} *</label>
                   <div className="relative">
                     <input
                       type={showPassword ? 'text' : 'password'}
@@ -1051,37 +1058,37 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
               {/* Full Name */}
               <div>
-                <label className="block font-bold text-slate-700 mb-1">الاسم الكامل للمستخدم *</label>
+                <label className="block font-bold text-slate-700 mb-1">{tr('الاسم الكامل للمستخدم', 'User Full Name')} *</label>
                 <input
                   type="text"
                   required
                   value={userFormData.name}
                   onChange={(e) => setUserFormData({ ...userFormData, name: e.target.value })}
                   className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold"
-                  placeholder="مثال: تركي بن خالد القحطاني"
+                  placeholder={tr('مثال: تركي بن خالد القحطاني', 'Example: Turki Al-Qahtani')}
                 />
               </div>
 
               {/* Role */}
               <div>
-                <label className="block font-bold text-slate-700 mb-1">الدور والصلاحية (Role) *</label>
+                <label className="block font-bold text-slate-700 mb-1">{tr('الدور والصلاحية', 'Role & Permissions')} *</label>
                 <select
                   value={userFormData.role}
                   onChange={(e) => setUserFormData({ ...userFormData, role: e.target.value as UserRole })}
                   className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800"
                 >
-                  {activeRole === 'ADMIN' && <option value="COMPANY_MANAGER">المدير العام</option>}
-                  <option value="OPERATIONS_MANAGER">مدير العمليات</option>
+                  {activeRole === 'ADMIN' && <option value="COMPANY_MANAGER">{tr('المدير العام', 'General Manager')}</option>}
+                  <option value="OPERATIONS_MANAGER">{tr('مدير العمليات', 'Operations Manager')}</option>
                 </select>
                 <p className="text-[11px] text-slate-500 mt-1 bg-slate-50 p-2 rounded-lg border border-slate-100">
-                  {ROLE_INFO[userFormData.role]?.descAr}
+                  {language === 'ar' ? ROLE_INFO[userFormData.role]?.descAr : ROLE_INFO[userFormData.role]?.descEn}
                 </p>
               </div>
 
               {/* Email & Phone */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block font-bold text-slate-700 mb-1">البريد الإلكتروني</label>
+                  <label className="block font-bold text-slate-700 mb-1">{tr('البريد الإلكتروني', 'Email')}</label>
                   <input
                     type="email"
                     value={userFormData.email}
@@ -1093,7 +1100,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 </div>
 
                 <div>
-                  <label className="block font-bold text-slate-700 mb-1">رقم الجوال</label>
+                  <label className="block font-bold text-slate-700 mb-1">{tr('رقم الجوال', 'Mobile Number')}</label>
                   <input
                     type="text"
                     value={userFormData.phone}
@@ -1114,7 +1121,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     onChange={(e) => setUserFormData({ ...userFormData, isActive: e.target.checked })}
                     className="w-4 h-4 text-emerald-600 rounded-md focus:ring-emerald-500 border-slate-300"
                   />
-                  <span className="font-bold text-slate-800">حساب نشط ومفعّل لتسجيل الدخول</span>
+                  <span className="font-bold text-slate-800">{tr('حساب نشط ومفعّل لتسجيل الدخول', 'Active account authorized to sign in')}</span>
                 </label>
               </div>
 
@@ -1124,14 +1131,14 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   onClick={() => setIsUserModalOpen(false)}
                   className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-semibold cursor-pointer"
                 >
-                  إلغاء
+                  {tr('إلغاء', 'Cancel')}
                 </button>
                 <button
                   type="submit"
                   className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold shadow-xs flex items-center gap-1.5 cursor-pointer"
                 >
                   <Save className="w-4 h-4" />
-                  <span>{editingUser ? 'حفظ التعديلات' : 'إضافة المستخدم'}</span>
+                  <span>{editingUser ? tr('حفظ التعديلات', 'Save Changes') : tr('إضافة المستخدم', 'Add User')}</span>
                 </button>
               </div>
             </form>
@@ -1151,10 +1158,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 </div>
                 <div>
                   <h3 className="text-lg font-bold text-slate-900">
-                    مستخدمو منشأة: {selectedCompanyForUsers.nameAr}
+                    {tr('مستخدمو منشأة:', 'Company Users:')} {language === 'ar' ? selectedCompanyForUsers.nameAr : selectedCompanyForUsers.nameEn || selectedCompanyForUsers.nameAr}
                   </h3>
                   <p className="text-xs text-slate-500">
-                    كود: <span className="font-mono font-bold text-emerald-700">{selectedCompanyForUsers.companyCode || '101'}</span> | حسابات الموظفين المفوّضين بالدخول
+                    {tr('كود:', 'Code:')} <span className="font-mono font-bold text-emerald-700">{selectedCompanyForUsers.companyCode || '101'}</span> | {tr('حسابات الموظفين المفوّضين بالدخول', 'Authorized sign-in accounts')}
                   </p>
                 </div>
               </div>
@@ -1167,7 +1174,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
                 >
                   <UserPlus className="w-3.5 h-3.5" />
-                  <span>إضافة مستخدم جديد</span>
+                  <span>{tr('إضافة مستخدم جديد', 'Add New User')}</span>
                 </button>
                 <button
                   onClick={() => setIsCompanyUsersModalOpen(false)}
@@ -1183,7 +1190,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               {getUsersByCompany(selectedCompanyForUsers).length === 0 ? (
                 <div className="p-10 text-center text-slate-400">
                   <Users className="w-12 h-12 mx-auto mb-2 text-slate-300" />
-                  <p className="text-sm font-semibold">لا يوجد مستخدمون مخصصون لهذه المنشأة حالياً</p>
+                  <p className="text-sm font-semibold">{tr('لا يوجد مستخدمون مخصصون لهذه المنشأة حالياً', 'No users are assigned to this company.')}</p>
                   <button
                     onClick={() => {
                       handleOpenAddUserForCompany(selectedCompanyForUsers);
@@ -1191,18 +1198,18 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     className="mt-3 px-4 py-2 bg-emerald-600 text-white rounded-xl text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer"
                   >
                     <UserPlus className="w-4 h-4" />
-                    <span>إضافة مستخدم</span>
+                    <span>{tr('إضافة مستخدم', 'Add User')}</span>
                   </button>
                 </div>
               ) : (
                 <table className="w-full text-right text-xs">
                   <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold sticky top-0">
                     <tr>
-                      <th className="py-3 px-4">المستخدم</th>
-                      <th className="py-3 px-4">اسم الدخول (Username)</th>
-                      <th className="py-3 px-4">الدور / الصلاحية</th>
-                      <th className="py-3 px-4">الحالة</th>
-                      <th className="py-3 px-4 text-center">إجراءات</th>
+                      <th className="py-3 px-4">{tr('المستخدم', 'User')}</th>
+                      <th className="py-3 px-4">{tr('اسم الدخول', 'Username')}</th>
+                      <th className="py-3 px-4">{tr('الدور / الصلاحية', 'Role / Permission')}</th>
+                      <th className="py-3 px-4">{tr('الحالة', 'Status')}</th>
+                      <th className="py-3 px-4 text-center">{tr('إجراءات', 'Actions')}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -1230,7 +1237,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                           <td className="py-3 px-4">
                             <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-bold border ${roleConfig.badgeBg}`}>
                               <Shield className="w-3 h-3" />
-                              <span>{roleConfig.labelAr}</span>
+                              <span>{language === 'ar' ? roleConfig.labelAr : roleConfig.labelEn}</span>
                             </span>
                           </td>
 
@@ -1238,12 +1245,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                             {u.isActive ? (
                               <span className="inline-flex items-center gap-1 text-emerald-700 font-bold text-[11px]">
                                 <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                                <span>نشط</span>
+                                <span>{tr('نشط', 'Active')}</span>
                               </span>
                             ) : (
                               <span className="inline-flex items-center gap-1 text-slate-400 font-semibold text-[11px]">
                                 <X className="w-3.5 h-3.5 text-slate-400" />
-                                <span>معطل</span>
+                                <span>{tr('معطل', 'Disabled')}</span>
                               </span>
                             )}
                           </td>
@@ -1255,7 +1262,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                                   handleOpenEditUser(u, selectedCompanyForUsers);
                                 }}
                                 className="p-1.5 text-slate-500 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg transition-colors cursor-pointer"
-                                title="تعديل المستخدم"
+                                title={tr('تعديل المستخدم', 'Edit User')}
                               >
                                 <Edit3 className="w-3.5 h-3.5" />
                               </button>
@@ -1264,7 +1271,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                                 <button
                                   onClick={() => onDeleteUser(u.id)}
                                   className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
-                                  title="حذف المستخدم"
+                                  title={tr('حذف المستخدم', 'Delete User')}
                                 >
                                   <Trash2 className="w-3.5 h-3.5" />
                                 </button>
@@ -1280,12 +1287,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             </div>
 
             <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
-              <span>إجمالي المستخدمين المتاحين لهذه المنشأة: {getUsersByCompany(selectedCompanyForUsers).length}</span>
+              <span>{tr('إجمالي المستخدمين المتاحين لهذه المنشأة:', 'Total users available to this company:')} {getUsersByCompany(selectedCompanyForUsers).length}</span>
               <button
                 onClick={() => setIsCompanyUsersModalOpen(false)}
                 className="px-4 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold cursor-pointer"
               >
-                إغلاق
+                {tr('إغلاق', 'Close')}
               </button>
             </div>
 

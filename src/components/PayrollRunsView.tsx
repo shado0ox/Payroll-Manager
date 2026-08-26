@@ -250,17 +250,17 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
     if (!currentRun) return;
     const batch = getEmployeePaymentBatch(item.employeeId);
     if (batch && ['SCHEDULED', 'PAID'].includes(batch.status)) {
-      alert('لا يمكن تغيير حالة الاستحقاق بعد جدولة أو دفع راتب الموظف. ألغِ الدفعة المجدولة أولًا، أما المدفوعة فتحتاج تسوية عكسية مستقلة.');
+      alert(tr('لا يمكن تغيير حالة الاستحقاق بعد جدولة أو دفع راتب الموظف. ألغِ الدفعة المجدولة أولًا، أما المدفوعة فتحتاج تسوية عكسية مستقلة.', 'Entitlement status cannot change after salary scheduling or payment. Cancel a scheduled batch first; paid salaries require a separate reversal settlement.'));
       return;
     }
     let reason = '';
     let documentRef = '';
     if (status !== 'PAYABLE') {
-      reason = window.prompt('اكتب سبب التعليق أو التسوية (إلزامي):', item.entitlementReason || '')?.trim() || '';
+      reason = window.prompt(tr('اكتب سبب التعليق أو التسوية (إلزامي):', 'Enter the hold or settlement reason (required):'), item.entitlementReason || '')?.trim() || '';
       if (!reason) return;
     }
     if (['SETTLED', 'CANCELLED_WITH_DOCUMENT'].includes(status)) {
-      documentRef = window.prompt('رقم مستند/مرجع التسوية (إلزامي):', item.entitlementDocumentRef || '')?.trim() || '';
+      documentRef = window.prompt(tr('رقم مستند/مرجع التسوية (إلزامي):', 'Settlement document/reference number (required):'), item.entitlementDocumentRef || '')?.trim() || '';
       if (!documentRef) return;
     }
     const items = currentRun.items.map(current => current.id === item.id ? {
@@ -296,7 +296,7 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
   const savePayrollAdjustment = () => {
     if (!currentRun || !adjustmentItem || !['UNDER_REVIEW', 'APPROVED'].includes(currentRun.status)) return;
     if (currentRun.paymentBatches?.some(batch => ['SCHEDULED', 'PAID'].includes(batch.status))) {
-      alert('لا يمكن تعديل مبالغ المسير بعد إنشاء دفعة تحويل نشطة. ألغِ الدفعة أولًا.');
+      alert(tr('لا يمكن تعديل مبالغ المسير بعد إنشاء دفعة تحويل نشطة. ألغِ الدفعة أولًا.', 'Payroll amounts cannot be edited while an active transfer batch exists. Cancel the batch first.'));
       return;
     }
     const previousAddition = adjustmentItem.manualAddition || 0;

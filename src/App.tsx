@@ -75,7 +75,8 @@ const LAST_ACTIVITY_KEY = 'masar_last_activity_v1';
 const IDLE_TIMEOUT_MS = 60 * 60 * 1000;
 
 export const App: React.FC = () => {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
+  const tr = (ar: string, en: string) => language === 'ar' ? ar : en;
   // Initialize full application state
   const [state, setState] = useState(() => loadInitialState());
 
@@ -159,7 +160,7 @@ export const App: React.FC = () => {
         if (!cancelled) setDbStatus(prev => ({ ...prev, isCloudConnected: true, isChecking: false, lastError: null }));
       })
       .catch((error: any) => {
-        if (!cancelled) setDbStatus(prev => ({ ...prev, isCloudConnected: false, isChecking: false, lastError: error?.message || 'تعذر الاتصال بقاعدة البيانات' }));
+        if (!cancelled) setDbStatus(prev => ({ ...prev, isCloudConnected: false, isChecking: false, lastError: error?.message || tr('تعذر الاتصال بقاعدة البيانات', 'Could not connect to the database') }));
       });
     return () => { cancelled = true; };
   }, [state.currentUser?.id]);
@@ -175,9 +176,9 @@ export const App: React.FC = () => {
       } catch (error: any) {
         try {
           await api.health();
-          setDbStatus(prev => ({ ...prev, isCloudConnected: true, isChecking: false, lastError: `تعذر حفظ آخر تعديل: ${error?.message || 'خطأ غير معروف'}` }));
+          setDbStatus(prev => ({ ...prev, isCloudConnected: true, isChecking: false, lastError: `${tr('تعذر حفظ آخر تعديل:', 'Could not save the latest change:')} ${error?.message || tr('خطأ غير معروف', 'Unknown error')}` }));
         } catch {
-          setDbStatus(prev => ({ ...prev, isCloudConnected: false, isChecking: false, lastError: error?.message || 'تعذر الاتصال بقاعدة البيانات' }));
+          setDbStatus(prev => ({ ...prev, isCloudConnected: false, isChecking: false, lastError: error?.message || tr('تعذر الاتصال بقاعدة البيانات', 'Could not connect to the database') }));
         }
       }
     }, 750);
@@ -226,10 +227,10 @@ export const App: React.FC = () => {
           timestamp: new Date().toISOString(),
           userName: prev.currentUser.name,
           userRole: prev.currentUser.role,
-          action: 'تسجيل الخروج من النظام',
+          action: tr('تسجيل الخروج من النظام', 'Signed out'),
           entityType: 'AUTH',
           entityId: prev.currentUser.id,
-          details: `تم تسجيل الخروج بنجاح للمستخدم ${prev.currentUser.username}`,
+          details: `${tr('تم تسجيل الخروج بنجاح للمستخدم', 'User signed out successfully:')} ${prev.currentUser.username}`,
         };
         const updatedLogs = [log, ...prev.auditLogs];
         saveAuditLogs(updatedLogs);
@@ -275,7 +276,7 @@ export const App: React.FC = () => {
   // User Management handlers
   const handleSaveUser = async (user: UserAccount) => {
     if (user.id === 'user-admin' || !hasPermission(state.currentUser, 'MANAGE_USERS')) {
-      alert('لا يمكن تعديل مدير النظام الأساسي، وإدارة المستخدمين متاحة للإدارة فقط.');
+      alert(tr('لا يمكن تعديل مدير النظام الأساسي، وإدارة المستخدمين متاحة للإدارة فقط.', 'The primary system administrator cannot be edited. User management is restricted to administrators.'));
       return;
     }
     const savedUser = await api.saveUser(user);
@@ -300,10 +301,10 @@ export const App: React.FC = () => {
         timestamp: new Date().toISOString(),
         userName: prev.currentUser?.name || 'مسؤول النظام',
         userRole: prev.activeRole,
-        action: exists ? 'تعديل بيانات وصلاحيات مستخدم' : 'إنشاء حساب مستخدم جديد',
+        action: exists ? tr('تعديل بيانات وصلاحيات مستخدم', 'Updated user details and permissions') : tr('إنشاء حساب مستخدم جديد', 'Created user account'),
         entityType: 'USER',
         entityId: user.id,
-        details: `المستخدم: ${user.name} (${user.username}) - الدور: ${user.role}`,
+        details: `${tr('المستخدم:', 'User:')} ${user.name} (${user.username}) - ${tr('الدور:', 'Role:')} ${user.role}`,
       };
       const updatedLogs = [log, ...prev.auditLogs];
       saveAuditLogs(updatedLogs);
@@ -319,7 +320,7 @@ export const App: React.FC = () => {
 
   const handleDeleteUser = async (userId: string) => {
     if (userId === 'user-admin' || !hasPermission(state.currentUser, 'MANAGE_USERS')) {
-      alert('لا يمكن حذف مدير النظام الأساسي، وإدارة المستخدمين متاحة للإدارة فقط.');
+      alert(tr('لا يمكن حذف مدير النظام الأساسي، وإدارة المستخدمين متاحة للإدارة فقط.', 'The primary system administrator cannot be deleted. User management is restricted to administrators.'));
       return;
     }
     await api.deleteUser(userId);
@@ -333,10 +334,10 @@ export const App: React.FC = () => {
         timestamp: new Date().toISOString(),
         userName: prev.currentUser?.name || 'مسؤول النظام',
         userRole: prev.activeRole,
-        action: 'حذف حساب مستخدم',
+        action: tr('حذف حساب مستخدم', 'Deleted user account'),
         entityType: 'USER',
         entityId: userId,
-        details: `تم حذف حساب المستخدم: ${targetUser?.name || userId}`,
+        details: `${tr('تم حذف حساب المستخدم:', 'Deleted user account:')} ${targetUser?.name || userId}`,
       };
       const updatedLogs = [log, ...prev.auditLogs];
       saveAuditLogs(updatedLogs);
@@ -372,10 +373,10 @@ export const App: React.FC = () => {
         timestamp: new Date().toISOString(),
         userName: prev.currentUser?.name || 'المدير العام',
         userRole: prev.activeRole,
-        action: exists ? 'تعديل بيانات موظف' : 'إضافة موظف جديد',
+        action: exists ? tr('تعديل بيانات موظف', 'Updated employee details') : tr('إضافة موظف جديد', 'Added employee'),
         entityType: 'EMPLOYEE',
         entityId: employee.id,
-        details: `الموظف: ${employee.firstNameAr} ${employee.lastNameAr} (${employee.employeeNo})`,
+        details: `${tr('الموظف:', 'Employee:')} ${language === 'ar' ? `${employee.firstNameAr} ${employee.lastNameAr}` : `${employee.firstNameEn || employee.firstNameAr} ${employee.lastNameEn || employee.lastNameAr}`} (${employee.employeeNo})`,
       };
       const updatedLogs = [log, ...prev.auditLogs];
       saveAuditLogs(updatedLogs);
@@ -399,10 +400,10 @@ export const App: React.FC = () => {
         timestamp: new Date().toISOString(),
         userName: prev.currentUser?.name || 'المدير العام',
         userRole: prev.activeRole,
-        action: 'استيراد موظفين من ملف',
+        action: tr('استيراد موظفين من ملف', 'Imported employees from file'),
         entityType: 'EMPLOYEE',
         entityId: importedEmployees[0].companyId,
-        details: `تم استيراد ${importedEmployees.length} موظف من Excel/CSV`,
+        details: `${tr('تم استيراد', 'Imported')} ${importedEmployees.length} ${tr('موظف من', 'employees from')} Excel/CSV`,
       };
       const updatedLogs = [log, ...prev.auditLogs];
       saveAuditLogs(updatedLogs);
@@ -440,10 +441,10 @@ export const App: React.FC = () => {
         timestamp: new Date().toISOString(),
         userName: prev.currentUser?.name || 'مسؤول النظام',
         userRole: prev.activeRole,
-        action: 'مسح جميع موظفي المنشأة',
+        action: tr('مسح جميع موظفي المنشأة', 'Deleted all company employees'),
         entityType: 'COMPANY',
         entityId: companyId,
-        details: `تم حذف ${deletedEmployees.length} موظفًا وجميع بيانات الحضور والإجازات والسلف والجزاءات والمسيرات والقيود المرتبطة بهم`,
+        details: `${tr('تم حذف', 'Deleted')} ${deletedEmployees.length} ${tr('موظفًا وجميع بياناتهم المرتبطة', 'employees and all related records')}`,
       };
       const auditLogs = [log, ...prev.auditLogs];
       saveAuditLogs(auditLogs);
@@ -482,27 +483,27 @@ export const App: React.FC = () => {
         return previous && (previous.entitlementStatus || 'PAYABLE') !== (item.entitlementStatus || 'PAYABLE');
       });
 
-      let auditAction = `تحديث مسير الرواتب (${run.status})`;
-      let auditDetails = `مسير فترة ${run.periodMonth} - إجمالي الصافي: ${run.totalNetSalaries.toLocaleString()} SAR`;
+      let auditAction = `${tr('تحديث مسير الرواتب', 'Updated payroll run')} (${run.status})`;
+      let auditDetails = `${tr('مسير فترة', 'Payroll period')} ${run.periodMonth} - ${tr('إجمالي الصافي:', 'Total net:')} ${run.totalNetSalaries.toLocaleString()} SAR`;
 
       if (previousRun?.status === 'POSTED' && run.status === 'UNDER_REVIEW') {
-        auditAction = 'التراجع عن ترحيل مسير الرواتب';
-        auditDetails = `فتح مسير ${run.periodMonth} المرحل للتعديل وإعادة الاعتماد - الصافي ${run.totalNetSalaries.toLocaleString()} SAR`;
+        auditAction = tr('التراجع عن ترحيل مسير الرواتب', 'Reversed payroll posting');
+        auditDetails = `${tr('تم فتح المسير المرحل للتعديل وإعادة الاعتماد:', 'Posted payroll reopened for editing and reapproval:')} ${run.periodMonth} - ${run.totalNetSalaries.toLocaleString()} SAR`;
       } else if (previousRun?.status === 'APPROVED' && run.status === 'UNDER_REVIEW') {
-        auditAction = 'التراجع عن اعتماد مسير الرواتب';
-        auditDetails = `فتح مسير ${run.periodMonth} للتعديل وإعادة الاعتماد - الصافي ${run.totalNetSalaries.toLocaleString()} SAR`;
+        auditAction = tr('التراجع عن اعتماد مسير الرواتب', 'Reversed payroll approval');
+        auditDetails = `${tr('تم فتح المسير للتعديل وإعادة الاعتماد:', 'Payroll reopened for editing and reapproval:')} ${run.periodMonth} - ${run.totalNetSalaries.toLocaleString()} SAR`;
       } else if (entitlementChangedItem) {
-        auditAction = 'تغيير حالة استحقاق راتب موظف';
-        auditDetails = `${entitlementChangedItem.employeeName} (${entitlementChangedItem.employeeNo}) - الحالة: ${entitlementChangedItem.entitlementStatus || 'PAYABLE'} - ${entitlementChangedItem.entitlementReason || 'بدون سبب'}`;
+        auditAction = tr('تغيير حالة استحقاق راتب موظف', 'Changed employee salary entitlement');
+        auditDetails = `${entitlementChangedItem.employeeName} (${entitlementChangedItem.employeeNo}) - ${tr('الحالة:', 'Status:')} ${entitlementChangedItem.entitlementStatus || 'PAYABLE'} - ${entitlementChangedItem.entitlementReason || tr('بدون سبب', 'No reason')}`;
       } else if (adjustedItem) {
-        auditAction = 'تعديل إضافات وخصومات موظف في المسير';
-        auditDetails = `${adjustedItem.employeeName} (${adjustedItem.employeeNo}) - إضافة ${(adjustedItem.manualAddition || 0).toLocaleString()} - خصم ${(adjustedItem.manualDeduction || 0).toLocaleString()} SAR - ${adjustedItem.adjustmentNotes || 'بدون ملاحظات'}`;
+        auditAction = tr('تعديل إضافات وخصومات موظف في المسير', 'Changed employee payroll adjustments');
+        auditDetails = `${adjustedItem.employeeName} (${adjustedItem.employeeNo}) - ${tr('إضافة', 'Addition')} ${(adjustedItem.manualAddition || 0).toLocaleString()} - ${tr('خصم', 'Deduction')} ${(adjustedItem.manualDeduction || 0).toLocaleString()} SAR - ${adjustedItem.adjustmentNotes || tr('بدون ملاحظات', 'No notes')}`;
       } else if (createdBatch) {
-        auditAction = 'إنشاء دفعة تحويل رواتب';
-        auditDetails = `${createdBatch.batchNumber} - ${createdBatch.employeesCount} موظف - ${createdBatch.totalAmount.toLocaleString()} SAR - الحالة: ${createdBatch.status}`;
+        auditAction = tr('إنشاء دفعة تحويل رواتب', 'Created salary transfer batch');
+        auditDetails = `${createdBatch.batchNumber} - ${createdBatch.employeesCount} ${tr('موظف', 'employees')} - ${createdBatch.totalAmount.toLocaleString()} SAR - ${tr('الحالة:', 'Status:')} ${createdBatch.status}`;
       } else if (changedBatch) {
-        auditAction = 'تحديث حالة دفعة تحويل رواتب';
-        auditDetails = `${changedBatch.batchNumber} - الحالة الجديدة: ${changedBatch.status} - ${changedBatch.totalAmount.toLocaleString()} SAR`;
+        auditAction = tr('تحديث حالة دفعة تحويل رواتب', 'Updated salary transfer batch status');
+        auditDetails = `${changedBatch.batchNumber} - ${tr('الحالة الجديدة:', 'New status:')} ${changedBatch.status} - ${changedBatch.totalAmount.toLocaleString()} SAR`;
       }
 
       const log: AuditLog = {
@@ -556,7 +557,7 @@ export const App: React.FC = () => {
         timestamp: new Date().toISOString(),
         userName: prev.currentUser?.name || 'مسؤول الموارد البشرية',
         userRole: prev.activeRole,
-        action: record.absence ? 'إلغاء غياب مسجل' : 'حذف حركة حضور',
+        action: record.absence ? tr('إلغاء غياب مسجل', 'Cancelled recorded absence') : tr('حذف حركة حضور', 'Deleted attendance record'),
         entityType: 'EMPLOYEE',
         entityId: record.employeeId,
         details: `${employee ? `${employee.firstNameAr} ${employee.lastNameAr}` : record.employeeId} - ${record.date}`,
@@ -648,10 +649,10 @@ export const App: React.FC = () => {
         timestamp: new Date().toISOString(),
         userName: prev.currentUser?.name || 'المدير العام',
         userRole: prev.activeRole,
-        action: 'حذف موظف',
+        action: tr('حذف موظف', 'Deleted employee'),
         entityType: 'EMPLOYEE',
         entityId: empId,
-        details: `تم حذف الموظف: ${targetEmp ? `${targetEmp.firstNameAr} ${targetEmp.lastNameAr}` : empId}`,
+        details: `${tr('تم حذف الموظف:', 'Deleted employee:')} ${targetEmp ? `${targetEmp.firstNameAr} ${targetEmp.lastNameAr}` : empId}`,
       };
       const updatedLogs = [log, ...prev.auditLogs];
       saveAuditLogs(updatedLogs);
@@ -675,10 +676,10 @@ export const App: React.FC = () => {
         timestamp: new Date().toISOString(),
         userName: prev.currentUser?.name || 'مسؤول النظام',
         userRole: prev.activeRole,
-        action: 'إضافة منشأة / شركة جديدة',
+        action: tr('إضافة منشأة / شركة جديدة', 'Added company'),
         entityType: 'COMPANY',
         entityId: company.id,
-        details: `تمت إضافة الشركة: ${company.nameAr} (كود: ${company.companyCode})`,
+        details: `${tr('تمت إضافة الشركة:', 'Added company:')} ${language === 'ar' ? company.nameAr : company.nameEn || company.nameAr} (${tr('كود:', 'Code:')} ${company.companyCode})`,
       };
       const updatedLogs = [log, ...prev.auditLogs];
       saveAuditLogs(updatedLogs);
@@ -699,10 +700,10 @@ export const App: React.FC = () => {
         timestamp: new Date().toISOString(),
         userName: prev.currentUser?.name || 'مسؤول النظام',
         userRole: prev.activeRole,
-        action: 'تعديل بيانات المنشأة',
+        action: tr('تعديل بيانات المنشأة', 'Updated company details'),
         entityType: 'COMPANY',
         entityId: company.id,
-        details: `تم تعديل بيانات الشركة: ${company.nameAr} (كود: ${company.companyCode})`,
+        details: `${tr('تم تعديل بيانات الشركة:', 'Updated company:')} ${language === 'ar' ? company.nameAr : company.nameEn || company.nameAr} (${tr('كود:', 'Code:')} ${company.companyCode})`,
       };
       const updatedLogs = [log, ...prev.auditLogs];
       saveAuditLogs(updatedLogs);
@@ -715,7 +716,7 @@ export const App: React.FC = () => {
     if (!hasPermission(state.currentUser, 'MANAGE_COMPANIES')) return;
     setState(prev => {
       if (prev.companies.length <= 1) {
-        alert('لا يمكن حذف الشركة الوحيدة المتبقية في النظام.');
+        alert(tr('لا يمكن حذف الشركة الوحيدة المتبقية في النظام.', 'The only remaining company cannot be deleted.'));
         return prev;
       }
       const targetComp = prev.companies.find(c => c.id === companyId);
@@ -730,10 +731,10 @@ export const App: React.FC = () => {
         timestamp: new Date().toISOString(),
         userName: prev.currentUser?.name || 'مسؤول النظام',
         userRole: prev.activeRole,
-        action: 'حذف منشأة / شركة',
+        action: tr('حذف منشأة / شركة', 'Deleted company'),
         entityType: 'COMPANY',
         entityId: companyId,
-        details: `تم حذف الشركة: ${targetComp?.nameAr || companyId}`,
+        details: `${tr('تم حذف الشركة:', 'Deleted company:')} ${targetComp ? (language === 'ar' ? targetComp.nameAr : targetComp.nameEn || targetComp.nameAr) : companyId}`,
       };
       const updatedLogs = [log, ...prev.auditLogs];
       saveAuditLogs(updatedLogs);
