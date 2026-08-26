@@ -10,12 +10,15 @@ import {
   Filter
 } from 'lucide-react';
 import { AuditLog } from '../types';
+import { useLanguage } from '../i18n/LanguageContext';
 
 interface AuditLogsViewProps {
   logs: AuditLog[];
 }
 
 export const AuditLogsView: React.FC<AuditLogsViewProps> = ({ logs }) => {
+  const { language } = useLanguage();
+  const ui = (ar: string, en: string) => language === 'ar' ? ar : en;
   const [searchTerm, setSearchTerm] = useState('');
 
   const filteredLogs = logs.filter(l => 
@@ -32,10 +35,10 @@ export const AuditLogsView: React.FC<AuditLogsViewProps> = ({ logs }) => {
         <div>
           <h1 className="text-xl sm:text-2xl font-bold text-slate-900 flex items-center gap-2">
             <History className="w-6 h-6 text-emerald-600" />
-            <span>سجل التدقيق والحركات الإدارية (Audit Trail)</span>
+            <span>{ui('سجل التدقيق والحركات الإدارية', 'Audit Trail & Administrative Activity')}</span>
           </h1>
           <p className="text-xs text-slate-500 mt-1">
-            توثيق كامل لكافة عمليات إنشاء الموظفين، احتساب الرواتب، التعديلات، والترحيل المحاسبي
+            {ui('توثيق كامل لكافة عمليات إنشاء الموظفين واحتساب الرواتب والتعديلات والترحيل المحاسبي', 'A complete record of employee creation, payroll calculations, adjustments, and accounting postings.')}
           </p>
         </div>
 
@@ -43,7 +46,7 @@ export const AuditLogsView: React.FC<AuditLogsViewProps> = ({ logs }) => {
           <Search className="w-4 h-4 text-slate-400 absolute right-3 top-2.5" />
           <input
             type="text"
-            placeholder="بحث في سجل العمليات..."
+            placeholder={ui('بحث في سجل العمليات...', 'Search the audit trail...')}
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="w-full pr-9 pl-3 py-1.5 text-xs bg-white border border-slate-200 rounded-xl shadow-xs focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
@@ -57,25 +60,25 @@ export const AuditLogsView: React.FC<AuditLogsViewProps> = ({ logs }) => {
           <table className="w-full text-right text-xs">
             <thead>
               <tr className="bg-slate-50 text-slate-500 font-bold border-b border-slate-200">
-                <th className="py-3 px-4">التوقيت والتاريخ</th>
-                <th className="py-3 px-4">المستخدم والمنصب</th>
-                <th className="py-3 px-4">نوع العملية</th>
-                <th className="py-3 px-4">الكيان المستهدف</th>
-                <th className="py-3 px-4">التفاصيل والتغييرات</th>
+                <th className="py-3 px-4">{ui('التوقيت والتاريخ', 'Date & Time')}</th>
+                <th className="py-3 px-4">{ui('المستخدم والمنصب', 'User & Role')}</th>
+                <th className="py-3 px-4">{ui('نوع العملية', 'Action')}</th>
+                <th className="py-3 px-4">{ui('الكيان المستهدف', 'Target Entity')}</th>
+                <th className="py-3 px-4">{ui('التفاصيل والتغييرات', 'Details & Changes')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {filteredLogs.length === 0 ? (
                 <tr>
                   <td colSpan={5} className="py-12 text-center text-slate-400">
-                    لا توجد سجلات تدقيق مطابقة للبحث
+                    {ui('لا توجد سجلات تدقيق مطابقة للبحث', 'No audit records match your search.')}
                   </td>
                 </tr>
               ) : (
                 filteredLogs.map((log) => (
                   <tr key={log.id} className="hover:bg-slate-50">
                     <td className="py-3 px-4 font-mono text-slate-600">
-                      {new Date(log.timestamp).toLocaleString('ar-SA')}
+                      {new Date(log.timestamp).toLocaleString(language === 'ar' ? 'ar-SA' : 'en-GB')}
                     </td>
                     <td className="py-3 px-4 font-semibold text-slate-900">
                       {log.userName}

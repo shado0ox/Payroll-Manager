@@ -382,11 +382,14 @@ export interface JournalLine {
   id: string;
   accountCode: string;
   accountNameAr: string;
+  accountNameEn?: string;
   descriptionAr: string;
+  descriptionEn?: string;
   debit: number;
   credit: number;
   costCenterCode?: string;
   costCenterName?: string;
+  costCenterNameEn?: string;
   contactName?: string;
 }
 
@@ -398,6 +401,7 @@ export interface JournalBatch {
   batchNumber: string;
   date: string;
   description: string;
+  descriptionEn?: string;
   totalDebit: number;
   totalCredit: number;
   status: 'DRAFT' | 'EXPORTED_TO_QOYOD' | 'POSTED';

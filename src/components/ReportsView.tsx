@@ -15,6 +15,7 @@ import {
 import { Company, Employee, PayrollRun, UserRole } from '../types';
 import { formatSAR, formatNumber } from '../utils/payrollEngine';
 import { exportPayrollSheetCsv, exportGosiReportCsv, exportWpsBankCsv } from '../utils/exportUtils';
+import { useLanguage } from '../i18n/LanguageContext';
 
 interface ReportsViewProps {
   company: Company;
@@ -29,12 +30,14 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
   payrollRuns,
   activeRole,
 }) => {
+  const { language } = useLanguage();
+  const ui = (ar: string, en: string) => language === 'ar' ? ar : en;
   const companyRuns = useMemo(() => {
     return payrollRuns.filter(r => r.companyId === company.id);
   }, [payrollRuns, company.id]);
 
   const [selectedPeriod, setSelectedPeriod] = useState<string>(
-    companyRuns[0]?.periodMonth || '2026-08'
+    companyRuns[0]?.periodMonth || new Date().toISOString().slice(0, 7)
   );
 
   const currentRun = useMemo(() => {
@@ -93,10 +96,10 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
         <div>
           <h1 className="text-xl sm:text-2xl font-bold text-slate-900 flex items-center gap-2">
             <FileSpreadsheet className="w-6 h-6 text-emerald-600" />
-            <span>التقارير المالية والامتثال النظامي</span>
+            <span>{ui('التقارير المالية والامتثال النظامي', 'Financial Reports & Regulatory Compliance')}</span>
           </h1>
           <p className="text-xs text-slate-500 mt-1">
-            كشوفات الرواتب، تقارير التأمينات الاجتماعية (GOSI)، ومطابقة حماية الأجور (WPS / مُدد)
+            {ui('كشوفات الرواتب، تقارير التأمينات الاجتماعية (GOSI)، ومطابقة حماية الأجور (WPS / مُدد)', 'Payroll statements, GOSI reports, and Wage Protection System (WPS / Mudad) reconciliation.')}
           </p>
         </div>
 
@@ -109,7 +112,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
             className="bg-transparent text-xs font-bold text-slate-800 border-none focus:ring-0 cursor-pointer"
           >
             {companyRuns.map(r => (
-              <option key={r.id} value={r.periodMonth}>فترة {r.periodMonth}</option>
+              <option key={r.id} value={r.periodMonth}>{ui('فترة', 'Period')} {r.periodMonth}</option>
             ))}
           </select>
         </div>
@@ -124,9 +127,9 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
             <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
               <FileSpreadsheet className="w-5 h-5" />
             </div>
-            <h3 className="font-bold text-sm text-slate-900">مسير الرواتب الشامل (Detailed Payroll)</h3>
+            <h3 className="font-bold text-sm text-slate-900">{ui('مسير الرواتب الشامل', 'Detailed Payroll')}</h3>
             <p className="text-xs text-slate-500">
-              ملف إكسل كامل بجميع الاستحقاقات، البدلات، الإضافي، التأمينات، والخصومات لجميع الموظفين ({currentRun?.employeesCount || 0} موظف).
+              {ui(`ملف إكسل كامل بجميع الاستحقاقات والبدلات والإضافي والتأمينات والخصومات لجميع الموظفين (${currentRun?.employeesCount || 0} موظف).`, `A complete spreadsheet of earnings, allowances, overtime, GOSI, and deductions for ${currentRun?.employeesCount || 0} employees.`)}
             </p>
           </div>
           <button
@@ -135,7 +138,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
             className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
           >
             <Download className="w-4 h-4" />
-            <span>تحميل ملف المسير Excel / CSV</span>
+            <span>{ui('تحميل ملف المسير Excel / CSV', 'Download Payroll Excel / CSV')}</span>
           </button>
         </div>
 
@@ -145,9 +148,9 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
             <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
               <DollarSign className="w-5 h-5" />
             </div>
-            <h3 className="font-bold text-sm text-slate-900">ملف حماية الأجور (WPS / مُدد)</h3>
+            <h3 className="font-bold text-sm text-slate-900">{ui('ملف حماية الأجور', 'Wage Protection File')} (WPS / {ui('مُدد', 'Mudad')})</h3>
             <p className="text-xs text-slate-500">
-              ملف مصرفي معتمد يطابق مواصفات البنك المركزي السعودي ومنصة مُدد لصرف الرواتب وضمان نسبة الالتزام 100%.
+              {ui('ملف مصرفي مطابق لإعدادات المنشأة ومتطلبات حماية الأجور ومنصة مُدد لصرف الرواتب.', 'A bank file generated from the company settings for salary transfers and WPS/Mudad compliance.')}
             </p>
           </div>
           <button
@@ -156,7 +159,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
             className="w-full py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
           >
             <Download className="w-4 h-4" />
-            <span>تحميل ملف حماية الأجور WPS</span>
+            <span>{ui('تحميل ملف حماية الأجور WPS', 'Download WPS File')}</span>
           </button>
         </div>
 
@@ -166,9 +169,9 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
             <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
               <ShieldCheck className="w-5 h-5" />
             </div>
-            <h3 className="font-bold text-sm text-slate-900">تقرير اشتراكات التأمينات (GOSI)</h3>
+            <h3 className="font-bold text-sm text-slate-900">{ui('تقرير اشتراكات التأمينات', 'GOSI Contribution Report')} (GOSI)</h3>
             <p className="text-xs text-slate-500">
-              تقرير مفصل بحصة الموظف والمنشأة (سعوديين 9.75%+11.75%، وغير سعوديين 2% أخطار مهنية مع سقف 45 ألف ريال).
+              {ui('تقرير مفصل بحصة الموظف والمنشأة وفق نسب وقواعد GOSI المحددة في إعدادات المنشأة.', 'A detailed employee and employer contribution report using the GOSI rates and rules configured for the company.')}
             </p>
           </div>
           <button
@@ -177,7 +180,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
             className="w-full py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
           >
             <Download className="w-4 h-4" />
-            <span>تحميل تقرير اشتراكات GOSI</span>
+            <span>{ui('تحميل تقرير اشتراكات GOSI', 'Download GOSI Report')}</span>
           </button>
         </div>
 
@@ -187,27 +190,27 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
       <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs space-y-4">
         <h3 className="font-bold text-sm text-slate-900 flex items-center gap-2">
           <ShieldCheck className="w-5 h-5 text-blue-600" />
-          <span>ملخص اشتراكات التأمينات الاجتماعية لشهر {selectedPeriod}</span>
+          <span>{ui('ملخص اشتراكات التأمينات الاجتماعية لشهر', 'GOSI contribution summary for')} {selectedPeriod}</span>
         </h3>
 
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs">
           <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200">
-            <span className="text-slate-500 block mb-1">الموظفون السعوديون (معاشات + أخطار + ساند):</span>
-            <span className="text-base font-bold text-slate-900">{gosiMetrics.saudiCount} موظف</span>
+            <span className="text-slate-500 block mb-1">{ui('الموظفون السعوديون (معاشات + أخطار + ساند):', 'Saudi employees (pension + occupational hazards + SANED):')}</span>
+            <span className="text-base font-bold text-slate-900">{gosiMetrics.saudiCount} {ui('موظف', 'employees')}</span>
           </div>
 
           <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200">
-            <span className="text-slate-500 block mb-1">الموظفون غير السعوديين (أخطار مهنية 2%):</span>
-            <span className="text-base font-bold text-slate-900">{gosiMetrics.nonSaudiCount} موظف</span>
+            <span className="text-slate-500 block mb-1">{ui('الموظفون غير السعوديين (أخطار مهنية):', 'Non-Saudi employees (occupational hazards):')}</span>
+            <span className="text-base font-bold text-slate-900">{gosiMetrics.nonSaudiCount} {ui('موظف', 'employees')}</span>
           </div>
 
           <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200">
-            <span className="text-slate-500 block mb-1">حصة الموظفين المستقطعة (Employee):</span>
+            <span className="text-slate-500 block mb-1">{ui('حصة الموظفين المستقطعة:', 'Employee contributions deducted:')}</span>
             <span className="text-base font-bold text-rose-700 font-mono">{formatSAR(gosiMetrics.employeeTotal)}</span>
           </div>
 
           <div className="bg-blue-50 p-3.5 rounded-xl border border-blue-200">
-            <span className="text-blue-900 font-semibold block mb-1">إجمالي فاتورة التأمينات المستحقة:</span>
+            <span className="text-blue-900 font-semibold block mb-1">{ui('إجمالي فاتورة التأمينات المستحقة:', 'Total GOSI payable:')}</span>
             <span className="text-base font-black text-blue-900 font-mono">{formatSAR(gosiMetrics.gosiTotal)}</span>
           </div>
         </div>
@@ -218,7 +221,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
         <div className="p-4 border-b border-slate-200 flex items-center justify-between">
           <h3 className="font-bold text-sm text-slate-900 flex items-center gap-2">
             <Building2 className="w-5 h-5 text-emerald-600" />
-            <span>توزيع تكلفة الرواتب حسب مراكز التكلفة والأقسام لشهر {selectedPeriod}</span>
+            <span>{ui('توزيع تكلفة الرواتب حسب مراكز التكلفة والأقسام لشهر', 'Payroll cost by cost center and department for')} {selectedPeriod}</span>
           </h3>
         </div>
 
@@ -226,12 +229,12 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
           <table className="w-full text-right text-xs">
             <thead>
               <tr className="bg-slate-50 text-slate-500 font-bold border-b border-slate-200">
-                <th className="py-3 px-4">مركز التكلفة / القسم</th>
-                <th className="py-3 px-4">عدد الموظفين</th>
-                <th className="py-3 px-4">إجمالي المستحق (Gross)</th>
-                <th className="py-3 px-4">صافي التحويل (Net)</th>
-                <th className="py-3 px-4">إجمالي تكلفة المنشأة الشاملة</th>
-                <th className="py-3 px-4">النسبة من إجمالي الرواتب</th>
+                <th className="py-3 px-4">{ui('مركز التكلفة / القسم', 'Cost Center / Department')}</th>
+                <th className="py-3 px-4">{ui('عدد الموظفين', 'Employees')}</th>
+                <th className="py-3 px-4">{ui('إجمالي المستحق', 'Gross Earnings')}</th>
+                <th className="py-3 px-4">{ui('صافي التحويل', 'Net Transfer')}</th>
+                <th className="py-3 px-4">{ui('إجمالي تكلفة المنشأة الشاملة', 'Total Company Cost')}</th>
+                <th className="py-3 px-4">{ui('النسبة من إجمالي الرواتب', 'Share of Total Payroll')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -243,7 +246,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
                 return (
                   <tr key={row.dept} className="hover:bg-slate-50">
                     <td className="py-3 px-4 font-bold text-slate-900">{row.dept}</td>
-                    <td className="py-3 px-4 font-semibold text-slate-600">{row.count} موظف</td>
+                    <td className="py-3 px-4 font-semibold text-slate-600">{row.count} {ui('موظف', 'employees')}</td>
                     <td className="py-3 px-4 font-semibold text-slate-800">{formatSAR(row.totalGross)}</td>
                     <td className="py-3 px-4 font-bold text-emerald-800">{formatSAR(row.totalNet)}</td>
                     <td className="py-3 px-4 font-extrabold text-purple-800 font-mono">{formatSAR(row.totalBurden)}</td>

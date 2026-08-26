@@ -57,7 +57,8 @@ export function generatePayrollJournalBatch(company: Company, payrollRun: Payrol
   costCenterMap.forEach((data, ccId) => {
     const cc = costCenters.find(c => c.id === ccId) || {
       code: 'CC-GEN',
-      nameAr: 'المركز العام'
+      nameAr: 'المركز العام',
+      nameEn: 'General cost center'
     };
 
     if (data.baseSalary > 0) {
@@ -65,11 +66,14 @@ export function generatePayrollJournalBatch(company: Company, payrollRun: Payrol
         id: `line-debit-base-${ccId}`,
         accountCode: accounts.salariesExpenseAccount || '5101',
         accountNameAr: 'مصروف الرواتب الأساسية',
+        accountNameEn: 'Basic salary expense',
         descriptionAr: `استحقاق رواتب شهر ${payrollRun.periodMonth} - ${cc.nameAr}`,
+        descriptionEn: `Basic salary accrual for ${payrollRun.periodMonth} - ${cc.nameEn || cc.nameAr}`,
         debit: roundAmount(data.baseSalary),
         credit: 0,
         costCenterCode: cc.code,
         costCenterName: cc.nameAr,
+        costCenterNameEn: cc.nameEn || cc.nameAr,
       });
     }
 
@@ -78,11 +82,14 @@ export function generatePayrollJournalBatch(company: Company, payrollRun: Payrol
         id: `line-debit-housing-${ccId}`,
         accountCode: accounts.housingAllowanceAccount || '5102',
         accountNameAr: 'مصروف بدل سكن',
+        accountNameEn: 'Housing allowance expense',
         descriptionAr: `استحقاق بدل سكن شهر ${payrollRun.periodMonth} - ${cc.nameAr}`,
+        descriptionEn: `Housing allowance accrual for ${payrollRun.periodMonth} - ${cc.nameEn || cc.nameAr}`,
         debit: roundAmount(data.housing),
         credit: 0,
         costCenterCode: cc.code,
         costCenterName: cc.nameAr,
+        costCenterNameEn: cc.nameEn || cc.nameAr,
       });
     }
 
@@ -91,11 +98,14 @@ export function generatePayrollJournalBatch(company: Company, payrollRun: Payrol
         id: `line-debit-trans-${ccId}`,
         accountCode: accounts.transportAllowanceAccount || '5103',
         accountNameAr: 'مصروف بدل نقل وتوصيل',
+        accountNameEn: 'Transport allowance expense',
         descriptionAr: `استحقاق بدل نقل شهر ${payrollRun.periodMonth} - ${cc.nameAr}`,
+        descriptionEn: `Transport allowance accrual for ${payrollRun.periodMonth} - ${cc.nameEn || cc.nameAr}`,
         debit: roundAmount(data.transport),
         credit: 0,
         costCenterCode: cc.code,
         costCenterName: cc.nameAr,
+        costCenterNameEn: cc.nameEn || cc.nameAr,
       });
     }
 
@@ -104,11 +114,14 @@ export function generatePayrollJournalBatch(company: Company, payrollRun: Payrol
         id: `line-debit-ot-${ccId}`,
         accountCode: accounts.overtimeExpenseAccount || '5104',
         accountNameAr: 'مصروف ساعات العمل الإضافي',
+        accountNameEn: 'Overtime expense',
         descriptionAr: `استحقاق العمل الإضافي شهر ${payrollRun.periodMonth} - ${cc.nameAr}`,
+        descriptionEn: `Overtime accrual for ${payrollRun.periodMonth} - ${cc.nameEn || cc.nameAr}`,
         debit: roundAmount(data.overtime),
         credit: 0,
         costCenterCode: cc.code,
         costCenterName: cc.nameAr,
+        costCenterNameEn: cc.nameEn || cc.nameAr,
       });
     }
 
@@ -117,11 +130,14 @@ export function generatePayrollJournalBatch(company: Company, payrollRun: Payrol
         id: `line-debit-other-${ccId}`,
         accountCode: accounts.otherAllowancesExpenseAccount || '5105',
         accountNameAr: 'مصروف بدلات ومكافآت أخرى',
+        accountNameEn: 'Other allowances and bonuses expense',
         descriptionAr: `استحقاق بدلات أخرى شهر ${payrollRun.periodMonth} - ${cc.nameAr}`,
+        descriptionEn: `Other allowances accrual for ${payrollRun.periodMonth} - ${cc.nameEn || cc.nameAr}`,
         debit: roundAmount(data.otherAllowances),
         credit: 0,
         costCenterCode: cc.code,
         costCenterName: cc.nameAr,
+        costCenterNameEn: cc.nameEn || cc.nameAr,
       });
     }
 
@@ -130,11 +146,14 @@ export function generatePayrollJournalBatch(company: Company, payrollRun: Payrol
         id: `line-debit-gosi-emp-${ccId}`,
         accountCode: accounts.gosiEmployerExpenseAccount || '5106',
         accountNameAr: 'مصروف التأمينات الاجتماعية - حصة المنشأة',
+        accountNameEn: 'GOSI expense - employer share',
         descriptionAr: `حصة الشركة في التأمينات شهر ${payrollRun.periodMonth} - ${cc.nameAr}`,
+        descriptionEn: `Employer GOSI contribution for ${payrollRun.periodMonth} - ${cc.nameEn || cc.nameAr}`,
         debit: roundAmount(data.gosiEmployer),
         credit: 0,
         costCenterCode: cc.code,
         costCenterName: cc.nameAr,
+        costCenterNameEn: cc.nameEn || cc.nameAr,
       });
     }
   });
@@ -151,7 +170,9 @@ export function generatePayrollJournalBatch(company: Company, payrollRun: Payrol
       id: 'line-cred-salaries-payable',
       accountCode: accounts.salariesPayableAccount || '2101',
       accountNameAr: 'مستحقات الرواتب والأجور (صافي المستحق للموظفين)',
+      accountNameEn: 'Salaries and wages payable (employee net pay)',
       descriptionAr: `صافي رواتب الموظفين المستحقة لشهر ${payrollRun.periodMonth}`,
+      descriptionEn: `Employee net salaries payable for ${payrollRun.periodMonth}`,
       debit: 0,
       credit: roundAmount(payrollRun.totalNetSalaries),
     });
@@ -164,7 +185,9 @@ export function generatePayrollJournalBatch(company: Company, payrollRun: Payrol
       id: 'line-cred-gosi-payable',
       accountCode: accounts.gosiPayableAccount || '2102',
       accountNameAr: 'مستحقات المؤسسة العامة للتأمينات الاجتماعية',
+      accountNameEn: 'GOSI contributions payable',
       descriptionAr: `مستحقات التأمينات (حصة موظفين ${payrollRun.totalGosiEmployee} + حصة منشأة ${payrollRun.totalGosiEmployer}) لشهر ${payrollRun.periodMonth}`,
+      descriptionEn: `GOSI payable (employee ${payrollRun.totalGosiEmployee} + employer ${payrollRun.totalGosiEmployer}) for ${payrollRun.periodMonth}`,
       debit: 0,
       credit: totalGosiLiability,
     });
@@ -176,7 +199,9 @@ export function generatePayrollJournalBatch(company: Company, payrollRun: Payrol
       id: 'line-cred-loans',
       accountCode: accounts.employeeAdvancesAccount || '1105',
       accountNameAr: 'ذمم وسلف الموظفين المستردة',
+      accountNameEn: 'Employee loans and advances recovered',
       descriptionAr: `استقطاع أقساط سلف الموظفين لشهر ${payrollRun.periodMonth}`,
+      descriptionEn: `Employee loan installments deducted for ${payrollRun.periodMonth}`,
       debit: 0,
       credit: roundAmount(payrollRun.totalLoanDeductions),
     });
@@ -191,7 +216,9 @@ export function generatePayrollJournalBatch(company: Company, payrollRun: Payrol
       id: 'line-cred-penalties',
       accountCode: accounts.penaltiesPayableAccount || '2105',
       accountNameAr: 'أمانات الجزاءات والخصومات الإدارية',
+      accountNameEn: 'Penalties and administrative deductions payable',
       descriptionAr: `خصومات الغياب والتأخير والجزاءات لشهر ${payrollRun.periodMonth}`,
+      descriptionEn: `Absence, lateness, and penalty deductions for ${payrollRun.periodMonth}`,
       debit: 0,
       credit: totalPenaltiesAndPenalties,
     });
@@ -219,6 +246,7 @@ export function generatePayrollJournalBatch(company: Company, payrollRun: Payrol
     batchNumber: `JV-${payrollRun.periodMonth.replace('-', '')}-${company.crNumber.slice(-4) || '001'}`,
     date: payrollRun.endDate || new Date().toISOString().split('T')[0],
     description: `قيد استحقاق رواتب وأجور موظفي (${company.nameAr}) لشهر ${payrollRun.periodMonth}`,
+    descriptionEn: `Payroll accrual for ${company.nameEn || company.nameAr} - ${payrollRun.periodMonth}`,
     totalDebit,
     totalCredit,
     status: 'DRAFT',
@@ -243,7 +271,9 @@ export function generatePaymentJournalBatch(company: Company, payrollRun: Payrol
     id: `line-pay-debit-payable`,
     accountCode: accounts.salariesPayableAccount || '2101',
     accountNameAr: 'مستحقات الرواتب والأجور',
+    accountNameEn: 'Salaries and wages payable',
     descriptionAr: `صرف رواتب شهر ${payrollRun.periodMonth} - دفعة ${reference}`,
+    descriptionEn: `Salary payment for ${payrollRun.periodMonth} - batch ${paymentBatch?.batchNumber || payrollRun.periodMonth}`,
     debit: paymentAmount,
     credit: 0,
   });
@@ -253,7 +283,9 @@ export function generatePaymentJournalBatch(company: Company, payrollRun: Payrol
     id: `line-pay-cred-bank`,
     accountCode: accounts.bankAccount || '1010',
     accountNameAr: 'حساب البنك الجاري',
+    accountNameEn: 'Current bank account',
     descriptionAr: `تحويل رواتب شهر ${payrollRun.periodMonth} - دفعة ${reference}`,
+    descriptionEn: `Salary transfer for ${payrollRun.periodMonth} - batch ${paymentBatch?.batchNumber || payrollRun.periodMonth}`,
     debit: 0,
     credit: paymentAmount,
   });
@@ -266,6 +298,7 @@ export function generatePaymentJournalBatch(company: Company, payrollRun: Payrol
     batchNumber: `PV-${paymentBatch?.batchNumber || `${payrollRun.periodMonth.replace('-', '')}-${company.crNumber.slice(-4) || '001'}`}`,
     date: journalDate,
     description: `قيد صرف وتحويل رواتب شهر ${payrollRun.periodMonth} - دفعة ${reference}`,
+    descriptionEn: `Salary payment journal for ${payrollRun.periodMonth} - batch ${paymentBatch?.batchNumber || payrollRun.periodMonth}`,
     totalDebit: paymentAmount,
     totalCredit: paymentAmount,
     status: 'DRAFT',

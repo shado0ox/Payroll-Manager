@@ -1,11 +1,11 @@
 import { Company, PayrollRun, JournalBatch, Employee, PayrollRunItem } from '../types';
-import { translateUiText } from '../i18n/LanguageContext';
+
+const isEnglish = () => localStorage.getItem('masar_language') === 'en';
 
 /**
  * Downloads a string content as a UTF-8 file with BOM for perfect Arabic Excel rendering.
  */
 export function downloadCsvFile(filename: string, csvContent: string): void {
-  if (localStorage.getItem('masar_language') === 'en') csvContent = translateUiText(csvContent);
   // UTF-8 BOM ensures Excel displays Arabic text properly
   const bom = '\uFEFF';
   const blob = new Blob([bom + csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -25,17 +25,20 @@ export function downloadCsvFile(filename: string, csvContent: string): void {
  * Date, Description, AccountCode, AccountName, Debit, Credit, CostCenter, ContactName, Reference
  */
 export function exportQoyodJournalCsv(batch: JournalBatch, company: Company): void {
-  const headers = ['التاريخ', 'الوصف', 'رمز الحساب', 'اسم الحساب', 'مدين (Debit)', 'دائن (Credit)', 'مركز التكلفة', 'اسم جهة الاتصال', 'المرجع'];
+  const en = isEnglish();
+  const headers = en
+    ? ['Date', 'Description', 'Account Code', 'Account Name', 'Debit', 'Credit', 'Cost Center', 'Contact Name', 'Reference']
+    : ['التاريخ', 'الوصف', 'رمز الحساب', 'اسم الحساب', 'مدين', 'دائن', 'مركز التكلفة', 'اسم جهة الاتصال', 'المرجع'];
   
   const rows = batch.lines.map(line => [
     `"${batch.date}"`,
-    `"${line.descriptionAr || batch.description}"`,
+    `"${en ? line.descriptionEn || line.descriptionAr || batch.descriptionEn || batch.description : line.descriptionAr || batch.description}"`,
     `"${line.accountCode}"`,
-    `"${line.accountNameAr}"`,
+    `"${en ? line.accountNameEn || line.accountNameAr : line.accountNameAr}"`,
     line.debit > 0 ? line.debit.toFixed(2) : '0.00',
     line.credit > 0 ? line.credit.toFixed(2) : '0.00',
     `"${line.costCenterCode || ''}"`,
-    `"${line.contactName || company.nameAr}"`,
+    `"${line.contactName || (en ? company.nameEn || company.nameAr : company.nameAr)}"`,
     `"${batch.batchNumber}"`
   ]);
 
@@ -48,7 +51,14 @@ export function exportQoyodJournalCsv(batch: JournalBatch, company: Company): vo
  * Generates Detailed Monthly Payroll Sheet CSV.
  */
 export function exportPayrollSheetCsv(payrollRun: PayrollRun, company: Company): void {
-  const headers = [
+  const en = isEnglish();
+  const headers = en ? [
+    'Employee Number', 'Employee Name', 'Nationality', 'Department', 'IBAN', 'Bank',
+    'Basic Salary', 'Housing Allowance', 'Transport Allowance', 'Other Allowances & Bonuses',
+    'Overtime Hours', 'Overtime Amount', 'Gross Earnings', 'Lateness Deduction', 'Absence Deduction',
+    'Unpaid Leave Deduction', 'Employee GOSI', 'Loan Installment', 'Other Penalties & Deductions',
+    'Total Deductions', 'Net Salary', 'Employer GOSI', 'Total Employee Cost'
+  ] : [
     'الرقم الوظيفي',
     'اسم الموظف',
     'الجنسية',
@@ -77,7 +87,7 @@ export function exportPayrollSheetCsv(payrollRun: PayrollRun, company: Company):
   const rows = payrollRun.items.map(item => [
     `"${item.employeeNo}"`,
     `"${item.employeeName}"`,
-    item.nationality === 'SAUDI' ? 'سعودي' : 'غير سعودي',
+    item.nationality === 'SAUDI' ? (en ? 'Saudi' : 'سعودي') : (en ? 'Non-Saudi' : 'غير سعودي'),
     `"${item.department}"`,
     `"${item.bankIban}"`,
     `"${item.bankName}"`,
@@ -101,8 +111,8 @@ export function exportPayrollSheetCsv(payrollRun: PayrollRun, company: Company):
   ]);
 
   const summaryRow = [
-    '"الإجمالي العام"',
-    `"${payrollRun.employeesCount} موظف"`,
+    `"${en ? 'Grand Total' : 'الإجمالي العام'}"`,
+    `"${payrollRun.employeesCount} ${en ? 'employees' : 'موظف'}"`,
     '""',
     '""',
     '""',
@@ -135,7 +145,12 @@ export function exportPayrollSheetCsv(payrollRun: PayrollRun, company: Company):
  * Generates Wages Protection System (WPS / Mudad / SAMA standard) Bank File format.
  */
 export function exportWpsBankCsv(payrollRun: PayrollRun, company: Company, employeeIds?: string[], batchReference?: string): void {
-  const headers = [
+  const en = isEnglish();
+  const headers = en ? [
+    'Record Type', 'National ID / Iqama', 'Employee Name', 'Bank Account / IBAN', 'Bank Code',
+    'Basic Salary', 'Housing Allowance', 'Other Allowances', 'Total Deductions', 'Transferred Net Salary',
+    'Company Reference'
+  ] : [
     'نوع السجل (Record Type)',
     'رقم الهوية / الإقامة',
     'اسم الموظف',
@@ -193,7 +208,12 @@ export function exportWpsBankCsv(payrollRun: PayrollRun, company: Company, emplo
  * Generates GOSI Monthly Schedule CSV.
  */
 export function exportGosiReportCsv(payrollRun: PayrollRun, company: Company): void {
-  const headers = [
+  const en = isEnglish();
+  const headers = en ? [
+    'Employee Number', 'Subscriber Name', 'Nationality', 'National ID / Iqama', 'Basic Salary',
+    'Housing Allowance', 'Contribution Wage', 'Employee Share (%)', 'Employee Contribution',
+    'Employer Share (%)', 'Employer Contribution', 'Total GOSI Contribution'
+  ] : [
     'الرقم الوظيفي',
     'اسم المشترك',
     'الجنسية',
@@ -216,7 +236,7 @@ export function exportGosiReportCsv(payrollRun: PayrollRun, company: Company): v
     return [
       `"${item.employeeNo}"`,
       `"${item.employeeName}"`,
-      isSaudi ? 'سعودي' : 'غير سعودي',
+      isSaudi ? (en ? 'Saudi' : 'سعودي') : (en ? 'Non-Saudi' : 'غير سعودي'),
       '""',
       item.baseSalary.toFixed(2),
       item.housingAllowance.toFixed(2),
@@ -225,7 +245,7 @@ export function exportGosiReportCsv(payrollRun: PayrollRun, company: Company): v
       item.gosiEmployeeShare.toFixed(2),
       isSaudi
         ? `${(((company.calculationRules.saudiGosiEmployerRate || 0.1175) + (item.saudiGosiPaymentMode === 'COMPANY_FULL' ? (company.calculationRules.saudiGosiEmployeeRate || 0.0975) : 0)) * 100).toFixed(2)}%`
-        : `${((company.calculationRules.nonSaudiGosiEmployerHazardRate || 0.02) * 100).toFixed(2)}% (مخاطر)`,
+        : `${((company.calculationRules.nonSaudiGosiEmployerHazardRate || 0.02) * 100).toFixed(2)}% (${en ? 'hazards' : 'مخاطر'})`,
       item.gosiEmployerShare.toFixed(2),
       totalGosi.toFixed(2)
     ];

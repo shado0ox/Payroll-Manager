@@ -16,6 +16,7 @@ import { Company, PayrollRun, JournalBatch, UserRole } from '../types';
 import { formatSAR, formatNumber, roundAmount } from '../utils/payrollEngine';
 import { generatePayrollJournalBatch, generatePaymentJournalBatch } from '../utils/accountingEngine';
 import { exportQoyodJournalCsv } from '../utils/exportUtils';
+import { useLanguage } from '../i18n/LanguageContext';
 
 interface AccountingJournalsViewProps {
   company: Company;
@@ -34,12 +35,14 @@ export const AccountingJournalsView: React.FC<AccountingJournalsViewProps> = ({
   onUpdateCompany,
   onOpenQoyodModal,
 }) => {
+  const { language } = useLanguage();
+  const ui = (ar: string, en: string) => language === 'ar' ? ar : en;
   const companyRuns = useMemo(() => {
     return payrollRuns.filter(r => r.companyId === company.id);
   }, [payrollRuns, company.id]);
 
   const [selectedPeriod, setSelectedPeriod] = useState<string>(
-    companyRuns[0]?.periodMonth || '2026-08'
+    companyRuns[0]?.periodMonth || new Date().toISOString().slice(0, 7)
   );
 
   const [journalType, setJournalType] = useState<'ACCRUAL' | 'PAYMENT'>('ACCRUAL');
@@ -71,7 +74,7 @@ export const AccountingJournalsView: React.FC<AccountingJournalsViewProps> = ({
       chartOfAccounts: accountsForm,
     });
     setIsAccountsMapModalOpen(false);
-    alert('تم تحديث خريطة الحسابات بنجاح ومطابقتها مع دليل حسابات قيود!');
+    alert(ui('تم تحديث خريطة الحسابات بنجاح ومطابقتها مع دليل حسابات قيود!', 'The account mapping was saved and aligned with the Qoyod chart of accounts.'));
   };
 
   return (
@@ -82,10 +85,10 @@ export const AccountingJournalsView: React.FC<AccountingJournalsViewProps> = ({
         <div>
           <h1 className="text-xl sm:text-2xl font-bold text-slate-900 flex items-center gap-2">
             <Layers className="w-6 h-6 text-emerald-600" />
-            <span>القيود المحاسبية وتكامل برنامج قيود</span>
+            <span>{ui('القيود المحاسبية وتكامل برنامج قيود', 'Accounting Journals & Qoyod Integration')}</span>
           </h1>
           <p className="text-xs text-slate-500 mt-1">
-            توليد قيود اليومية المزدوجة المتوازنة آلياً حسب مراكز التكلفة والتصدير بصيغة قيود المحاسبي
+            {ui('توليد قيود اليومية المزدوجة المتوازنة آلياً حسب مراكز التكلفة والتصدير بصيغة قيود المحاسبي', 'Generate balanced double-entry journals by cost center and export them in Qoyod format.')}
           </p>
         </div>
 
@@ -99,7 +102,7 @@ export const AccountingJournalsView: React.FC<AccountingJournalsViewProps> = ({
               className="bg-transparent text-xs font-bold text-slate-800 border-none focus:ring-0 cursor-pointer"
             >
               {companyRuns.map(r => (
-                <option key={r.id} value={r.periodMonth}>فترة {r.periodMonth}</option>
+                <option key={r.id} value={r.periodMonth}>{ui('فترة', 'Period')} {r.periodMonth}</option>
               ))}
             </select>
           </div>
@@ -113,7 +116,7 @@ export const AccountingJournalsView: React.FC<AccountingJournalsViewProps> = ({
             className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
           >
             <Settings className="w-4 h-4 text-slate-600" />
-            <span>خريطة الحسابات (قيود)</span>
+            <span>{ui('خريطة الحسابات (قيود)', 'Account Mapping (Qoyod)')}</span>
           </button>
 
           {/* Qoyod Direct API & CSV Export */}
@@ -124,7 +127,7 @@ export const AccountingJournalsView: React.FC<AccountingJournalsViewProps> = ({
                 className="px-3.5 py-2 bg-sky-600 hover:bg-sky-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
               >
                 <Sparkles className="w-4 h-4" />
-                <span>ترحيل لقيود (API 2.0)</span>
+                <span>{ui('ترحيل لقيود (API 2.0)', 'Post to Qoyod (API 2.0)')}</span>
               </button>
 
               <button
@@ -132,7 +135,7 @@ export const AccountingJournalsView: React.FC<AccountingJournalsViewProps> = ({
                 className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
               >
                 <FileSpreadsheet className="w-4 h-4" />
-                <span>تصدير CSV لقيود</span>
+                <span>{ui('تصدير CSV لقيود', 'Export Qoyod CSV')}</span>
               </button>
             </>
           )}
@@ -149,7 +152,7 @@ export const AccountingJournalsView: React.FC<AccountingJournalsViewProps> = ({
               : 'text-slate-600 hover:bg-slate-50'
           }`}
         >
-          قيد استحقاق الرواتب والأجور (Accrual JV)
+          {ui('قيد استحقاق الرواتب والأجور', 'Payroll Accrual')} (Accrual JV)
         </button>
 
         <button
@@ -160,7 +163,7 @@ export const AccountingJournalsView: React.FC<AccountingJournalsViewProps> = ({
               : 'text-slate-600 hover:bg-slate-50'
           }`}
         >
-          قيد سداد وصرف البنك (Payment PV)
+          {ui('قيد سداد وصرف البنك', 'Bank Payment')} (Payment PV)
         </button>
       </div>
 
@@ -173,22 +176,22 @@ export const AccountingJournalsView: React.FC<AccountingJournalsViewProps> = ({
                 {activeBatch.batchNumber}
               </span>
               <span className="text-xs text-slate-500 font-medium">
-                تاريخ القيد: {activeBatch.date}
+                {ui('تاريخ القيد', 'Journal date')}: {activeBatch.date}
               </span>
             </div>
-            <h3 className="font-bold text-sm text-slate-900">{activeBatch.description}</h3>
+            <h3 className="font-bold text-sm text-slate-900">{language === 'en' ? activeBatch.descriptionEn || activeBatch.description : activeBatch.description}</h3>
           </div>
 
           <div className="flex items-center gap-4">
             <div className="text-right">
-              <div className="text-[11px] text-slate-500">إجمالي المدين (Debit)</div>
+              <div className="text-[11px] text-slate-500">{ui('إجمالي المدين', 'Total debit')} (Debit)</div>
               <div className="text-base font-extrabold text-slate-900 font-mono">
                 {formatSAR(activeBatch.totalDebit)}
               </div>
             </div>
 
             <div className="text-right">
-              <div className="text-[11px] text-slate-500">إجمالي الدائن (Credit)</div>
+              <div className="text-[11px] text-slate-500">{ui('إجمالي الدائن', 'Total credit')} (Credit)</div>
               <div className="text-base font-extrabold text-slate-900 font-mono">
                 {formatSAR(activeBatch.totalCredit)}
               </div>
@@ -196,7 +199,7 @@ export const AccountingJournalsView: React.FC<AccountingJournalsViewProps> = ({
 
             <div className="px-3 py-1.5 rounded-xl border flex items-center gap-1.5 text-xs font-bold bg-emerald-50 text-emerald-800 border-emerald-200">
               <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-              <span>القيد متوازن تماماً (Balanced)</span>
+              <span>{ui('القيد متوازن تماماً', 'Journal is balanced')} (Balanced)</span>
             </div>
           </div>
         </div>
@@ -209,29 +212,29 @@ export const AccountingJournalsView: React.FC<AccountingJournalsViewProps> = ({
             <table className="w-full text-right text-xs">
               <thead>
                 <tr className="bg-slate-800 text-white font-bold border-b border-slate-700">
-                  <th className="py-3 px-4">رمز الحساب (قيود)</th>
-                  <th className="py-3 px-4">اسم الحساب في الدليل</th>
-                  <th className="py-3 px-4">مركز التكلفة</th>
-                  <th className="py-3 px-4">البيان والشرح</th>
-                  <th className="py-3 px-4 text-emerald-300 font-extrabold">مدين (Debit)</th>
-                  <th className="py-3 px-4 text-sky-300 font-extrabold">دائن (Credit)</th>
+                  <th className="py-3 px-4">{ui('رمز الحساب (قيود)', 'Account Code (Qoyod)')}</th>
+                  <th className="py-3 px-4">{ui('اسم الحساب في الدليل', 'Account Name')}</th>
+                  <th className="py-3 px-4">{ui('مركز التكلفة', 'Cost Center')}</th>
+                  <th className="py-3 px-4">{ui('البيان والشرح', 'Description')}</th>
+                  <th className="py-3 px-4 text-emerald-300 font-extrabold">{ui('مدين', 'Debit')}</th>
+                  <th className="py-3 px-4 text-sky-300 font-extrabold">{ui('دائن', 'Credit')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 font-mono">
                 {activeBatch.lines.map((line) => (
                   <tr key={line.id} className="hover:bg-slate-50">
                     <td className="py-3 px-4 font-bold text-slate-800">{line.accountCode}</td>
-                    <td className="py-3 px-4 font-sans font-semibold text-slate-900">{line.accountNameAr}</td>
+                    <td className="py-3 px-4 font-sans font-semibold text-slate-900">{language === 'en' ? line.accountNameEn || line.accountNameAr : line.accountNameAr}</td>
                     <td className="py-3 px-4 font-sans text-slate-600">
                       {line.costCenterName ? (
                         <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 text-[10px] font-bold">
-                          {line.costCenterCode} - {line.costCenterName}
+                          {line.costCenterCode} - {language === 'en' ? line.costCenterNameEn || line.costCenterName : line.costCenterName}
                         </span>
                       ) : (
                         <span className="text-slate-300">-</span>
                       )}
                     </td>
-                    <td className="py-3 px-4 font-sans text-slate-600">{line.descriptionAr}</td>
+                    <td className="py-3 px-4 font-sans text-slate-600">{language === 'en' ? line.descriptionEn || line.descriptionAr : line.descriptionAr}</td>
                     <td className="py-3 px-4 font-extrabold text-emerald-700">
                       {line.debit > 0 ? formatSAR(line.debit) : '-'}
                     </td>
@@ -243,7 +246,7 @@ export const AccountingJournalsView: React.FC<AccountingJournalsViewProps> = ({
               </tbody>
               <tfoot>
                 <tr className="bg-slate-50 border-t-2 border-slate-300 font-bold text-slate-900">
-                  <td colSpan={4} className="py-3 px-4 text-left font-sans">الإجمالي العام المتوازن:</td>
+                  <td colSpan={4} className="py-3 px-4 text-left font-sans">{ui('الإجمالي العام المتوازن:', 'Balanced total:')}</td>
                   <td className="py-3 px-4 text-emerald-800 text-sm font-extrabold font-mono">{formatSAR(activeBatch.totalDebit)}</td>
                   <td className="py-3 px-4 text-sky-800 text-sm font-extrabold font-mono">{formatSAR(activeBatch.totalCredit)}</td>
                 </tr>
@@ -259,8 +262,8 @@ export const AccountingJournalsView: React.FC<AccountingJournalsViewProps> = ({
           <div className="bg-white rounded-3xl max-w-2xl w-full shadow-2xl border border-slate-200 p-6 space-y-4 max-h-[85vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div>
-                <h3 className="text-sm font-bold text-slate-900">خريطة الحسابات المحاسبية (دليل قيود)</h3>
-                <p className="text-xs text-slate-500">تخصيص رموز وأرقام الحسابات للمنشأة: {company.nameAr}</p>
+                <h3 className="text-sm font-bold text-slate-900">{ui('خريطة الحسابات المحاسبية (دليل قيود)', 'Accounting Mapping (Qoyod Chart of Accounts)')}</h3>
+                <p className="text-xs text-slate-500">{ui('تخصيص رموز وأرقام الحسابات للمنشأة:', 'Configure account codes for:')} {language === 'en' ? company.nameEn || company.nameAr : company.nameAr}</p>
               </div>
               <button
                 onClick={() => setIsAccountsMapModalOpen(false)}
@@ -273,7 +276,7 @@ export const AccountingJournalsView: React.FC<AccountingJournalsViewProps> = ({
             <form onSubmit={handleSaveAccounts} className="space-y-3.5 text-xs">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                 <div>
-                  <label className="block font-semibold text-slate-700 mb-1">ح/ مصروف الرواتب الأساسية</label>
+                  <label className="block font-semibold text-slate-700 mb-1">{ui('ح/ مصروف الرواتب الأساسية', 'Basic salary expense account')}</label>
                   <input
                     type="text"
                     value={accountsForm.salariesExpenseAccount}
@@ -283,7 +286,7 @@ export const AccountingJournalsView: React.FC<AccountingJournalsViewProps> = ({
                 </div>
 
                 <div>
-                  <label className="block font-semibold text-slate-700 mb-1">ح/ مصروف بدل السكن</label>
+                  <label className="block font-semibold text-slate-700 mb-1">{ui('ح/ مصروف بدل السكن', 'Housing allowance expense account')}</label>
                   <input
                     type="text"
                     value={accountsForm.housingAllowanceAccount}
@@ -293,7 +296,7 @@ export const AccountingJournalsView: React.FC<AccountingJournalsViewProps> = ({
                 </div>
 
                 <div>
-                  <label className="block font-semibold text-slate-700 mb-1">ح/ مصروف بدل النقل</label>
+                  <label className="block font-semibold text-slate-700 mb-1">{ui('ح/ مصروف بدل النقل', 'Transport allowance expense account')}</label>
                   <input
                     type="text"
                     value={accountsForm.transportAllowanceAccount}
@@ -303,7 +306,7 @@ export const AccountingJournalsView: React.FC<AccountingJournalsViewProps> = ({
                 </div>
 
                 <div>
-                  <label className="block font-semibold text-slate-700 mb-1">ح/ مصروف العمل الإضافي</label>
+                  <label className="block font-semibold text-slate-700 mb-1">{ui('ح/ مصروف العمل الإضافي', 'Overtime expense account')}</label>
                   <input
                     type="text"
                     value={accountsForm.overtimeExpenseAccount}
@@ -313,7 +316,7 @@ export const AccountingJournalsView: React.FC<AccountingJournalsViewProps> = ({
                 </div>
 
                 <div>
-                  <label className="block font-semibold text-slate-700 mb-1">ح/ مصروف التأمينات - حصة المنشأة</label>
+                  <label className="block font-semibold text-slate-700 mb-1">{ui('ح/ مصروف التأمينات - حصة المنشأة', 'Employer GOSI expense account')}</label>
                   <input
                     type="text"
                     value={accountsForm.gosiEmployerExpenseAccount}
@@ -323,7 +326,7 @@ export const AccountingJournalsView: React.FC<AccountingJournalsViewProps> = ({
                 </div>
 
                 <div>
-                  <label className="block font-semibold text-slate-700 mb-1">ح/ مستحقات الرواتب والأجور (دائن)</label>
+                  <label className="block font-semibold text-slate-700 mb-1">{ui('ح/ مستحقات الرواتب والأجور (دائن)', 'Salaries and wages payable account')}</label>
                   <input
                     type="text"
                     value={accountsForm.salariesPayableAccount}
@@ -333,7 +336,7 @@ export const AccountingJournalsView: React.FC<AccountingJournalsViewProps> = ({
                 </div>
 
                 <div>
-                  <label className="block font-semibold text-slate-700 mb-1">ح/ مستحقات التأمينات GOSI (دائن)</label>
+                  <label className="block font-semibold text-slate-700 mb-1">{ui('ح/ مستحقات التأمينات GOSI (دائن)', 'GOSI payable account')}</label>
                   <input
                     type="text"
                     value={accountsForm.gosiPayableAccount}
@@ -343,7 +346,7 @@ export const AccountingJournalsView: React.FC<AccountingJournalsViewProps> = ({
                 </div>
 
                 <div>
-                  <label className="block font-semibold text-slate-700 mb-1">ح/ سلف وذمم الموظفين (دائن)</label>
+                  <label className="block font-semibold text-slate-700 mb-1">{ui('ح/ سلف وذمم الموظفين (دائن)', 'Employee loans and advances account')}</label>
                   <input
                     type="text"
                     value={accountsForm.employeeAdvancesAccount}
@@ -353,7 +356,7 @@ export const AccountingJournalsView: React.FC<AccountingJournalsViewProps> = ({
                 </div>
 
                 <div>
-                  <label className="block font-semibold text-slate-700 mb-1">ح/ البنك الجاري (حساب الصرف)</label>
+                  <label className="block font-semibold text-slate-700 mb-1">{ui('ح/ البنك الجاري (حساب الصرف)', 'Current bank payment account')}</label>
                   <input
                     type="text"
                     value={accountsForm.bankAccount}
@@ -369,13 +372,13 @@ export const AccountingJournalsView: React.FC<AccountingJournalsViewProps> = ({
                   onClick={() => setIsAccountsMapModalOpen(false)}
                   className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-xl"
                 >
-                  إلغاء
+                  {ui('إلغاء', 'Cancel')}
                 </button>
                 <button
                   type="submit"
                   className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold"
                 >
-                  حفظ الخريطة
+                  {ui('حفظ الخريطة', 'Save mapping')}
                 </button>
               </div>
             </form>
