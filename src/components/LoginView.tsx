@@ -1,34 +1,26 @@
 import React, { useState } from 'react';
 import { useLanguage } from '../i18n/LanguageContext';
-import { 
-  Lock, 
-  User as UserIcon, 
-  Eye, 
-  EyeOff, 
-  Building2, 
-  AlertCircle,
-  KeyRound,
-  Hash,
-  ArrowLeft
-} from 'lucide-react';
-interface LoginViewProps {
-  defaultCompanyCode?: string;
-  onLogin: (companyCode: string, username: string, password: string) => Promise<void>;
-}
+import { AlertCircle, ArrowRight, CheckCircle2, Eye, EyeOff, Hash, KeyRound, Lock, Route, ShieldCheck, Sparkles, User as UserIcon } from 'lucide-react';
 
-// Convert Eastern Arabic numerals (٠-٩) to standard Latin digits (0-9)
+interface LoginViewProps { defaultCompanyCode?: string; onLogin: (companyCode: string, username: string, password: string) => Promise<void>; }
+
+const currencies = [
+  { symbol: 'SR', ar: 'ريال سعودي', en: 'Saudi Riyal', pos: 'masar-coin-one' },
+  { symbol: '$', ar: 'دولار أمريكي', en: 'US Dollar', pos: 'masar-coin-two' },
+  { symbol: 'E£', ar: 'جنيه مصري', en: 'Egyptian Pound', pos: 'masar-coin-three' },
+  { symbol: '€', ar: 'يورو', en: 'Euro', pos: 'masar-coin-four' },
+  { symbol: '£', ar: 'جنيه إسترليني', en: 'Pound Sterling', pos: 'masar-coin-five' },
+];
+
 const normalizeArabicNumbers = (val: string): string => {
-  const arabicDigits = ['٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩'];
-  return (val || '')
-    .replace(/[٠-٩]/g, (char) => String(arabicDigits.indexOf(char)))
-    .trim()
-    .toLowerCase();
+  const digits = ['٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩'];
+  return (val || '').replace(/[٠-٩]/g, char => String(digits.indexOf(char))).trim().toLowerCase();
 };
 
 export const LoginView: React.FC<LoginViewProps> = ({ defaultCompanyCode = '101', onLogin }) => {
   const { language, toggleLanguage, t } = useLanguage();
-  const defaultCode = defaultCompanyCode;
-  const [companyInput, setCompanyInput] = useState(defaultCode);
+  const isArabic = language === 'ar';
+  const [companyInput, setCompanyInput] = useState(defaultCompanyCode);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -36,163 +28,84 @@ export const LoginView: React.FC<LoginViewProps> = ({ defaultCompanyCode = '101'
   const [isLoading, setIsLoading] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(null);
-    setIsLoading(true);
-
-    try {
-      await onLogin(normalizeArabicNumbers(companyInput), username.trim().toLowerCase(), password);
-    } catch {
-      setError(t('invalidLogin'));
-    } finally {
-      setIsLoading(false);
-    }
+    e.preventDefault(); setError(null); setIsLoading(true);
+    try { await onLogin(normalizeArabicNumbers(companyInput), username.trim().toLowerCase(), password); }
+    catch { setError(t('invalidLogin')); }
+    finally { setIsLoading(false); }
   };
+  const inputClass = 'w-full h-12 ps-11 pe-4 bg-slate-950/45 border border-white/10 rounded-2xl text-white placeholder:text-slate-500 text-sm focus:outline-none focus:border-emerald-400/70 focus:ring-4 focus:ring-emerald-400/10 transition-all font-mono';
 
   return (
-    <div className="min-h-screen w-full bg-slate-900 flex flex-col items-center justify-center p-4 sm:p-6 text-slate-100 relative overflow-hidden" dir={language === 'ar' ? 'rtl' : 'ltr'}>
-      
-      {/* Background Decorative Elements */}
-      <div className="absolute -top-40 -right-40 w-96 h-96 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
-      <div className="absolute -bottom-40 -left-40 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl pointer-events-none" />
-
-      <div className="max-w-md w-full relative z-10 my-auto">
-        
-        {/* Header Branding */}
-        <div className="text-center mb-6">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-emerald-600 shadow-xl shadow-emerald-900/30 text-white font-bold text-2xl mb-3 border border-emerald-500/40">
-            <Building2 className="w-8 h-8" />
+    <main className="masar-login min-h-screen w-full text-slate-100 relative overflow-hidden" dir={isArabic ? 'rtl' : 'ltr'}>
+      <div className="masar-grid absolute inset-0 pointer-events-none" />
+      <div className="absolute -top-48 -start-40 h-[32rem] w-[32rem] rounded-full bg-emerald-500/15 blur-[110px] pointer-events-none" />
+      <div className="absolute -bottom-56 -end-32 h-[34rem] w-[34rem] rounded-full bg-cyan-500/10 blur-[120px] pointer-events-none" />
+      <div className="relative z-10 mx-auto grid min-h-screen max-w-[1440px] lg:grid-cols-[1.08fr_.92fr]">
+        <section className="relative hidden overflow-hidden border-e border-white/5 px-10 py-12 lg:flex xl:px-20 xl:py-16">
+          <div className="relative z-10 flex w-full flex-col">
+            <MasarLogo />
+            <div className="my-auto max-w-xl py-16">
+              <div className="mb-7 inline-flex items-center gap-2 rounded-full border border-emerald-300/20 bg-emerald-400/10 px-3.5 py-2 text-xs font-bold text-emerald-200 backdrop-blur-sm">
+                <Sparkles className="h-3.5 w-3.5" />{isArabic ? 'رحلة مالية أكثر وضوحًا' : 'A clearer financial journey'}
+              </div>
+              <h1 className="text-5xl font-black leading-[1.15] tracking-tight text-white xl:text-6xl">
+                {isArabic ? 'رواتبك على' : 'Your payroll,'}
+                <span className="block bg-gradient-to-l from-emerald-300 via-teal-200 to-cyan-300 bg-clip-text text-transparent">{isArabic ? 'المسار الصحيح.' : 'on the right path.'}</span>
+              </h1>
+              <p className="mt-6 max-w-lg text-base leading-8 text-slate-400 xl:text-lg">{isArabic ? 'منصة موحدة لإدارة الرواتب والموظفين والالتزامات المالية بدقة وأمان.' : 'One secure workspace for payroll, people, and financial compliance.'}</p>
+              <div className="mt-9 flex flex-wrap gap-x-6 gap-y-3 text-sm text-slate-300">
+                {[isArabic ? 'حسابات دقيقة' : 'Accurate calculations', isArabic ? 'بيانات آمنة' : 'Secure data', isArabic ? 'تقارير فورية' : 'Instant reports'].map(feature => (
+                  <span key={feature} className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-emerald-400" />{feature}</span>
+                ))}
+              </div>
+            </div>
+            <div className="flex items-center gap-3 text-xs text-slate-500"><ShieldCheck className="h-4 w-4 text-emerald-500" />{isArabic ? 'حماية وخصوصية على مستوى المؤسسات' : 'Enterprise-grade security and privacy'}</div>
           </div>
-          <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-white">
-            {t('payrollSystem')}
-          </h1>
-          <p className="text-xs sm:text-sm text-slate-400 mt-1 font-medium">
-            {t('loginSubtitle')}
-          </p>
-        </div>
-
-        {/* Login Card */}
-        <div className="bg-slate-800/90 backdrop-blur-md rounded-3xl border border-slate-700 shadow-2xl p-6 sm:p-7">
-          
-          <div className="flex items-center justify-between border-b border-slate-700/80 pb-3.5 mb-5">
-            <div>
-              <h2 className="text-base sm:text-lg font-bold text-white">{t('loginTitle')}</h2>
-              <p className="text-[11px] text-slate-400">{t('loginHint')}</p>
-            </div>
-            <div className="p-2 bg-emerald-500/10 text-emerald-400 rounded-xl border border-emerald-500/20">
-              <KeyRound className="w-4 h-4" />
-            </div>
+          <div className="masar-currency-stage absolute inset-0 pointer-events-none" aria-hidden="true">
+            <div className="masar-orbit masar-orbit-outer" /><div className="masar-orbit masar-orbit-inner" />
+            {currencies.map(currency => <div key={currency.symbol} className={`masar-coin ${currency.pos}`}><span>{currency.symbol}</span><small>{isArabic ? currency.ar : currency.en}</small></div>)}
           </div>
+        </section>
 
-          {error && (
-            <div className="mb-4 p-3 bg-rose-500/15 border border-rose-500/30 rounded-2xl flex items-start gap-2.5 text-rose-200 text-xs animate-in fade-in duration-200">
-              <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
-              <div className="leading-relaxed">{error}</div>
+        <section className="flex min-h-screen items-center justify-center px-4 py-8 sm:px-8 lg:px-12 xl:px-20">
+          <div className="w-full max-w-[460px]">
+            <div className="mb-8 flex items-center justify-between lg:justify-end">
+              <div className="lg:hidden"><MasarLogo compact /></div>
+              <button type="button" data-no-translate onClick={toggleLanguage} className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs font-bold text-slate-300 backdrop-blur-md transition hover:border-emerald-400/30 hover:bg-white/10 hover:text-white">{isArabic ? 'English' : 'العربية'}</button>
             </div>
-          )}
-
-          <form onSubmit={handleSubmit} className="space-y-4">
-            
-            {/* Company Code Input */}
-            <div>
-              <label className="block text-xs font-bold text-slate-300 mb-1.5">
-                {t('companyCodeLabel')}
-              </label>
-              
-              <div className="relative">
-                <input
-                  type="text"
-                  value={companyInput}
-                  onChange={(e) => setCompanyInput(e.target.value)}
-                  placeholder={t('companyCodePlaceholder')}
-                  required
-                  className="w-full pl-3 pr-10 py-2.5 bg-slate-900/80 border border-slate-700 rounded-xl text-white text-sm focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 transition-all font-mono"
-                  dir="ltr"
-                />
-                <Hash className="w-4 h-4 text-slate-500 absolute right-3.5 top-3" />
+            <div className="masar-login-card rounded-[2rem] border border-white/10 bg-slate-900/60 p-6 shadow-2xl shadow-black/30 backdrop-blur-2xl sm:p-9">
+              <div className="mb-8">
+                <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-2xl border border-emerald-300/20 bg-emerald-400/10 text-emerald-300"><KeyRound className="h-5 w-5" /></div>
+                <h2 className="text-2xl font-black tracking-tight text-white">{t('loginTitle')}</h2><p className="mt-2 text-sm leading-6 text-slate-400">{t('loginHint')}</p>
               </div>
-            </div>
-
-            {/* Username */}
-            <div>
-              <label className="block text-xs font-bold text-slate-300 mb-1.5">
-                {t('username')}
-              </label>
-              <div className="relative">
-                <input
-                  type="text"
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  placeholder={t('username')}
-                  required
-                  className="w-full pl-3 pr-10 py-2.5 bg-slate-900/80 border border-slate-700 rounded-xl text-white text-sm focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 transition-all font-mono"
-                  dir="ltr"
-                />
-                <UserIcon className="w-4 h-4 text-slate-500 absolute right-3.5 top-3" />
-              </div>
-            </div>
-
-            {/* Password */}
-            <div>
-              <div className="flex items-center justify-between mb-1.5">
-                <label className="block text-xs font-bold text-slate-300">
-                  {t('password')}
-                </label>
-              </div>
-              <div className="relative">
-                <input
-                  type={showPassword ? 'text' : 'password'}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder={t('password')}
-                  required
-                  className="w-full pl-10 pr-10 py-2.5 bg-slate-900/80 border border-slate-700 rounded-xl text-white text-sm focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 transition-all font-mono"
-                  dir="ltr"
-                />
-                <Lock className="w-4 h-4 text-slate-500 absolute right-3.5 top-3" />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute left-3.5 top-3 text-slate-500 hover:text-slate-300 transition-colors cursor-pointer"
-                  tabIndex={-1}
-                >
-                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              {error && <div className="mb-5 flex items-start gap-2.5 rounded-2xl border border-rose-500/25 bg-rose-500/10 p-3.5 text-xs leading-relaxed text-rose-200"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-rose-400" />{error}</div>}
+              <form onSubmit={handleSubmit} className="space-y-5">
+                <LoginField label={t('companyCodeLabel')} icon={<Hash className="h-4 w-4" />}><input type="text" value={companyInput} onChange={e => setCompanyInput(e.target.value)} placeholder={t('companyCodePlaceholder')} required className={inputClass} dir="ltr" autoComplete="organization" /></LoginField>
+                <LoginField label={t('username')} icon={<UserIcon className="h-4 w-4" />}><input type="text" value={username} onChange={e => setUsername(e.target.value)} placeholder={t('username')} required className={inputClass} dir="ltr" autoComplete="username" /></LoginField>
+                <LoginField label={t('password')} icon={<Lock className="h-4 w-4" />}>
+                  <input type={showPassword ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)} placeholder={t('password')} required className={`${inputClass} pe-11`} dir="ltr" autoComplete="current-password" />
+                  <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute end-4 top-1/2 -translate-y-1/2 text-slate-500 transition hover:text-slate-200" tabIndex={-1} aria-label={showPassword ? 'Hide password' : 'Show password'}>{showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}</button>
+                </LoginField>
+                <button type="submit" disabled={isLoading} className="group mt-2 flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-l from-emerald-500 to-teal-500 text-sm font-black text-slate-950 shadow-lg shadow-emerald-950/40 transition hover:brightness-110 active:scale-[.99] disabled:cursor-not-allowed disabled:opacity-50">
+                  {isLoading ? <span className="h-5 w-5 animate-spin rounded-full border-2 border-slate-900/25 border-t-slate-900" /> : <><span>{t('signIn')}</span><ArrowRight className={`h-4 w-4 transition-transform ${isArabic ? 'rotate-180' : ''}`} /></>}
                 </button>
-              </div>
+              </form>
             </div>
-
-            {/* Submit Button */}
-            <button
-              type="submit"
-              disabled={isLoading}
-              className="w-full mt-4 py-3 px-4 bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white rounded-xl font-bold text-sm shadow-lg shadow-emerald-900/40 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
-            >
-              {isLoading ? (
-                <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-              ) : (
-                <>
-                  <span>{t('signIn')}</span>
-                  <ArrowLeft className="w-4 h-4" />
-                </>
-              )}
-            </button>
-          </form>
-
-        </div>
-
-        <button type="button" data-no-translate onClick={toggleLanguage} className="mx-auto mt-4 block px-4 py-2 rounded-xl border border-slate-700 text-sm font-bold text-slate-300 hover:bg-slate-800">{t('language')}</button>
-        {/* Designer Attribution & System Info Footer */}
-        <div className="text-center mt-6 space-y-1.5">
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-800/80 border border-slate-700 text-slate-300 text-xs font-semibold shadow-xs">
-            <span>{t('designedBy')}</span>
-            <span className="text-emerald-400 font-bold">Shadi Nassef</span>
+            <div className="mt-7 text-center text-[11px] leading-5 text-slate-600"><p>{t('loginFooter')}</p><p className="mt-1">{t('designedBy')} <span className="font-bold text-slate-500">Shadi Nassef</span></p></div>
           </div>
-          <div className="text-[11px] text-slate-500">
-            {t('loginFooter')}
-          </div>
-        </div>
-
+        </section>
       </div>
-    </div>
+    </main>
   );
 };
+
+const MasarLogo: React.FC<{ compact?: boolean }> = ({ compact }) => (
+  <div className="flex items-center gap-3" aria-label="Masar">
+    <div className={`${compact ? 'h-11 w-11 rounded-2xl' : 'h-13 w-13 rounded-[1.15rem]'} relative flex items-center justify-center overflow-hidden border border-emerald-300/25 bg-gradient-to-br from-emerald-400 to-teal-600 text-slate-950 shadow-lg shadow-emerald-950/30`}><Route className={compact ? 'h-6 w-6' : 'h-7 w-7'} strokeWidth={2.6} /><span className="absolute end-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-white/80" /></div>
+    <div className="leading-none"><div className={`${compact ? 'text-xl' : 'text-2xl'} font-black tracking-tight text-white`}>مسار <span className="font-semibold text-emerald-300">Masar</span></div>{!compact && <div className="mt-1.5 text-[10px] font-bold tracking-[.22em] text-slate-500">PAYROLL & PEOPLE</div>}</div>
+  </div>
+);
+
+const LoginField: React.FC<{ label: string; icon: React.ReactNode; children: React.ReactNode }> = ({ label, icon, children }) => (
+  <label className="block"><span className="mb-2 block text-xs font-bold text-slate-300">{label}</span><span className="relative block"><span className="absolute start-4 top-1/2 z-10 -translate-y-1/2 text-slate-500">{icon}</span>{children}</span></label>
+);
