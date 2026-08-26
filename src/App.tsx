@@ -47,7 +47,7 @@ import {
   resetToCleanState
 } from './utils/storage';
 import { Navbar } from './components/Navbar';
-import { hasPermission, TAB_PERMISSION } from './utils/permissions';
+import { hasPermission, isDeveloperAccount, TAB_PERMISSION } from './utils/permissions';
 import { Sidebar } from './components/Sidebar';
 import { LoginView } from './components/LoginView';
 import { UserManagementView } from './components/UserManagementView';
@@ -777,6 +777,8 @@ export const App: React.FC = () => {
     return <LoginView defaultCompanyCode={state.companies[0]?.companyCode || '101'} onLogin={handleLogin} />;
   }
 
+  const canViewDatabaseTools = isDeveloperAccount(state.currentUser);
+
   return (
     <div className="flex h-screen w-full overflow-hidden bg-[#f8fafc] font-sans antialiased text-slate-900 selection:bg-emerald-500 selection:text-white">
       
@@ -800,7 +802,7 @@ export const App: React.FC = () => {
           activeCompany={activeCompany}
           currentUser={state.currentUser}
           dbStatus={dbStatus}
-          onOpenDbModal={() => setIsDbModalOpen(true)}
+          onOpenDbModal={canViewDatabaseTools ? () => setIsDbModalOpen(true) : undefined}
           onSelectCompany={handleSelectCompany}
           onLogout={handleLogout}
           onOpenQoyodModal={() => setIsQoyodModalOpen(true)}
@@ -809,7 +811,7 @@ export const App: React.FC = () => {
         />
 
         {/* Database Status Notification Banner (Shows when cloud DB is disconnected) */}
-        {!dbStatus.isChecking && !dbStatus.isCloudConnected && showDbWarningBanner && (
+        {canViewDatabaseTools && !dbStatus.isChecking && !dbStatus.isCloudConnected && showDbWarningBanner && (
           <div className="bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-transparent border-b border-amber-200/80 px-6 py-2 flex items-center justify-between gap-3 text-xs text-amber-900 shrink-0">
             <div className="flex items-center gap-2.5 min-w-0">
               <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0 animate-pulse"></span>
@@ -1007,13 +1009,15 @@ export const App: React.FC = () => {
       )}
 
       {/* Database Management & Diagnostics Modal */}
-      <DatabaseStatusModal
-        isOpen={isDbModalOpen}
-        onClose={() => setIsDbModalOpen(false)}
-        state={state}
-        dbStatus={dbStatus}
-        onRestoreState={handleRestoreState}
-      />
+      {canViewDatabaseTools && (
+        <DatabaseStatusModal
+          isOpen={isDbModalOpen}
+          onClose={() => setIsDbModalOpen(false)}
+          state={state}
+          dbStatus={dbStatus}
+          onRestoreState={handleRestoreState}
+        />
+      )}
 
     </div>
   );
