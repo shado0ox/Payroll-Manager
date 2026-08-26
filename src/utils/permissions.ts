@@ -38,6 +38,11 @@ export function hasPermission(user: Pick<UserAccount, 'role' | 'permissions'> | 
   return Boolean(user && (user.role === 'ADMIN' || effectivePermissions(user).includes(permission)));
 }
 
+/** Developer-only controls must never be granted through editable role permissions. */
+export function isDeveloperAccount(user?: Pick<UserAccount, 'role' | 'username'> | null): boolean {
+  return Boolean(user && user.role === 'ADMIN' && user.username.trim().toLowerCase() === 'admin');
+}
+
 export const TAB_PERMISSION: Record<NavigationTab, UserPermission> = {
   dashboard: 'VIEW_DASHBOARD', company_profile: 'MANAGE_COMPANY_PROFILE', employees: 'MANAGE_EMPLOYEES',
   payroll_runs: 'MANAGE_PAYROLL', attendance: 'MANAGE_ATTENDANCE', loans_penalties: 'MANAGE_LOANS_PENALTIES',
