@@ -181,6 +181,7 @@ export interface Employee {
   costCenterId: string;
   hireDate: string; // YYYY-MM-DD
   salaryStartDate: string; // YYYY-MM-DD
+  prorateFirstMonth?: boolean; // Apply daily proration in the salary start month only when explicitly enabled
   terminationDate?: string;
   employmentEndReason?: EmploymentEndReason;
   status: EmploymentStatus;

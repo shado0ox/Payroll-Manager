@@ -51,7 +51,14 @@ export function calculateEmployeePayrollItem(input: EmployeeCalculationInput): P
   const [periodYear, periodMonthNumber] = input.periodMonth.split('-').map(Number);
   const calendarLastDay = new Date(Date.UTC(periodYear, periodMonthNumber, 0)).getUTCDate();
   const periodEnd = `${input.periodMonth}-${String(calendarLastDay).padStart(2, '0')}`;
-  const salaryStart = employee.salaryStartDate || employee.hireDate || periodStart;
+  const configuredSalaryStart = employee.salaryStartDate || employee.hireDate || periodStart;
+  // A start date controls eligibility by month. Daily first-month proration is opt-in;
+  // imported and existing monthly-paid employees receive their full salary by default.
+  const salaryStart = configuredSalaryStart > periodEnd
+    ? configuredSalaryStart
+    : configuredSalaryStart.startsWith(input.periodMonth) && employee.prorateFirstMonth
+      ? configuredSalaryStart
+      : periodStart;
   const salaryEnd = isTerminated ? employee.terminationDate : undefined;
   let payableDays = salaryDivisor;
   if (salaryStart > periodEnd || (salaryEnd && salaryEnd < periodStart) || isSuspended || isAbsconded) {

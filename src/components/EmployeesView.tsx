@@ -108,6 +108,7 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
     costCenterId: company.costCenters[0]?.id || '',
     hireDate: '2026-01-01',
     salaryStartDate: '2026-01-01',
+    prorateFirstMonth: false,
     status: 'ACTIVE',
     bankName: 'مصرف الراجحي',
     bankIban: 'SA',
@@ -177,6 +178,7 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
       costCenterId: company.costCenters[0]?.id || '',
       hireDate: '2026-01-01',
       salaryStartDate: '2026-01-01',
+      prorateFirstMonth: false,
       status: 'ACTIVE',
       bankName: 'مصرف الراجحي',
       bankIban: 'SA4480000' + Math.floor(100000000000 + Math.random() * 900000000000),
@@ -385,6 +387,7 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
         costCenterId: company.costCenters[0]?.id || '',
         hireDate: today,
         salaryStartDate: today,
+        prorateFirstMonth: false,
         status,
         bankName,
         bankCode: detectedBank?.code,
@@ -1058,6 +1061,21 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                       onChange={(e) => setFormData({ ...formData, salaryStartDate: e.target.value })}
                       className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white"
                     />
+                  </div>
+
+                  <div className="sm:col-span-2 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                    <label className="flex items-start gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={formData.prorateFirstMonth === true}
+                        onChange={(e) => setFormData({ ...formData, prorateFirstMonth: e.target.checked })}
+                        className="mt-0.5 w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                      />
+                      <span>
+                        <span className="block text-xs font-bold text-slate-800">{language === 'ar' ? 'احتساب أول شهر باليوم' : 'Prorate the first month by day'}</span>
+                        <span className="block text-[10px] text-slate-500 mt-0.5">{language === 'ar' ? 'غير مفعّل افتراضيًا؛ عند تفعيله يُحسب الراتب من تاريخ بداية الاستحقاق حتى نهاية الشهر.' : 'Off by default. When enabled, salary is calculated from the eligibility date through month end.'}</span>
+                      </span>
+                    </label>
                   </div>
 
                   <div>
