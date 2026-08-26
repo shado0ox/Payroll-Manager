@@ -80,25 +80,25 @@ const STATUS_CONFIG: Record<PayrollRunStatus, { labelAr: string; labelEn: string
   POSTED: { labelAr: 'مرحل ومقفل محاسبياً', labelEn: 'Posted & Locked', bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-200' },
 };
 
-const PAYMENT_STATUS_CONFIG: Record<PaymentBatchStatus, { label: string; classes: string }> = {
-  SCHEDULED: { label: 'مجدولة للتحويل', classes: 'bg-blue-50 text-blue-700 border-blue-200' },
-  PAID: { label: 'تم التحويل', classes: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
-  FAILED: { label: 'فشل التحويل', classes: 'bg-rose-50 text-rose-700 border-rose-200' },
-  CANCELLED: { label: 'ملغاة', classes: 'bg-slate-100 text-slate-600 border-slate-200' },
+const PAYMENT_STATUS_CONFIG: Record<PaymentBatchStatus, { labelAr: string; labelEn: string; classes: string }> = {
+  SCHEDULED: { labelAr: 'مجدولة للتحويل', labelEn: 'Scheduled', classes: 'bg-blue-50 text-blue-700 border-blue-200' },
+  PAID: { labelAr: 'تم التحويل', labelEn: 'Paid', classes: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+  FAILED: { labelAr: 'فشل التحويل', labelEn: 'Failed', classes: 'bg-rose-50 text-rose-700 border-rose-200' },
+  CANCELLED: { labelAr: 'ملغاة', labelEn: 'Cancelled', classes: 'bg-slate-100 text-slate-600 border-slate-200' },
 };
 
-const ENTITLEMENT_CONFIG: Record<PayrollEntitlementStatus, { label: string; classes: string }> = {
-  PAYABLE: { label: 'مستحق للدفع', classes: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
-  HELD: { label: 'راتب معلق', classes: 'bg-amber-50 text-amber-800 border-amber-200' },
-  UNDER_SETTLEMENT: { label: 'تحت التسوية', classes: 'bg-blue-50 text-blue-700 border-blue-200' },
-  SETTLED: { label: 'مسوى نهائيًا', classes: 'bg-purple-50 text-purple-700 border-purple-200' },
-  CANCELLED_WITH_DOCUMENT: { label: 'ملغى بمستند', classes: 'bg-slate-100 text-slate-700 border-slate-200' },
+const ENTITLEMENT_CONFIG: Record<PayrollEntitlementStatus, { labelAr: string; labelEn: string; classes: string }> = {
+  PAYABLE: { labelAr: 'مستحق للدفع', labelEn: 'Payable', classes: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+  HELD: { labelAr: 'راتب معلق', labelEn: 'Held', classes: 'bg-amber-50 text-amber-800 border-amber-200' },
+  UNDER_SETTLEMENT: { labelAr: 'تحت التسوية', labelEn: 'Under Settlement', classes: 'bg-blue-50 text-blue-700 border-blue-200' },
+  SETTLED: { labelAr: 'مسوى نهائيًا', labelEn: 'Settled', classes: 'bg-purple-50 text-purple-700 border-purple-200' },
+  CANCELLED_WITH_DOCUMENT: { labelAr: 'ملغى بمستند', labelEn: 'Cancelled with Document', classes: 'bg-slate-100 text-slate-700 border-slate-200' },
 };
 
-const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
-  WPS: 'حماية الأجور WPS',
-  BANK_TRANSFER: 'تحويل بنكي',
-  CASH: 'دفع نقدي',
+const PAYMENT_METHOD_LABELS: Record<PaymentMethod, { ar: string; en: string }> = {
+  WPS: { ar: 'حماية الأجور WPS', en: 'WPS' },
+  BANK_TRANSFER: { ar: 'تحويل بنكي', en: 'Bank Transfer' },
+  CASH: { ar: 'دفع نقدي', en: 'Cash' },
 };
 
 export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
@@ -726,9 +726,9 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
           <div className="p-4 border-b border-slate-100 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
             <div>
               <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
-                <WalletCards className="w-5 h-5 text-emerald-600" /> دفعات تحويل الرواتب
+                <WalletCards className="w-5 h-5 text-emerald-600" /> {tr('دفعات تحويل الرواتب', 'Payroll Payment Batches')}
               </h3>
-              <p className="text-xs text-slate-500 mt-1">حوّل لمجموعة أو لموظف واحد مع إبقاء مسير الشهر موحدًا.</p>
+              <p className="text-xs text-slate-500 mt-1">{tr('حوّل لمجموعة أو لموظف واحد مع إبقاء مسير الشهر موحدًا.', 'Pay a group or one employee while keeping a single monthly payroll run.')}</p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <button
@@ -737,7 +737,7 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
                 disabled={!eligibleFilteredItems.length}
                 className="px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-slate-700 text-xs font-bold cursor-pointer disabled:opacity-40"
               >
-                تحديد المتاح ({eligibleFilteredItems.length})
+                {tr('تحديد المتاح', 'Select eligible')} ({eligibleFilteredItems.length})
               </button>
               <button
                 type="button"
@@ -745,50 +745,50 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
                 disabled={!selectedPaymentEmployeeIds.length || !['APPROVED', 'POSTED'].includes(currentRun.status)}
                 className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-2 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
               >
-                <Send className="w-4 h-4" /> {currentRun.status === 'POSTED' ? 'إنشاء دفعة متأخرة' : 'إنشاء دفعة للمحددين'} ({selectedPaymentEmployeeIds.length})
+                <Send className="w-4 h-4" /> {currentRun.status === 'POSTED' ? tr('إنشاء دفعة متأخرة', 'Create late payment batch') : tr('إنشاء دفعة للمحددين', 'Create selected batch')} ({selectedPaymentEmployeeIds.length})
               </button>
             </div>
           </div>
 
           <div className="grid grid-cols-2 lg:grid-cols-4 xl:grid-cols-8 gap-3 p-4 bg-slate-50/70">
-            <div className="p-3 rounded-xl bg-white border border-slate-200"><div className="text-[10px] text-slate-500">إجمالي المسير</div><div className="font-black text-slate-900">{formatSAR(currentRun.totalNetSalaries)}</div></div>
-            <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200"><div className="text-[10px] text-emerald-700">تم تحويله</div><div className="font-black text-emerald-800">{formatSAR(paidAmount)}</div></div>
-            <div className="p-3 rounded-xl bg-blue-50 border border-blue-200"><div className="text-[10px] text-blue-700">مجدول للتحويل</div><div className="font-black text-blue-800">{formatSAR(scheduledAmount)}</div></div>
-            <div className="p-3 rounded-xl bg-amber-50 border border-amber-200"><div className="text-[10px] text-amber-700">رواتب معلقة</div><div className="font-black text-amber-800">{formatSAR(heldAmount)}</div></div>
-            <div className="p-3 rounded-xl bg-sky-50 border border-sky-200"><div className="text-[10px] text-sky-700">تحت التسوية</div><div className="font-black text-sky-800">{formatSAR(underSettlementAmount)}</div></div>
-            <div className="p-3 rounded-xl bg-purple-50 border border-purple-200"><div className="text-[10px] text-purple-700">مسوى/ملغى بمستند</div><div className="font-black text-purple-800">{formatSAR(settledAmount + cancelledByDocumentAmount)}</div></div>
-            <div className="p-3 rounded-xl bg-amber-50 border border-amber-200"><div className="text-[10px] text-amber-700">غير محوّل</div><div className="font-black text-amber-800">{formatSAR(unpaidAmount)}</div></div>
-            <div className="p-3 rounded-xl bg-white border border-slate-200"><div className="text-[10px] text-slate-500">متاح لدفعة جديدة</div><div className="font-black text-slate-900">{formatSAR(remainingToSchedule)}</div></div>
+            <div className="p-3 rounded-xl bg-white border border-slate-200"><div className="text-[10px] text-slate-500">{tr('إجمالي المسير', 'Payroll total')}</div><div className="font-black text-slate-900">{formatSAR(currentRun.totalNetSalaries)}</div></div>
+            <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200"><div className="text-[10px] text-emerald-700">{tr('تم تحويله', 'Paid')}</div><div className="font-black text-emerald-800">{formatSAR(paidAmount)}</div></div>
+            <div className="p-3 rounded-xl bg-blue-50 border border-blue-200"><div className="text-[10px] text-blue-700">{tr('مجدول للتحويل', 'Scheduled')}</div><div className="font-black text-blue-800">{formatSAR(scheduledAmount)}</div></div>
+            <div className="p-3 rounded-xl bg-amber-50 border border-amber-200"><div className="text-[10px] text-amber-700">{tr('رواتب معلقة', 'Held salaries')}</div><div className="font-black text-amber-800">{formatSAR(heldAmount)}</div></div>
+            <div className="p-3 rounded-xl bg-sky-50 border border-sky-200"><div className="text-[10px] text-sky-700">{tr('تحت التسوية', 'Under settlement')}</div><div className="font-black text-sky-800">{formatSAR(underSettlementAmount)}</div></div>
+            <div className="p-3 rounded-xl bg-purple-50 border border-purple-200"><div className="text-[10px] text-purple-700">{tr('مسوى/ملغى بمستند', 'Settled / documented cancellation')}</div><div className="font-black text-purple-800">{formatSAR(settledAmount + cancelledByDocumentAmount)}</div></div>
+            <div className="p-3 rounded-xl bg-amber-50 border border-amber-200"><div className="text-[10px] text-amber-700">{tr('غير محوّل', 'Unpaid')}</div><div className="font-black text-amber-800">{formatSAR(unpaidAmount)}</div></div>
+            <div className="p-3 rounded-xl bg-white border border-slate-200"><div className="text-[10px] text-slate-500">{tr('متاح لدفعة جديدة', 'Available for new batch')}</div><div className="font-black text-slate-900">{formatSAR(remainingToSchedule)}</div></div>
           </div>
 
           {paymentBatches.length > 0 && (
             <div className="overflow-x-auto border-t border-slate-100">
               <table className="w-full text-xs text-right">
                 <thead className="bg-slate-50 text-slate-600"><tr>
-                  <th className="p-3">رقم الدفعة</th><th className="p-3">الموظفون</th><th className="p-3">المبلغ</th><th className="p-3">الطريقة والتاريخ</th><th className="p-3">الحالة</th><th className="p-3 text-center">الإجراءات</th>
+                  <th className="p-3">{tr('رقم الدفعة', 'Batch number')}</th><th className="p-3">{tr('الموظفون', 'Employees')}</th><th className="p-3">{tr('المبلغ', 'Amount')}</th><th className="p-3">{tr('الطريقة والتاريخ', 'Method & date')}</th><th className="p-3">{tr('الحالة', 'Status')}</th><th className="p-3 text-center">{tr('الإجراءات', 'Actions')}</th>
                 </tr></thead>
                 <tbody className="divide-y divide-slate-100">
                   {[...paymentBatches].reverse().map(batch => (
                     <tr key={batch.id} className="hover:bg-slate-50/70">
                       <td className="p-3"><div className="font-black font-mono text-slate-900">{batch.batchNumber}</div><div className="text-[10px] text-slate-400">{batch.reference}</div></td>
-                      <td className="p-3 font-bold">{batch.employeesCount} موظف</td>
+                      <td className="p-3 font-bold">{batch.employeesCount} {tr('موظف', 'employees')}</td>
                       <td className="p-3 font-black text-emerald-800">{formatSAR(batch.totalAmount)}</td>
-                      <td className="p-3"><div className="font-semibold">{PAYMENT_METHOD_LABELS[batch.method]}</div><div className="text-[10px] text-slate-400">{batch.paymentDate || batch.scheduledDate}</div></td>
-                      <td className="p-3"><span className={`px-2 py-1 rounded-lg border text-[10px] font-bold ${PAYMENT_STATUS_CONFIG[batch.status].classes}`}>{PAYMENT_STATUS_CONFIG[batch.status].label}</span></td>
+                      <td className="p-3"><div className="font-semibold">{PAYMENT_METHOD_LABELS[batch.method][language]}</div><div className="text-[10px] text-slate-400">{batch.paymentDate || batch.scheduledDate}</div></td>
+                      <td className="p-3"><span className={`px-2 py-1 rounded-lg border text-[10px] font-bold ${PAYMENT_STATUS_CONFIG[batch.status].classes}`}>{language === 'ar' ? PAYMENT_STATUS_CONFIG[batch.status].labelAr : PAYMENT_STATUS_CONFIG[batch.status].labelEn}</span></td>
                       <td className="p-3"><div className="flex flex-wrap justify-center gap-1.5">
                         <button type="button" onClick={() => exportWpsBankCsv(currentRun, company, batch.employeeIds, batch.reference || batch.batchNumber)} className="px-2 py-1 rounded-lg bg-indigo-50 text-indigo-700 border border-indigo-200 font-bold">WPS</button>
                         {['SCHEDULED', 'PAID'].includes(batch.status) && (
-                          <button type="button" onClick={() => exportBankPayrollXlsx(currentRun, company, batch, employees)} className="px-2 py-1 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold">ملف البنك Excel</button>
+                          <button type="button" onClick={() => exportBankPayrollXlsx(currentRun, company, batch, employees)} className="px-2 py-1 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold">{tr('ملف البنك Excel', 'Bank Excel')}</button>
                         )}
                         {batch.status === 'SCHEDULED' && <>
-                          <button type="button" onClick={() => handlePaymentBatchStatus(batch.id, 'PAID')} className="px-2 py-1 rounded-lg bg-emerald-600 text-white font-bold">تم التحويل</button>
-                          <button type="button" onClick={() => handlePaymentBatchStatus(batch.id, 'FAILED')} className="px-2 py-1 rounded-lg bg-rose-50 text-rose-700 border border-rose-200 font-bold">فشل</button>
-                          <button type="button" onClick={() => handlePaymentBatchStatus(batch.id, 'CANCELLED')} className="px-2 py-1 rounded-lg bg-slate-100 text-slate-600 font-bold">إلغاء</button>
+                          <button type="button" onClick={() => handlePaymentBatchStatus(batch.id, 'PAID')} className="px-2 py-1 rounded-lg bg-emerald-600 text-white font-bold">{tr('تم التحويل', 'Mark paid')}</button>
+                          <button type="button" onClick={() => handlePaymentBatchStatus(batch.id, 'FAILED')} className="px-2 py-1 rounded-lg bg-rose-50 text-rose-700 border border-rose-200 font-bold">{tr('فشل', 'Failed')}</button>
+                          <button type="button" onClick={() => handlePaymentBatchStatus(batch.id, 'CANCELLED')} className="px-2 py-1 rounded-lg bg-slate-100 text-slate-600 font-bold">{tr('إلغاء', 'Cancel')}</button>
                         </>}
                         {batch.status === 'PAID' && (
-                          <button type="button" onClick={() => exportQoyodJournalCsv(generatePaymentJournalBatch(company, currentRun, batch), company)} className="px-2 py-1 rounded-lg bg-sky-50 text-sky-700 border border-sky-200 font-bold">قيد السداد</button>
+                          <button type="button" onClick={() => exportQoyodJournalCsv(generatePaymentJournalBatch(company, currentRun, batch), company)} className="px-2 py-1 rounded-lg bg-sky-50 text-sky-700 border border-sky-200 font-bold">{tr('قيد السداد', 'Payment journal')}</button>
                         )}
-                        {['FAILED', 'CANCELLED'].includes(batch.status) && <span className="text-[10px] text-slate-400 self-center">الموظفون متاحون لدفعة جديدة</span>}
+                        {['FAILED', 'CANCELLED'].includes(batch.status) && <span className="text-[10px] text-slate-400 self-center">{tr('الموظفون متاحون لدفعة جديدة', 'Employees are available for a new batch')}</span>}
                       </div></td>
                     </tr>
                   ))}
@@ -798,9 +798,9 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
           )}
 
           {!['APPROVED', 'POSTED'].includes(currentRun.status) && (
-            <div className="px-4 py-3 border-t border-amber-200 bg-amber-50 text-xs text-amber-800 font-semibold">يجب اعتماد المسير أولًا قبل إنشاء دفعات التحويل.</div>
+            <div className="px-4 py-3 border-t border-amber-200 bg-amber-50 text-xs text-amber-800 font-semibold">{tr('يجب اعتماد المسير أولًا قبل إنشاء دفعات التحويل.', 'Payroll must be approved before creating payment batches.')}</div>
           )}
-          {currentRun.status === 'POSTED' && <div className="px-4 py-3 border-t border-blue-200 bg-blue-50 text-xs text-blue-800 font-semibold">يمكن إنشاء دفعة متأخرة للرواتب التي أُعيدت إلى «مستحق للدفع»، وستظل الدفعة مرتبطة بمسير {currentRun.periodMonth}.</div>}
+          {currentRun.status === 'POSTED' && <div className="px-4 py-3 border-t border-blue-200 bg-blue-50 text-xs text-blue-800 font-semibold">{tr('يمكن إنشاء دفعة متأخرة للرواتب التي أُعيدت إلى «مستحق للدفع»، وستظل الدفعة مرتبطة بمسير', 'A late batch can be created for salaries returned to Payable; it remains linked to payroll')} {currentRun.periodMonth}.</div>}
         </div>
       )}
 
@@ -811,7 +811,7 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
             <Search className="w-4 h-4 text-slate-400 absolute right-3 top-2.5" />
             <input
               type="text"
-              placeholder="بحث بالاسم، الرقم الوظيفي، الآيبان..."
+              placeholder={tr('بحث بالاسم، الرقم الوظيفي، الآيبان...', 'Search by name, employee number, or IBAN...')}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full pr-9 pl-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
@@ -826,7 +826,7 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
             onChange={(e) => setFilterDept(e.target.value)}
             className="px-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl"
           >
-            <option value="ALL">جميع الأقسام</option>
+            <option value="ALL">{tr('جميع الأقسام', 'All departments')}</option>
             {departments.map(d => (
               <option key={d} value={d}>{d}</option>
             ))}
@@ -842,7 +842,7 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
             }`}
           >
             <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
-            <span>عرض التنبيهات فقط ({totalWarnings})</span>
+            <span>{tr('عرض التنبيهات فقط', 'Warnings only')} ({totalWarnings})</span>
           </button>
         </div>
       </div>
@@ -855,28 +855,28 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
               <th className="py-2.5 px-2 w-[15%] text-right font-bold">
                 <div className="flex items-center gap-2">
                   <input type="checkbox" checked={eligibleFilteredItems.length > 0 && eligibleFilteredItems.every(item => selectedPaymentEmployeeIds.includes(item.employeeId))} onChange={toggleAllEligibleEmployees} className="accent-emerald-500" />
-                  <span>الموظف والرقم</span>
+                  <span>{tr('الموظف والرقم', 'Employee & number')}</span>
                 </div>
               </th>
-              <th className="py-2.5 px-1.5 w-[8%] text-right font-bold">القسم</th>
-              <th className="py-2.5 px-1.5 w-[7%] text-right font-bold">الأساسي</th>
-              <th className="py-2.5 px-1.5 w-[8%] text-right font-bold">البدلات</th>
-              <th className="py-2.5 px-1.5 w-[6%] text-right font-bold">الإضافي</th>
-              <th className="py-2.5 px-1.5 w-[9%] text-right font-bold">المستحق (Gross)</th>
-              <th className="py-2.5 px-1.5 w-[7%] text-right font-bold text-rose-300">الغياب/التأخير</th>
-              <th className="py-2.5 px-1.5 w-[7%] text-right font-bold text-rose-300">تأمينات</th>
-              <th className="py-2.5 px-1.5 w-[6%] text-right font-bold text-rose-300">السلف</th>
-              <th className="py-2.5 px-1.5 w-[8%] text-right font-bold text-rose-300">الخصم</th>
-              <th className="py-2.5 px-1.5 w-[10%] text-right font-bold text-emerald-300">صافي الراتب</th>
-              <th className="py-2.5 px-1.5 w-[6%] text-right font-bold text-purple-300">المنشأة</th>
-              <th className="py-2.5 px-1 w-[3%] text-center font-bold">قسيمة</th>
+              <th className="py-2.5 px-1.5 w-[8%] text-start font-bold">{tr('القسم', 'Department')}</th>
+              <th className="py-2.5 px-1.5 w-[7%] text-start font-bold">{tr('الأساسي', 'Basic')}</th>
+              <th className="py-2.5 px-1.5 w-[8%] text-start font-bold">{tr('البدلات', 'Allowances')}</th>
+              <th className="py-2.5 px-1.5 w-[6%] text-start font-bold">{tr('الإضافي', 'Overtime')}</th>
+              <th className="py-2.5 px-1.5 w-[9%] text-start font-bold">{tr('المستحق (Gross)', 'Gross pay')}</th>
+              <th className="py-2.5 px-1.5 w-[7%] text-start font-bold text-rose-300">{tr('الغياب/التأخير', 'Absence / late')}</th>
+              <th className="py-2.5 px-1.5 w-[7%] text-start font-bold text-rose-300">{tr('تأمينات', 'GOSI')}</th>
+              <th className="py-2.5 px-1.5 w-[6%] text-start font-bold text-rose-300">{tr('السلف', 'Loans')}</th>
+              <th className="py-2.5 px-1.5 w-[8%] text-start font-bold text-rose-300">{tr('الخصم', 'Deductions')}</th>
+              <th className="py-2.5 px-1.5 w-[10%] text-start font-bold text-emerald-300">{tr('صافي الراتب', 'Net salary')}</th>
+              <th className="py-2.5 px-1.5 w-[6%] text-start font-bold text-purple-300">{tr('المنشأة', 'Employer')}</th>
+              <th className="py-2.5 px-1 w-[3%] text-center font-bold">{tr('قسيمة', 'Payslip')}</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 bg-white">
             {!currentRun || filteredItems.length === 0 ? (
               <tr>
                 <td colSpan={13} className="py-12 text-center text-slate-400">
-                  لا توجد بنود رواتب مطابقة للبحث أو الفترة
+                  {tr('لا توجد بنود رواتب مطابقة للبحث أو الفترة', 'No payroll items match this search or period')}
                 </td>
               </tr>
             ) : (
@@ -903,30 +903,30 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
                           checked={selectedPaymentEmployeeIds.includes(item.employeeId)}
                           onChange={() => togglePaymentEmployee(item.employeeId)}
                           className="mt-0.5 accent-emerald-600 disabled:opacity-30"
-                          title={canSelectForPayment ? 'تحديد لدفعة تحويل' : 'الموظف مرتبط بدفعة أو غير قابل للتحويل'}
+                          title={canSelectForPayment ? tr('تحديد لدفعة تحويل', 'Select for payment batch') : tr('الموظف مرتبط بدفعة أو غير قابل للتحويل', 'Employee is already in a batch or not eligible')}
                         />
                         <div className="min-w-0 grow">
                           <div className="font-bold text-slate-900 flex items-center gap-1 truncate">
                             <span className="truncate">{item.employeeName}</span>
                             {item.nationality === 'SAUDI' && (
-                              <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${item.gosiEnabled === false ? 'bg-slate-300' : 'bg-emerald-500'}`} title={item.gosiEnabled === false ? 'سعودي غير خاضع للتأمينات' : `GOSI موظف ${((item.gosiEmployeeRate || 0) * 100).toFixed(2)}% / شركة ${((item.gosiEmployerRate || 0) * 100).toFixed(2)}%`} />
+                              <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${item.gosiEnabled === false ? 'bg-slate-300' : 'bg-emerald-500'}`} title={item.gosiEnabled === false ? tr('سعودي غير خاضع للتأمينات', 'Saudi employee not subject to GOSI') : `${tr('موظف', 'Employee')} ${((item.gosiEmployeeRate || 0) * 100).toFixed(2)}% / ${tr('شركة', 'Employer')} ${((item.gosiEmployerRate || 0) * 100).toFixed(2)}%`} />
                             )}
                           </div>
                           <div className="text-[10px] text-slate-400 font-mono">{item.employeeNo}</div>
                           {paymentBatch ? (
                             <div className={`inline-flex mt-0.5 px-1.5 py-0.5 rounded border text-[9px] font-bold ${PAYMENT_STATUS_CONFIG[paymentBatch.status].classes}`} title={paymentBatch.batchNumber}>
-                              {PAYMENT_STATUS_CONFIG[paymentBatch.status].label} • {paymentBatch.batchNumber}
+                              {language === 'ar' ? PAYMENT_STATUS_CONFIG[paymentBatch.status].labelAr : PAYMENT_STATUS_CONFIG[paymentBatch.status].labelEn} • {paymentBatch.batchNumber}
                             </div>
-                          ) : <div className={`inline-flex mt-0.5 px-1.5 py-0.5 rounded border text-[9px] font-bold ${ENTITLEMENT_CONFIG[entitlementStatus].classes}`} title={item.entitlementReason || ''}>{ENTITLEMENT_CONFIG[entitlementStatus].label}</div>}
+                          ) : <div className={`inline-flex mt-0.5 px-1.5 py-0.5 rounded border text-[9px] font-bold ${ENTITLEMENT_CONFIG[entitlementStatus].classes}`} title={item.entitlementReason || ''}>{language === 'ar' ? ENTITLEMENT_CONFIG[entitlementStatus].labelAr : ENTITLEMENT_CONFIG[entitlementStatus].labelEn}</div>}
                           {!paymentBatch && ['APPROVED', 'POSTED'].includes(currentRun.status) && (
                             <select value={entitlementStatus} onChange={event => handleEntitlementStatusChange(item, event.target.value as PayrollEntitlementStatus)} className="block mt-1 max-w-full px-1.5 py-1 rounded-lg border border-slate-200 bg-white text-[9px] font-bold">
-                              {Object.entries(ENTITLEMENT_CONFIG).map(([status, config]) => <option key={status} value={status}>{config.label}</option>)}
+                              {Object.entries(ENTITLEMENT_CONFIG).map(([status, config]) => <option key={status} value={status}>{language === 'ar' ? config.labelAr : config.labelEn}</option>)}
                             </select>
                           )}
                           {item.entitlementReason && <div className="text-[9px] text-slate-500 mt-0.5 truncate" title={`${item.entitlementReason}${item.entitlementDocumentRef ? ` • ${item.entitlementDocumentRef}` : ''}`}>{item.entitlementReason}{item.entitlementDocumentRef ? ` • ${item.entitlementDocumentRef}` : ''}</div>}
                           {['UNDER_REVIEW', 'APPROVED'].includes(currentRun.status) && (
                             <button type="button" onClick={() => openAdjustmentModal(item)} className="mt-1 text-[9px] font-bold text-blue-700 hover:text-blue-900 inline-flex items-center gap-1">
-                              <PencilLine className="w-3 h-3" /> تعديل إضافة أو خصم
+                              <PencilLine className="w-3 h-3" /> {tr('تعديل إضافة أو خصم', 'Edit addition or deduction')}
                             </button>
                           )}
                         </div>
@@ -958,7 +958,7 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
                       {item.overtimeAmount > 0 ? (
                         <div>
                           <span className="font-bold text-emerald-700">{formatSAR(item.overtimeAmount)}</span>
-                          <div className="text-[9px] text-slate-400">({item.overtimeHours}س)</div>
+                          <div className="text-[9px] text-slate-400">({item.overtimeHours}{tr('س', 'h')})</div>
                         </div>
                       ) : (
                         <span className="text-slate-300">-</span>
@@ -1018,7 +1018,7 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
                         onClick={() => {
                           if (emp) onViewEmployeeStatement(emp);
                         }}
-                        title="عرض وطباعة قسيمة الراتب"
+                        title={tr('عرض وطباعة قسيمة الراتب', 'View and print payslip')}
                         className="p-1 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors cursor-pointer"
                       >
                         <FileText className="w-3.5 h-3.5" />
@@ -1035,28 +1035,28 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
 
       {isPaymentBatchModalOpen && currentRun && (
         <div className="fixed inset-0 z-[100] bg-slate-950/65 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-lg w-full shadow-2xl border border-slate-200 overflow-hidden">
+          <div data-no-translate className="bg-white rounded-3xl max-w-lg w-full shadow-2xl border border-slate-200 overflow-hidden">
             <div className="bg-slate-900 text-white p-5 flex items-center justify-between">
-              <div className="flex items-center gap-3"><CircleDollarSign className="w-6 h-6 text-emerald-400" /><div><h3 className="font-black">إنشاء دفعة تحويل رواتب</h3><p className="text-xs text-slate-400">{selectedPaymentItems.length} موظف • {formatSAR(selectedPaymentTotal)}</p></div></div>
+              <div className="flex items-center gap-3"><CircleDollarSign className="w-6 h-6 text-emerald-400" /><div><h3 className="font-black">{tr('إنشاء دفعة تحويل رواتب', 'Create Payroll Payment Batch')}</h3><p className="text-xs text-slate-400">{selectedPaymentItems.length} {tr('موظف', 'employees')} • {formatSAR(selectedPaymentTotal)}</p></div></div>
               <button type="button" onClick={() => setIsPaymentBatchModalOpen(false)} className="p-1.5 hover:bg-white/10 rounded-lg"><X className="w-5 h-5" /></button>
             </div>
             <div className="p-6 space-y-4 text-xs">
               <div>
-                <label className="block font-bold text-slate-700 mb-1">طريقة التحويل *</label>
+                <label className="block font-bold text-slate-700 mb-1">{tr('طريقة التحويل *', 'Payment method *')}</label>
                 <select value={paymentBatchForm.method} onChange={event => setPaymentBatchForm({ ...paymentBatchForm, method: event.target.value as PaymentMethod })} className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold">
-                  <option value="WPS">حماية الأجور WPS</option><option value="BANK_TRANSFER">تحويل بنكي</option><option value="CASH">دفع نقدي</option>
+                  <option value="WPS">{tr('حماية الأجور WPS', 'WPS')}</option><option value="BANK_TRANSFER">{tr('تحويل بنكي', 'Bank transfer')}</option><option value="CASH">{tr('دفع نقدي', 'Cash')}</option>
                 </select>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div><label className="block font-bold text-slate-700 mb-1">تاريخ التحويل المجدول *</label><input type="date" required value={paymentBatchForm.scheduledDate} onChange={event => setPaymentBatchForm({ ...paymentBatchForm, scheduledDate: event.target.value })} className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl" /></div>
-                <div><label className="block font-bold text-slate-700 mb-1">مرجع التحويل</label><input value={paymentBatchForm.reference} onChange={event => setPaymentBatchForm({ ...paymentBatchForm, reference: event.target.value })} className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl" placeholder="رقم ملف البنك أو الحوالة" /></div>
+                <div><label className="block font-bold text-slate-700 mb-1">{tr('تاريخ التحويل المجدول *', 'Scheduled payment date *')}</label><input type="date" required value={paymentBatchForm.scheduledDate} onChange={event => setPaymentBatchForm({ ...paymentBatchForm, scheduledDate: event.target.value })} className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl" /></div>
+                <div><label className="block font-bold text-slate-700 mb-1">{tr('مرجع التحويل', 'Payment reference')}</label><input value={paymentBatchForm.reference} onChange={event => setPaymentBatchForm({ ...paymentBatchForm, reference: event.target.value })} className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl" placeholder={tr('رقم ملف البنك أو الحوالة', 'Bank file or transfer reference')} /></div>
               </div>
-              <div><label className="block font-bold text-slate-700 mb-1">ملاحظات</label><textarea rows={2} value={paymentBatchForm.notes} onChange={event => setPaymentBatchForm({ ...paymentBatchForm, notes: event.target.value })} className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl resize-none" placeholder="مثال: الدفعة الأولى من رواتب الشهر" /></div>
-              <div className="rounded-xl bg-emerald-50 border border-emerald-200 p-3 flex items-center justify-between"><span className="font-bold text-emerald-900">إجمالي الدفعة</span><span className="font-black text-emerald-800 text-base">{formatSAR(selectedPaymentTotal)}</span></div>
+              <div><label className="block font-bold text-slate-700 mb-1">{tr('ملاحظات', 'Notes')}</label><textarea rows={2} value={paymentBatchForm.notes} onChange={event => setPaymentBatchForm({ ...paymentBatchForm, notes: event.target.value })} className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl resize-none" placeholder={tr('مثال: الدفعة الأولى من رواتب الشهر', 'Example: first payroll batch of the month')} /></div>
+              <div className="rounded-xl bg-emerald-50 border border-emerald-200 p-3 flex items-center justify-between"><span className="font-bold text-emerald-900">{tr('إجمالي الدفعة', 'Batch total')}</span><span className="font-black text-emerald-800 text-base">{formatSAR(selectedPaymentTotal)}</span></div>
             </div>
             <div className="p-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-2">
-              <button type="button" onClick={() => setIsPaymentBatchModalOpen(false)} className="px-4 py-2 bg-white border border-slate-200 rounded-xl font-bold">إلغاء</button>
-              <button type="button" onClick={handleCreatePaymentBatch} disabled={!paymentBatchForm.scheduledDate || !selectedPaymentItems.length} className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-black disabled:opacity-40">إنشاء وجدولة الدفعة</button>
+              <button type="button" onClick={() => setIsPaymentBatchModalOpen(false)} className="px-4 py-2 bg-white border border-slate-200 rounded-xl font-bold">{tr('إلغاء', 'Cancel')}</button>
+              <button type="button" onClick={handleCreatePaymentBatch} disabled={!paymentBatchForm.scheduledDate || !selectedPaymentItems.length} className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-black disabled:opacity-40">{tr('إنشاء وجدولة الدفعة', 'Create and schedule batch')}</button>
             </div>
           </div>
         </div>
@@ -1064,20 +1064,20 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
 
       {adjustmentItem && currentRun && (
         <div className="fixed inset-0 z-[110] bg-slate-950/65 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-lg w-full shadow-2xl border border-slate-200 overflow-hidden">
+          <div data-no-translate className="bg-white rounded-3xl max-w-lg w-full shadow-2xl border border-slate-200 overflow-hidden">
             <div className="bg-slate-900 text-white p-5 flex items-center justify-between">
-              <div><h3 className="font-black">تعديل إضافات وخصومات المسير</h3><p className="text-xs text-slate-400 mt-1">{adjustmentItem.employeeName} • {adjustmentItem.employeeNo}</p></div>
+              <div><h3 className="font-black">{tr('تعديل إضافات وخصومات المسير', 'Edit Payroll Additions & Deductions')}</h3><p className="text-xs text-slate-400 mt-1">{adjustmentItem.employeeName} • {adjustmentItem.employeeNo}</p></div>
               <button type="button" onClick={() => setAdjustmentItem(null)} className="p-1.5 hover:bg-white/10 rounded-lg"><X className="w-5 h-5" /></button>
             </div>
             <div className="p-6 space-y-4 text-xs">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div><label className="block font-bold text-emerald-800 mb-1">إضافة على الراتب</label><input type="number" min="0" step="0.01" value={adjustmentForm.addition} onChange={event => setAdjustmentForm({ ...adjustmentForm, addition: Math.max(0, Number(event.target.value) || 0) })} className="w-full px-3 py-2.5 bg-emerald-50 border border-emerald-200 rounded-xl font-mono" /></div>
-                <div><label className="block font-bold text-rose-800 mb-1">خصم إضافي</label><input type="number" min="0" step="0.01" value={adjustmentForm.deduction} onChange={event => setAdjustmentForm({ ...adjustmentForm, deduction: Math.max(0, Number(event.target.value) || 0) })} className="w-full px-3 py-2.5 bg-rose-50 border border-rose-200 rounded-xl font-mono" /></div>
+                <div><label className="block font-bold text-emerald-800 mb-1">{tr('إضافة على الراتب', 'Salary addition')}</label><input type="number" min="0" step="0.01" value={adjustmentForm.addition} onChange={event => setAdjustmentForm({ ...adjustmentForm, addition: Math.max(0, Number(event.target.value) || 0) })} className="w-full px-3 py-2.5 bg-emerald-50 border border-emerald-200 rounded-xl font-mono" /></div>
+                <div><label className="block font-bold text-rose-800 mb-1">{tr('خصم إضافي', 'Additional deduction')}</label><input type="number" min="0" step="0.01" value={adjustmentForm.deduction} onChange={event => setAdjustmentForm({ ...adjustmentForm, deduction: Math.max(0, Number(event.target.value) || 0) })} className="w-full px-3 py-2.5 bg-rose-50 border border-rose-200 rounded-xl font-mono" /></div>
               </div>
-              <div><label className="block font-bold text-slate-700 mb-1">سبب التعديل / المرجع</label><textarea rows={3} value={adjustmentForm.notes} onChange={event => setAdjustmentForm({ ...adjustmentForm, notes: event.target.value })} className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl resize-none" placeholder="مثال: مكافأة أداء أو خصم عهدة بموافقة الإدارة" /></div>
-              <div className="rounded-xl bg-blue-50 border border-blue-200 p-3 text-blue-900">سيُعاد احتساب إجمالي المستحق والخصومات والصافي وإجماليات المسير تلقائيًا.</div>
+              <div><label className="block font-bold text-slate-700 mb-1">{tr('سبب التعديل / المرجع', 'Adjustment reason / reference')}</label><textarea rows={3} value={adjustmentForm.notes} onChange={event => setAdjustmentForm({ ...adjustmentForm, notes: event.target.value })} className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl resize-none" placeholder={tr('مثال: مكافأة أداء أو خصم عهدة بموافقة الإدارة', 'Example: performance bonus or approved custody deduction')} /></div>
+              <div className="rounded-xl bg-blue-50 border border-blue-200 p-3 text-blue-900">{tr('سيُعاد احتساب إجمالي المستحق والخصومات والصافي وإجماليات المسير تلقائيًا.', 'Gross pay, deductions, net pay and payroll totals will be recalculated automatically.')}</div>
             </div>
-            <div className="p-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-2"><button type="button" onClick={() => setAdjustmentItem(null)} className="px-4 py-2 bg-white border border-slate-200 rounded-xl font-bold">إلغاء</button><button type="button" onClick={savePayrollAdjustment} className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-black">حفظ وإعادة الاحتساب</button></div>
+            <div className="p-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-2"><button type="button" onClick={() => setAdjustmentItem(null)} className="px-4 py-2 bg-white border border-slate-200 rounded-xl font-bold">{tr('إلغاء', 'Cancel')}</button><button type="button" onClick={savePayrollAdjustment} className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-black">{tr('حفظ وإعادة الاحتساب', 'Save and recalculate')}</button></div>
           </div>
         </div>
       )}
