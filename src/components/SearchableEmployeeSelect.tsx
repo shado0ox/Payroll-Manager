@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Check, ChevronDown, Search, UserRound, X } from 'lucide-react';
 import { Employee } from '../types';
+import { useLanguage } from '../i18n/LanguageContext';
 
 interface SearchableEmployeeSelectProps {
   employees: Employee[];
@@ -19,16 +20,22 @@ export const SearchableEmployeeSelect: React.FC<SearchableEmployeeSelectProps> =
   onChange,
   required = false,
   allowEmpty = false,
-  emptyLabel = 'بدون اختيار',
-  placeholder = 'ابحث بالاسم أو الرقم الوظيفي أو الإقامة...',
+  emptyLabel,
+  placeholder,
   className = '',
 }) => {
+  const { language } = useLanguage();
+  const resolvedEmptyLabel = emptyLabel || (language === 'ar' ? 'بدون اختيار' : 'No selection');
+  const resolvedPlaceholder = placeholder || (language === 'ar' ? 'ابحث بالاسم أو الرقم الوظيفي أو الإقامة...' : 'Search by name, employee number, or ID...');
   const rootRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [activeIndex, setActiveIndex] = useState(0);
   const selected = employees.find(employee => employee.id === value);
+  const employeeName = (employee: Employee) => language === 'en' && (employee.firstNameEn || employee.lastNameEn)
+    ? `${employee.firstNameEn || ''} ${employee.lastNameEn || ''}`.trim()
+    : `${employee.firstNameAr} ${employee.lastNameAr}`;
 
   const filtered = useMemo(() => {
     const normalized = query.trim().toLocaleLowerCase('ar');
@@ -79,8 +86,8 @@ export const SearchableEmployeeSelect: React.FC<SearchableEmployeeSelectProps> =
         <UserRound className="w-4 h-4 text-slate-400 shrink-0" />
         <span className={`grow truncate ${selected ? 'font-semibold' : 'text-slate-400'}`}>
           {selected
-            ? `${selected.employeeNo} - ${selected.firstNameAr} ${selected.lastNameAr} (${selected.department})`
-            : allowEmpty ? emptyLabel : 'اختر موظفًا'}
+            ? `${selected.employeeNo} - ${employeeName(selected)} (${selected.department})`
+            : allowEmpty ? resolvedEmptyLabel : (language === 'ar' ? 'اختر موظفًا' : 'Select employee')}
         </span>
         <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
@@ -103,7 +110,7 @@ export const SearchableEmployeeSelect: React.FC<SearchableEmployeeSelectProps> =
                     choose(options[activeIndex]?.id || '');
                   }
                 }}
-                placeholder={placeholder}
+                placeholder={resolvedPlaceholder}
                 className="w-full pr-9 pl-9 py-2 bg-white border border-slate-200 rounded-lg text-xs outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/10"
               />
               {query && <button type="button" onClick={() => setQuery('')} className="absolute left-2.5 top-2.5 text-slate-400 hover:text-slate-700"><X className="w-4 h-4" /></button>}
@@ -113,7 +120,7 @@ export const SearchableEmployeeSelect: React.FC<SearchableEmployeeSelectProps> =
           <div className="max-h-64 overflow-y-auto py-1">
             {emptyVisible && (
               <button type="button" onClick={() => choose('')} className={`w-full px-3 py-2.5 text-start text-xs hover:bg-slate-50 flex items-center gap-2 ${!value ? 'bg-emerald-50 text-emerald-700 font-bold' : ''}`}>
-                <span className="grow">{emptyLabel}</span>{!value && <Check className="w-4 h-4" />}
+                <span className="grow">{resolvedEmptyLabel}</span>{!value && <Check className="w-4 h-4" />}
               </button>
             )}
             {filtered.map((employee, index) => (
@@ -125,13 +132,13 @@ export const SearchableEmployeeSelect: React.FC<SearchableEmployeeSelectProps> =
                 className={`w-full px-3 py-2.5 text-start hover:bg-slate-50 flex items-center gap-3 ${employee.id === value ? 'bg-emerald-50' : ''} ${activeIndex === index + (emptyVisible ? 1 : 0) ? 'ring-1 ring-inset ring-emerald-200' : ''}`}
               >
                 <div className="grow min-w-0">
-                  <div className="text-xs font-bold text-slate-800 truncate">{employee.employeeNo} - {employee.firstNameAr} {employee.lastNameAr}</div>
+                  <div className="text-xs font-bold text-slate-800 truncate">{employee.employeeNo} - {employeeName(employee)}</div>
                   <div className="text-[10px] text-slate-500 truncate">{employee.nationalIdOrIqama} • {employee.department} • {employee.jobTitle}</div>
                 </div>
                 {employee.id === value && <Check className="w-4 h-4 text-emerald-600 shrink-0" />}
               </button>
             ))}
-            {!filtered.length && <div className="px-4 py-8 text-center text-xs text-slate-400">لا يوجد موظف مطابق للبحث</div>}
+            {!filtered.length && <div className="px-4 py-8 text-center text-xs text-slate-400">{language === 'ar' ? 'لا يوجد موظف مطابق للبحث' : 'No matching employees'}</div>}
           </div>
         </div>
       )}
