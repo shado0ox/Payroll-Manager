@@ -89,6 +89,7 @@ export const App: React.FC = () => {
   const [showDbWarningBanner, setShowDbWarningBanner] = useState(true);
   const [authReady, setAuthReady] = useState(false);
   const persistenceQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const remoteStateSnapshotRef = useRef<MasarAppState | null>(null);
 
   // Restore authentication only inside the same open tab. sessionStorage survives refresh
   // but is cleared when the tab/window is closed.
@@ -168,9 +169,14 @@ export const App: React.FC = () => {
     return () => { cancelled = true; };
   }, [state.currentUser?.id]);
 
-  // Persist immediately and serialize writes so rapid actions cannot cancel or overtake each other.
+  // Persist immediately and serialize writes so rapid actions cannot cancel each other.
   useEffect(() => {
     if (!state.currentUser) return;
+    if (remoteStateSnapshotRef.current === state) {
+      remoteStateSnapshotRef.current = null;
+      return;
+    }
+    remoteStateSnapshotRef.current = null;
     const snapshot = state;
     setDbStatus(prev => ({ ...prev, isChecking: true }));
     persistenceQueueRef.current = persistenceQueueRef.current.catch(() => undefined).then(async () => {
@@ -188,6 +194,40 @@ export const App: React.FC = () => {
       }
     });
   }, [state]);
+
+  // Apply changes saved by other users instantly, while keeping the active session
+  // and relying on the server's company/permission filtering.
+  useEffect(() => {
+    const currentUser = state.currentUser;
+    if (!currentUser) return;
+    return api.subscribeStateEvents((event) => {
+      if (!event?.version || event.updatedBy === currentUser.id) return;
+      persistenceQueueRef.current = persistenceQueueRef.current.catch(() => undefined).then(async () => {
+        try {
+          const remote = await api.getState();
+          if (!remote.state) return;
+          setState(prev => {
+            const base = { ...prev, ...remote.state } as MasarAppState;
+            const companies = base.companies || [];
+            const activeCompanyId = companies.some(company => company.id === prev.activeCompanyId)
+              ? prev.activeCompanyId
+              : base.activeCompanyId || companies[0]?.id || '';
+            const next: MasarAppState = {
+              ...base,
+              currentUser: prev.currentUser,
+              activeRole: prev.currentUser?.role || prev.activeRole,
+              activeCompanyId,
+              employees: synchronizeEmployeeBankDetails(companies, base.employees || []),
+            };
+            remoteStateSnapshotRef.current = next;
+            return next;
+          });
+        } catch {
+          // EventSource reconnects automatically. A later event/session refresh recovers.
+        }
+      });
+    });
+  }, [state.currentUser?.id]);
 
   // Active Company
   const activeCompany = useMemo(() => {
