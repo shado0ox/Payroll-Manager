@@ -35,6 +35,7 @@ import {
   AttendanceRecord, 
   LoanSchedule, 
   PenaltyRecord, 
+  TemporaryEarningRecord,
   UserRole,
   UserPermission,
   PayrollPaymentBatch,
@@ -66,6 +67,7 @@ interface PayrollRunsViewProps {
   attendance: AttendanceRecord[];
   loans: LoanSchedule[];
   penalties: PenaltyRecord[];
+  temporaryEarnings: TemporaryEarningRecord[];
   activeRole: UserRole;
   permissions?: UserPermission[];
   onSavePayrollRun: (run: PayrollRun) => void;
@@ -108,6 +110,7 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
   attendance,
   loans,
   penalties,
+  temporaryEarnings,
   activeRole,
   permissions,
   onSavePayrollRun,
@@ -329,7 +332,7 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
       ...currentRun,
       items,
       totalBaseSalaries: sum(item => item.baseSalary),
-      totalAllowances: sum(item => item.housingAllowance + item.transportAllowance + item.otherAllowances),
+      totalAllowances: sum(item => item.housingAllowance + item.transportAllowance + item.otherAllowances + item.bonuses),
       totalOvertime: sum(item => item.overtimeAmount),
       totalGrossSalaries: sum(item => item.totalGrossSalary),
       totalAbsenceDeductions: sum(item => item.absenceDeduction),
@@ -369,6 +372,7 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
         const empAtt = attendance.filter(a => a.employeeId === emp.id && a.date <= monthEnd && (a.endDate || a.date) >= monthStart);
         const empLoans = loans.filter(l => l.employeeId === emp.id);
         const empPens = penalties.filter(p => p.employeeId === emp.id && p.periodMonth === selectedPeriod && p.appliedInPayroll !== false);
+        const empEarnings = temporaryEarnings.filter(e => e.employeeId === emp.id && e.periodMonth === selectedPeriod && e.appliedInPayroll !== false);
 
         const calculated = calculateEmployeePayrollItem({
           employee: emp,
@@ -377,6 +381,7 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
           attendanceRecords: empAtt,
           activeLoans: empLoans,
           penalties: empPens,
+          temporaryEarnings: empEarnings,
         });
         const previousItem = currentRun?.items.find(item => item.employeeId === emp.id);
         return previousItem ? {
@@ -390,7 +395,7 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
 
       const decimals = company.calculationRules?.roundingDecimals ?? 2;
       const totalBaseSalaries = roundAmount(runItems.reduce((s, i) => s + i.baseSalary, 0), decimals);
-      const totalAllowances = roundAmount(runItems.reduce((s, i) => s + i.housingAllowance + i.transportAllowance + i.otherAllowances, 0), decimals);
+      const totalAllowances = roundAmount(runItems.reduce((s, i) => s + i.housingAllowance + i.transportAllowance + i.otherAllowances + i.bonuses, 0), decimals);
       const totalOvertime = roundAmount(runItems.reduce((s, i) => s + i.overtimeAmount, 0), decimals);
       const totalGrossSalaries = roundAmount(runItems.reduce((s, i) => s + i.totalGrossSalary, 0), decimals);
       const totalAbsenceDeductions = roundAmount(runItems.reduce((s, i) => s + i.absenceDeduction + i.unpaidLeaveDeduction, 0), decimals);
@@ -861,7 +866,7 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
               <th className="py-2.5 px-1.5 w-[8%] text-start font-bold">{tr('القسم', 'Department')}</th>
               <th className="py-2.5 px-1.5 w-[7%] text-start font-bold">{tr('الأساسي', 'Basic')}</th>
               <th className="py-2.5 px-1.5 w-[8%] text-start font-bold">{tr('البدلات', 'Allowances')}</th>
-              <th className="py-2.5 px-1.5 w-[6%] text-start font-bold">{tr('الإضافي', 'Overtime')}</th>
+              <th className="py-2.5 px-1.5 w-[6%] text-start font-bold">{tr('إضافات', 'Additions')}</th>
               <th className="py-2.5 px-1.5 w-[9%] text-start font-bold">{tr('المستحق (Gross)', 'Gross pay')}</th>
               <th className="py-2.5 px-1.5 w-[7%] text-start font-bold text-rose-300">{tr('الغياب/التأخير', 'Absence / late')}</th>
               <th className="py-2.5 px-1.5 w-[7%] text-start font-bold text-rose-300">{tr('تأمينات', 'GOSI')}</th>
@@ -955,10 +960,11 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
 
                     {/* Overtime */}
                     <td className="py-2.5 px-1.5 whitespace-nowrap">
-                      {item.overtimeAmount > 0 ? (
+                      {(item.overtimeAmount + item.bonuses) > 0 ? (
                         <div>
-                          <span className="font-bold text-emerald-700">{formatSAR(item.overtimeAmount)}</span>
-                          <div className="text-[9px] text-slate-400">({item.overtimeHours}{tr('س', 'h')})</div>
+                          <span className="font-bold text-emerald-700">{formatSAR(item.overtimeAmount + item.bonuses)}</span>
+                          {item.overtimeAmount > 0 && <div className="text-[9px] text-slate-400">{tr('إضافي', 'OT')}: {item.overtimeHours}{tr('س', 'h')}</div>}
+                          {item.bonuses > 0 && <div className="text-[9px] text-emerald-600">{tr('مؤقت', 'One-time')}: {formatSAR(item.bonuses)}</div>}
                         </div>
                       ) : (
                         <span className="text-slate-300">-</span>
