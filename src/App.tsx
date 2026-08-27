@@ -37,7 +37,6 @@ import {
   saveLeaves, 
   saveLoans, 
   savePenalties, 
-  saveTemporaryEarnings,
   saveJournals, 
   saveAuditLogs, 
   saveQoyodConfig, 
@@ -75,12 +74,13 @@ import { useLanguage } from './i18n/LanguageContext';
 const TAB_SESSION_KEY = 'masar_tab_session_v1';
 const LAST_ACTIVITY_KEY = 'masar_last_activity_v1';
 const IDLE_TIMEOUT_MS = 60 * 60 * 1000;
+type MasarAppState = ReturnType<typeof loadInitialState> & { temporaryEarnings: TemporaryEarningRecord[] };
 
 export const App: React.FC = () => {
   const { t, language } = useLanguage();
   const tr = (ar: string, en: string) => language === 'ar' ? ar : en;
   // Initialize full application state
-  const [state, setState] = useState(() => loadInitialState());
+  const [state, setState] = useState<MasarAppState>(() => ({ ...loadInitialState(), temporaryEarnings: [] }));
 
   const [activeTab, setActiveTab] = useState<NavigationTab>('dashboard');
   const [statementEmployee, setStatementEmployee] = useState<Employee | null>(null);
@@ -435,7 +435,6 @@ export const App: React.FC = () => {
       saveLeaves(leaves);
       saveLoans(loans);
       savePenalties(penalties);
-      saveTemporaryEarnings(temporaryEarnings);
       savePayrollRuns(payrollRuns);
       saveJournals(journals);
       saveUsers(users);
@@ -647,7 +646,6 @@ export const App: React.FC = () => {
       const updated = prev.temporaryEarnings.some(item => item.id === earning.id)
         ? prev.temporaryEarnings.map(item => item.id === earning.id ? earning : item)
         : [earning, ...prev.temporaryEarnings];
-      saveTemporaryEarnings(updated);
       return { ...prev, temporaryEarnings: updated };
     });
   };
@@ -655,7 +653,6 @@ export const App: React.FC = () => {
   const handleCancelTemporaryEarning = (earningId: string) => {
     setState(prev => {
       const updated = prev.temporaryEarnings.map(item => item.id === earningId ? { ...item, appliedInPayroll: false } : item);
-      saveTemporaryEarnings(updated);
       return { ...prev, temporaryEarnings: updated };
     });
   };
@@ -663,7 +660,6 @@ export const App: React.FC = () => {
   const handleDeleteTemporaryEarning = (earningId: string) => {
     setState(prev => {
       const updated = prev.temporaryEarnings.filter(item => item.id !== earningId);
-      saveTemporaryEarnings(updated);
       return { ...prev, temporaryEarnings: updated };
     });
   };
@@ -674,7 +670,6 @@ export const App: React.FC = () => {
       const updated = prev.employees.filter(e => e.id !== empId);
       const temporaryEarnings = prev.temporaryEarnings.filter(record => record.employeeId !== empId);
       saveEmployees(updated);
-      saveTemporaryEarnings(temporaryEarnings);
 
       const log: AuditLog = {
         id: `log-${Date.now()}`,
@@ -789,7 +784,7 @@ export const App: React.FC = () => {
   };
 
   const handleResetData = () => {
-    const fresh = resetToCleanState();
+    const fresh: MasarAppState = { ...resetToCleanState(), temporaryEarnings: [] };
     setState(fresh);
   };
 
