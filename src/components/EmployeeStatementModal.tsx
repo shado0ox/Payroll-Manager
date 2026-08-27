@@ -202,6 +202,12 @@ export const EmployeeStatementModal: React.FC<EmployeeStatementModalProps> = ({
                         <span className="font-bold">{formatSAR(latestItem.overtimeAmount)}</span>
                       </div>
                     )}
+                    {latestItem.bonuses > 0 && (
+                      <div className="flex items-center justify-between text-emerald-800 font-semibold">
+                        <span>{tr('عمولات ومكافآت وإضافات مؤقتة', 'Commissions, bonuses & temporary earnings')}</span>
+                        <span className="font-bold">{formatSAR(latestItem.bonuses)}</span>
+                      </div>
+                    )}
 
                     <div className="pt-3 border-t border-slate-100 flex items-center justify-between font-black text-sm text-slate-900">
                       <span>{tr('إجمالي المستحقات:', 'Gross Earnings:')}</span>
