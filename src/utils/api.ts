@@ -2,10 +2,7 @@ import { AppState } from './storage';
 import { UserAccount } from '../types';
 
 class ApiError extends Error {
-  constructor(message: string, public status: number) {
-    super(message);
-    this.name = 'ApiError';
-  }
+  constructor(message: string, public status: number) { super(message); this.name = 'ApiError'; }
 }
 
 async function request<T>(url: string, options: RequestInit = {}): Promise<T> {
@@ -28,21 +25,20 @@ export const api = {
   saveState: async (state: AppState) => {
     const put = () => request<{version:number; updated_at:string}>('/api/state', { method:'PUT', body:JSON.stringify({ state, version: stateVersion }) });
     try {
-      const result = await put();
-      stateVersion = result.version;
-      return result;
+      const result = await put(); stateVersion = result.version; return result;
     } catch (error) {
-      // Company-scoped users can safely retry: the server merges only their authorized
-      // company keys into the newest stored state, preserving concurrent changes.
       if (!(error instanceof ApiError) || error.status !== 409 || state.currentUser?.role === 'ADMIN') throw error;
       const latest = await request<{state: Partial<AppState> | null; version: number}>('/api/state');
       stateVersion = latest.version;
-      const result = await put();
-      stateVersion = result.version;
-      return result;
+      const result = await put(); stateVersion = result.version; return result;
     }
   },
   health: () => request<{status:string}>('/api/health'),
+  subscribeStateEvents: (onUpdate: (event: { version: number; updatedBy: string; updatedAt?: string }) => void) => {
+    const source = new EventSource('/api/state/events', { withCredentials: true });
+    source.onmessage = (message) => { try { onUpdate(JSON.parse(message.data)); } catch {} };
+    return () => source.close();
+  },
   saveUser: (user: UserAccount) => request<UserAccount>(`/api/users/${encodeURIComponent(user.id)}`, { method:'PUT', body:JSON.stringify(user) }),
   deleteUser: (id: string) => request<void>(`/api/users/${encodeURIComponent(id)}`, { method:'DELETE' }),
 };
