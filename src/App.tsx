@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   Building2, 
   Users, 
@@ -88,6 +88,7 @@ export const App: React.FC = () => {
   const [isDbModalOpen, setIsDbModalOpen] = useState(false);
   const [showDbWarningBanner, setShowDbWarningBanner] = useState(true);
   const [authReady, setAuthReady] = useState(false);
+  const persistenceQueueRef = useRef<Promise<void>>(Promise.resolve());
 
   // Restore authentication only inside the same open tab. sessionStorage survives refresh
   // but is cleared when the tab/window is closed.
@@ -167,13 +168,15 @@ export const App: React.FC = () => {
     return () => { cancelled = true; };
   }, [state.currentUser?.id]);
 
-  // Debounced central PostgreSQL persistence for authenticated sessions.
+  // Persist immediately and serialize writes so rapid actions cannot cancel or overtake each other.
   useEffect(() => {
     if (!state.currentUser) return;
-    const timer = window.setTimeout(async () => {
+    const snapshot = state;
+    setDbStatus(prev => ({ ...prev, isChecking: true }));
+    persistenceQueueRef.current = persistenceQueueRef.current.catch(() => undefined).then(async () => {
       try {
-        await api.saveState(state);
-        const status = await persistFullStateToDatabase(state);
+        await api.saveState(snapshot);
+        const status = await persistFullStateToDatabase(snapshot);
         setDbStatus({ ...status, lastError: null });
       } catch (error: any) {
         try {
@@ -183,8 +186,7 @@ export const App: React.FC = () => {
           setDbStatus(prev => ({ ...prev, isCloudConnected: false, isChecking: false, lastError: error?.message || tr('تعذر الاتصال بقاعدة البيانات', 'Could not connect to the database') }));
         }
       }
-    }, 750);
-    return () => window.clearTimeout(timer);
+    });
   }, [state]);
 
   // Active Company
