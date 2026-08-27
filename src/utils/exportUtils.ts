@@ -94,7 +94,7 @@ export function exportPayrollSheetCsv(payrollRun: PayrollRun, company: Company):
     item.baseSalary.toFixed(2),
     item.housingAllowance.toFixed(2),
     item.transportAllowance.toFixed(2),
-    item.otherAllowances.toFixed(2),
+    (item.otherAllowances + item.bonuses).toFixed(2),
     item.overtimeHours.toFixed(1),
     item.overtimeAmount.toFixed(2),
     item.totalGrossSalary.toFixed(2),
