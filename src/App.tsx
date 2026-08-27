@@ -20,6 +20,7 @@ import {
   LeaveRequest, 
   LoanSchedule, 
   PenaltyRecord, 
+  TemporaryEarningRecord,
   JournalBatch, 
   AuditLog, 
   UserRole, 
@@ -36,6 +37,7 @@ import {
   saveLeaves, 
   saveLoans, 
   savePenalties, 
+  saveTemporaryEarnings,
   saveJournals, 
   saveAuditLogs, 
   saveQoyodConfig, 
@@ -423,6 +425,7 @@ export const App: React.FC = () => {
       const leaves = prev.leaves.filter(record => !employeeIds.has(record.employeeId));
       const loans = prev.loans.filter(record => !employeeIds.has(record.employeeId));
       const penalties = prev.penalties.filter(record => !employeeIds.has(record.employeeId));
+      const temporaryEarnings = prev.temporaryEarnings.filter(record => !employeeIds.has(record.employeeId));
       const payrollRuns = prev.payrollRuns.filter(run => run.companyId !== companyId);
       const journals = prev.journals.filter(journal => journal.companyId !== companyId);
       const users = prev.users.map(user => employeeIds.has(user.employeeId || '') ? { ...user, employeeId: undefined } : user);
@@ -432,6 +435,7 @@ export const App: React.FC = () => {
       saveLeaves(leaves);
       saveLoans(loans);
       savePenalties(penalties);
+      saveTemporaryEarnings(temporaryEarnings);
       savePayrollRuns(payrollRuns);
       saveJournals(journals);
       saveUsers(users);
@@ -449,7 +453,7 @@ export const App: React.FC = () => {
       const auditLogs = [log, ...prev.auditLogs];
       saveAuditLogs(auditLogs);
 
-      return { ...prev, employees, attendance, leaves, loans, penalties, payrollRuns, journals, users, auditLogs };
+      return { ...prev, employees, attendance, leaves, loans, penalties, temporaryEarnings, payrollRuns, journals, users, auditLogs };
     });
   };
 
@@ -638,11 +642,39 @@ export const App: React.FC = () => {
     });
   };
 
+  const handleSaveTemporaryEarning = (earning: TemporaryEarningRecord) => {
+    setState(prev => {
+      const updated = prev.temporaryEarnings.some(item => item.id === earning.id)
+        ? prev.temporaryEarnings.map(item => item.id === earning.id ? earning : item)
+        : [earning, ...prev.temporaryEarnings];
+      saveTemporaryEarnings(updated);
+      return { ...prev, temporaryEarnings: updated };
+    });
+  };
+
+  const handleCancelTemporaryEarning = (earningId: string) => {
+    setState(prev => {
+      const updated = prev.temporaryEarnings.map(item => item.id === earningId ? { ...item, appliedInPayroll: false } : item);
+      saveTemporaryEarnings(updated);
+      return { ...prev, temporaryEarnings: updated };
+    });
+  };
+
+  const handleDeleteTemporaryEarning = (earningId: string) => {
+    setState(prev => {
+      const updated = prev.temporaryEarnings.filter(item => item.id !== earningId);
+      saveTemporaryEarnings(updated);
+      return { ...prev, temporaryEarnings: updated };
+    });
+  };
+
   const handleDeleteEmployee = (empId: string) => {
     setState(prev => {
       const targetEmp = prev.employees.find(e => e.id === empId);
       const updated = prev.employees.filter(e => e.id !== empId);
+      const temporaryEarnings = prev.temporaryEarnings.filter(record => record.employeeId !== empId);
       saveEmployees(updated);
+      saveTemporaryEarnings(temporaryEarnings);
 
       const log: AuditLog = {
         id: `log-${Date.now()}`,
@@ -660,6 +692,7 @@ export const App: React.FC = () => {
       return {
         ...prev,
         employees: updated,
+        temporaryEarnings,
         auditLogs: updatedLogs,
       };
     });
@@ -893,6 +926,7 @@ export const App: React.FC = () => {
                 attendance={state.attendance}
                 loans={state.loans}
                 penalties={state.penalties}
+                temporaryEarnings={state.temporaryEarnings}
                 activeRole={state.activeRole}
                 permissions={state.currentUser?.permissions}
                 onSavePayrollRun={handleSavePayrollRun}
@@ -922,6 +956,7 @@ export const App: React.FC = () => {
                 employees={state.employees}
                 loans={state.loans}
                 penalties={state.penalties}
+                temporaryEarnings={state.temporaryEarnings}
                 activeRole={state.activeRole}
                 onSaveLoan={handleAddLoan}
                 onUpdateLoanStatus={handleUpdateLoanStatus}
@@ -929,6 +964,9 @@ export const App: React.FC = () => {
                 onSavePenalty={handleAddPenalty}
                 onCancelPenalty={handleCancelPenalty}
                 onDeletePenalty={handleDeletePenalty}
+                onSaveTemporaryEarning={handleSaveTemporaryEarning}
+                onCancelTemporaryEarning={handleCancelTemporaryEarning}
+                onDeleteTemporaryEarning={handleDeleteTemporaryEarning}
               />
             )}
 
