@@ -4,6 +4,7 @@ import {
   AttendanceRecord, 
   LoanSchedule, 
   PenaltyRecord, 
+  TemporaryEarningRecord,
   PayrollRunItem 
 } from '../types';
 import { detectBankFromIBAN, getSwiftCodeFromBankName } from './security';
@@ -15,6 +16,7 @@ export interface EmployeeCalculationInput {
   attendanceRecords: AttendanceRecord[];
   activeLoans: LoanSchedule[];
   penalties: PenaltyRecord[];
+  temporaryEarnings?: TemporaryEarningRecord[];
 }
 
 export function calculateEmployeePayrollItem(input: EmployeeCalculationInput): PayrollRunItem {
@@ -22,6 +24,7 @@ export function calculateEmployeePayrollItem(input: EmployeeCalculationInput): P
   const attendanceRecords = input.attendanceRecords || [];
   const activeLoans = input.activeLoans || [];
   const penalties = input.penalties || [];
+  const temporaryEarnings = input.temporaryEarnings || [];
   const companyBank = detectBankFromIBAN(employee.bankIban, company.bankDefinitions);
   const effectiveBankName = companyBank?.nameAr || employee.bankName;
   const effectiveBankSwift = companyBank?.swiftCode || getSwiftCodeFromBankName(employee.bankName, company.bankDefinitions) || employee.bankSwiftCode;
@@ -206,7 +209,12 @@ export function calculateEmployeePayrollItem(input: EmployeeCalculationInput): P
   }
 
   const totalOtherAllowances = effectiveOtherFixed + effectiveNonGosiOther + (customAllowancesSum * salaryProrationFactor);
-  const bonuses = 0;
+  const bonuses = roundAmount(
+    temporaryEarnings
+      .filter(earning => earning.appliedInPayroll !== false)
+      .reduce((sum, earning) => sum + Math.max(0, Number(earning.amount) || 0), 0),
+    rules.roundingDecimals
+  );
 
   const totalGrossSalary = roundAmount(
     effectiveBaseSalary + effectiveHousing + effectiveTransport + totalOtherAllowances + totalOvertimeAmount + bonuses,
