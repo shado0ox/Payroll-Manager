@@ -10,13 +10,15 @@ import {
   Trash2,
   Edit3,
   RotateCcw,
-  FileText
+  FileText,
+  Printer
 } from 'lucide-react';
 import { Company, Employee, LoanSchedule, PenaltyRecord, TemporaryEarningRecord, UserRole } from '../types';
 import { formatSAR } from '../utils/payrollEngine';
 import { SearchableEmployeeSelect } from './SearchableEmployeeSelect';
 import { useLanguage } from '../i18n/LanguageContext';
 import { TemporaryEarningsPanel } from './TemporaryEarningsPanel';
+import { printLoanAcknowledgement, printPenaltyAcknowledgement } from '../utils/employeeActionForms';
 
 interface LoansPenaltiesViewProps {
   company: Company;
@@ -315,6 +317,7 @@ export const LoansPenaltiesView: React.FC<LoansPenaltiesViewProps> = ({
 
                         <td className="py-3 px-4 text-center">
                           <div className="flex items-center justify-center gap-2">
+                          <button disabled={!emp} onClick={() => emp && !printLoanAcknowledgement(company, emp, loan) && alert(tr('يرجى السماح بالنوافذ المنبثقة لطباعة النموذج.', 'Please allow pop-ups to print the form.'))} className="text-emerald-700 disabled:text-slate-300" title={tr('طباعة إقرار السلفة PDF', 'Print loan acknowledgment PDF')}><Printer className="w-4 h-4" /></button>
                           <button onClick={() => openEditLoan(loan)} className="text-blue-700" title={tr('تعديل السلفة', 'Edit loan')}><Edit3 className="w-4 h-4" /></button>
                           <button onClick={() => { if (confirm(tr('حذف السلفة نهائيًا وإزالة أقساطها من المسير القادم؟', 'Permanently delete this loan and remove its installments from future payroll?'))) onDeleteLoan(loan.id); }} className="text-rose-700" title={tr('حذف السلفة', 'Delete loan')}><Trash2 className="w-4 h-4" /></button>
                           {loan.status === 'ACTIVE' ? (
@@ -377,6 +380,7 @@ export const LoansPenaltiesView: React.FC<LoansPenaltiesViewProps> = ({
                         </span>
                       </td>
                       <td className="py-3 px-4"><div className="flex justify-center gap-2">
+                        <button disabled={!emp} onClick={() => emp && !printPenaltyAcknowledgement(company, emp, pen) && alert(tr('يرجى السماح بالنوافذ المنبثقة لطباعة النموذج.', 'Please allow pop-ups to print the form.'))} className="text-emerald-700 disabled:text-slate-300" title={tr('طباعة إشعار الخصم PDF', 'Print deduction notice PDF')}><Printer className="w-4 h-4" /></button>
                         <button onClick={() => openEditPenalty(pen)} className="text-blue-700" title={tr('تعديل الخصم', 'Edit deduction')}><Edit3 className="w-4 h-4" /></button>
                         {pen.appliedInPayroll && <button onClick={() => { if (confirm(tr('إلغاء هذا الخصم وإزالة أثره من المسير؟', 'Cancel this deduction and remove its payroll impact?'))) onCancelPenalty(pen.id); }} className="text-amber-700" title={tr('التراجع عن الخصم', 'Undo deduction')}><RotateCcw className="w-4 h-4" /></button>}
                         <button onClick={() => { if (confirm(tr('حذف الجزاء/الخصم نهائيًا؟', 'Permanently delete this penalty / deduction?'))) onDeletePenalty(pen.id); }} className="text-rose-700" title={tr('حذف نهائي', 'Delete permanently')}><Trash2 className="w-4 h-4" /></button>
