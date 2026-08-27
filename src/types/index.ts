@@ -254,6 +254,20 @@ export interface PenaltyRecord {
   appliedInPayroll: boolean;
 }
 
+export type TemporaryEarningType = 'COMMISSION' | 'BONUS' | 'INCENTIVE' | 'OTHER';
+
+export interface TemporaryEarningRecord {
+  id: string;
+  companyId: string;
+  employeeId: string;
+  periodMonth: string; // Applied once to this payroll period only (YYYY-MM)
+  date: string;
+  type: TemporaryEarningType;
+  amount: number;
+  reason: string;
+  appliedInPayroll: boolean;
+}
+
 export type PayrollRunStatus = 'DRAFT' | 'UNDER_REVIEW' | 'APPROVED' | 'POSTED';
 export type PayrollEntitlementStatus = 'PAYABLE' | 'HELD' | 'UNDER_SETTLEMENT' | 'SETTLED' | 'CANCELLED_WITH_DOCUMENT';
 
