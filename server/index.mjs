@@ -45,6 +45,13 @@ const allowedCompanyIds = (user) => new Set(user.role === 'ADMIN' ? [] : (Array.
 const itemCompanyId = (item) => item && typeof item.companyId === 'string' ? item.companyId : '';
 const permissionsFor = (user) => user.role === 'ADMIN' ? [...ALL_PERMISSIONS] : (Array.isArray(user.permissions) ? user.permissions : DEFAULT_PERMISSIONS[user.role] || []);
 const can = (user, permission) => user.role === 'ADMIN' || permissionsFor(user).includes(permission);
+const stateEventClients = new Set();
+const broadcastStateUpdate = (payload) => {
+  const message = `data: ${JSON.stringify(payload)}\n\n`;
+  for (const client of stateEventClients) {
+    try { client.write(message); } catch { stateEventClients.delete(client); }
+  }
+};
 
 function publicStateForUser(rawState, user) {
   const state = clone(rawState || {});
@@ -220,6 +227,20 @@ app.get('/api/auth/session', auth, async (req, res) => {
   });
 });
 
+// Broadcast version metadata only. Clients reload through the normal authenticated,
+// company-filtered state endpoint so no cross-company data is exposed.
+app.get('/api/state/events', auth, (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.flushHeaders?.();
+  res.write(`event: ready\ndata: ${JSON.stringify({ connected:true })}\n\n`);
+  stateEventClients.add(res);
+  const heartbeat = setInterval(() => { try { res.write(': heartbeat\n\n'); } catch {} }, 25_000);
+  req.on('close', () => { clearInterval(heartbeat); stateEventClients.delete(res); });
+});
+
 app.post('/api/auth/logout', auth, async (req, res, next) => {
   try {
     const token = cookieValue(req, 'masar_session');
@@ -265,6 +286,7 @@ app.put('/api/state', auth, writeLimiter, async (req, res, next) => {
       ON CONFLICT (id) DO UPDATE SET state=EXCLUDED.state,version=${q('app_state')}.version+1,updated_by=EXCLUDED.updated_by,updated_at=now()
       WHERE ${q('app_state')}.version=$3 RETURNING version,updated_at`, [JSON.stringify(state), req.user.id, expectedVersion]);
     if (!r.rowCount) return res.status(409).json({ error:'STATE_CONFLICT_RELOAD_REQUIRED' });
+    broadcastStateUpdate({ version:r.rows[0].version, updatedBy:req.user.id, updatedAt:r.rows[0].updated_at });
     res.json(r.rows[0]);
   } catch (e) { next(e); }
 });
