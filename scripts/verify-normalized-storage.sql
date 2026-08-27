@@ -52,3 +52,28 @@ SELECT
 SELECT version, applied_at
 FROM masar_payroll.schema_migrations
 ORDER BY applied_at, version;
+
+SELECT
+  (SELECT count(*) FROM masar_payroll.companies WHERE is_archived=false) AS companies,
+  (SELECT count(*) FROM masar_payroll.company_departments) AS departments,
+  (SELECT count(*) FROM masar_payroll.cost_centers) AS cost_centers,
+  (SELECT count(*) FROM masar_payroll.company_bank_definitions) AS bank_definitions,
+  (SELECT count(*) FROM masar_payroll.journal_batches) AS journal_batches,
+  (SELECT count(*) FROM masar_payroll.journal_lines) AS journal_lines,
+  (SELECT count(*) FROM masar_payroll.application_audit_logs) AS application_audit_logs;
+
+SELECT
+  j.id,
+  j.batch_number,
+  j.total_debit,
+  j.total_credit,
+  COALESCE(sum(l.debit),0) AS lines_debit,
+  COALESCE(sum(l.credit),0) AS lines_credit,
+  j.total_debit=COALESCE(sum(l.debit),0) AND j.total_credit=COALESCE(sum(l.credit),0) AS totals_match
+FROM masar_payroll.journal_batches j
+LEFT JOIN masar_payroll.journal_lines l ON l.journal_batch_id=j.id
+GROUP BY j.id
+ORDER BY j.period_month DESC,j.batch_number;
+
+SELECT provider, secret_value <> '' AS secret_configured, updated_at
+FROM masar_payroll.integration_configs;

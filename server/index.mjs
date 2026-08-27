@@ -126,10 +126,10 @@ async function replaceNormalizedPayrollData(client, state) {
   const employees = asArray(state?.employees);
   const payrollRuns = asArray(state?.payrollRuns);
 
-  await client.query(`INSERT INTO ${q('companies')} (id,company_code,name_ar,name_en)
-    SELECT company->>'id',company->>'companyCode',COALESCE(company->>'nameAr',''),COALESCE(company->>'nameEn','')
+  await client.query(`INSERT INTO ${q('companies')} (id,company_code,name_ar,name_en,is_archived)
+    SELECT company->>'id',company->>'companyCode',COALESCE(company->>'nameAr',''),COALESCE(company->>'nameEn',''),false
     FROM jsonb_array_elements($1::jsonb) AS source(company)
-    ON CONFLICT (id) DO UPDATE SET company_code=EXCLUDED.company_code,name_ar=EXCLUDED.name_ar,name_en=EXCLUDED.name_en`,
+    ON CONFLICT (id) DO UPDATE SET company_code=EXCLUDED.company_code,name_ar=EXCLUDED.name_ar,name_en=EXCLUDED.name_en,is_archived=false`,
     [JSON.stringify(companies)]);
 
   // Operational rows reference employees, so clear them before replacing employee identities.
@@ -275,6 +275,79 @@ async function replaceNormalizedOperationsData(client, state) {
     FROM jsonb_array_elements($1::jsonb) WITH ORDINALITY AS source(earning,ordinality)`, [JSON.stringify(temporaryEarnings)]);
 }
 
+async function replaceNormalizedCoreData(client, state) {
+  const companies = asArray(state?.companies);
+  const journals = asArray(state?.journals);
+  const auditLogs = asArray(state?.auditLogs);
+  const qoyodConfig = state?.qoyodConfig && typeof state.qoyodConfig === 'object' ? state.qoyodConfig : {};
+
+  await client.query(`UPDATE ${q('companies')} SET is_archived=true,updated_at=now()`);
+  await client.query(`INSERT INTO ${q('companies')} (id,company_code,name_ar,name_en,payload,sort_order,is_archived)
+    SELECT company->>'id',company->>'companyCode',COALESCE(company->>'nameAr',''),COALESCE(company->>'nameEn',''),
+      company - 'departments' - 'costCenters' - 'bankDefinitions',(ordinality - 1)::integer,false
+    FROM jsonb_array_elements($1::jsonb) WITH ORDINALITY AS source(company,ordinality)
+    ON CONFLICT (id) DO UPDATE SET company_code=EXCLUDED.company_code,name_ar=EXCLUDED.name_ar,name_en=EXCLUDED.name_en,
+      payload=EXCLUDED.payload,sort_order=EXCLUDED.sort_order,is_archived=false,updated_at=now()`, [JSON.stringify(companies)]);
+
+  await client.query(`DELETE FROM ${q('company_departments')}`);
+  await client.query(`DELETE FROM ${q('cost_centers')}`);
+  await client.query(`DELETE FROM ${q('company_bank_definitions')}`);
+  await client.query(`INSERT INTO ${q('company_departments')} (company_id,id,code,name_ar,name_en,payload,sort_order)
+    SELECT company->>'id',department->>'id',COALESCE(department->>'code',''),COALESCE(department->>'nameAr',''),
+      COALESCE(department->>'nameEn',''),department,(department_ordinality - 1)::integer
+    FROM jsonb_array_elements($1::jsonb) AS companies(company)
+    CROSS JOIN LATERAL jsonb_array_elements(COALESCE(company->'departments','[]'::jsonb)) WITH ORDINALITY AS departments(department,department_ordinality)`,
+    [JSON.stringify(companies)]);
+  await client.query(`INSERT INTO ${q('cost_centers')} (company_id,id,code,name_ar,name_en,payload,sort_order)
+    SELECT company->>'id',center->>'id',COALESCE(center->>'code',''),COALESCE(center->>'nameAr',''),
+      COALESCE(center->>'nameEn',''),center,(center_ordinality - 1)::integer
+    FROM jsonb_array_elements($1::jsonb) AS companies(company)
+    CROSS JOIN LATERAL jsonb_array_elements(COALESCE(company->'costCenters','[]'::jsonb)) WITH ORDINALITY AS centers(center,center_ordinality)`,
+    [JSON.stringify(companies)]);
+  await client.query(`INSERT INTO ${q('company_bank_definitions')} (company_id,iban_bank_code,name_ar,name_en,swift_code,is_active,payload,sort_order)
+    SELECT company->>'id',bank->>'ibanBankCode',COALESCE(bank->>'nameAr',''),COALESCE(bank->>'nameEn',''),
+      COALESCE(bank->>'swiftCode',''),COALESCE((bank->>'isActive')::boolean,true),bank,(bank_ordinality - 1)::integer
+    FROM jsonb_array_elements($1::jsonb) AS companies(company)
+    CROSS JOIN LATERAL jsonb_array_elements(COALESCE(company->'bankDefinitions','[]'::jsonb)) WITH ORDINALITY AS banks(bank,bank_ordinality)`,
+    [JSON.stringify(companies)]);
+
+  await client.query(`DELETE FROM ${q('journal_lines')}`);
+  await client.query(`DELETE FROM ${q('journal_batches')}`);
+  await client.query(`INSERT INTO ${q('journal_batches')} (
+      id,company_id,payroll_run_id,period_month,batch_number,journal_date,description,status,total_debit,total_credit,payload,sort_order
+    )
+    SELECT journal->>'id',journal->>'companyId',journal->>'payrollRunId',journal->>'periodMonth',COALESCE(journal->>'batchNumber',''),
+      NULLIF(journal->>'date','')::date,COALESCE(journal->>'description',''),COALESCE(journal->>'status','DRAFT'),
+      COALESCE(NULLIF(journal->>'totalDebit','')::numeric,0),COALESCE(NULLIF(journal->>'totalCredit','')::numeric,0),
+      journal - 'lines',(ordinality - 1)::integer
+    FROM jsonb_array_elements($1::jsonb) WITH ORDINALITY AS source(journal,ordinality)`, [JSON.stringify(journals)]);
+  await client.query(`INSERT INTO ${q('journal_lines')} (
+      journal_batch_id,id,account_code,account_name_ar,description_ar,debit,credit,cost_center_code,payload,sort_order
+    )
+    SELECT journal->>'id',line->>'id',COALESCE(line->>'accountCode',''),COALESCE(line->>'accountNameAr',''),
+      COALESCE(line->>'descriptionAr',''),COALESCE(NULLIF(line->>'debit','')::numeric,0),
+      COALESCE(NULLIF(line->>'credit','')::numeric,0),NULLIF(line->>'costCenterCode',''),line,(line_ordinality - 1)::integer
+    FROM jsonb_array_elements($1::jsonb) AS journals(journal)
+    CROSS JOIN LATERAL jsonb_array_elements(COALESCE(journal->'lines','[]'::jsonb)) WITH ORDINALITY AS lines(line,line_ordinality)`,
+    [JSON.stringify(journals)]);
+
+  await client.query(`DELETE FROM ${q('application_audit_logs')}`);
+  await client.query(`INSERT INTO ${q('application_audit_logs')} (
+      id,company_id,user_id,user_name,user_role,action,entity_type,entity_id,occurred_at,details,payload,sort_order
+    )
+    SELECT log->>'id',NULLIF(log->>'companyId',''),NULLIF(log->>'userId',''),COALESCE(log->>'userName',''),
+      COALESCE(log->>'userRole','OPERATIONS_MANAGER'),COALESCE(log->>'action',''),NULLIF(COALESCE(log->>'entityType',log->>'entity'),''),
+      COALESCE(log->>'entityId',''),NULLIF(log->>'timestamp','')::timestamptz,NULLIF(log->>'details',''),log,(ordinality - 1)::integer
+    FROM jsonb_array_elements($1::jsonb) WITH ORDINALITY AS source(log,ordinality)`, [JSON.stringify(auditLogs)]);
+
+  const { apiKey = '', apiKeyConfigured: _ignored, ...publicConfig } = qoyodConfig;
+  await client.query(`INSERT INTO ${q('integration_configs')} (provider,public_config,secret_value,updated_at)
+    VALUES ('QOYOD',$1::jsonb,$2,now())
+    ON CONFLICT (provider) DO UPDATE SET public_config=EXCLUDED.public_config,
+      secret_value=CASE WHEN EXCLUDED.secret_value <> '' THEN EXCLUDED.secret_value ELSE ${q('integration_configs')}.secret_value END,
+      updated_at=now()`, [JSON.stringify(publicConfig), String(apiKey || '')]);
+}
+
 async function hydrateNormalizedPayrollData(client, rawState) {
   const state = clone(rawState || {});
   const [employeeResult, runResult, itemResult, batchResult, batchItemResult] = await Promise.all([
@@ -325,9 +398,52 @@ async function hydrateNormalizedOperationsData(client, rawState) {
   return state;
 }
 
+async function hydrateNormalizedCoreData(client, rawState) {
+  const state = clone(rawState || {});
+  const [companies, departments, costCenters, bankDefinitions, journals, journalLines, auditLogs, integration] = await Promise.all([
+    client.query(`SELECT id,payload FROM ${q('companies')} WHERE is_archived=false ORDER BY sort_order,id`),
+    client.query(`SELECT company_id,payload FROM ${q('company_departments')} ORDER BY company_id,sort_order,id`),
+    client.query(`SELECT company_id,payload FROM ${q('cost_centers')} ORDER BY company_id,sort_order,id`),
+    client.query(`SELECT company_id,payload FROM ${q('company_bank_definitions')} ORDER BY company_id,sort_order,iban_bank_code`),
+    client.query(`SELECT id,payload FROM ${q('journal_batches')} ORDER BY sort_order,id`),
+    client.query(`SELECT journal_batch_id,payload FROM ${q('journal_lines')} ORDER BY journal_batch_id,sort_order,id`),
+    client.query(`SELECT payload FROM ${q('application_audit_logs')} ORDER BY sort_order,id`),
+    client.query(`SELECT public_config,secret_value FROM ${q('integration_configs')} WHERE provider='QOYOD'`),
+  ]);
+  const linesByJournal = new Map();
+  for (const row of journalLines.rows) {
+    if (!linesByJournal.has(row.journal_batch_id)) linesByJournal.set(row.journal_batch_id, []);
+    linesByJournal.get(row.journal_batch_id).push(row.payload);
+  }
+  const groupPayloads = (rows) => {
+    const grouped = new Map();
+    for (const row of rows) {
+      if (!grouped.has(row.company_id)) grouped.set(row.company_id, []);
+      grouped.get(row.company_id).push(row.payload);
+    }
+    return grouped;
+  };
+  const departmentsByCompany = groupPayloads(departments.rows);
+  const costCentersByCompany = groupPayloads(costCenters.rows);
+  const bankDefinitionsByCompany = groupPayloads(bankDefinitions.rows);
+  state.companies = companies.rows.map(row => ({
+    ...row.payload,
+    departments: departmentsByCompany.get(row.id) || [],
+    costCenters: costCentersByCompany.get(row.id) || [],
+    bankDefinitions: bankDefinitionsByCompany.get(row.id) || [],
+  }));
+  state.journals = journals.rows.map(row => ({ ...row.payload, lines: linesByJournal.get(row.id) || [] }));
+  state.auditLogs = auditLogs.rows.map(row => row.payload);
+  if (integration.rowCount) {
+    state.qoyodConfig = { ...integration.rows[0].public_config, apiKey: integration.rows[0].secret_value || '' };
+  }
+  return state;
+}
+
 async function hydrateNormalizedStateData(client, rawState) {
   const payrollState = await hydrateNormalizedPayrollData(client, rawState);
-  return hydrateNormalizedOperationsData(client, payrollState);
+  const operationsState = await hydrateNormalizedOperationsData(client, payrollState);
+  return hydrateNormalizedCoreData(client, operationsState);
 }
 
 async function migrate() {
@@ -335,6 +451,10 @@ async function migrate() {
   await pool.query(`CREATE TABLE IF NOT EXISTS ${q('companies')} (
     id text PRIMARY KEY, company_code text NOT NULL UNIQUE, name_ar text NOT NULL, name_en text NOT NULL DEFAULT '', created_at timestamptz NOT NULL DEFAULT now()
   )`);
+  await pool.query(`ALTER TABLE ${q('companies')} ADD COLUMN IF NOT EXISTS payload jsonb NOT NULL DEFAULT '{}'::jsonb`);
+  await pool.query(`ALTER TABLE ${q('companies')} ADD COLUMN IF NOT EXISTS sort_order integer NOT NULL DEFAULT 0`);
+  await pool.query(`ALTER TABLE ${q('companies')} ADD COLUMN IF NOT EXISTS is_archived boolean NOT NULL DEFAULT false`);
+  await pool.query(`ALTER TABLE ${q('companies')} ADD COLUMN IF NOT EXISTS updated_at timestamptz NOT NULL DEFAULT now()`);
   await pool.query(`CREATE TABLE IF NOT EXISTS ${q('users')} (
     id text PRIMARY KEY, username text NOT NULL UNIQUE, password_hash text NOT NULL, name text NOT NULL,
     email text NOT NULL DEFAULT '', phone text NOT NULL DEFAULT '', role text NOT NULL,
@@ -447,6 +567,46 @@ async function migrate() {
     payload jsonb NOT NULL, sort_order integer NOT NULL DEFAULT 0, updated_at timestamptz NOT NULL DEFAULT now(),
     CHECK (period_month ~ '^[0-9]{4}-(0[1-9]|1[0-2])$'), CHECK (earning_type IN ('COMMISSION','BONUS','INCENTIVE','OTHER'))
   )`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS ${q('company_departments')} (
+    company_id text NOT NULL REFERENCES ${q('companies')}(id) ON DELETE CASCADE, id text NOT NULL, code text NOT NULL DEFAULT '',
+    name_ar text NOT NULL DEFAULT '', name_en text NOT NULL DEFAULT '', payload jsonb NOT NULL, sort_order integer NOT NULL DEFAULT 0,
+    PRIMARY KEY (company_id,id)
+  )`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS ${q('cost_centers')} (
+    company_id text NOT NULL REFERENCES ${q('companies')}(id) ON DELETE CASCADE, id text NOT NULL, code text NOT NULL DEFAULT '',
+    name_ar text NOT NULL DEFAULT '', name_en text NOT NULL DEFAULT '', payload jsonb NOT NULL, sort_order integer NOT NULL DEFAULT 0,
+    PRIMARY KEY (company_id,id)
+  )`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS ${q('company_bank_definitions')} (
+    company_id text NOT NULL REFERENCES ${q('companies')}(id) ON DELETE CASCADE, iban_bank_code text NOT NULL,
+    name_ar text NOT NULL DEFAULT '', name_en text NOT NULL DEFAULT '', swift_code text NOT NULL DEFAULT '', is_active boolean NOT NULL DEFAULT true,
+    payload jsonb NOT NULL, sort_order integer NOT NULL DEFAULT 0, PRIMARY KEY (company_id,iban_bank_code)
+  )`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS ${q('journal_batches')} (
+    id text PRIMARY KEY, company_id text NOT NULL REFERENCES ${q('companies')}(id) ON DELETE RESTRICT,
+    payroll_run_id text NOT NULL, period_month text NOT NULL, batch_number text NOT NULL, journal_date date NOT NULL,
+    description text NOT NULL DEFAULT '', status text NOT NULL, total_debit numeric(16,2) NOT NULL DEFAULT 0,
+    total_credit numeric(16,2) NOT NULL DEFAULT 0, payload jsonb NOT NULL, sort_order integer NOT NULL DEFAULT 0,
+    updated_at timestamptz NOT NULL DEFAULT now(), UNIQUE (company_id,batch_number),
+    CHECK (period_month ~ '^[0-9]{4}-(0[1-9]|1[0-2])$'), CHECK (status IN ('DRAFT','EXPORTED_TO_QOYOD','POSTED')),
+    CHECK (abs(total_debit-total_credit) < 0.01)
+  )`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS ${q('journal_lines')} (
+    journal_batch_id text NOT NULL REFERENCES ${q('journal_batches')}(id) ON DELETE CASCADE, id text NOT NULL,
+    account_code text NOT NULL, account_name_ar text NOT NULL DEFAULT '', description_ar text NOT NULL DEFAULT '',
+    debit numeric(16,2) NOT NULL DEFAULT 0 CHECK (debit >= 0), credit numeric(16,2) NOT NULL DEFAULT 0 CHECK (credit >= 0),
+    cost_center_code text, payload jsonb NOT NULL, sort_order integer NOT NULL DEFAULT 0,
+    PRIMARY KEY (journal_batch_id,id), CHECK (NOT (debit > 0 AND credit > 0))
+  )`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS ${q('application_audit_logs')} (
+    id text PRIMARY KEY, company_id text, user_id text, user_name text NOT NULL DEFAULT '', user_role text NOT NULL,
+    action text NOT NULL DEFAULT '', entity_type text, entity_id text NOT NULL DEFAULT '', occurred_at timestamptz NOT NULL,
+    details text, payload jsonb NOT NULL, sort_order integer NOT NULL DEFAULT 0
+  )`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS ${q('integration_configs')} (
+    provider text PRIMARY KEY, public_config jsonb NOT NULL DEFAULT '{}'::jsonb, secret_value text NOT NULL DEFAULT '',
+    updated_at timestamptz NOT NULL DEFAULT now(), CHECK (provider IN ('QOYOD'))
+  )`);
   await pool.query(`CREATE TABLE IF NOT EXISTS ${q('audit_log')} (
     id bigserial PRIMARY KEY, user_id text, action text NOT NULL, ip inet, created_at timestamptz NOT NULL DEFAULT now()
   )`);
@@ -462,6 +622,12 @@ async function migrate() {
   await pool.query(`CREATE INDEX IF NOT EXISTS loans_employee_status_idx ON ${q('loans')}(employee_id,status)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS penalties_employee_period_idx ON ${q('penalties')}(employee_id,period_month)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS earnings_employee_period_idx ON ${q('temporary_earnings')}(employee_id,period_month)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS journal_batches_company_period_idx ON ${q('journal_batches')}(company_id,period_month)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS application_audit_logs_company_time_idx ON ${q('application_audit_logs')}(company_id,occurred_at DESC)`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS company_departments_code_unique_idx
+    ON ${q('company_departments')}(company_id,code) WHERE code <> ''`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS cost_centers_code_unique_idx
+    ON ${q('cost_centers')}(company_id,code) WHERE code <> ''`);
   await pool.query(`UPDATE ${q('users')} SET role='OPERATIONS_MANAGER',updated_at=now()
     WHERE id <> 'user-admin' AND role IN ('HR_MANAGER','PAYROLL_SPECIALIST','AUDITOR','EMPLOYEE')`);
 
@@ -502,6 +668,18 @@ async function migrate() {
       }
       await migrationClient.query(`INSERT INTO ${q('schema_migrations')} (version) VALUES ('002_normalized_operations')`);
     }
+
+    const coreMigration = await migrationClient.query(`SELECT 1 FROM ${q('schema_migrations')} WHERE version='003_normalized_core'`);
+    if (!coreMigration.rowCount) {
+      const source = await migrationClient.query(`SELECT state,version FROM ${q('app_state')} WHERE id=1 FOR UPDATE`);
+      if (source.rowCount) {
+        await migrationClient.query(`INSERT INTO ${q('app_state_migration_backups')} (source_version,state,reason)
+          VALUES ($1,$2::jsonb,'Migration of companies, journals, application audit logs and integration configuration')
+          ON CONFLICT (source_version) DO NOTHING`, [source.rows[0].version, JSON.stringify(source.rows[0].state)]);
+        await replaceNormalizedCoreData(migrationClient, source.rows[0].state);
+      }
+      await migrationClient.query(`INSERT INTO ${q('schema_migrations')} (version) VALUES ('003_normalized_core')`);
+    }
     await migrationClient.query('COMMIT');
   } catch (error) {
     await migrationClient.query('ROLLBACK');
@@ -522,7 +700,18 @@ async function migrate() {
         jsonb_array_length(COALESCE(state->'leaves','[]'::jsonb)) AS legacy_leaves,
         jsonb_array_length(COALESCE(state->'loans','[]'::jsonb)) AS legacy_loans,
         jsonb_array_length(COALESCE(state->'penalties','[]'::jsonb)) AS legacy_penalties,
-        jsonb_array_length(COALESCE(state->'temporaryEarnings','[]'::jsonb)) AS legacy_temporary_earnings
+        jsonb_array_length(COALESCE(state->'temporaryEarnings','[]'::jsonb)) AS legacy_temporary_earnings,
+        jsonb_array_length(COALESCE(state->'companies','[]'::jsonb)) AS legacy_companies,
+        COALESCE((SELECT sum(jsonb_array_length(COALESCE(company->'departments','[]'::jsonb)))
+          FROM jsonb_array_elements(COALESCE(state->'companies','[]'::jsonb)) AS companies(company)),0) AS legacy_departments,
+        COALESCE((SELECT sum(jsonb_array_length(COALESCE(company->'costCenters','[]'::jsonb)))
+          FROM jsonb_array_elements(COALESCE(state->'companies','[]'::jsonb)) AS companies(company)),0) AS legacy_cost_centers,
+        COALESCE((SELECT sum(jsonb_array_length(COALESCE(company->'bankDefinitions','[]'::jsonb)))
+          FROM jsonb_array_elements(COALESCE(state->'companies','[]'::jsonb)) AS companies(company)),0) AS legacy_bank_definitions,
+        jsonb_array_length(COALESCE(state->'journals','[]'::jsonb)) AS legacy_journals,
+        COALESCE((SELECT sum(jsonb_array_length(COALESCE(journal->'lines','[]'::jsonb)))
+          FROM jsonb_array_elements(COALESCE(state->'journals','[]'::jsonb)) AS journals(journal)),0) AS legacy_journal_lines,
+        jsonb_array_length(COALESCE(state->'auditLogs','[]'::jsonb)) AS legacy_audit_logs
       FROM ${q('app_state')} WHERE id=1
     )
     SELECT legacy_employees,(SELECT count(*) FROM ${q('employees')} WHERE is_archived=false) AS table_employees,
@@ -533,6 +722,13 @@ async function migrate() {
       legacy_loans,(SELECT count(*) FROM ${q('loans')}) AS table_loans,
       legacy_penalties,(SELECT count(*) FROM ${q('penalties')}) AS table_penalties,
       legacy_temporary_earnings,(SELECT count(*) FROM ${q('temporary_earnings')}) AS table_temporary_earnings,
+      legacy_companies,(SELECT count(*) FROM ${q('companies')} WHERE is_archived=false) AS table_companies,
+      legacy_departments,(SELECT count(*) FROM ${q('company_departments')}) AS table_departments,
+      legacy_cost_centers,(SELECT count(*) FROM ${q('cost_centers')}) AS table_cost_centers,
+      legacy_bank_definitions,(SELECT count(*) FROM ${q('company_bank_definitions')}) AS table_bank_definitions,
+      legacy_journals,(SELECT count(*) FROM ${q('journal_batches')}) AS table_journals,
+      legacy_journal_lines,(SELECT count(*) FROM ${q('journal_lines')}) AS table_journal_lines,
+      legacy_audit_logs,(SELECT count(*) FROM ${q('application_audit_logs')}) AS table_audit_logs,
       legacy_employees=(SELECT count(*) FROM ${q('employees')} WHERE is_archived=false)
         AND legacy_runs=(SELECT count(*) FROM ${q('payroll_runs')})
         AND legacy_items=(SELECT count(*) FROM ${q('payroll_run_items')})
@@ -540,7 +736,14 @@ async function migrate() {
         AND legacy_leaves=(SELECT count(*) FROM ${q('leave_requests')})
         AND legacy_loans=(SELECT count(*) FROM ${q('loans')})
         AND legacy_penalties=(SELECT count(*) FROM ${q('penalties')})
-        AND legacy_temporary_earnings=(SELECT count(*) FROM ${q('temporary_earnings')}) AS counts_match
+        AND legacy_temporary_earnings=(SELECT count(*) FROM ${q('temporary_earnings')})
+        AND legacy_companies=(SELECT count(*) FROM ${q('companies')} WHERE is_archived=false)
+        AND legacy_departments=(SELECT count(*) FROM ${q('company_departments')})
+        AND legacy_cost_centers=(SELECT count(*) FROM ${q('cost_centers')})
+        AND legacy_bank_definitions=(SELECT count(*) FROM ${q('company_bank_definitions')})
+        AND legacy_journals=(SELECT count(*) FROM ${q('journal_batches')})
+        AND legacy_journal_lines=(SELECT count(*) FROM ${q('journal_lines')})
+        AND legacy_audit_logs=(SELECT count(*) FROM ${q('application_audit_logs')}) AS counts_match
     FROM legacy`);
 }
 
@@ -587,7 +790,7 @@ app.post('/api/auth/login', loginLimiter, async (req, res, next) => {
     const companyCode = String(req.body?.companyCode || '').trim();
     const password = String(req.body?.password || '');
     const result = await pool.query(`SELECT u.*, c.id company_id FROM ${q('users')} u
-      JOIN ${q('companies')} c ON c.company_code=$2 WHERE lower(u.username)=$1`, [username, companyCode]);
+      JOIN ${q('companies')} c ON c.company_code=$2 AND c.is_archived=false WHERE lower(u.username)=$1`, [username, companyCode]);
     const user = result.rows[0];
     const valid = user && user.is_active && await bcrypt.compare(password, user.password_hash);
     const companyAllowed = valid && (user.role === 'ADMIN' || user.company_ids.includes(user.company_id));
@@ -704,16 +907,21 @@ app.put('/api/state', auth, writeLimiter, async (req, res, next) => {
     state = mergeStateForUser(stored, state, req.user);
     await replaceNormalizedPayrollData(client, state);
     await replaceNormalizedOperationsData(client, state);
+    await replaceNormalizedCoreData(client, state);
+    const compatibilityState = clone(state);
+    if (compatibilityState.qoyodConfig && typeof compatibilityState.qoyodConfig === 'object') {
+      compatibilityState.qoyodConfig = { ...compatibilityState.qoyodConfig, apiKey:'', apiKeyConfigured:Boolean(state.qoyodConfig?.apiKey) };
+    }
     const r = current.rowCount
       ? await client.query(`UPDATE ${q('app_state')} SET state=$1::jsonb,version=version+1,updated_by=$2,updated_at=now()
-          WHERE id=1 RETURNING version,updated_at`, [JSON.stringify(state), req.user.id])
+          WHERE id=1 RETURNING version,updated_at`, [JSON.stringify(compatibilityState), req.user.id])
       : await client.query(`INSERT INTO ${q('app_state')} (id,state,version,updated_by) VALUES (1,$1::jsonb,1,$2)
-          RETURNING version,updated_at`, [JSON.stringify(state), req.user.id]);
+          RETURNING version,updated_at`, [JSON.stringify(compatibilityState), req.user.id]);
     await client.query(`INSERT INTO ${q('app_state_migration_backups')} (source_version,state,reason)
       SELECT $1,$2::jsonb,'Normalized storage baseline'
       WHERE NOT EXISTS (SELECT 1 FROM ${q('app_state_migration_backups')})
       ON CONFLICT (source_version) DO NOTHING`,
-      [r.rows[0].version, JSON.stringify(state)]);
+      [r.rows[0].version, JSON.stringify(compatibilityState)]);
     await client.query('COMMIT');
     broadcastStateUpdate({ version:r.rows[0].version, updatedBy:req.user.id, updatedAt:r.rows[0].updated_at });
     res.json(r.rows[0]);
@@ -771,9 +979,9 @@ app.post('/api/integrations/qoyod/journal', auth, writeLimiter, async (req, res,
     if (!companyId || (req.user.role !== 'ADMIN' && !req.user.company_ids.includes(companyId))) {
       return res.status(403).json({ error:'FORBIDDEN' });
     }
-    const stateResult = await pool.query(`SELECT state FROM ${q('app_state')} WHERE id=1`);
-    const config = stateResult.rows[0]?.state?.qoyodConfig || {};
-    const apiKey = String(config.apiKey || '').trim();
+    const configResult = await pool.query(`SELECT public_config,secret_value FROM ${q('integration_configs')} WHERE provider='QOYOD'`);
+    const config = configResult.rows[0]?.public_config || {};
+    const apiKey = String(configResult.rows[0]?.secret_value || '').trim();
     if (apiKey.length < 5) return res.status(400).json({ error:'QOYOD_NOT_CONFIGURED' });
     const baseUrl = new URL(String(config.baseUrl || 'https://api.qoyod.com/2.0'));
     if (baseUrl.protocol !== 'https:' || baseUrl.hostname !== 'api.qoyod.com') {
