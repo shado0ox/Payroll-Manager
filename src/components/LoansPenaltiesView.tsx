@@ -12,16 +12,18 @@ import {
   RotateCcw,
   FileText
 } from 'lucide-react';
-import { Company, Employee, LoanSchedule, PenaltyRecord, UserRole } from '../types';
+import { Company, Employee, LoanSchedule, PenaltyRecord, TemporaryEarningRecord, UserRole } from '../types';
 import { formatSAR } from '../utils/payrollEngine';
 import { SearchableEmployeeSelect } from './SearchableEmployeeSelect';
 import { useLanguage } from '../i18n/LanguageContext';
+import { TemporaryEarningsPanel } from './TemporaryEarningsPanel';
 
 interface LoansPenaltiesViewProps {
   company: Company;
   employees: Employee[];
   loans: LoanSchedule[];
   penalties: PenaltyRecord[];
+  temporaryEarnings: TemporaryEarningRecord[];
   activeRole: UserRole;
   onSaveLoan: (loan: LoanSchedule) => void;
   onUpdateLoanStatus: (loanId: string, status: LoanSchedule['status']) => void;
@@ -29,6 +31,9 @@ interface LoansPenaltiesViewProps {
   onSavePenalty: (penalty: PenaltyRecord) => void;
   onCancelPenalty: (penaltyId: string) => void;
   onDeletePenalty: (penaltyId: string) => void;
+  onSaveTemporaryEarning: (earning: TemporaryEarningRecord) => void;
+  onCancelTemporaryEarning: (earningId: string) => void;
+  onDeleteTemporaryEarning: (earningId: string) => void;
 }
 
 export const LoansPenaltiesView: React.FC<LoansPenaltiesViewProps> = ({
@@ -36,6 +41,7 @@ export const LoansPenaltiesView: React.FC<LoansPenaltiesViewProps> = ({
   employees,
   loans,
   penalties,
+  temporaryEarnings,
   activeRole,
   onSaveLoan,
   onUpdateLoanStatus,
@@ -43,12 +49,15 @@ export const LoansPenaltiesView: React.FC<LoansPenaltiesViewProps> = ({
   onSavePenalty,
   onCancelPenalty,
   onDeletePenalty,
+  onSaveTemporaryEarning,
+  onCancelTemporaryEarning,
+  onDeleteTemporaryEarning,
 }) => {
   const { language } = useLanguage();
   const tr = (ar: string, en: string) => language === 'ar' ? ar : en;
   const today = new Date().toISOString().slice(0, 10);
   const currentPeriod = today.slice(0, 7);
-  const [activeTab, setActiveTab] = useState<'loans' | 'penalties'>('loans');
+  const [activeTab, setActiveTab] = useState<'loans' | 'penalties' | 'earnings'>('loans');
   const [isLoanModalOpen, setIsLoanModalOpen] = useState(false);
   const [isPenaltyModalOpen, setIsPenaltyModalOpen] = useState(false);
   const [editingLoan, setEditingLoan] = useState<LoanSchedule | null>(null);
@@ -167,10 +176,10 @@ export const LoansPenaltiesView: React.FC<LoansPenaltiesViewProps> = ({
         <div>
           <h1 className="text-xl sm:text-2xl font-bold text-slate-900 flex items-center gap-2">
             <Receipt className="w-6 h-6 text-emerald-600" />
-            <span>{tr('السلف والأقساط والجزاءات الإدارية', 'Loans, Installments & Penalties')}</span>
+            <span>{tr('السلف والجزاءات والإضافات المؤقتة', 'Loans, Penalties & Temporary Earnings')}</span>
           </h1>
           <p className="text-xs text-slate-500 mt-1">
-            {tr('جدولة أقساط سلف الموظفين، ضبط حد الاستقطاع (33%)، وتسجيل الخصومات الإدارية', 'Schedule employee loan installments, monitor the 33% deduction limit, and record administrative deductions')}
+            {tr('إدارة السلف والخصومات والعمولات والمكافآت غير الدورية وربطها تلقائيًا بالمسير', 'Manage loans, deductions, commissions and one-time bonuses with automatic payroll integration')}
           </p>
         </div>
 
@@ -183,7 +192,7 @@ export const LoansPenaltiesView: React.FC<LoansPenaltiesViewProps> = ({
               <Plus className="w-4 h-4" />
               <span>{tr('إضافة سلفة جديدة', 'Add loan')}</span>
             </button>
-          ) : (
+          ) : activeTab === 'penalties' ? (
             <button
               onClick={() => { setEditingPenalty(null); setIsPenaltyModalOpen(true); }}
               className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
@@ -191,7 +200,7 @@ export const LoansPenaltiesView: React.FC<LoansPenaltiesViewProps> = ({
               <Plus className="w-4 h-4" />
               <span>{tr('تسجيل جزاء / خصم إداري', 'Add penalty / deduction')}</span>
             </button>
-          )}
+          ) : null}
         </div>
       </div>
 
@@ -240,6 +249,13 @@ export const LoansPenaltiesView: React.FC<LoansPenaltiesViewProps> = ({
           }`}
         >
           {tr('سجل الجزاءات والخصومات', 'Penalties & deductions')} ({companyPenalties.length})
+        </button>
+
+        <button
+          onClick={() => setActiveTab('earnings')}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${activeTab === 'earnings' ? 'bg-emerald-600 text-white shadow-xs' : 'text-slate-600 hover:bg-slate-100'}`}
+        >
+          {tr('العمولات والمكافآت المؤقتة', 'Temporary earnings')} ({temporaryEarnings.filter(item => item.companyId === company.id).length})
         </button>
       </div>
 
@@ -326,7 +342,7 @@ export const LoansPenaltiesView: React.FC<LoansPenaltiesViewProps> = ({
             </table>
           </div>
         </div>
-      ) : (
+      ) : activeTab === 'penalties' ? (
         /* Penalties Table */
         <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
           <div className="overflow-x-auto">
@@ -372,6 +388,15 @@ export const LoansPenaltiesView: React.FC<LoansPenaltiesViewProps> = ({
             </table>
           </div>
         </div>
+      ) : (
+        <TemporaryEarningsPanel
+          companyId={company.id}
+          employees={employees}
+          earnings={temporaryEarnings}
+          onSave={onSaveTemporaryEarning}
+          onCancel={onCancelTemporaryEarning}
+          onDelete={onDeleteTemporaryEarning}
+        />
       )}
 
       {/* Add Loan Modal */}
