@@ -38,8 +38,8 @@ const pool = new Pool({
 const q = (name) => `"${schema}".${name}`;
 const sha256 = (value) => crypto.createHash('sha256').update(value).digest('hex');
 const cookieValue = (req, key) => (req.headers.cookie || '').split(';').map(v => v.trim()).find(v => v.startsWith(`${key}=`))?.slice(key.length + 1);
-const COMPANY_SCOPED_KEYS = ['employees', 'attendance', 'loans', 'penalties', 'leaves', 'payrollRuns', 'journals'];
-const OPERATIONS_MUTABLE_KEYS = new Set(['employees', 'attendance', 'loans', 'penalties', 'leaves', 'payrollRuns']);
+const COMPANY_SCOPED_KEYS = ['employees', 'attendance', 'loans', 'penalties', 'temporaryEarnings', 'leaves', 'payrollRuns', 'journals'];
+const OPERATIONS_MUTABLE_KEYS = new Set(['employees', 'attendance', 'loans', 'penalties', 'temporaryEarnings', 'leaves', 'payrollRuns']);
 const clone = (value) => value == null ? value : structuredClone(value);
 const allowedCompanyIds = (user) => new Set(user.role === 'ADMIN' ? [] : (Array.isArray(user.company_ids) ? user.company_ids : []));
 const itemCompanyId = (item) => item && typeof item.companyId === 'string' ? item.companyId : '';
@@ -81,7 +81,7 @@ function mergeStateForUser(stored, incoming, user) {
   const allowed = allowedCompanyIds(user);
   const keyPermissions = {
     employees:'MANAGE_EMPLOYEES', attendance:'MANAGE_ATTENDANCE', leaves:'MANAGE_ATTENDANCE',
-    loans:'MANAGE_LOANS_PENALTIES', penalties:'MANAGE_LOANS_PENALTIES', payrollRuns:'MANAGE_PAYROLL', journals:'MANAGE_JOURNALS',
+    loans:'MANAGE_LOANS_PENALTIES', penalties:'MANAGE_LOANS_PENALTIES', temporaryEarnings:'MANAGE_LOANS_PENALTIES', payrollRuns:'MANAGE_PAYROLL', journals:'MANAGE_JOURNALS',
   };
   const roleKeys = user.role === 'OPERATIONS_MANAGER' ? OPERATIONS_MUTABLE_KEYS : new Set(COMPANY_SCOPED_KEYS);
   const mutableKeys = [...roleKeys].filter(key => can(user, keyPermissions[key]));
