@@ -551,7 +551,7 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
           >
             <option value="ALL">{language === 'ar' ? 'جميع الحالات الوظيفية' : 'All employment statuses'}</option>
             <option value="ACTIVE">{language === 'ar' ? 'على رأس العمل (نشط)' : 'Active'}</option>
-            <option value="SUSPENDED">{language === 'ar' ? 'معلق الراتب (موقوف)' : 'Salary suspended'}</option>
+            <option value="SUSPENDED">{language === 'ar' ? 'تعليق الصرف مع استمرار الاستحقاق' : 'Payment held — entitlement continues'}</option>
             <option value="ON_LEAVE">{language === 'ar' ? 'في إجازة' : 'On leave'}</option>
             <option value="TERMINATED">{language === 'ar' ? 'منتهي الخدمة' : 'Terminated'}</option>
             <option value="ABSCONDED">{language === 'ar' ? 'العمالة الهاربة' : 'Absconded workers'}</option>
@@ -1094,7 +1094,7 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                       className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white"
                     >
                       <option value="ACTIVE">{language === 'ar' ? 'على رأس العمل' : 'Active'}</option>
-                      <option value="SUSPENDED">{language === 'ar' ? 'تعليق الراتب' : 'Suspended'}</option>
+                      <option value="SUSPENDED">{language === 'ar' ? 'تعليق الصرف مع استمرار الاستحقاق' : 'Payment held — entitlement continues'}</option>
                       <option value="ON_LEAVE">{language === 'ar' ? 'إجازة' : 'On leave'}</option>
                       <option value="TERMINATED">{language === 'ar' ? 'منتهي الخدمة' : 'Terminated'}</option>
                       <option value="ABSCONDED">{language === 'ar' ? 'هروب — تعليق واستبعاد الراتب' : 'Absconded — payroll suspended'}</option>
@@ -1106,7 +1106,7 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                 {formData.status === 'SUSPENDED' && (
                   <div className="mt-3 p-3 bg-amber-50 rounded-xl border border-amber-200 grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div className="sm:col-span-2">
-                      <label className="block text-xs font-bold text-amber-900 mb-1">{language === 'ar' ? 'سبب تعليق الراتب' : 'Payroll suspension reason'}</label>
+                      <label className="block text-xs font-bold text-amber-900 mb-1">{language === 'ar' ? 'سبب تعليق صرف الراتب' : 'Salary payment hold reason'}</label>
                       <input
                         type="text"
                         value={formData.suspensionReason || ''}

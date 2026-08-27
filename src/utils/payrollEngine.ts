@@ -45,7 +45,13 @@ export function calculateEmployeePayrollItem(input: EmployeeCalculationInput): P
     roundingDecimals: 2,
   };
 
-  const isSuspended = employee.status === 'SUSPENDED';
+  const suspensionStartsBeforePeriodEnds = !employee.suspensionStartDate
+    || employee.suspensionStartDate <= `${input.periodMonth}-31`;
+  const suspensionEndsAfterPeriodStarts = !employee.suspensionEndDate
+    || employee.suspensionEndDate >= `${input.periodMonth}-01`;
+  const isSuspended = employee.status === 'SUSPENDED'
+    && suspensionStartsBeforePeriodEnds
+    && suspensionEndsAfterPeriodStarts;
   const isAbsconded = employee.status === 'ABSCONDED';
   const isTerminated = employee.status === 'TERMINATED';
 
@@ -64,7 +70,7 @@ export function calculateEmployeePayrollItem(input: EmployeeCalculationInput): P
       : periodStart;
   const salaryEnd = isTerminated ? employee.terminationDate : undefined;
   let payableDays = salaryDivisor;
-  if (salaryStart > periodEnd || (salaryEnd && salaryEnd < periodStart) || isSuspended || isAbsconded) {
+  if (salaryStart > periodEnd || (salaryEnd && salaryEnd < periodStart) || isAbsconded) {
     payableDays = 0;
   } else {
     const startDay = salaryStart.startsWith(input.periodMonth) ? Math.min(Number(salaryStart.slice(-2)), salaryDivisor) : 1;
@@ -199,8 +205,8 @@ export function calculateEmployeePayrollItem(input: EmployeeCalculationInput): P
   let effectiveOtherFixed = otherFixedAllowances * salaryProrationFactor;
   let effectiveNonGosiOther = nonGosiOtherAllowances * salaryProrationFactor;
 
-  if (isSuspended || isAbsconded) {
-    // Suspension: 0 base payout unless specific allowance rule
+  if (isAbsconded) {
+    // Absconded workers are excluded from new payroll entitlement.
     effectiveBaseSalary = 0;
     effectiveHousing = 0;
     effectiveTransport = 0;
@@ -232,7 +238,7 @@ export function calculateEmployeePayrollItem(input: EmployeeCalculationInput): P
   // Warnings
   const warningFlags: string[] = [];
   if (isSuspended) {
-    warningFlags.push('الموظف في حالة تعليق راتب');
+    warningFlags.push('صرف راتب الموظف معلق مع استمرار احتساب الاستحقاق');
   }
   if (isAbsconded) {
     warningFlags.push('عامل هارب — الراتب معلق ومستبعد من المسير');

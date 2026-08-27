@@ -358,6 +358,22 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
     const startTime = performance.now();
 
     setTimeout(() => {
+      const previousItems: PayrollRunItem[] = currentRun?.items || [];
+      const previousItemsByEmployeeId = new Map<string, PayrollRunItem>(previousItems.map(item => [item.employeeId, item]));
+      const previousItemsByEmployeeNo = new Map<string, PayrollRunItem>();
+      const duplicateEmployeeNumbers = new Set<string>();
+
+      previousItems.forEach(item => {
+        const employeeNo = item.employeeNo?.trim().toUpperCase();
+        if (!employeeNo) return;
+        if (previousItemsByEmployeeNo.has(employeeNo)) {
+          duplicateEmployeeNumbers.add(employeeNo);
+          previousItemsByEmployeeNo.delete(employeeNo);
+          return;
+        }
+        if (!duplicateEmployeeNumbers.has(employeeNo)) previousItemsByEmployeeNo.set(employeeNo, item);
+      });
+
       const runItems: PayrollRunItem[] = companyEmployees
         .filter(emp => {
           if (emp.status === 'ABSCONDED') return false;
@@ -383,13 +399,26 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
           penalties: empPens,
           temporaryEarnings: empEarnings,
         });
-        const previousItem = currentRun?.items.find(item => item.employeeId === emp.id);
+        const employeeNo = emp.employeeNo?.trim().toUpperCase();
+        const previousItem = previousItemsByEmployeeId.get(emp.id)
+          || (employeeNo && !duplicateEmployeeNumbers.has(employeeNo)
+            ? previousItemsByEmployeeNo.get(employeeNo)
+            : undefined);
+        const previousEntitlementStatus = previousItem?.entitlementStatus || 'PAYABLE';
+        const shouldApplyAutomaticHold = calculated.isSuspended && previousEntitlementStatus === 'PAYABLE';
         return previousItem ? {
           ...calculated,
-          entitlementStatus: previousItem.entitlementStatus,
-          entitlementReason: previousItem.entitlementReason,
+          entitlementStatus: shouldApplyAutomaticHold ? 'HELD' : previousItem.entitlementStatus,
+          entitlementReason: shouldApplyAutomaticHold
+            ? (emp.suspensionReason?.trim() || tr('تعليق تلقائي من ملف الموظف', 'Automatically held from employee profile'))
+            : previousItem.entitlementReason,
           entitlementDocumentRef: previousItem.entitlementDocumentRef,
-          entitlementUpdatedAt: previousItem.entitlementUpdatedAt,
+          entitlementUpdatedAt: shouldApplyAutomaticHold ? new Date().toISOString() : previousItem.entitlementUpdatedAt,
+        } : calculated.isSuspended ? {
+          ...calculated,
+          entitlementStatus: 'HELD',
+          entitlementReason: emp.suspensionReason?.trim() || tr('تعليق تلقائي من ملف الموظف', 'Automatically held from employee profile'),
+          entitlementUpdatedAt: new Date().toISOString(),
         } : calculated;
       });
 
