@@ -1,6 +1,6 @@
 # PostgreSQL payroll normalization
 
-This release moves employees, payroll runs, payroll run items, payment batches, and payment batch employees into relational PostgreSQL tables.
+This release moves employees, payroll runs, payroll run items, payment batches, attendance, leaves, loans, penalties, and temporary earnings into relational PostgreSQL tables.
 
 ## Safety model
 
@@ -17,11 +17,19 @@ This release moves employees, payroll runs, payroll run items, payment batches, 
 - `payroll_run_items`
 - `payroll_payment_batches`
 - `payroll_payment_batch_items`
+- `attendance_records`
+- `leave_requests`
+- `loans`
+- `penalties`
+- `temporary_earnings`
 - `app_state_migration_backups`
+- `schema_migrations`
 - `normalization_status` (view)
 
 ## Deployment checks
 
 Before deployment, create a PostgreSQL custom-format backup. After deployment, run `scripts/verify-normalized-storage.sql` in pgAdmin. `counts_match` must be true, every payroll `net_total_matches` value must be true, and duplicate employee-number results should be empty.
+
+Historical operational records whose employee was already deleted are preserved through hidden archived employee references. They are not returned as active employees to the application.
 
 Do not delete `app_state` or `app_state_migration_backups` during this transition release.

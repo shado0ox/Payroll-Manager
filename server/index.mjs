@@ -132,6 +132,12 @@ async function replaceNormalizedPayrollData(client, state) {
     ON CONFLICT (id) DO UPDATE SET company_code=EXCLUDED.company_code,name_ar=EXCLUDED.name_ar,name_en=EXCLUDED.name_en`,
     [JSON.stringify(companies)]);
 
+  // Operational rows reference employees, so clear them before replacing employee identities.
+  await client.query(`DELETE FROM ${q('attendance_records')}`);
+  await client.query(`DELETE FROM ${q('leave_requests')}`);
+  await client.query(`DELETE FROM ${q('loans')}`);
+  await client.query(`DELETE FROM ${q('penalties')}`);
+  await client.query(`DELETE FROM ${q('temporary_earnings')}`);
   await client.query(`DELETE FROM ${q('payroll_payment_batch_items')}`);
   await client.query(`DELETE FROM ${q('payroll_payment_batches')}`);
   await client.query(`DELETE FROM ${q('payroll_run_items')}`);
@@ -141,7 +147,7 @@ async function replaceNormalizedPayrollData(client, state) {
   await client.query(`INSERT INTO ${q('employees')} (
       id,company_id,employee_no,national_id_or_iqama,status,first_name_ar,last_name_ar,first_name_en,last_name_en,
       department,job_title,hire_date,salary_start_date,termination_date,suspension_start_date,suspension_end_date,
-      base_salary,housing_allowance,transport_allowance,other_fixed_allowances,bank_iban,payload,sort_order
+      base_salary,housing_allowance,transport_allowance,other_fixed_allowances,bank_iban,payload,sort_order,is_archived
     )
     SELECT employee->>'id',employee->>'companyId',employee->>'employeeNo',COALESCE(employee->>'nationalIdOrIqama',''),
       COALESCE(employee->>'status','ACTIVE'),COALESCE(employee->>'firstNameAr',''),COALESCE(employee->>'lastNameAr',''),
@@ -152,7 +158,7 @@ async function replaceNormalizedPayrollData(client, state) {
       COALESCE(NULLIF(employee->'salaryPackage'->>'housingAllowance','')::numeric,0),
       COALESCE(NULLIF(employee->'salaryPackage'->>'transportAllowance','')::numeric,0),
       COALESCE(NULLIF(employee->'salaryPackage'->>'otherFixedAllowances','')::numeric,0),
-      COALESCE(employee->>'bankIban',''),employee,(ordinality - 1)::integer
+      COALESCE(employee->>'bankIban',''),employee,(ordinality - 1)::integer,false
     FROM jsonb_array_elements($1::jsonb) WITH ORDINALITY AS source(employee, ordinality)`, [JSON.stringify(employees)]);
 
   await client.query(`INSERT INTO ${q('payroll_runs')} (
@@ -196,10 +202,83 @@ async function replaceNormalizedPayrollData(client, state) {
     CROSS JOIN LATERAL jsonb_array_elements_text(COALESCE(batch->'employeeIds','[]'::jsonb)) WITH ORDINALITY AS employee_ids(employee_id,employee_ordinality)`, [JSON.stringify(payrollRuns)]);
 }
 
+async function replaceNormalizedOperationsData(client, state) {
+  const attendance = asArray(state?.attendance);
+  const leaves = asArray(state?.leaves);
+  const loans = asArray(state?.loans);
+  const penalties = asArray(state?.penalties);
+  const temporaryEarnings = asArray(state?.temporaryEarnings);
+
+  await client.query(`DELETE FROM ${q('attendance_records')}`);
+  await client.query(`DELETE FROM ${q('leave_requests')}`);
+  await client.query(`DELETE FROM ${q('loans')}`);
+  await client.query(`DELETE FROM ${q('penalties')}`);
+  await client.query(`DELETE FROM ${q('temporary_earnings')}`);
+
+  const operationalSources = [attendance, leaves, loans, penalties, temporaryEarnings].flat();
+  await client.query(`INSERT INTO ${q('employees')} (
+      id,company_id,employee_no,national_id_or_iqama,status,first_name_ar,last_name_ar,first_name_en,last_name_en,
+      payload,sort_order,is_archived
+    )
+    SELECT DISTINCT ON (record->>'employeeId') record->>'employeeId',record->>'companyId',
+      'ARCHIVED-' || left(record->>'employeeId',32),'','TERMINATED','موظف','مؤرشف','Archived','Employee',
+      jsonb_build_object('id',record->>'employeeId','companyId',record->>'companyId','employeeNo','ARCHIVED-' || left(record->>'employeeId',32),'status','TERMINATED'),
+      2147483647,true
+    FROM jsonb_array_elements($1::jsonb) AS source(record)
+    WHERE NULLIF(record->>'employeeId','') IS NOT NULL AND NULLIF(record->>'companyId','') IS NOT NULL
+      AND NOT EXISTS (SELECT 1 FROM ${q('employees')} employee WHERE employee.id=record->>'employeeId')
+    ON CONFLICT (id) DO NOTHING`, [JSON.stringify(operationalSources)]);
+
+  await client.query(`INSERT INTO ${q('attendance_records')} (
+      id,company_id,employee_id,period_month,record_date,end_date,days_count,delay_minutes,absence,unpaid_leave,
+      overtime_hours,overtime_type,notes,payload,sort_order
+    )
+    SELECT record->>'id',record->>'companyId',record->>'employeeId',record->>'periodMonth',NULLIF(record->>'date','')::date,
+      NULLIF(record->>'endDate','')::date,COALESCE(NULLIF(record->>'daysCount','')::integer,1),
+      COALESCE(NULLIF(record->>'delayMinutes','')::integer,0),COALESCE((record->>'absence')::boolean,false),
+      COALESCE((record->>'unpaidLeave')::boolean,false),COALESCE(NULLIF(record->>'overtimeHours','')::numeric,0),
+      COALESCE(record->>'overtimeType','STANDARD'),NULLIF(record->>'notes',''),record,(ordinality - 1)::integer
+    FROM jsonb_array_elements($1::jsonb) WITH ORDINALITY AS source(record,ordinality)`, [JSON.stringify(attendance)]);
+
+  await client.query(`INSERT INTO ${q('leave_requests')} (
+      id,company_id,employee_id,leave_type,start_date,end_date,days_count,status,is_paid,reason,payload,sort_order
+    )
+    SELECT leave->>'id',leave->>'companyId',leave->>'employeeId',leave->>'type',NULLIF(leave->>'startDate','')::date,
+      NULLIF(leave->>'endDate','')::date,COALESCE(NULLIF(leave->>'daysCount','')::integer,0),COALESCE(leave->>'status','PENDING'),
+      COALESCE((leave->>'isPaid')::boolean,false),NULLIF(leave->>'reason',''),leave,(ordinality - 1)::integer
+    FROM jsonb_array_elements($1::jsonb) WITH ORDINALITY AS source(leave,ordinality)`, [JSON.stringify(leaves)]);
+
+  await client.query(`INSERT INTO ${q('loans')} (
+      id,company_id,employee_id,total_amount,monthly_installment,total_installments,remaining_installments,
+      remaining_amount,start_month,status,reason,payload,sort_order
+    )
+    SELECT loan->>'id',loan->>'companyId',loan->>'employeeId',COALESCE(NULLIF(loan->>'totalAmount','')::numeric,0),
+      COALESCE(NULLIF(loan->>'monthlyInstallment','')::numeric,0),COALESCE(NULLIF(loan->>'totalInstallments','')::integer,0),
+      COALESCE(NULLIF(loan->>'remainingInstallments','')::integer,0),COALESCE(NULLIF(loan->>'remainingAmount','')::numeric,0),
+      loan->>'startDate',COALESCE(loan->>'status','ACTIVE'),COALESCE(loan->>'reason',''),loan,(ordinality - 1)::integer
+    FROM jsonb_array_elements($1::jsonb) WITH ORDINALITY AS source(loan,ordinality)`, [JSON.stringify(loans)]);
+
+  await client.query(`INSERT INTO ${q('penalties')} (
+      id,company_id,employee_id,period_month,record_date,reason,amount,applied_in_payroll,payload,sort_order
+    )
+    SELECT penalty->>'id',penalty->>'companyId',penalty->>'employeeId',penalty->>'periodMonth',
+      NULLIF(penalty->>'date','')::date,COALESCE(penalty->>'reason',''),COALESCE(NULLIF(penalty->>'amount','')::numeric,0),
+      COALESCE((penalty->>'appliedInPayroll')::boolean,false),penalty,(ordinality - 1)::integer
+    FROM jsonb_array_elements($1::jsonb) WITH ORDINALITY AS source(penalty,ordinality)`, [JSON.stringify(penalties)]);
+
+  await client.query(`INSERT INTO ${q('temporary_earnings')} (
+      id,company_id,employee_id,period_month,record_date,earning_type,amount,reason,applied_in_payroll,payload,sort_order
+    )
+    SELECT earning->>'id',earning->>'companyId',earning->>'employeeId',earning->>'periodMonth',
+      NULLIF(earning->>'date','')::date,earning->>'type',COALESCE(NULLIF(earning->>'amount','')::numeric,0),
+      COALESCE(earning->>'reason',''),COALESCE((earning->>'appliedInPayroll')::boolean,false),earning,(ordinality - 1)::integer
+    FROM jsonb_array_elements($1::jsonb) WITH ORDINALITY AS source(earning,ordinality)`, [JSON.stringify(temporaryEarnings)]);
+}
+
 async function hydrateNormalizedPayrollData(client, rawState) {
   const state = clone(rawState || {});
   const [employeeResult, runResult, itemResult, batchResult, batchItemResult] = await Promise.all([
-    client.query(`SELECT payload FROM ${q('employees')} ORDER BY sort_order,id`),
+    client.query(`SELECT payload FROM ${q('employees')} WHERE is_archived=false ORDER BY sort_order,id`),
     client.query(`SELECT id,payload FROM ${q('payroll_runs')} ORDER BY sort_order,id`),
     client.query(`SELECT payroll_run_id,payload FROM ${q('payroll_run_items')} ORDER BY payroll_run_id,sort_order,id`),
     client.query(`SELECT id,payroll_run_id,payload FROM ${q('payroll_payment_batches')} ORDER BY payroll_run_id,sort_order,id`),
@@ -229,6 +308,28 @@ async function hydrateNormalizedPayrollData(client, rawState) {
   return state;
 }
 
+async function hydrateNormalizedOperationsData(client, rawState) {
+  const state = clone(rawState || {});
+  const [attendance, leaves, loans, penalties, temporaryEarnings] = await Promise.all([
+    client.query(`SELECT payload FROM ${q('attendance_records')} ORDER BY sort_order,id`),
+    client.query(`SELECT payload FROM ${q('leave_requests')} ORDER BY sort_order,id`),
+    client.query(`SELECT payload FROM ${q('loans')} ORDER BY sort_order,id`),
+    client.query(`SELECT payload FROM ${q('penalties')} ORDER BY sort_order,id`),
+    client.query(`SELECT payload FROM ${q('temporary_earnings')} ORDER BY sort_order,id`),
+  ]);
+  state.attendance = attendance.rows.map(row => row.payload);
+  state.leaves = leaves.rows.map(row => row.payload);
+  state.loans = loans.rows.map(row => row.payload);
+  state.penalties = penalties.rows.map(row => row.payload);
+  state.temporaryEarnings = temporaryEarnings.rows.map(row => row.payload);
+  return state;
+}
+
+async function hydrateNormalizedStateData(client, rawState) {
+  const payrollState = await hydrateNormalizedPayrollData(client, rawState);
+  return hydrateNormalizedOperationsData(client, payrollState);
+}
+
 async function migrate() {
   await pool.query(`CREATE SCHEMA IF NOT EXISTS "${schema}"`);
   await pool.query(`CREATE TABLE IF NOT EXISTS ${q('companies')} (
@@ -253,6 +354,9 @@ async function migrate() {
     id bigserial PRIMARY KEY, source_version bigint NOT NULL UNIQUE, state jsonb NOT NULL,
     reason text NOT NULL, created_at timestamptz NOT NULL DEFAULT now()
   )`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS ${q('schema_migrations')} (
+    version text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now()
+  )`);
   await pool.query(`CREATE TABLE IF NOT EXISTS ${q('employees')} (
     id text PRIMARY KEY, company_id text NOT NULL REFERENCES ${q('companies')}(id) ON DELETE RESTRICT,
     employee_no text NOT NULL, national_id_or_iqama text NOT NULL DEFAULT '', status text NOT NULL,
@@ -261,9 +365,11 @@ async function migrate() {
     suspension_start_date date, suspension_end_date date, base_salary numeric(14,2) NOT NULL DEFAULT 0,
     housing_allowance numeric(14,2) NOT NULL DEFAULT 0, transport_allowance numeric(14,2) NOT NULL DEFAULT 0,
     other_fixed_allowances numeric(14,2) NOT NULL DEFAULT 0, bank_iban text NOT NULL DEFAULT '', payload jsonb NOT NULL,
-    sort_order integer NOT NULL DEFAULT 0, created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
+    sort_order integer NOT NULL DEFAULT 0, is_archived boolean NOT NULL DEFAULT false,
+    created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
     CHECK (status IN ('ACTIVE','SUSPENDED','ON_LEAVE','TERMINATED','ABSCONDED'))
   )`);
+  await pool.query(`ALTER TABLE ${q('employees')} ADD COLUMN IF NOT EXISTS is_archived boolean NOT NULL DEFAULT false`);
   await pool.query(`CREATE TABLE IF NOT EXISTS ${q('payroll_runs')} (
     id text PRIMARY KEY, company_id text NOT NULL REFERENCES ${q('companies')}(id) ON DELETE RESTRICT,
     period_month text NOT NULL CHECK (period_month ~ '^[0-9]{4}-(0[1-9]|1[0-2])$'), status text NOT NULL,
@@ -297,14 +403,65 @@ async function migrate() {
     payment_batch_id text NOT NULL REFERENCES ${q('payroll_payment_batches')}(id) ON DELETE CASCADE,
     employee_id text NOT NULL, sort_order integer NOT NULL DEFAULT 0, PRIMARY KEY (payment_batch_id,employee_id)
   )`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS ${q('attendance_records')} (
+    id text PRIMARY KEY, company_id text NOT NULL REFERENCES ${q('companies')}(id) ON DELETE RESTRICT,
+    employee_id text NOT NULL REFERENCES ${q('employees')}(id) ON DELETE CASCADE,
+    period_month text NOT NULL CHECK (period_month ~ '^[0-9]{4}-(0[1-9]|1[0-2])$'), record_date date NOT NULL,
+    end_date date, days_count integer NOT NULL DEFAULT 1 CHECK (days_count >= 0), delay_minutes integer NOT NULL DEFAULT 0 CHECK (delay_minutes >= 0),
+    absence boolean NOT NULL DEFAULT false, unpaid_leave boolean NOT NULL DEFAULT false,
+    overtime_hours numeric(10,2) NOT NULL DEFAULT 0 CHECK (overtime_hours >= 0), overtime_type text NOT NULL,
+    notes text, payload jsonb NOT NULL, sort_order integer NOT NULL DEFAULT 0, updated_at timestamptz NOT NULL DEFAULT now(),
+    CHECK (overtime_type IN ('STANDARD','WEEKEND'))
+  )`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS ${q('leave_requests')} (
+    id text PRIMARY KEY, company_id text NOT NULL REFERENCES ${q('companies')}(id) ON DELETE RESTRICT,
+    employee_id text NOT NULL REFERENCES ${q('employees')}(id) ON DELETE CASCADE,
+    leave_type text NOT NULL, start_date date NOT NULL, end_date date NOT NULL, days_count integer NOT NULL CHECK (days_count >= 0),
+    status text NOT NULL, is_paid boolean NOT NULL DEFAULT false, reason text, payload jsonb NOT NULL,
+    sort_order integer NOT NULL DEFAULT 0, updated_at timestamptz NOT NULL DEFAULT now(),
+    CHECK (leave_type IN ('ANNUAL','SICK','UNPAID','EMERGENCY','MATERNITY')),
+    CHECK (status IN ('PENDING','APPROVED','REJECTED')), CHECK (end_date >= start_date)
+  )`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS ${q('loans')} (
+    id text PRIMARY KEY, company_id text NOT NULL REFERENCES ${q('companies')}(id) ON DELETE RESTRICT,
+    employee_id text NOT NULL REFERENCES ${q('employees')}(id) ON DELETE RESTRICT,
+    total_amount numeric(14,2) NOT NULL CHECK (total_amount >= 0), monthly_installment numeric(14,2) NOT NULL CHECK (monthly_installment >= 0),
+    total_installments integer NOT NULL CHECK (total_installments >= 0), remaining_installments integer NOT NULL CHECK (remaining_installments >= 0),
+    remaining_amount numeric(14,2) NOT NULL CHECK (remaining_amount >= 0), start_month text NOT NULL,
+    status text NOT NULL, reason text NOT NULL DEFAULT '', payload jsonb NOT NULL, sort_order integer NOT NULL DEFAULT 0,
+    updated_at timestamptz NOT NULL DEFAULT now(), CHECK (start_month ~ '^[0-9]{4}-(0[1-9]|1[0-2])$'),
+    CHECK (status IN ('ACTIVE','COMPLETED','PAUSED'))
+  )`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS ${q('penalties')} (
+    id text PRIMARY KEY, company_id text NOT NULL REFERENCES ${q('companies')}(id) ON DELETE RESTRICT,
+    employee_id text NOT NULL REFERENCES ${q('employees')}(id) ON DELETE RESTRICT,
+    period_month text NOT NULL, record_date date NOT NULL, reason text NOT NULL DEFAULT '', amount numeric(14,2) NOT NULL CHECK (amount >= 0),
+    applied_in_payroll boolean NOT NULL DEFAULT false, payload jsonb NOT NULL, sort_order integer NOT NULL DEFAULT 0,
+    updated_at timestamptz NOT NULL DEFAULT now(), CHECK (period_month ~ '^[0-9]{4}-(0[1-9]|1[0-2])$')
+  )`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS ${q('temporary_earnings')} (
+    id text PRIMARY KEY, company_id text NOT NULL REFERENCES ${q('companies')}(id) ON DELETE RESTRICT,
+    employee_id text NOT NULL REFERENCES ${q('employees')}(id) ON DELETE RESTRICT,
+    period_month text NOT NULL, record_date date NOT NULL, earning_type text NOT NULL,
+    amount numeric(14,2) NOT NULL CHECK (amount >= 0), reason text NOT NULL DEFAULT '', applied_in_payroll boolean NOT NULL DEFAULT false,
+    payload jsonb NOT NULL, sort_order integer NOT NULL DEFAULT 0, updated_at timestamptz NOT NULL DEFAULT now(),
+    CHECK (period_month ~ '^[0-9]{4}-(0[1-9]|1[0-2])$'), CHECK (earning_type IN ('COMMISSION','BONUS','INCENTIVE','OTHER'))
+  )`);
   await pool.query(`CREATE TABLE IF NOT EXISTS ${q('audit_log')} (
     id bigserial PRIMARY KEY, user_id text, action text NOT NULL, ip inet, created_at timestamptz NOT NULL DEFAULT now()
   )`);
   await pool.query(`CREATE INDEX IF NOT EXISTS sessions_expiry_idx ON ${q('sessions')}(expires_at)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS employees_company_idx ON ${q('employees')}(company_id,status)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS employees_number_idx ON ${q('employees')}(company_id,employee_no)`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS employees_company_number_unique_idx
+    ON ${q('employees')}(company_id,employee_no) WHERE is_archived=false AND employee_no <> ''`);
   await pool.query(`CREATE INDEX IF NOT EXISTS payroll_runs_company_period_idx ON ${q('payroll_runs')}(company_id,period_month DESC)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS payroll_items_employee_idx ON ${q('payroll_run_items')}(employee_id,payroll_run_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS attendance_employee_period_idx ON ${q('attendance_records')}(employee_id,period_month)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS leaves_employee_dates_idx ON ${q('leave_requests')}(employee_id,start_date,end_date)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS loans_employee_status_idx ON ${q('loans')}(employee_id,status)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS penalties_employee_period_idx ON ${q('penalties')}(employee_id,period_month)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS earnings_employee_period_idx ON ${q('temporary_earnings')}(employee_id,period_month)`);
   await pool.query(`UPDATE ${q('users')} SET role='OPERATIONS_MANAGER',updated_at=now()
     WHERE id <> 'user-admin' AND role IN ('HR_MANAGER','PAYROLL_SPECIALIST','AUDITOR','EMPLOYEE')`);
 
@@ -321,15 +478,29 @@ async function migrate() {
   const migrationClient = await pool.connect();
   try {
     await migrationClient.query('BEGIN');
-    const marker = await migrationClient.query(`SELECT 1 FROM ${q('app_state_migration_backups')} LIMIT 1`);
-    if (!marker.rowCount) {
+    const payrollMigration = await migrationClient.query(`SELECT 1 FROM ${q('schema_migrations')} WHERE version='001_normalized_payroll'`);
+    if (!payrollMigration.rowCount) {
+      const marker = await migrationClient.query(`SELECT 1 FROM ${q('app_state_migration_backups')} LIMIT 1`);
       const source = await migrationClient.query(`SELECT state,version FROM ${q('app_state')} WHERE id=1 FOR UPDATE`);
-      if (source.rowCount) {
+      if (!marker.rowCount && source.rowCount) {
         await migrationClient.query(`INSERT INTO ${q('app_state_migration_backups')} (source_version,state,reason)
           VALUES ($1,$2::jsonb,'Initial migration from app_state JSONB to normalized payroll tables')`,
           [source.rows[0].version, JSON.stringify(source.rows[0].state)]);
         await replaceNormalizedPayrollData(migrationClient, source.rows[0].state);
       }
+      await migrationClient.query(`INSERT INTO ${q('schema_migrations')} (version) VALUES ('001_normalized_payroll')`);
+    }
+
+    const operationsMigration = await migrationClient.query(`SELECT 1 FROM ${q('schema_migrations')} WHERE version='002_normalized_operations'`);
+    if (!operationsMigration.rowCount) {
+      const source = await migrationClient.query(`SELECT state,version FROM ${q('app_state')} WHERE id=1 FOR UPDATE`);
+      if (source.rowCount) {
+        await migrationClient.query(`INSERT INTO ${q('app_state_migration_backups')} (source_version,state,reason)
+          VALUES ($1,$2::jsonb,'Migration of attendance, leave, loan, penalty and temporary earning data')
+          ON CONFLICT (source_version) DO NOTHING`, [source.rows[0].version, JSON.stringify(source.rows[0].state)]);
+        await replaceNormalizedOperationsData(migrationClient, source.rows[0].state);
+      }
+      await migrationClient.query(`INSERT INTO ${q('schema_migrations')} (version) VALUES ('002_normalized_operations')`);
     }
     await migrationClient.query('COMMIT');
   } catch (error) {
@@ -339,21 +510,37 @@ async function migrate() {
     migrationClient.release();
   }
 
-  await pool.query(`CREATE OR REPLACE VIEW ${q('normalization_status')} AS
+  await pool.query(`DROP VIEW IF EXISTS ${q('normalization_status')}`);
+  await pool.query(`CREATE VIEW ${q('normalization_status')} AS
     WITH legacy AS (
       SELECT state,
         jsonb_array_length(COALESCE(state->'employees','[]'::jsonb)) AS legacy_employees,
         jsonb_array_length(COALESCE(state->'payrollRuns','[]'::jsonb)) AS legacy_runs,
         COALESCE((SELECT sum(jsonb_array_length(COALESCE(run->'items','[]'::jsonb)))
-          FROM jsonb_array_elements(COALESCE(state->'payrollRuns','[]'::jsonb)) AS runs(run)),0) AS legacy_items
+          FROM jsonb_array_elements(COALESCE(state->'payrollRuns','[]'::jsonb)) AS runs(run)),0) AS legacy_items,
+        jsonb_array_length(COALESCE(state->'attendance','[]'::jsonb)) AS legacy_attendance,
+        jsonb_array_length(COALESCE(state->'leaves','[]'::jsonb)) AS legacy_leaves,
+        jsonb_array_length(COALESCE(state->'loans','[]'::jsonb)) AS legacy_loans,
+        jsonb_array_length(COALESCE(state->'penalties','[]'::jsonb)) AS legacy_penalties,
+        jsonb_array_length(COALESCE(state->'temporaryEarnings','[]'::jsonb)) AS legacy_temporary_earnings
       FROM ${q('app_state')} WHERE id=1
     )
-    SELECT legacy_employees,(SELECT count(*) FROM ${q('employees')}) AS table_employees,
+    SELECT legacy_employees,(SELECT count(*) FROM ${q('employees')} WHERE is_archived=false) AS table_employees,
       legacy_runs,(SELECT count(*) FROM ${q('payroll_runs')}) AS table_runs,
       legacy_items,(SELECT count(*) FROM ${q('payroll_run_items')}) AS table_items,
-      legacy_employees=(SELECT count(*) FROM ${q('employees')})
+      legacy_attendance,(SELECT count(*) FROM ${q('attendance_records')}) AS table_attendance,
+      legacy_leaves,(SELECT count(*) FROM ${q('leave_requests')}) AS table_leaves,
+      legacy_loans,(SELECT count(*) FROM ${q('loans')}) AS table_loans,
+      legacy_penalties,(SELECT count(*) FROM ${q('penalties')}) AS table_penalties,
+      legacy_temporary_earnings,(SELECT count(*) FROM ${q('temporary_earnings')}) AS table_temporary_earnings,
+      legacy_employees=(SELECT count(*) FROM ${q('employees')} WHERE is_archived=false)
         AND legacy_runs=(SELECT count(*) FROM ${q('payroll_runs')})
-        AND legacy_items=(SELECT count(*) FROM ${q('payroll_run_items')}) AS counts_match
+        AND legacy_items=(SELECT count(*) FROM ${q('payroll_run_items')})
+        AND legacy_attendance=(SELECT count(*) FROM ${q('attendance_records')})
+        AND legacy_leaves=(SELECT count(*) FROM ${q('leave_requests')})
+        AND legacy_loans=(SELECT count(*) FROM ${q('loans')})
+        AND legacy_penalties=(SELECT count(*) FROM ${q('penalties')})
+        AND legacy_temporary_earnings=(SELECT count(*) FROM ${q('temporary_earnings')}) AS counts_match
     FROM legacy`);
 }
 
@@ -433,7 +620,7 @@ app.get('/api/admin/database/normalization-status', auth, async (req, res, next)
     const [status, duplicateNumbers, totals] = await Promise.all([
       pool.query(`SELECT * FROM ${q('normalization_status')}`),
       pool.query(`SELECT company_id,employee_no,count(*)::integer AS duplicate_count
-        FROM ${q('employees')} WHERE employee_no <> '' GROUP BY company_id,employee_no HAVING count(*) > 1
+        FROM ${q('employees')} WHERE is_archived=false AND employee_no <> '' GROUP BY company_id,employee_no HAVING count(*) > 1
         ORDER BY duplicate_count DESC,company_id,employee_no LIMIT 100`),
       pool.query(`SELECT
         COALESCE((SELECT sum(total_net_salaries) FROM ${q('payroll_runs')}),0)::text AS table_net_total,
@@ -480,7 +667,7 @@ app.get('/api/state', auth, async (req, res, next) => {
       pool.query(`SELECT id,username,name,email,phone,role,company_ids,permissions,is_active,created_at,last_login FROM ${q('users')} ORDER BY created_at`),
     ]);
     if (!r.rowCount) return res.json({ state:null, version:0 });
-    const normalizedState = await hydrateNormalizedPayrollData(pool, r.rows[0].state);
+    const normalizedState = await hydrateNormalizedStateData(pool, r.rows[0].state);
     const state = publicStateForUser(normalizedState, req.user);
     const allowed = allowedCompanyIds(req.user);
     state.users = userResult.rows
@@ -507,7 +694,7 @@ app.put('/api/state', auth, writeLimiter, async (req, res, next) => {
       return res.status(409).json({ error:'STATE_CONFLICT_RELOAD_REQUIRED' });
     }
     const stored = current.rowCount
-      ? await hydrateNormalizedPayrollData(client, current.rows[0].state)
+      ? await hydrateNormalizedStateData(client, current.rows[0].state)
       : {};
     // A redacted key from GET must not erase the existing server-side secret.
     if (stored.qoyodConfig?.apiKey && !state.qoyodConfig?.apiKey) {
@@ -516,6 +703,7 @@ app.put('/api/state', auth, writeLimiter, async (req, res, next) => {
     delete state.qoyodConfig?.apiKeyConfigured;
     state = mergeStateForUser(stored, state, req.user);
     await replaceNormalizedPayrollData(client, state);
+    await replaceNormalizedOperationsData(client, state);
     const r = current.rowCount
       ? await client.query(`UPDATE ${q('app_state')} SET state=$1::jsonb,version=version+1,updated_by=$2,updated_at=now()
           WHERE id=1 RETURNING version,updated_at`, [JSON.stringify(state), req.user.id])

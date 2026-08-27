@@ -35,3 +35,20 @@ SELECT
   created_at
 FROM masar_payroll.app_state_migration_backups
 ORDER BY id;
+
+SELECT
+  (SELECT count(*) FROM masar_payroll.employees WHERE is_archived = true) AS archived_employee_references,
+  (SELECT count(*) FROM masar_payroll.attendance_records) AS attendance_records,
+  (SELECT count(*) FROM masar_payroll.leave_requests) AS leave_requests,
+  (SELECT count(*) FROM masar_payroll.loans) AS loans,
+  (SELECT count(*) FROM masar_payroll.penalties) AS penalties,
+  (SELECT count(*) FROM masar_payroll.temporary_earnings) AS temporary_earnings;
+
+SELECT
+  (SELECT COALESCE(sum(remaining_amount),0) FROM masar_payroll.loans) AS loans_remaining_total,
+  (SELECT COALESCE(sum(amount),0) FROM masar_payroll.penalties) AS penalties_total,
+  (SELECT COALESCE(sum(amount),0) FROM masar_payroll.temporary_earnings) AS temporary_earnings_total;
+
+SELECT version, applied_at
+FROM masar_payroll.schema_migrations
+ORDER BY applied_at, version;
