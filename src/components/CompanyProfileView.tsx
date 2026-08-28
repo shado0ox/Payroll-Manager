@@ -68,6 +68,7 @@ import { exportQoyodJournalCsv } from '../utils/exportUtils';
 import { generatePayrollJournalBatch } from '../utils/accountingEngine';
 import { useLanguage } from '../i18n/LanguageContext';
 import { hasPermission } from '../utils/permissions';
+import { api } from '../utils/api';
 
 interface CompanyProfileViewProps {
   company: Company;
@@ -137,6 +138,9 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
   const [saveSuccessMessage, setSaveSuccessMessage] = useState<string | null>(null);
   const [isDeleteEmployeesModalOpen, setIsDeleteEmployeesModalOpen] = useState(false);
   const [deleteEmployeesConfirmation, setDeleteEmployeesConfirmation] = useState('');
+  const [subscriptionStatus, setSubscriptionStatus] = useState<'TRIAL'|'ACTIVE'|'EXPIRED'|'SUSPENDED'>(company.subscriptionStatus || 'ACTIVE');
+  const [subscriptionEndsAt, setSubscriptionEndsAt] = useState((company.subscriptionEndsAt || company.trialEndsAt || '').slice(0,10));
+  const [savingSubscription, setSavingSubscription] = useState(false);
 
   // Local editable company state
   const [formData, setFormData] = useState<Company>(() => ({
@@ -165,8 +169,28 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
   React.useEffect(() => {
     if (company) {
       setFormData({ ...JSON.parse(JSON.stringify(company)), bankDefinitions: getBankDefinitions(company.bankDefinitions) });
+      setSubscriptionStatus(company.subscriptionStatus || 'ACTIVE');
+      setSubscriptionEndsAt((company.subscriptionEndsAt || company.trialEndsAt || '').slice(0,10));
     }
   }, [company]);
+
+  const handleSaveSubscription = async () => {
+    setSavingSubscription(true);
+    try {
+      const endsAt = subscriptionEndsAt ? new Date(`${subscriptionEndsAt}T23:59:59+03:00`).toISOString() : null;
+      await api.updateSubscription(formData.id,subscriptionStatus,endsAt);
+      const updated = {
+        ...formData,
+        subscriptionStatus,
+        trialEndsAt:subscriptionStatus === 'TRIAL' ? endsAt : formData.trialEndsAt,
+        subscriptionEndsAt:subscriptionStatus === 'ACTIVE' ? endsAt : formData.subscriptionEndsAt,
+      };
+      setFormData(updated); onUpdateCompany(updated);
+      setSaveSuccessMessage(tr('تم تحديث اشتراك الشركة', 'Company subscription updated'));
+    } catch {
+      alert(tr('تعذر تحديث الاشتراك', 'Could not update subscription'));
+    } finally { setSavingSubscription(false); }
+  };
 
   React.useEffect(() => {
     if (qoyodConfig) {
@@ -711,6 +735,16 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
       {/* SUB-TAB 1: Basic & Government Details */}
       {activeSubTab === 'details' && (
         <div className="bg-white rounded-2xl p-6 border border-slate-200/80 shadow-sm space-y-6">
+          {currentUser?.role === 'ADMIN' && <div className="rounded-2xl border border-violet-200 bg-violet-50 p-5">
+            <div className="mb-4 flex items-center gap-2 text-sm font-black text-violet-950"><ShieldCheck className="h-5 w-5" />{tr('إدارة الاشتراك — للمطور فقط', 'Subscription management — developer only')}</div>
+            <div className="grid gap-3 md:grid-cols-[1fr_1fr_auto]">
+              <select value={subscriptionStatus} onChange={e => setSubscriptionStatus(e.target.value as typeof subscriptionStatus)} className="rounded-xl border border-violet-200 bg-white px-3 py-2 text-xs font-bold">
+                <option value="TRIAL">{tr('تجريبي', 'Trial')}</option><option value="ACTIVE">{tr('نشط', 'Active')}</option><option value="EXPIRED">{tr('منتهي', 'Expired')}</option><option value="SUSPENDED">{tr('موقوف', 'Suspended')}</option>
+              </select>
+              <input type="date" value={subscriptionEndsAt} onChange={e => setSubscriptionEndsAt(e.target.value)} className="rounded-xl border border-violet-200 bg-white px-3 py-2 text-xs" />
+              <button type="button" onClick={handleSaveSubscription} disabled={savingSubscription} className="rounded-xl bg-violet-700 px-5 py-2 text-xs font-black text-white disabled:opacity-50">{savingSubscription ? '...' : tr('حفظ الاشتراك', 'Save subscription')}</button>
+            </div>
+          </div>}
           <div className="flex items-center justify-between border-b border-slate-100 pb-3">
             <div>
               <h3 className="text-sm font-bold text-slate-900">{tr('بيانات التسجيل الحكومي والمنشأة', 'Company and government registration')}</h3>

@@ -53,6 +53,11 @@ SELECT version, applied_at
 FROM masar_payroll.schema_migrations
 ORDER BY applied_at, version;
 
+SELECT company_code,name_ar,subscription_status,trial_ends_at,subscription_ends_at
+FROM masar_payroll.companies
+WHERE is_archived=false
+ORDER BY created_at;
+
 SELECT
   (SELECT count(*) FROM masar_payroll.companies WHERE is_archived=false) AS companies,
   (SELECT count(*) FROM masar_payroll.company_departments) AS departments,

@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useLanguage } from '../i18n/LanguageContext';
-import { AlertCircle, ArrowRight, CheckCircle2, Eye, EyeOff, Hash, KeyRound, Lock, Route, ShieldCheck, Sparkles, User as UserIcon } from 'lucide-react';
+import { AlertCircle, ArrowRight, Building2, CheckCircle2, Eye, EyeOff, Hash, KeyRound, Lock, Mail, Phone, Route, ShieldCheck, Sparkles, User as UserIcon } from 'lucide-react';
+import { api } from '../utils/api';
 
 interface LoginViewProps { defaultCompanyCode?: string; onLogin: (companyCode: string, username: string, password: string) => Promise<void>; }
 
@@ -26,6 +27,24 @@ export const LoginView: React.FC<LoginViewProps> = ({ defaultCompanyCode = '101'
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [mode, setMode] = useState<'LOGIN'|'REGISTER'|'VERIFY'|'CREATED'>('LOGIN');
+  const [registrationEnabled, setRegistrationEnabled] = useState(false);
+  const [trialDays, setTrialDays] = useState(14);
+  const [requestId, setRequestId] = useState('');
+  const [maskedEmail, setMaskedEmail] = useState('');
+  const [verificationCode, setVerificationCode] = useState('');
+  const [createdCompanyCode, setCreatedCompanyCode] = useState('');
+  const [registration, setRegistration] = useState({
+    companyNameAr:'', companyNameEn:'', crNumber:'', taxNumber:'', phone:'',
+    adminName:'', username:'', email:'', password:'',
+  });
+
+  useEffect(() => {
+    api.publicConfig().then(config => {
+      setRegistrationEnabled(config.registrationEnabled);
+      setTrialDays(config.trialDays);
+    }).catch(() => undefined);
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault(); setError(null); setIsLoading(true);
@@ -33,6 +52,36 @@ export const LoginView: React.FC<LoginViewProps> = ({ defaultCompanyCode = '101'
     catch { setError(t('invalidLogin')); }
     finally { setIsLoading(false); }
   };
+  const registrationError = (value: unknown) => {
+    const code = value instanceof Error ? value.message : '';
+    const messages: Record<string,string> = {
+      INVALID_REGISTRATION:isArabic ? 'راجع البيانات. كلمة المرور يجب أن تكون 8 أحرف على الأقل وتضم حرفًا كبيرًا وصغيرًا ورقمًا ورمزًا.' : 'Check the fields. Password must be at least 8 characters with upper/lowercase, number, and symbol.',
+      ACCOUNT_ALREADY_EXISTS:isArabic ? 'اسم المستخدم أو البريد مسجل بالفعل.' : 'Username or email is already registered.',
+      EMAIL_SEND_FAILED:isArabic ? 'تعذر إرسال رسالة التحقق. حاول لاحقًا.' : 'Could not send the verification email. Try again later.',
+      EMAIL_SERVICE_NOT_CONFIGURED:isArabic ? 'خدمة البريد غير مهيأة بعد.' : 'Email service is not configured yet.',
+      INVALID_VERIFICATION_CODE:isArabic ? 'رمز التحقق غير صحيح.' : 'Incorrect verification code.',
+      VERIFICATION_EXPIRED:isArabic ? 'انتهت صلاحية الرمز. ابدأ التسجيل مرة أخرى.' : 'The code expired. Start registration again.',
+    };
+    return messages[code] || (isArabic ? 'تعذر إكمال العملية. حاول مرة أخرى.' : 'Could not complete the request. Try again.');
+  };
+  const handleRegistration = async (e: React.FormEvent) => {
+    e.preventDefault(); setError(null); setIsLoading(true);
+    try {
+      const result = await api.startRegistration({ ...registration, language });
+      setRequestId(result.requestId); setMaskedEmail(result.maskedEmail); setMode('VERIFY');
+    } catch (value) { setError(registrationError(value)); }
+    finally { setIsLoading(false); }
+  };
+  const handleVerification = async (e: React.FormEvent) => {
+    e.preventDefault(); setError(null); setIsLoading(true);
+    try {
+      const result = await api.verifyRegistration(requestId,normalizeArabicNumbers(verificationCode));
+      setCreatedCompanyCode(result.companyCode); setCompanyInput(result.companyCode);
+      setUsername(result.username); setPassword(registration.password); setMode('CREATED');
+    } catch (value) { setError(registrationError(value)); }
+    finally { setIsLoading(false); }
+  };
+  const updateRegistration = (key: keyof typeof registration, value: string) => setRegistration(prev => ({ ...prev,[key]:value }));
   const inputClass = 'w-full h-12 ps-11 pe-4 bg-slate-950/45 border border-white/10 rounded-2xl text-white placeholder:text-slate-500 text-sm focus:outline-none focus:border-emerald-400/70 focus:ring-4 focus:ring-emerald-400/10 transition-all font-mono';
 
   return (
@@ -76,10 +125,11 @@ export const LoginView: React.FC<LoginViewProps> = ({ defaultCompanyCode = '101'
             <div className="masar-login-card rounded-[2rem] border border-white/10 bg-slate-900/60 p-6 shadow-2xl shadow-black/30 backdrop-blur-2xl sm:p-9">
               <div className="mb-8">
                 <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-2xl border border-emerald-300/20 bg-emerald-400/10 text-emerald-300"><KeyRound className="h-5 w-5" /></div>
-                <h2 className="text-2xl font-black tracking-tight text-white">{t('loginTitle')}</h2><p className="mt-2 text-sm leading-6 text-slate-400">{t('loginHint')}</p>
+                <h2 className="text-2xl font-black tracking-tight text-white">{mode === 'LOGIN' ? t('loginTitle') : mode === 'VERIFY' ? (isArabic ? 'تحقق من بريدك' : 'Verify your email') : mode === 'CREATED' ? (isArabic ? 'تم إنشاء شركتك' : 'Company created') : (isArabic ? 'ابدأ تجربتك المجانية' : 'Start your free trial')}</h2>
+                <p className="mt-2 text-sm leading-6 text-slate-400">{mode === 'LOGIN' ? t('loginHint') : mode === 'REGISTER' ? (isArabic ? `سجّل بيانات شركتك واحصل على ${trialDays} يومًا مجانًا.` : `Register your company and get a ${trialDays}-day free trial.`) : mode === 'VERIFY' ? (isArabic ? `أرسلنا رمزًا من 6 أرقام إلى ${maskedEmail}` : `We sent a 6-digit code to ${maskedEmail}`) : (isArabic ? 'احتفظ بكود الشركة؛ ستحتاج إليه عند كل تسجيل دخول.' : 'Keep your company code; you need it whenever you sign in.')}</p>
               </div>
               {error && <div className="mb-5 flex items-start gap-2.5 rounded-2xl border border-rose-500/25 bg-rose-500/10 p-3.5 text-xs leading-relaxed text-rose-200"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-rose-400" />{error}</div>}
-              <form onSubmit={handleSubmit} className="space-y-5">
+              {mode === 'LOGIN' && <form onSubmit={handleSubmit} className="space-y-5">
                 <LoginField label={t('companyCodeLabel')} icon={<Hash className="h-4 w-4" />}><input type="text" value={companyInput} onChange={e => setCompanyInput(e.target.value)} placeholder={t('companyCodePlaceholder')} required className={inputClass} dir="ltr" autoComplete="organization" /></LoginField>
                 <LoginField label={t('username')} icon={<UserIcon className="h-4 w-4" />}><input type="text" value={username} onChange={e => setUsername(e.target.value)} placeholder={t('username')} required className={inputClass} dir="ltr" autoComplete="username" /></LoginField>
                 <LoginField label={t('password')} icon={<Lock className="h-4 w-4" />}>
@@ -89,7 +139,30 @@ export const LoginView: React.FC<LoginViewProps> = ({ defaultCompanyCode = '101'
                 <button type="submit" disabled={isLoading} className="group mt-2 flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-l from-emerald-500 to-teal-500 text-sm font-black text-slate-950 shadow-lg shadow-emerald-950/40 transition hover:brightness-110 active:scale-[.99] disabled:cursor-not-allowed disabled:opacity-50">
                   {isLoading ? <span className="h-5 w-5 animate-spin rounded-full border-2 border-slate-900/25 border-t-slate-900" /> : <><span>{t('signIn')}</span><ArrowRight className={`h-4 w-4 transition-transform ${isArabic ? 'rotate-180' : ''}`} /></>}
                 </button>
-              </form>
+                {registrationEnabled && <button type="button" onClick={() => { setError(null); setMode('REGISTER'); }} className="w-full text-center text-xs font-bold text-emerald-300 hover:text-emerald-200">{isArabic ? `شركة جديدة؟ ابدأ تجربة ${trialDays} يومًا` : `New company? Start a ${trialDays}-day trial`}</button>}
+              </form>}
+              {mode === 'REGISTER' && <form onSubmit={handleRegistration} className="grid grid-cols-2 gap-3">
+                <RegisterInput icon={<Building2 className="h-4 w-4" />} placeholder={isArabic ? 'اسم الشركة بالعربية' : 'Company Arabic name'} value={registration.companyNameAr} onChange={v => updateRegistration('companyNameAr',v)} required wide />
+                <RegisterInput icon={<Building2 className="h-4 w-4" />} placeholder={isArabic ? 'اسم الشركة بالإنجليزية (اختياري)' : 'English company name (optional)'} value={registration.companyNameEn} onChange={v => updateRegistration('companyNameEn',v)} wide />
+                <RegisterInput icon={<Hash className="h-4 w-4" />} placeholder={isArabic ? 'السجل التجاري' : 'Commercial registration'} value={registration.crNumber} onChange={v => updateRegistration('crNumber',v)} />
+                <RegisterInput icon={<Hash className="h-4 w-4" />} placeholder={isArabic ? 'الرقم الضريبي' : 'VAT number'} value={registration.taxNumber} onChange={v => updateRegistration('taxNumber',v)} />
+                <RegisterInput icon={<UserIcon className="h-4 w-4" />} placeholder={isArabic ? 'اسم المسؤول' : 'Administrator name'} value={registration.adminName} onChange={v => updateRegistration('adminName',v)} required wide />
+                <RegisterInput icon={<Phone className="h-4 w-4" />} placeholder={isArabic ? 'رقم الجوال' : 'Mobile number'} value={registration.phone} onChange={v => updateRegistration('phone',v)} required />
+                <RegisterInput icon={<UserIcon className="h-4 w-4" />} placeholder={isArabic ? 'اسم المستخدم بالإنجليزية' : 'Username'} value={registration.username} onChange={v => updateRegistration('username',v.toLowerCase())} required />
+                <RegisterInput icon={<Mail className="h-4 w-4" />} placeholder={isArabic ? 'البريد الإلكتروني الفعلي' : 'Real email address'} type="email" value={registration.email} onChange={v => updateRegistration('email',v.toLowerCase())} required wide />
+                <RegisterInput icon={<Lock className="h-4 w-4" />} placeholder={isArabic ? 'كلمة مرور قوية' : 'Strong password'} type="password" value={registration.password} onChange={v => updateRegistration('password',v)} required wide />
+                <button type="submit" disabled={isLoading} className="col-span-2 flex h-12 items-center justify-center rounded-2xl bg-emerald-500 text-sm font-black text-slate-950 disabled:opacity-50">{isLoading ? '...' : (isArabic ? 'إرسال رمز التحقق' : 'Send verification code')}</button>
+                <button type="button" onClick={() => { setError(null); setMode('LOGIN'); }} className="col-span-2 text-xs font-bold text-slate-400">{isArabic ? 'العودة لتسجيل الدخول' : 'Back to sign in'}</button>
+              </form>}
+              {mode === 'VERIFY' && <form onSubmit={handleVerification} className="space-y-4">
+                <input value={verificationCode} onChange={e => setVerificationCode(e.target.value)} inputMode="numeric" maxLength={6} required autoFocus dir="ltr" className="h-16 w-full rounded-2xl border border-white/10 bg-slate-950/50 text-center font-mono text-3xl font-black tracking-[.5em] text-white focus:border-emerald-400 focus:outline-none" placeholder="000000" />
+                <button type="submit" disabled={isLoading} className="flex h-12 w-full items-center justify-center rounded-2xl bg-emerald-500 text-sm font-black text-slate-950 disabled:opacity-50">{isLoading ? '...' : (isArabic ? 'تأكيد وإنشاء الشركة' : 'Verify and create company')}</button>
+                <button type="button" onClick={() => { setError(null); setMode('REGISTER'); }} className="w-full text-xs font-bold text-slate-400">{isArabic ? 'تعديل بيانات التسجيل' : 'Edit registration details'}</button>
+              </form>}
+              {mode === 'CREATED' && <div className="space-y-5">
+                <div className="rounded-2xl border border-emerald-400/25 bg-emerald-400/10 p-5 text-center"><div className="text-xs text-emerald-200">{isArabic ? 'كود الشركة' : 'Company code'}</div><div className="mt-2 font-mono text-3xl font-black tracking-[.25em] text-white">{createdCompanyCode}</div></div>
+                <button type="button" onClick={() => setMode('LOGIN')} className="flex h-12 w-full items-center justify-center rounded-2xl bg-emerald-500 text-sm font-black text-slate-950">{isArabic ? 'الدخول الآن' : 'Sign in now'}</button>
+              </div>}
             </div>
             <div className="mt-7 text-center text-[11px] leading-5 text-slate-600"><p>{t('loginFooter')}</p><p className="mt-1">{t('designedBy')} <span className="font-bold text-slate-500">Shadi Nassef</span></p></div>
           </div>
@@ -108,4 +181,8 @@ const MasarLogo: React.FC<{ compact?: boolean }> = ({ compact }) => (
 
 const LoginField: React.FC<{ label: string; icon: React.ReactNode; children: React.ReactNode }> = ({ label, icon, children }) => (
   <label className="block"><span className="mb-2 block text-xs font-bold text-slate-300">{label}</span><span className="relative block"><span className="absolute start-4 top-1/2 z-10 -translate-y-1/2 text-slate-500">{icon}</span>{children}</span></label>
+);
+
+const RegisterInput: React.FC<{icon:React.ReactNode; placeholder:string; value:string; onChange:(value:string)=>void; type?:string; required?:boolean; wide?:boolean}> = ({icon,placeholder,value,onChange,type='text',required,wide}) => (
+  <label className={wide ? 'col-span-2' : ''}><span className="relative block"><span className="absolute start-3.5 top-1/2 -translate-y-1/2 text-slate-500">{icon}</span><input type={type} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} required={required} dir={type === 'email' || type === 'password' ? 'ltr' : undefined} className="h-11 w-full rounded-xl border border-white/10 bg-slate-950/45 ps-10 pe-3 text-xs text-white placeholder:text-slate-500 focus:border-emerald-400/70 focus:outline-none" /></span></label>
 );

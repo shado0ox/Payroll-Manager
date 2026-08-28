@@ -55,6 +55,9 @@ export interface Company {
   companyCode: string; // e.g. '101', '102'
   nameAr: string;
   nameEn: string;
+  subscriptionStatus?: 'TRIAL' | 'ACTIVE' | 'EXPIRED' | 'SUSPENDED';
+  trialEndsAt?: string | null;
+  subscriptionEndsAt?: string | null;
   crNumber: string; // Commercial Registration
   taxNumber: string; // VAT
   gosiEstablishmentNo: string;

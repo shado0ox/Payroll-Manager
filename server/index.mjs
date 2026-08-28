@@ -18,6 +18,11 @@ const DEFAULT_PERMISSIONS = {
   COMPANY_MANAGER: [...ALL_PERMISSIONS].filter(value => value !== 'MANAGE_COMPANIES'),
   OPERATIONS_MANAGER: ['VIEW_DASHBOARD','MANAGE_EMPLOYEES','MANAGE_ATTENDANCE','MANAGE_LOANS_PENALTIES','MANAGE_PAYROLL','POST_PAYROLL','VIEW_REPORTS'],
 };
+const trialDays = Math.max(1, Math.min(90, Number(process.env.TRIAL_DAYS || 14)));
+const publicRegistrationEnabled = process.env.ALLOW_PUBLIC_REGISTRATION === 'true';
+const developerContactPhone = String(process.env.DEVELOPER_CONTACT_PHONE || '').trim();
+const resendApiKey = String(process.env.RESEND_API_KEY || '').trim();
+const verificationEmailFrom = String(process.env.EMAIL_FROM || '').trim();
 const isStrongPassword = (value) => typeof value === 'string' && value.length >= 8 && value.length <= 128
   && /[A-Z]/.test(value) && /[a-z]/.test(value) && /\d/.test(value) && /[^A-Za-z0-9]/.test(value);
 if (!isStrongPassword(process.env.ADMIN_PASSWORD)) {
@@ -437,7 +442,8 @@ async function hydrateNormalizedOperationsData(client, rawState) {
 async function hydrateNormalizedCoreData(client, rawState) {
   const state = clone(rawState || {});
   const [companies, departments, costCenters, bankDefinitions, journals, journalLines, auditLogs, integration] = await Promise.all([
-    client.query(`SELECT id,payload FROM ${q('companies')} WHERE is_archived=false ORDER BY sort_order,id`),
+    client.query(`SELECT id,company_code,name_ar,name_en,payload,subscription_status,trial_ends_at,subscription_ends_at
+      FROM ${q('companies')} WHERE is_archived=false ORDER BY sort_order,id`),
     client.query(`SELECT company_id,payload FROM ${q('company_departments')} ORDER BY company_id,sort_order,id`),
     client.query(`SELECT company_id,payload FROM ${q('cost_centers')} ORDER BY company_id,sort_order,id`),
     client.query(`SELECT company_id,payload FROM ${q('company_bank_definitions')} ORDER BY company_id,sort_order,iban_bank_code`),
@@ -464,6 +470,13 @@ async function hydrateNormalizedCoreData(client, rawState) {
   const bankDefinitionsByCompany = groupPayloads(bankDefinitions.rows);
   state.companies = companies.rows.map(row => ({
     ...row.payload,
+    id:row.id,
+    companyCode:row.company_code,
+    nameAr:row.name_ar,
+    nameEn:row.name_en,
+    subscriptionStatus:subscriptionState(row).status,
+    trialEndsAt:row.trial_ends_at?.toISOString?.() || row.trial_ends_at || null,
+    subscriptionEndsAt:row.subscription_ends_at?.toISOString?.() || row.subscription_ends_at || null,
     departments: departmentsByCompany.get(row.id) || [],
     costCenters: costCentersByCompany.get(row.id) || [],
     bankDefinitions: bankDefinitionsByCompany.get(row.id) || [],
@@ -491,6 +504,13 @@ async function migrate() {
   await pool.query(`ALTER TABLE ${q('companies')} ADD COLUMN IF NOT EXISTS sort_order integer NOT NULL DEFAULT 0`);
   await pool.query(`ALTER TABLE ${q('companies')} ADD COLUMN IF NOT EXISTS is_archived boolean NOT NULL DEFAULT false`);
   await pool.query(`ALTER TABLE ${q('companies')} ADD COLUMN IF NOT EXISTS updated_at timestamptz NOT NULL DEFAULT now()`);
+  await pool.query(`ALTER TABLE ${q('companies')} ADD COLUMN IF NOT EXISTS subscription_status text NOT NULL DEFAULT 'ACTIVE'`);
+  await pool.query(`ALTER TABLE ${q('companies')} ADD COLUMN IF NOT EXISTS trial_ends_at timestamptz`);
+  await pool.query(`ALTER TABLE ${q('companies')} ADD COLUMN IF NOT EXISTS subscription_ends_at timestamptz`);
+  await pool.query(`DO $$ BEGIN
+    ALTER TABLE ${q('companies')} ADD CONSTRAINT companies_subscription_status_check
+      CHECK (subscription_status IN ('TRIAL','ACTIVE','EXPIRED','SUSPENDED'));
+  EXCEPTION WHEN duplicate_object THEN NULL; END $$`);
   await pool.query(`CREATE TABLE IF NOT EXISTS ${q('users')} (
     id text PRIMARY KEY, username text NOT NULL UNIQUE, password_hash text NOT NULL, name text NOT NULL,
     email text NOT NULL DEFAULT '', phone text NOT NULL DEFAULT '', role text NOT NULL,
@@ -498,6 +518,14 @@ async function migrate() {
     last_login timestamptz, created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now()
   )`);
   await pool.query(`ALTER TABLE ${q('users')} ADD COLUMN IF NOT EXISTS permissions jsonb`);
+  await pool.query(`ALTER TABLE ${q('users')} ADD COLUMN IF NOT EXISTS email_verified_at timestamptz`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS users_email_unique_idx ON ${q('users')}(lower(email)) WHERE email <> ''`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS ${q('registration_requests')} (
+    id text PRIMARY KEY, email text NOT NULL UNIQUE, code_hash text NOT NULL, details jsonb NOT NULL,
+    attempts integer NOT NULL DEFAULT 0 CHECK (attempts >= 0 AND attempts <= 10),
+    expires_at timestamptz NOT NULL, created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now()
+  )`);
+  await pool.query(`DELETE FROM ${q('registration_requests')} WHERE expires_at < now()-interval '1 day'`);
   await pool.query(`CREATE TABLE IF NOT EXISTS ${q('sessions')} (
     token_hash text PRIMARY KEY, user_id text NOT NULL REFERENCES ${q('users')}(id) ON DELETE CASCADE,
     expires_at timestamptz NOT NULL, created_at timestamptz NOT NULL DEFAULT now()
@@ -716,6 +744,8 @@ async function migrate() {
       }
       await migrationClient.query(`INSERT INTO ${q('schema_migrations')} (version) VALUES ('003_normalized_core')`);
     }
+    await migrationClient.query(`INSERT INTO ${q('schema_migrations')} (version) VALUES ('004_company_trials')
+      ON CONFLICT (version) DO NOTHING`);
     await migrationClient.query('COMMIT');
   } catch (error) {
     await migrationClient.query('ROLLBACK');
@@ -801,6 +831,72 @@ app.use((req, res, next) => {
 
 const loginLimiter = rateLimit({ windowMs: 15 * 60_000, limit: 10, standardHeaders: true, legacyHeaders: false });
 const writeLimiter = rateLimit({ windowMs: 60_000, limit: 120, standardHeaders: true, legacyHeaders: false });
+const registrationLimiter = rateLimit({ windowMs: 60 * 60_000, limit: 5, standardHeaders: true, legacyHeaders: false });
+
+const subscriptionState = (company) => {
+  const now = Date.now();
+  const status = String(company?.subscription_status || 'ACTIVE');
+  const trialEndsAt = company?.trial_ends_at ? new Date(company.trial_ends_at) : null;
+  const subscriptionEndsAt = company?.subscription_ends_at ? new Date(company.subscription_ends_at) : null;
+  const expired = status === 'EXPIRED' || status === 'SUSPENDED'
+    || (status === 'TRIAL' && trialEndsAt && trialEndsAt.getTime() <= now)
+    || (status === 'ACTIVE' && subscriptionEndsAt && subscriptionEndsAt.getTime() <= now);
+  return {
+    status: expired ? 'EXPIRED' : status,
+    trialEndsAt: trialEndsAt?.toISOString() || null,
+    subscriptionEndsAt: subscriptionEndsAt?.toISOString() || null,
+    expired,
+  };
+};
+
+async function sendVerificationEmail(email, code, language = 'ar') {
+  if (!resendApiKey || !verificationEmailFrom) throw Object.assign(new Error('EMAIL_SERVICE_NOT_CONFIGURED'), { status:503 });
+  const isArabic = language !== 'en';
+  const response = await fetch('https://api.resend.com/emails', {
+    method:'POST',
+    headers:{ Authorization:`Bearer ${resendApiKey}`, 'Content-Type':'application/json' },
+    body:JSON.stringify({
+      from:verificationEmailFrom,
+      to:[email],
+      subject:isArabic ? 'رمز التحقق لتجربة مسار' : 'Masar trial verification code',
+      html:`<div dir="${isArabic ? 'rtl' : 'ltr'}" style="font-family:Arial,sans-serif;max-width:560px;margin:auto;padding:24px">
+        <h2>${isArabic ? 'تأكيد البريد الإلكتروني' : 'Verify your email'}</h2>
+        <p>${isArabic ? 'استخدم الرمز التالي لإكمال إنشاء شركتك في مسار. الرمز صالح لمدة 15 دقيقة.' : 'Use this code to finish creating your Masar company. It expires in 15 minutes.'}</p>
+        <div style="font-size:32px;font-weight:800;letter-spacing:8px;background:#ecfdf5;padding:18px;text-align:center;border-radius:12px">${code}</div>
+        <p style="color:#64748b;font-size:12px">${isArabic ? 'إذا لم تطلب التسجيل فتجاهل الرسالة.' : 'If you did not request this, ignore this email.'}</p>
+      </div>`,
+    }),
+  });
+  if (!response.ok) {
+    const detail = await response.text().catch(() => '');
+    console.error('Resend verification email failed', response.status, detail.slice(0, 500));
+    throw Object.assign(new Error('EMAIL_SEND_FAILED'), { status:502 });
+  }
+}
+
+function newCompanyPayload({ id, companyCode, companyNameAr, companyNameEn, crNumber, taxNumber, phone, email, trialEndsAt }) {
+  return {
+    id, companyCode, nameAr:companyNameAr, nameEn:companyNameEn || companyNameAr,
+    crNumber:crNumber || '', taxNumber:taxNumber || '', gosiEstablishmentNo:'',
+    phone:phone || '', email, currency:'SAR', timezone:'Asia/Riyadh',
+    fiscalYearStartMonth:1, payrollCutoffDay:25, payrollPaymentDay:27,
+    workDaysPerMonth:30, dailyWorkHours:8, departments:[], costCenters:[], bankDefinitions:[],
+    subscriptionStatus:'TRIAL', trialEndsAt,
+    calculationRules:{
+      dailyRateFormula:'BASE_PLUS_FIXED', hourlyRateDivisor:8, delayGracePeriodMinutes:15,
+      delayCalculationMethod:'EXACT_MINUTES', absenceDayMultiplier:1, unpaidLeaveMultiplier:1,
+      saudiGosiEmployeeRate:0.0975, saudiGosiEmployerRate:0.1175, saudiGosiMaxCap:45000,
+      saudiGosiBaseComponents:['BASE','HOUSING'], nonSaudiGosiEmployerHazardRate:0.02,
+      overtimeStandardRate:1.5, overtimeWeekendRate:2, roundingDecimals:2,
+    },
+    chartOfAccounts:{
+      salariesExpenseAccount:'510101', housingAllowanceAccount:'510102', transportAllowanceAccount:'510103',
+      overtimeExpenseAccount:'510104', otherAllowancesExpenseAccount:'510105', gosiEmployerExpenseAccount:'510106',
+      salariesPayableAccount:'210101', gosiPayableAccount:'210201', employeeAdvancesAccount:'110501',
+      penaltiesPayableAccount:'210501', bankAccount:'101001',
+    },
+  };
+}
 
 async function auth(req, res, next) {
   try {
@@ -812,12 +908,122 @@ async function auth(req, res, next) {
     if (!result.rowCount) return res.status(401).json({ error: 'SESSION_EXPIRED' });
     await pool.query(`UPDATE ${q('sessions')} SET expires_at=now()+interval '1 hour' WHERE token_hash=$1`, [sha256(token)]);
     req.user = result.rows[0];
+    if (req.user.role !== 'ADMIN') {
+      const company = await pool.query(`SELECT subscription_status,trial_ends_at,subscription_ends_at
+        FROM ${q('companies')} WHERE id=ANY($1::text[]) AND is_archived=false
+        ORDER BY created_at LIMIT 1`, [req.user.company_ids]);
+      const subscription = subscriptionState(company.rows[0]);
+      req.subscription = subscription;
+      const allowedWhileExpired = req.path === '/api/state' || req.path === '/api/auth/session'
+        || req.path === '/api/auth/logout' || req.path === '/api/subscription/status';
+      if (subscription.expired && !allowedWhileExpired) {
+        return res.status(402).json({ error:'SUBSCRIPTION_EXPIRED', subscription, developerContactPhone });
+      }
+    }
     next();
   } catch (error) { next(error); }
 }
 
 app.get('/api/health', async (_req, res, next) => {
   try { await pool.query('SELECT 1'); res.json({ status: 'ok' }); } catch (e) { next(e); }
+});
+
+app.get('/api/public/config', (_req, res) => {
+  res.json({
+    registrationEnabled:publicRegistrationEnabled && Boolean(resendApiKey && verificationEmailFrom),
+    trialDays,
+    developerContactPhone,
+  });
+});
+
+app.post('/api/auth/register/start', registrationLimiter, async (req, res, next) => {
+  try {
+    if (!publicRegistrationEnabled) return res.status(404).json({ error:'REGISTRATION_DISABLED' });
+    const companyNameAr = String(req.body?.companyNameAr || '').trim();
+    const companyNameEn = String(req.body?.companyNameEn || '').trim();
+    const crNumber = String(req.body?.crNumber || '').trim();
+    const taxNumber = String(req.body?.taxNumber || '').trim();
+    const phone = String(req.body?.phone || '').trim();
+    const adminName = String(req.body?.adminName || '').trim();
+    const username = String(req.body?.username || '').trim().toLowerCase();
+    const email = String(req.body?.email || '').trim().toLowerCase();
+    const password = String(req.body?.password || '');
+    const language = req.body?.language === 'en' ? 'en' : 'ar';
+    if (companyNameAr.length < 2 || adminName.length < 2 || !/^[a-z0-9._-]{3,40}$/.test(username)
+      || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || !isStrongPassword(password)
+      || phone.length < 7 || phone.length > 25) {
+      return res.status(400).json({ error:'INVALID_REGISTRATION' });
+    }
+    const duplicate = await pool.query(`SELECT 1 FROM ${q('users')} WHERE lower(username)=$1 OR lower(email)=$2 LIMIT 1`, [username,email]);
+    if (duplicate.rowCount) return res.status(409).json({ error:'ACCOUNT_ALREADY_EXISTS' });
+    const requestId = crypto.randomUUID();
+    const code = String(crypto.randomInt(100000, 1000000));
+    const details = { companyNameAr,companyNameEn,crNumber,taxNumber,phone,adminName,username,email,passwordHash:await bcrypt.hash(password,12),language };
+    await pool.query(`INSERT INTO ${q('registration_requests')} (id,email,code_hash,details,expires_at)
+      VALUES ($1,$2,$3,$4::jsonb,now()+interval '15 minutes')
+      ON CONFLICT (email) DO UPDATE SET id=EXCLUDED.id,code_hash=EXCLUDED.code_hash,details=EXCLUDED.details,
+        expires_at=EXCLUDED.expires_at,attempts=0,updated_at=now()`,
+      [requestId,email,sha256(`${requestId}:${code}`),JSON.stringify(details)]);
+    try {
+      await sendVerificationEmail(email,code,language);
+    } catch (error) {
+      await pool.query(`DELETE FROM ${q('registration_requests')} WHERE id=$1`, [requestId]);
+      throw error;
+    }
+    res.status(202).json({ requestId, maskedEmail:email.replace(/^(.{1,2}).*(@.*)$/, '$1***$2'), expiresInSeconds:900 });
+  } catch (e) { next(e); }
+});
+
+app.post('/api/auth/register/verify', registrationLimiter, async (req, res, next) => {
+  const client = await pool.connect();
+  try {
+    const requestId = String(req.body?.requestId || '');
+    const code = String(req.body?.code || '').trim();
+    if (!requestId || !/^\d{6}$/.test(code)) return res.status(400).json({ error:'INVALID_VERIFICATION_CODE' });
+    await client.query('BEGIN');
+    const request = await client.query(`SELECT * FROM ${q('registration_requests')} WHERE id=$1 FOR UPDATE`, [requestId]);
+    const row = request.rows[0];
+    if (!row || new Date(row.expires_at).getTime() <= Date.now() || row.attempts >= 5) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error:'VERIFICATION_EXPIRED' });
+    }
+    if (row.code_hash !== sha256(`${requestId}:${code}`)) {
+      await client.query(`UPDATE ${q('registration_requests')} SET attempts=attempts+1,updated_at=now() WHERE id=$1`, [requestId]);
+      await client.query('COMMIT');
+      return res.status(400).json({ error:'INVALID_VERIFICATION_CODE' });
+    }
+    const d = row.details;
+    const duplicate = await client.query(`SELECT 1 FROM ${q('users')} WHERE lower(username)=$1 OR lower(email)=$2 LIMIT 1`, [d.username,d.email]);
+    if (duplicate.rowCount) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error:'ACCOUNT_ALREADY_EXISTS' });
+    }
+    const companyId = `comp-${crypto.randomUUID()}`;
+    let companyCode = '';
+    for (let attempt=0; attempt<10 && !companyCode; attempt += 1) {
+      const candidate = String(crypto.randomInt(100000,1000000));
+      const exists = await client.query(`SELECT 1 FROM ${q('companies')} WHERE company_code=$1`, [candidate]);
+      if (!exists.rowCount) companyCode = candidate;
+    }
+    if (!companyCode) throw new Error('COMPANY_CODE_GENERATION_FAILED');
+    const trialEndsAt = new Date(Date.now()+trialDays*86_400_000).toISOString();
+    const payload = newCompanyPayload({ id:companyId,companyCode,...d,trialEndsAt });
+    await client.query(`INSERT INTO ${q('companies')}
+      (id,company_code,name_ar,name_en,payload,subscription_status,trial_ends_at,is_archived)
+      VALUES ($1,$2,$3,$4,$5::jsonb,'TRIAL',$6,false)`,
+      [companyId,companyCode,d.companyNameAr,d.companyNameEn || d.companyNameAr,JSON.stringify(payload),trialEndsAt]);
+    const userId = `user-${crypto.randomUUID()}`;
+    await client.query(`INSERT INTO ${q('users')}
+      (id,username,password_hash,name,email,phone,role,company_ids,permissions,is_active,email_verified_at)
+      VALUES ($1,$2,$3,$4,$5,$6,'COMPANY_MANAGER',$7::jsonb,$8::jsonb,true,now())`,
+      [userId,d.username,d.passwordHash,d.adminName,d.email,d.phone,JSON.stringify([companyId]),JSON.stringify(DEFAULT_PERMISSIONS.COMPANY_MANAGER)]);
+    await client.query(`DELETE FROM ${q('registration_requests')} WHERE email=$1`, [d.email]);
+    await client.query('COMMIT');
+    res.status(201).json({ companyCode,username:d.username,trialEndsAt,trialDays });
+  } catch (e) {
+    try { await client.query('ROLLBACK'); } catch {}
+    next(e);
+  } finally { client.release(); }
 });
 
 app.post('/api/auth/login', loginLimiter, async (req, res, next) => {
@@ -873,6 +1079,28 @@ app.get('/api/admin/database/normalization-status', auth, async (req, res, next)
       payrollTotals: totals.rows[0] || null,
       duplicateEmployeeNumbers: duplicateNumbers.rows,
     });
+  } catch (e) { next(e); }
+});
+
+app.put('/api/admin/companies/:id/subscription', auth, writeLimiter, async (req, res, next) => {
+  try {
+    if (req.user.role !== 'ADMIN') return res.status(403).json({ error:'FORBIDDEN' });
+    const status = String(req.body?.status || '');
+    const endsAt = req.body?.endsAt ? new Date(req.body.endsAt) : null;
+    if (!['TRIAL','ACTIVE','EXPIRED','SUSPENDED'].includes(status) || (endsAt && Number.isNaN(endsAt.getTime()))) {
+      return res.status(400).json({ error:'INVALID_SUBSCRIPTION' });
+    }
+    const result = await pool.query(`UPDATE ${q('companies')} SET subscription_status=$2,
+      trial_ends_at=CASE WHEN $2='TRIAL' THEN $3 ELSE trial_ends_at END,
+      subscription_ends_at=CASE WHEN $2='ACTIVE' THEN $3 ELSE subscription_ends_at END,
+      updated_at=now() WHERE id=$1 AND is_archived=false
+      RETURNING id,subscription_status,trial_ends_at,subscription_ends_at`,
+      [req.params.id,status,endsAt?.toISOString() || null]);
+    if (!result.rowCount) return res.status(404).json({ error:'COMPANY_NOT_FOUND' });
+    const current = await pool.query(`UPDATE ${q('app_state')} SET version=version+1,updated_by=$1,updated_at=now()
+      WHERE id=1 RETURNING version,updated_at`, [req.user.id]);
+    if (current.rowCount) broadcastStateUpdate({ version:current.rows[0].version,updatedBy:req.user.id,updatedAt:current.rows[0].updated_at });
+    res.json(result.rows[0]);
   } catch (e) { next(e); }
 });
 
@@ -1086,7 +1314,10 @@ app.post('/api/integrations/qoyod/journal', auth, writeLimiter, async (req, res,
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'dist');
 app.use(express.static(root, { index: false, maxAge: '1h', immutable: false }));
 app.get('*', (_req, res) => res.sendFile(path.join(root, 'index.html')));
-app.use((error, _req, res, _next) => { console.error(error); res.status(500).json({ error: 'INTERNAL_ERROR' }); });
+app.use((error, _req, res, _next) => {
+  console.error(error);
+  res.status(Number(error?.status) || 500).json({ error:Number(error?.status) < 500 ? error.message : 'INTERNAL_ERROR' });
+});
 
 await migrate();
 const server = app.listen(port, '0.0.0.0', () => console.log(`Masar Payroll listening on ${port}`));

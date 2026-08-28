@@ -38,6 +38,10 @@ function buildStatePatch(previous: Record<string, any> | null, next: Record<stri
 }
 
 export const api = {
+  publicConfig: () => request<{registrationEnabled:boolean; trialDays:number; developerContactPhone:string}>('/api/public/config'),
+  startRegistration: (data: Record<string, unknown>) => request<{requestId:string; maskedEmail:string; expiresInSeconds:number}>('/api/auth/register/start', { method:'POST', body:JSON.stringify(data) }),
+  verifyRegistration: (requestId: string, code: string) => request<{companyCode:string; username:string; trialEndsAt:string; trialDays:number}>('/api/auth/register/verify', { method:'POST', body:JSON.stringify({requestId,code}) }),
+  updateSubscription: (companyId:string,status:'TRIAL'|'ACTIVE'|'EXPIRED'|'SUSPENDED',endsAt:string|null) => request(`/api/admin/companies/${encodeURIComponent(companyId)}/subscription`, { method:'PUT',body:JSON.stringify({status,endsAt}) }),
   login: (companyCode: string, username: string, password: string) => request<{user: UserAccount; companyId: string}>('/api/auth/login', { method:'POST', body:JSON.stringify({ companyCode, username, password }) }),
   session: () => request<{user: UserAccount}>('/api/auth/session'),
   logout: () => request<void>('/api/auth/logout', { method:'POST' }),

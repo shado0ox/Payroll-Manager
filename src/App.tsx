@@ -88,8 +88,13 @@ export const App: React.FC = () => {
   const [isDbModalOpen, setIsDbModalOpen] = useState(false);
   const [showDbWarningBanner, setShowDbWarningBanner] = useState(true);
   const [authReady, setAuthReady] = useState(false);
+  const [publicConfig, setPublicConfig] = useState({ registrationEnabled:false,trialDays:14,developerContactPhone:'' });
   const persistenceQueueRef = useRef<Promise<void>>(Promise.resolve());
   const remoteStateSnapshotRef = useRef<MasarAppState | null>(null);
+
+  useEffect(() => {
+    api.publicConfig().then(setPublicConfig).catch(() => undefined);
+  }, []);
 
   // Restore authentication only inside the same open tab. sessionStorage survives refresh
   // but is cleared when the tab/window is closed.
@@ -848,6 +853,28 @@ export const App: React.FC = () => {
   }
 
   const canViewDatabaseTools = isDeveloperAccount(state.currentUser);
+  const subscriptionExpired = state.currentUser.role !== 'ADMIN' && activeCompany && (
+    activeCompany.subscriptionStatus === 'EXPIRED'
+    || activeCompany.subscriptionStatus === 'SUSPENDED'
+    || (activeCompany.subscriptionStatus === 'TRIAL' && activeCompany.trialEndsAt && new Date(activeCompany.trialEndsAt).getTime() <= Date.now())
+    || (activeCompany.subscriptionStatus === 'ACTIVE' && activeCompany.subscriptionEndsAt && new Date(activeCompany.subscriptionEndsAt).getTime() <= Date.now())
+  );
+  const trialDaysRemaining = activeCompany?.subscriptionStatus === 'TRIAL' && activeCompany.trialEndsAt
+    ? Math.max(0,Math.ceil((new Date(activeCompany.trialEndsAt).getTime()-Date.now())/86_400_000))
+    : null;
+
+  if (subscriptionExpired) {
+    const phone = publicConfig.developerContactPhone;
+    return <main className="flex min-h-screen items-center justify-center bg-slate-950 p-6 text-white" dir={language === 'ar' ? 'rtl' : 'ltr'}>
+      <section className="w-full max-w-lg rounded-[2rem] border border-amber-400/20 bg-slate-900 p-8 text-center shadow-2xl">
+        <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-amber-400/10 text-amber-300"><ShieldAlert className="h-8 w-8" /></div>
+        <h1 className="mt-6 text-2xl font-black">{tr('انتهت الفترة التجريبية', 'Trial period ended')}</h1>
+        <p className="mt-3 text-sm leading-7 text-slate-400">{tr('تم إيقاف خدمات الشركة مؤقتًا مع الاحتفاظ بجميع بياناتك بأمان. تواصل مع المطور لتجديد الاشتراك وإعادة فتح الخدمات.', 'Company services are temporarily locked while all data remains safely stored. Contact the developer to renew and restore access.')}</p>
+        {phone && <a href={`tel:${phone}`} dir="ltr" className="mt-6 block rounded-2xl border border-emerald-400/25 bg-emerald-400/10 px-5 py-4 font-mono text-lg font-black text-emerald-300">{phone}</a>}
+        <button type="button" onClick={handleLogout} className="mt-6 h-11 w-full rounded-xl bg-white/10 text-sm font-bold text-slate-200 hover:bg-white/15">{tr('تسجيل الخروج', 'Sign out')}</button>
+      </section>
+    </main>;
+  }
 
   return (
     <div className="flex h-screen w-full overflow-hidden bg-[#f8fafc] font-sans antialiased text-slate-900 selection:bg-emerald-500 selection:text-white">
@@ -879,6 +906,12 @@ export const App: React.FC = () => {
           onNavigate={setActiveTab}
           onResetData={handleResetData}
         />
+
+        {trialDaysRemaining !== null && <div className="flex shrink-0 items-center justify-center gap-2 border-b border-emerald-200 bg-emerald-50 px-4 py-2 text-xs font-bold text-emerald-900">
+          <Clock className="h-4 w-4" />
+          {tr(`الفترة التجريبية: متبقي ${trialDaysRemaining} يوم`, `Free trial: ${trialDaysRemaining} days remaining`)}
+          {publicConfig.developerContactPhone && <span className="text-emerald-700">— {tr('للاشتراك:', 'Subscribe:')} <span dir="ltr">{publicConfig.developerContactPhone}</span></span>}
+        </div>}
 
         {/* Database Status Notification Banner (Shows when cloud DB is disconnected) */}
         {canViewDatabaseTools && !dbStatus.isChecking && !dbStatus.isCloudConnected && showDbWarningBanner && (
