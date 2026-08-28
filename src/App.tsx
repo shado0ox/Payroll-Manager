@@ -90,6 +90,7 @@ export const App: React.FC = () => {
   const [authReady, setAuthReady] = useState(false);
   const [publicConfig, setPublicConfig] = useState({ registrationEnabled:false,trialDays:14,developerContactPhone:'' });
   const persistenceQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const persistenceEpochRef = useRef(0);
   const remoteStateSnapshotRef = useRef<MasarAppState | null>(null);
 
   useEffect(() => {
@@ -183,8 +184,12 @@ export const App: React.FC = () => {
     }
     remoteStateSnapshotRef.current = null;
     const snapshot = state;
+    const epoch = persistenceEpochRef.current;
     setDbStatus(prev => ({ ...prev, isChecking: true }));
     persistenceQueueRef.current = persistenceQueueRef.current.catch(() => undefined).then(async () => {
+      // A destructive server operation may invalidate snapshots that were queued
+      // before it. Never let an old snapshot recreate a deleted record.
+      if (epoch !== persistenceEpochRef.current) return;
       try {
         await api.saveState(snapshot);
         const status = await persistFullStateToDatabase(snapshot);
@@ -713,10 +718,18 @@ export const App: React.FC = () => {
   };
 
   const handleDeleteEmployee = async (empId: string) => {
-    try {
-      await api.deleteEmployee(empId);
+    // Invalidate every state snapshot that was queued before this deletion, then
+    // serialize the DELETE after any write that is already in flight.
+    persistenceEpochRef.current += 1;
+    const deletion = persistenceQueueRef.current.catch(() => undefined).then(async () => {
+      const result = await api.deleteEmployee(empId);
       const remote = await api.getState();
       if (!remote.state) throw new Error('STATE_RELOAD_FAILED');
+      return { result, remote };
+    });
+    persistenceQueueRef.current = deletion.then(() => undefined);
+    try {
+      const { result, remote } = await deletion;
       setState(prev => {
         const base = { ...prev,...remote.state } as MasarAppState;
         const next:MasarAppState = {
@@ -729,8 +742,17 @@ export const App: React.FC = () => {
         remoteStateSnapshotRef.current = next;
         return next;
       });
+      alert(result.archived
+        ? tr('تمت أرشفة الموظف وإخفاؤه لأن لديه حركات أو مسيرات سابقة.', 'The employee was archived and hidden because historical records exist.')
+        : tr('تم حذف الموظف نهائيًا.', 'The employee was permanently deleted.'));
     } catch (error) {
-      alert(tr('تعذر حذف الموظف. حدّث الصفحة وحاول مرة أخرى.', 'Could not delete the employee. Refresh and try again.'));
+      const code = error instanceof Error ? error.message : 'UNKNOWN_ERROR';
+      const message = code === 'FORBIDDEN'
+        ? tr('ليس لدى هذا الحساب صلاحية حذف الموظف.', 'This account does not have permission to delete employees.')
+        : code === 'EMPLOYEE_NOT_FOUND'
+          ? tr('الموظف غير موجود أو تم حذفه بالفعل. حدّث الصفحة.', 'The employee was not found or was already deleted. Refresh the page.')
+          : `${tr('تعذر حذف الموظف:', 'Could not delete the employee:')} ${code}`;
+      alert(message);
       return;
     }
   };
