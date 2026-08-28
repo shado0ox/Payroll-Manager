@@ -62,8 +62,27 @@ const broadcastStateUpdate = (payload) => {
 function publicStateForUser(rawState, user) {
   const state = clone(rawState || {});
   delete state.currentUser;
-  const allowed = allowedCompanyIds(user);
-  if (user.role !== 'ADMIN') {
+  const assigned = new Set(Array.isArray(user.company_ids) ? user.company_ids : []);
+  const sanitizeCompany = (item) => ({
+    id:item.id,companyCode:item.companyCode,nameAr:item.nameAr,nameEn:item.nameEn,
+    crNumber:item.crNumber || '',taxNumber:item.taxNumber || '',phone:item.phone || '',email:item.email || '',
+    subscriptionStatus:item.subscriptionStatus,trialEndsAt:item.trialEndsAt,subscriptionEndsAt:item.subscriptionEndsAt,
+    currency:'SAR',timezone:'Asia/Riyadh',fiscalYearStartMonth:1,payrollCutoffDay:25,payrollPaymentDay:27,
+    workDaysPerMonth:30,dailyWorkHours:8,departments:[],costCenters:[],bankDefinitions:[],
+    calculationRules:{},chartOfAccounts:{},
+  });
+  if (user.role === 'ADMIN') {
+    // The developer can administer tenant identity and subscriptions, but payroll,
+    // employee, banking and operational records are never returned for tenant companies.
+    if (Array.isArray(state.companies)) state.companies = state.companies.map(item => assigned.has(item.id) ? item : sanitizeCompany(item));
+    for (const key of COMPANY_SCOPED_KEYS) {
+      if (Array.isArray(state[key])) state[key] = state[key].filter(item => assigned.has(itemCompanyId(item)));
+    }
+    if (Array.isArray(state.auditLogs)) state.auditLogs = state.auditLogs.filter(item => item.companyId && assigned.has(item.companyId));
+    if (Array.isArray(state.users)) state.users = state.users.filter(item => item.id === user.id);
+    if (state.activeCompanyId && !assigned.has(state.activeCompanyId)) state.activeCompanyId = [...assigned][0] || '';
+  } else {
+    const allowed = allowedCompanyIds(user);
     if (Array.isArray(state.companies)) state.companies = state.companies.filter(item => allowed.has(item.id));
     for (const key of COMPANY_SCOPED_KEYS) {
       if (Array.isArray(state[key])) state[key] = state[key].filter(item => allowed.has(itemCompanyId(item)));
@@ -89,7 +108,19 @@ function mergeCompanyScoped(storedItems, incomingItems, allowed) {
 }
 
 function mergeStateForUser(stored, incoming, user) {
-  if (user.role === 'ADMIN') return incoming;
+  if (user.role === 'ADMIN') {
+    const next = clone(stored || {});
+    const assigned = new Set(Array.isArray(user.company_ids) ? user.company_ids : []);
+    for (const key of COMPANY_SCOPED_KEYS) next[key] = mergeCompanyScoped(stored?.[key],incoming?.[key],assigned);
+    const oldCompanies = asArray(stored?.companies);
+    const incomingById = new Map(asArray(incoming?.companies).filter(item => assigned.has(item.id)).map(item => [item.id,item]));
+    next.companies = oldCompanies.map(item => assigned.has(item.id) && incomingById.has(item.id) ? incomingById.get(item.id) : item);
+    next.auditLogs = mergeCompanyScoped(stored?.auditLogs,incoming?.auditLogs,assigned);
+    next.users = stored?.users || [];
+    next.qoyodConfig = incoming?.qoyodConfig || stored?.qoyodConfig || {};
+    if (incoming?.activeCompanyId && assigned.has(incoming.activeCompanyId)) next.activeCompanyId = incoming.activeCompanyId;
+    return next;
+  }
   const next = clone(stored || {});
   const allowed = allowedCompanyIds(user);
   const keyPermissions = {
@@ -1035,7 +1066,7 @@ app.post('/api/auth/login', loginLimiter, async (req, res, next) => {
       JOIN ${q('companies')} c ON c.company_code=$2 AND c.is_archived=false WHERE lower(u.username)=$1`, [username, companyCode]);
     const user = result.rows[0];
     const valid = user && user.is_active && await bcrypt.compare(password, user.password_hash);
-    const companyAllowed = valid && (user.role === 'ADMIN' || user.company_ids.includes(user.company_id));
+    const companyAllowed = valid && user.company_ids.includes(user.company_id);
     if (!companyAllowed) return res.status(401).json({ error: 'INVALID_CREDENTIALS' });
     const token = crypto.randomBytes(32).toString('base64url');
     const client = await pool.connect();
@@ -1065,17 +1096,15 @@ app.get('/api/admin/database/normalization-status', auth, async (req, res, next)
     const [status, duplicateNumbers, totals] = await Promise.all([
       pool.query(`SELECT * FROM ${q('normalization_status')}`),
       pool.query(`SELECT company_id,employee_no,count(*)::integer AS duplicate_count
-        FROM ${q('employees')} WHERE is_archived=false AND employee_no <> '' GROUP BY company_id,employee_no HAVING count(*) > 1
-        ORDER BY duplicate_count DESC,company_id,employee_no LIMIT 100`),
+        FROM ${q('employees')} WHERE is_archived=false AND employee_no <> '' AND company_id=ANY($1::text[])
+        GROUP BY company_id,employee_no HAVING count(*) > 1 ORDER BY duplicate_count DESC,company_id,employee_no LIMIT 100`,
+        [req.user.company_ids]),
       pool.query(`SELECT
-        COALESCE((SELECT sum(total_net_salaries) FROM ${q('payroll_runs')}),0)::text AS table_net_total,
-        COALESCE((SELECT sum(COALESCE(NULLIF(run->>'totalNetSalaries','')::numeric,0))
-          FROM ${q('app_state')} state_row
-          CROSS JOIN LATERAL jsonb_array_elements(COALESCE(state_row.state->'payrollRuns','[]'::jsonb)) AS runs(run)
-          WHERE state_row.id=1),0)::text AS legacy_net_total`),
+        COALESCE(sum(total_net_salaries),0)::text AS table_net_total
+        FROM ${q('payroll_runs')} WHERE company_id=ANY($1::text[])`, [req.user.company_ids]),
     ]);
     res.json({
-      status: status.rows[0] || null,
+      status: { counts_match:Boolean(status.rows[0]?.counts_match) },
       payrollTotals: totals.rows[0] || null,
       duplicateEmployeeNumbers: duplicateNumbers.rows,
     });
@@ -1138,7 +1167,7 @@ app.get('/api/state', auth, async (req, res, next) => {
     const state = publicStateForUser(normalizedState, req.user);
     const allowed = allowedCompanyIds(req.user);
     state.users = userResult.rows
-      .filter(user => req.user.role === 'ADMIN' || (Array.isArray(user.company_ids) && user.company_ids.some(id => allowed.has(id))))
+      .filter(user => req.user.role === 'ADMIN' ? user.id === req.user.id : (Array.isArray(user.company_ids) && user.company_ids.some(id => allowed.has(id))))
       .map(user => ({ id:user.id, username:user.username, name:user.name, email:user.email, phone:user.phone, role:user.role,
         companyIds:user.company_ids, permissions:permissionsFor(user), isActive:user.is_active, createdAt:user.created_at, lastLogin:user.last_login }));
     res.json({ ...r.rows[0], state });
@@ -1242,6 +1271,9 @@ app.put('/api/users/:id', auth, writeLimiter, async (req, res, next) => {
     const u = req.body || {};
     if (!u.username || !u.name || !u.role || !Array.isArray(u.companyIds)) return res.status(400).json({ error:'INVALID_USER' });
     if (!ALLOWED_ROLES.has(u.role) || u.role === 'ADMIN') return res.status(400).json({ error:'INVALID_ROLE' });
+    if (req.user.role === 'ADMIN' && u.companyIds.some(id => !req.user.company_ids.includes(id))) {
+      return res.status(403).json({ error:'TENANT_DATA_IS_PRIVATE' });
+    }
     const permissions = Array.isArray(u.permissions) ? [...new Set(u.permissions)].filter(value => ALL_PERMISSIONS.has(value) && value !== 'MANAGE_COMPANIES') : DEFAULT_PERMISSIONS[u.role];
     if (req.user.role !== 'ADMIN' && (u.role !== 'OPERATIONS_MANAGER' || u.companyIds.some(id => !req.user.company_ids.includes(id)))) {
       return res.status(403).json({ error:'FORBIDDEN' });
@@ -1267,9 +1299,8 @@ app.delete('/api/users/:id', auth, writeLimiter, async (req, res, next) => {
     if (!can(req.user, 'MANAGE_USERS')) return res.status(403).json({ error:'FORBIDDEN' });
     if (req.params.id === 'user-admin') return res.status(403).json({ error:'SYSTEM_ADMIN_IMMUTABLE' });
     if (req.user.id === req.params.id) return res.status(400).json({ error:'CANNOT_DELETE_SELF' });
-    const params = [req.params.id];
-    const scope = req.user.role !== 'ADMIN' ? ` AND role='OPERATIONS_MANAGER' AND company_ids <@ $2::jsonb` : '';
-    if (req.user.role !== 'ADMIN') params.push(JSON.stringify(req.user.company_ids));
+    const params = [req.params.id,JSON.stringify(req.user.company_ids)];
+    const scope = ` AND company_ids <@ $2::jsonb${req.user.role !== 'ADMIN' ? " AND role='OPERATIONS_MANAGER'" : ''}`;
     await pool.query(`DELETE FROM ${q('users')} WHERE id=$1${scope}`, params);
     res.status(204).end();
   } catch (e) { next(e); }
@@ -1279,7 +1310,7 @@ app.post('/api/integrations/qoyod/journal', auth, writeLimiter, async (req, res,
   try {
     if (!can(req.user, 'MANAGE_JOURNALS')) return res.status(403).json({ error:'FORBIDDEN' });
     const companyId = String(req.body?.companyId || '');
-    if (!companyId || (req.user.role !== 'ADMIN' && !req.user.company_ids.includes(companyId))) {
+    if (!companyId || !req.user.company_ids.includes(companyId)) {
       return res.status(403).json({ error:'FORBIDDEN' });
     }
     const configResult = await pool.query(`SELECT public_config,secret_value FROM ${q('integration_configs')} WHERE provider='QOYOD'`);

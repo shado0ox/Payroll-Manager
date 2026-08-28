@@ -33,9 +33,18 @@ button stays hidden.
 
 ## Renewing a company
 
-The developer account can select the company, open **Company Profile**, and use
-**Subscription management — developer only** to choose Active and an end date.
-The server broadcasts the change to other connected sessions.
+The developer account opens **Companies & Establishments**, finds the company,
+and uses **Manage & renew** to choose Active and an end date. A one-year renewal
+shortcut is available. The server broadcasts the change to connected sessions.
+
+## Tenant privacy
+
+The developer account receives only tenant registration and subscription
+metadata. PostgreSQL-backed API filtering prevents it from receiving tenant
+employees, payroll runs, attendance, loans, penalties, journals, audit history,
+banking configuration, or tenant users. Tenant companies cannot be selected in
+the developer's normal company switcher. Subscription renewal uses a dedicated
+metadata-only endpoint and does not grant access to tenant operational data.
 
 For emergency recovery, the equivalent SQL is:
 

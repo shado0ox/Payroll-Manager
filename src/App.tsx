@@ -402,6 +402,7 @@ export const App: React.FC = () => {
   // Persist handlers
   const handleSelectCompany = (companyId: string) => {
     setState(prev => {
+      if (prev.currentUser?.role === 'ADMIN' && !prev.currentUser.companyIds.includes(companyId)) return prev;
       const next = { ...prev, activeCompanyId: companyId };
       saveActiveCompanyId(companyId);
       return next;
@@ -895,7 +896,7 @@ export const App: React.FC = () => {
         
         {/* Top Header Navbar */}
         <Navbar
-          companies={state.companies}
+          companies={state.currentUser.role === 'ADMIN' ? state.companies.filter(company => state.currentUser!.companyIds.includes(company.id)) : state.companies}
           activeCompany={activeCompany}
           currentUser={state.currentUser}
           dbStatus={dbStatus}
@@ -960,7 +961,7 @@ export const App: React.FC = () => {
             {activeTab === 'company_profile' && hasPermission(state.currentUser, 'MANAGE_COMPANY_PROFILE') && (
               <CompanyProfileView
                 company={activeCompany}
-                allCompanies={state.companies}
+                allCompanies={state.currentUser.role === 'ADMIN' ? state.companies.filter(company => state.currentUser!.companyIds.includes(company.id)) : state.companies}
                 employees={state.employees}
                 users={state.users}
                 activeRole={state.activeRole}

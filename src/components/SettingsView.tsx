@@ -40,6 +40,7 @@ import {
   getBankDefinitions
 } from '../utils/security';
 import { useLanguage } from '../i18n/LanguageContext';
+import { api } from '../utils/api';
 
 interface SettingsViewProps {
   companies: Company[];
@@ -111,6 +112,39 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
   const [isCompanyUsersModalOpen, setIsCompanyUsersModalOpen] = useState(false);
   const [selectedCompanyForUsers, setSelectedCompanyForUsers] = useState<Company | null>(null);
+  const [subscriptionCompany, setSubscriptionCompany] = useState<Company | null>(null);
+  const [subscriptionStatus, setSubscriptionStatus] = useState<'TRIAL'|'ACTIVE'|'EXPIRED'|'SUSPENDED'>('ACTIVE');
+  const [subscriptionEndsAt, setSubscriptionEndsAt] = useState('');
+  const [savingSubscription, setSavingSubscription] = useState(false);
+
+  const openSubscription = (company:Company) => {
+    setSubscriptionCompany(company);
+    setSubscriptionStatus(company.subscriptionStatus || 'ACTIVE');
+    setSubscriptionEndsAt((company.subscriptionEndsAt || company.trialEndsAt || '').slice(0,10));
+  };
+  const oneYearFromToday = () => {
+    const date = new Date();
+    date.setFullYear(date.getFullYear()+1);
+    setSubscriptionStatus('ACTIVE');
+    setSubscriptionEndsAt(date.toISOString().slice(0,10));
+  };
+  const saveSubscription = async () => {
+    if (!subscriptionCompany) return;
+    setSavingSubscription(true);
+    try {
+      const endsAt = subscriptionEndsAt ? new Date(`${subscriptionEndsAt}T23:59:59+03:00`).toISOString() : null;
+      await api.updateSubscription(subscriptionCompany.id,subscriptionStatus,endsAt);
+      onUpdateCompany({
+        ...subscriptionCompany,
+        subscriptionStatus,
+        trialEndsAt:subscriptionStatus === 'TRIAL' ? endsAt : subscriptionCompany.trialEndsAt,
+        subscriptionEndsAt:subscriptionStatus === 'ACTIVE' ? endsAt : subscriptionCompany.subscriptionEndsAt,
+      });
+      setSubscriptionCompany(null);
+    } catch {
+      alert(tr('تعذر تحديث اشتراك الشركة', 'Could not update the company subscription'));
+    } finally { setSavingSubscription(false); }
+  };
 
   // Form State for Company
   const [companyForm, setCompanyForm] = useState<Partial<Company>>({
@@ -443,25 +477,17 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         <div>
           <h1 className="text-xl sm:text-2xl font-bold text-slate-900 flex items-center gap-2.5">
             <Building2 className="w-6 h-6 text-emerald-600" />
-            <span>{tr('إدارة الشركات ومستخدمي المنشآت', 'Companies & Authorized Users')}</span>
+            <span>{tr('إدارة الشركات والمنشآت والاشتراكات', 'Companies, Establishments & Subscriptions')}</span>
             <span className="text-xs px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 font-bold border border-emerald-200">
               {companies.length} {tr('منشآت مسجلة', 'registered companies')}
             </span>
           </h1>
           <p className="text-xs text-slate-500 mt-1">
-            {tr('إدارة المنشآت القائمة في النظام وتعديل البيانات الرسمية وتعيين المستخدمين وصلاحيات الدخول لكل شركة', 'Manage companies, official records, authorized users, and access permissions.')}
+            {tr('إدارة التسجيلات وحالة التجربة وتجديد الاشتراكات دون الوصول إلى البيانات التشغيلية الخاصة بالشركات', 'Manage registrations, trials, and renewals without access to private tenant operations.')}
           </p>
         </div>
 
-        <div className="flex items-center gap-2.5">
-          <button
-            onClick={handleOpenAddCompany}
-            className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-2 cursor-pointer"
-          >
-            <Plus className="w-4 h-4" />
-            <span>{tr('إضافة منشأة / شركة جديدة', 'Add New Company')}</span>
-          </button>
-        </div>
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-xs font-bold text-emerald-800">{tr('الشركات الجديدة تسجل من شاشة الدخول بعد توثيق البريد', 'New companies register from the login screen after email verification')}</div>
       </div>
 
       {/* Search & Filter Bar */}
@@ -492,6 +518,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           const compUsers = getUsersByCompany(comp);
           const compEmployees = employees.filter((e) => e.companyId === comp.id);
           const isCurrentActive = comp.id === activeCompany.id;
+          const isDeveloperOwned = currentUser?.companyIds.includes(comp.id) ?? false;
 
           return (
             <div
@@ -553,16 +580,16 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   </div>
                   <div>
                     <span className="text-slate-400 text-[11px] block">{tr('اشتراك التأمينات', 'GOSI Registration')}:</span>
-                    <span className="font-mono font-bold text-slate-800">{comp.gosiEstablishmentNo}</span>
+                    <span className="font-mono font-bold text-slate-800">{isDeveloperOwned ? comp.gosiEstablishmentNo : tr('بيانات خاصة', 'Private')}</span>
                   </div>
                   <div>
                     <span className="text-slate-400 text-[11px] block">{tr('بنك مسير الرواتب:', 'Payroll Bank:')}</span>
-                    <span className="font-semibold text-slate-800 truncate block">{comp.bankName || 'مصرف الراجحي'}</span>
+                    <span className="font-semibold text-slate-800 truncate block">{isDeveloperOwned ? (comp.bankName || '—') : tr('بيانات خاصة', 'Private')}</span>
                   </div>
                 </div>
 
                 {/* IBAN & SWIFT */}
-                <div className="mt-2 text-xs bg-slate-50 px-3 py-2 rounded-xl border border-slate-100 space-y-1">
+                {isDeveloperOwned && <div className="mt-2 text-xs bg-slate-50 px-3 py-2 rounded-xl border border-slate-100 space-y-1">
                   <div className="flex items-center justify-between">
                     <span className="text-slate-400 text-[11px]">{tr('الآيبان البنكي:', 'Bank IBAN:')}</span>
                     <span className="font-mono font-bold text-slate-700 text-[11px] dir-ltr">{comp.bankIban}</span>
@@ -573,6 +600,18 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                       <span className="font-mono font-bold text-emerald-700 text-[11px] dir-ltr">{comp.bankSwiftCode}</span>
                     </div>
                   )}
+                </div>}
+              </div>
+
+              {/* Users & Employees Metrics */}
+              <div className="px-5 py-3 border-b border-slate-100">
+                <div className="flex items-center justify-between rounded-xl border border-violet-200 bg-violet-50 px-3 py-2.5">
+                  <div>
+                    <div className="text-[10px] font-bold text-violet-500">{tr('حالة الاشتراك', 'Subscription status')}</div>
+                    <div className="mt-0.5 text-xs font-black text-violet-950">{comp.subscriptionStatus === 'TRIAL' ? tr('فترة تجريبية', 'Free trial') : comp.subscriptionStatus === 'EXPIRED' ? tr('منتهي', 'Expired') : comp.subscriptionStatus === 'SUSPENDED' ? tr('موقوف', 'Suspended') : tr('نشط', 'Active')}</div>
+                    <div className="mt-0.5 text-[10px] text-violet-600" dir="ltr">{(comp.subscriptionEndsAt || comp.trialEndsAt || '').slice(0,10) || '—'}</div>
+                  </div>
+                  <button type="button" onClick={() => openSubscription(comp)} className="rounded-lg bg-violet-700 px-3 py-1.5 text-[11px] font-black text-white">{tr('إدارة وتجديد', 'Manage & renew')}</button>
                 </div>
               </div>
 
@@ -583,8 +622,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     <Users className="w-3.5 h-3.5 text-emerald-600" />
                     <span>{tr('المستخدمون المفوّضون', 'Authorized Users')}</span>
                   </div>
-                  <div className="text-base font-black text-slate-800 mt-1">{compUsers.length} {tr('مستخدمين', 'users')}</div>
-                  <div className="text-[10px] text-slate-400 mt-0.5">{tr('صلاحيات إدارة المنشأة', 'Company access permissions')}</div>
+                  <div className="text-base font-black text-slate-800 mt-1">{isDeveloperOwned ? `${compUsers.length} ${tr('مستخدمين', 'users')}` : tr('محجوبة للخصوصية', 'Privacy protected')}</div>
+                  <div className="text-[10px] text-slate-400 mt-0.5">{isDeveloperOwned ? tr('صلاحيات إدارة المنشأة', 'Company access permissions') : tr('لا تصل لحساب المطور', 'Not available to developer')}</div>
                 </div>
 
                 <div className="bg-white p-2.5 rounded-xl border border-slate-200/70">
@@ -592,14 +631,14 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     <Briefcase className="w-3.5 h-3.5 text-blue-600" />
                     <span>{tr('موظفو المنشأة', 'Company Employees')}</span>
                   </div>
-                  <div className="text-base font-black text-slate-800 mt-1">{compEmployees.length} {tr('موظف', 'employees')}</div>
-                  <div className="text-[10px] text-slate-400 mt-0.5">{tr('تُدار بقسم الموظفين الخاص', 'Managed in the Employees section')}</div>
+                  <div className="text-base font-black text-slate-800 mt-1">{isDeveloperOwned ? `${compEmployees.length} ${tr('موظف', 'employees')}` : tr('محجوبة للخصوصية', 'Privacy protected')}</div>
+                  <div className="text-[10px] text-slate-400 mt-0.5">{isDeveloperOwned ? tr('تُدار بقسم الموظفين الخاص', 'Managed in the Employees section') : tr('لا تصل لحساب المطور', 'Not available to developer')}</div>
                 </div>
               </div>
 
               {/* Card Actions Footer */}
               <div className="p-4 bg-white flex flex-wrap items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
+                {isDeveloperOwned && <div className="flex items-center gap-2">
                   <button
                     onClick={() => handleOpenAddUserForCompany(comp)}
                     className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
@@ -615,9 +654,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     <Users className="w-3.5 h-3.5 text-slate-500" />
                     <span>{tr('مستخدمو المنشأة', 'Company Users')} ({compUsers.length})</span>
                   </button>
-                </div>
+                </div>}
 
-                <div className="flex items-center gap-1.5">
+                {isDeveloperOwned && <div className="flex items-center gap-1.5">
                   <button
                     onClick={() => handleOpenEditCompany(comp)}
                     className="px-3 py-1.5 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-xl text-xs font-semibold transition-all flex items-center gap-1 cursor-pointer"
@@ -635,12 +674,27 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                       <Trash2 className="w-4 h-4" />
                     </button>
                   )}
-                </div>
+                </div>}
               </div>
             </div>
           );
         })}
       </div>
+
+      {subscriptionCompany && <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm">
+        <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl">
+          <div className="flex items-start justify-between">
+            <div><h3 className="text-lg font-black text-slate-900">{tr('تجديد اشتراك الشركة', 'Renew company subscription')}</h3><p className="mt-1 text-xs text-slate-500">{language === 'ar' ? subscriptionCompany.nameAr : subscriptionCompany.nameEn || subscriptionCompany.nameAr}</p></div>
+            <button type="button" onClick={() => setSubscriptionCompany(null)} className="rounded-lg p-2 text-slate-400 hover:bg-slate-100"><X className="h-4 w-4" /></button>
+          </div>
+          <div className="mt-5 space-y-4">
+            <label className="block"><span className="mb-1.5 block text-xs font-bold text-slate-700">{tr('حالة الاشتراك', 'Subscription status')}</span><select value={subscriptionStatus} onChange={e => setSubscriptionStatus(e.target.value as typeof subscriptionStatus)} className="h-11 w-full rounded-xl border border-slate-200 px-3 text-sm"><option value="TRIAL">{tr('تجريبي', 'Trial')}</option><option value="ACTIVE">{tr('نشط', 'Active')}</option><option value="EXPIRED">{tr('منتهي', 'Expired')}</option><option value="SUSPENDED">{tr('موقوف', 'Suspended')}</option></select></label>
+            <label className="block"><span className="mb-1.5 block text-xs font-bold text-slate-700">{tr('تاريخ نهاية الاشتراك', 'Subscription end date')}</span><input type="date" value={subscriptionEndsAt} onChange={e => setSubscriptionEndsAt(e.target.value)} className="h-11 w-full rounded-xl border border-slate-200 px-3 text-sm" /></label>
+            <button type="button" onClick={oneYearFromToday} className="h-10 w-full rounded-xl border border-emerald-200 bg-emerald-50 text-xs font-black text-emerald-800">{tr('تجديد سنة من تاريخ اليوم', 'Renew one year from today')}</button>
+            <button type="button" onClick={saveSubscription} disabled={savingSubscription} className="h-11 w-full rounded-xl bg-violet-700 text-sm font-black text-white disabled:opacity-50">{savingSubscription ? '...' : tr('حفظ وتفعيل الاشتراك', 'Save and activate subscription')}</button>
+          </div>
+        </div>
+      </div>}
 
       {/* MODAL 1: Add/Edit Company Modal */}
       {isCompanyModalOpen && (
