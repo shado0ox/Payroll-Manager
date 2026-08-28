@@ -712,7 +712,13 @@ export const App: React.FC = () => {
     });
   };
 
-  const handleDeleteEmployee = (empId: string) => {
+  const handleDeleteEmployee = async (empId: string) => {
+    try {
+      await api.deleteEmployee(empId);
+    } catch (error) {
+      alert(tr('تعذر حذف الموظف. حدّث الصفحة وحاول مرة أخرى.', 'Could not delete the employee. Refresh and try again.'));
+      return;
+    }
     setState(prev => {
       const targetEmp = prev.employees.find(e => e.id === empId);
       const updated = prev.employees.filter(e => e.id !== empId);

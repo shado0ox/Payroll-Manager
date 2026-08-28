@@ -730,7 +730,10 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                         {/* Delete */}
                         <button
                           onClick={() => {
-                            if (onDeleteEmployee) onDeleteEmployee(emp.id);
+                            const name = language === 'ar' ? `${emp.firstNameAr} ${emp.lastNameAr}` : (`${emp.firstNameEn} ${emp.lastNameEn}`.trim() || `${emp.firstNameAr} ${emp.lastNameAr}`);
+                            if (window.confirm(language === 'ar' ? `هل تريد حذف الموظف «${name}»؟ إذا كان مرتبطًا بحركات سابقة فسيتم أرشفته مع حفظ السجلات.` : `Delete “${name}”? If historical records exist, the employee will be archived and history retained.`)) {
+                              if (onDeleteEmployee) onDeleteEmployee(emp.id);
+                            }
                           }}
                           title={language === 'ar' ? 'حذف الموظف' : 'Delete employee'}
                           className="p-1 text-rose-500 hover:bg-rose-50 hover:text-rose-700 rounded-lg transition-colors cursor-pointer shrink-0"

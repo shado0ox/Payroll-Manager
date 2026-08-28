@@ -1166,8 +1166,9 @@ app.get('/api/state', auth, async (req, res, next) => {
     const normalizedState = await hydrateNormalizedStateData(pool, r.rows[0].state);
     const state = publicStateForUser(normalizedState, req.user);
     const allowed = allowedCompanyIds(req.user);
+    const visibleCompanyIds = new Set(Array.isArray(req.user.company_ids) ? req.user.company_ids : []);
     state.users = userResult.rows
-      .filter(user => req.user.role === 'ADMIN' ? user.id === req.user.id : (Array.isArray(user.company_ids) && user.company_ids.some(id => allowed.has(id))))
+      .filter(user => Array.isArray(user.company_ids) && user.company_ids.some(id => visibleCompanyIds.has(id)))
       .map(user => ({ id:user.id, username:user.username, name:user.name, email:user.email, phone:user.phone, role:user.role,
         companyIds:user.company_ids, permissions:permissionsFor(user), isActive:user.is_active, createdAt:user.created_at, lastLogin:user.last_login }));
     res.json({ ...r.rows[0], state });
@@ -1260,6 +1261,47 @@ app.patch('/api/state/patch', auth, writeLimiter, async (req, res, next) => {
     try { await client.query('ROLLBACK'); } catch {}
     if (e?.status === 400) return res.status(400).json({ error:e.message });
     if (e?.code === '23505') return res.status(409).json({ error:'NORMALIZED_DATA_DUPLICATE', detail:e.constraint });
+    next(e);
+  } finally { client.release(); }
+});
+
+app.delete('/api/employees/:id', auth, writeLimiter, async (req, res, next) => {
+  const client = await pool.connect();
+  try {
+    if (!can(req.user,'MANAGE_EMPLOYEES')) return res.status(403).json({ error:'FORBIDDEN' });
+    await client.query('BEGIN');
+    const employee = await client.query(`SELECT id,company_id FROM ${q('employees')} WHERE id=$1 AND is_archived=false FOR UPDATE`, [req.params.id]);
+    if (!employee.rowCount) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error:'EMPLOYEE_NOT_FOUND' });
+    }
+    if (!req.user.company_ids.includes(employee.rows[0].company_id)) {
+      await client.query('ROLLBACK');
+      return res.status(403).json({ error:'FORBIDDEN' });
+    }
+    const references = await client.query(`SELECT
+      (SELECT count(*) FROM ${q('attendance_records')} WHERE employee_id=$1)
+      +(SELECT count(*) FROM ${q('leave_requests')} WHERE employee_id=$1)
+      +(SELECT count(*) FROM ${q('loans')} WHERE employee_id=$1)
+      +(SELECT count(*) FROM ${q('penalties')} WHERE employee_id=$1)
+      +(SELECT count(*) FROM ${q('temporary_earnings')} WHERE employee_id=$1)
+      +(SELECT count(*) FROM ${q('payroll_run_items')} WHERE employee_id=$1) AS count`, [req.params.id]);
+    const archived = Number(references.rows[0]?.count || 0) > 0;
+    if (archived) {
+      await client.query(`UPDATE ${q('employees')} SET is_archived=true,updated_at=now() WHERE id=$1`, [req.params.id]);
+    } else {
+      await client.query(`DELETE FROM ${q('employees')} WHERE id=$1`, [req.params.id]);
+    }
+    const stateRow = await client.query(`SELECT state FROM ${q('app_state')} WHERE id=1 FOR UPDATE`);
+    const compatibilityState = clone(stateRow.rows[0]?.state || {});
+    compatibilityState.employees = asArray(compatibilityState.employees).filter(item => item?.id !== req.params.id);
+    const updated = await client.query(`UPDATE ${q('app_state')} SET state=$1::jsonb,version=version+1,updated_by=$2,updated_at=now()
+      WHERE id=1 RETURNING version,updated_at`, [JSON.stringify(compatibilityState),req.user.id]);
+    await client.query('COMMIT');
+    if (updated.rowCount) broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at });
+    res.json({ deleted:!archived,archived });
+  } catch (e) {
+    try { await client.query('ROLLBACK'); } catch {}
     next(e);
   } finally { client.release(); }
 });
