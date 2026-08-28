@@ -732,7 +732,11 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                           onClick={() => {
                             const name = language === 'ar' ? `${emp.firstNameAr} ${emp.lastNameAr}` : (`${emp.firstNameEn} ${emp.lastNameEn}`.trim() || `${emp.firstNameAr} ${emp.lastNameAr}`);
                             if (window.confirm(language === 'ar' ? `هل تريد حذف الموظف «${name}»؟ إذا كان مرتبطًا بحركات سابقة فسيتم أرشفته مع حفظ السجلات.` : `Delete “${name}”? If historical records exist, the employee will be archived and history retained.`)) {
-                              if (onDeleteEmployee) onDeleteEmployee(emp.id);
+                              if (onDeleteEmployee) {
+                                onDeleteEmployee(emp.id);
+                              } else {
+                                alert(language === 'ar' ? 'تعذر بدء الحذف: وظيفة الحذف غير مرتبطة بهذه الشاشة.' : 'Could not start deletion: the delete action is not connected to this view.');
+                              }
                             }
                           }}
                           title={language === 'ar' ? 'حذف الموظف' : 'Delete employee'}

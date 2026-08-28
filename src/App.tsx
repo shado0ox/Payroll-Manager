@@ -1000,6 +1000,7 @@ export const App: React.FC = () => {
                 loans={state.loans}
                 activeRole={state.activeRole}
                 onSaveEmployee={handleSaveEmployee}
+                onDeleteEmployee={handleDeleteEmployee}
                 onBulkImportEmployees={handleBulkImportEmployees}
                 onViewStatement={setStatementEmployee}
               />
