@@ -1297,6 +1297,8 @@ app.delete('/api/employees/:id', auth, writeLimiter, async (req, res, next) => {
     compatibilityState.employees = asArray(compatibilityState.employees).filter(item => item?.id !== req.params.id);
     const updated = await client.query(`UPDATE ${q('app_state')} SET state=$1::jsonb,version=version+1,updated_by=$2,updated_at=now()
       WHERE id=1 RETURNING version,updated_at`, [JSON.stringify(compatibilityState),req.user.id]);
+    await client.query(`INSERT INTO ${q('audit_log')} (user_id,action,ip) VALUES ($1,$2,$3)`,
+      [req.user.id,`${archived ? 'ARCHIVE' : 'DELETE'}_EMPLOYEE:${req.params.id}`,req.ip]);
     await client.query('COMMIT');
     if (updated.rowCount) broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at });
     res.json({ deleted:!archived,archived });

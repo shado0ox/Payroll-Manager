@@ -715,36 +715,24 @@ export const App: React.FC = () => {
   const handleDeleteEmployee = async (empId: string) => {
     try {
       await api.deleteEmployee(empId);
+      const remote = await api.getState();
+      if (!remote.state) throw new Error('STATE_RELOAD_FAILED');
+      setState(prev => {
+        const base = { ...prev,...remote.state } as MasarAppState;
+        const next:MasarAppState = {
+          ...base,
+          currentUser:prev.currentUser,
+          activeRole:prev.currentUser?.role || prev.activeRole,
+          activeCompanyId:prev.activeCompanyId,
+          employees:synchronizeEmployeeBankDetails(base.companies || [],base.employees || []),
+        };
+        remoteStateSnapshotRef.current = next;
+        return next;
+      });
     } catch (error) {
       alert(tr('تعذر حذف الموظف. حدّث الصفحة وحاول مرة أخرى.', 'Could not delete the employee. Refresh and try again.'));
       return;
     }
-    setState(prev => {
-      const targetEmp = prev.employees.find(e => e.id === empId);
-      const updated = prev.employees.filter(e => e.id !== empId);
-      const temporaryEarnings = prev.temporaryEarnings.filter(record => record.employeeId !== empId);
-      saveEmployees(updated);
-
-      const log: AuditLog = {
-        id: `log-${Date.now()}`,
-        timestamp: new Date().toISOString(),
-        userName: prev.currentUser?.name || 'المدير العام',
-        userRole: prev.activeRole,
-        action: tr('حذف موظف', 'Deleted employee'),
-        entityType: 'EMPLOYEE',
-        entityId: empId,
-        details: `${tr('تم حذف الموظف:', 'Deleted employee:')} ${targetEmp ? `${targetEmp.firstNameAr} ${targetEmp.lastNameAr}` : empId}`,
-      };
-      const updatedLogs = [log, ...prev.auditLogs];
-      saveAuditLogs(updatedLogs);
-
-      return {
-        ...prev,
-        employees: updated,
-        temporaryEarnings,
-        auditLogs: updatedLogs,
-      };
-    });
   };
 
   const handleAddCompany = (company: Company) => {
