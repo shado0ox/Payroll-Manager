@@ -10,6 +10,16 @@ const replaceOnce = (from, to, label) => {
   source = source.replace(from, to);
 };
 
+const replaceExactly = (from, to, expectedCount, label) => {
+  const currentCount = source.split(from).length - 1;
+  const hardenedCount = source.split(to).length - 1;
+  if (currentCount === 0 && hardenedCount === expectedCount) return;
+  if (currentCount !== expectedCount) {
+    throw new Error(`Security patch target count mismatch for ${label}: expected ${expectedCount}, found ${currentCount}`);
+  }
+  source = source.split(from).join(to);
+};
+
 replaceOnce(
   "import pg from 'pg';",
   "import pg from 'pg';\nimport { createTenantScopedClient, scopeStateForCompanies } from './tenant-storage.mjs';",
@@ -28,6 +38,9 @@ replaceOnce(
   'make admin audit history server-owned',
 );
 
+const rawRuntimeWrites = `    await replaceNormalizedPayrollData(client, state);
+    await replaceNormalizedOperationsData(client, state);
+    await replaceNormalizedCoreData(client, state);`;
 const runtimeWrites = `    const tenantCompanyIds = Array.isArray(req.user.company_ids) ? req.user.company_ids : [];
     const scopedState = scopeStateForCompanies(state, tenantCompanyIds);
     const tenantClient = createTenantScopedClient(client, q, tenantCompanyIds);
@@ -35,21 +48,7 @@ const runtimeWrites = `    const tenantCompanyIds = Array.isArray(req.user.compa
     await replaceNormalizedOperationsData(tenantClient, scopedState);
     await replaceNormalizedCoreData(tenantClient, scopedState);`;
 
-replaceOnce(
-  `    await replaceNormalizedPayrollData(client, state);
-    await replaceNormalizedOperationsData(client, state);
-    await replaceNormalizedCoreData(client, state);`,
-  runtimeWrites,
-  'tenant-scope full state PUT writes',
-);
-
-replaceOnce(
-  `    await replaceNormalizedPayrollData(client, state);
-    await replaceNormalizedOperationsData(client, state);
-    await replaceNormalizedCoreData(client, state);`,
-  runtimeWrites,
-  'tenant-scope PATCH writes',
-);
+replaceExactly(rawRuntimeWrites, runtimeWrites, 2, 'tenant-scope PUT and PATCH writes');
 
 replaceOnce(
   "    const existing = await pool.query(`SELECT id,password_hash FROM ${q('users')} WHERE id=$1`, [req.params.id]);",
