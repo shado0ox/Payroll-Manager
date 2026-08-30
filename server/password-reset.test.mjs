@@ -26,7 +26,18 @@ test('login page exposes forgot password flow', () => {
   assert.match(login, /passwordResetConfirm/);
 });
 
-test('editing a user never reuses their existing password', () => {
+test('editing a user never reuses or exposes their existing password', () => {
   assert.doesNotMatch(users, /password:\s*user\.password/);
   assert.match(users, /password:\s*editingUser \? '' : formData\.password/);
+  assert.match(users, /!editingUser && <div>/);
+  assert.match(users, /تعديل بيانات المستخدم والصلاحيات/);
+});
+
+test('new-user form does not suggest or autofill administrator credentials', () => {
+  assert.match(users, /placeholder=\{language === 'ar' \? 'أدخل اسم مستخدم جديد' : 'Enter a new username'\}/);
+  assert.match(users, /name="new-user-username"/);
+  assert.match(users, /autoComplete="off"/);
+  assert.match(users, /placeholder=\{language === 'ar' \? 'أنشئ كلمة مرور جديدة' : 'Create a new password'\}/);
+  assert.match(users, /name="new-user-password"/);
+  assert.match(users, /autoComplete="new-password"/);
 });
