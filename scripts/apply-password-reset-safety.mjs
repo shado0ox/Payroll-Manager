@@ -18,8 +18,8 @@ source = replaceOnce(
 
 source = replaceOnce(
   source,
-  `    const existing = await pool.query(\`SELECT id,password_hash FROM \${q('users')} WHERE id=$1\`, [req.params.id]);`,
-  `    const normalizedEmail = String(u.email || '').trim().toLowerCase();\n    if (normalizedEmail) {\n      const duplicateEmail = await pool.query(\`SELECT id FROM \${q('users')} WHERE lower(email)=lower($1) AND id<>$2 LIMIT 1\`, [normalizedEmail, req.params.id]);\n      if (duplicateEmail.rowCount) return res.status(409).json({ error:'USER_EMAIL_EXISTS' });\n    }\n    const existing = await pool.query(\`SELECT id,password_hash FROM \${q('users')} WHERE id=$1\`, [req.params.id]);`,
+  `    const existing = await pool.query(\`SELECT id,password_hash,company_ids,role FROM \${q('users')} WHERE id=$1\`, [req.params.id]);`,
+  `    const normalizedEmail = String(u.email || '').trim().toLowerCase();\n    if (normalizedEmail) {\n      const duplicateEmail = await pool.query(\`SELECT id FROM \${q('users')} WHERE lower(email)=lower($1) AND id<>$2 LIMIT 1\`, [normalizedEmail, req.params.id]);\n      if (duplicateEmail.rowCount) return res.status(409).json({ error:'USER_EMAIL_EXISTS' });\n    }\n    const existing = await pool.query(\`SELECT id,password_hash,company_ids,role FROM \${q('users')} WHERE id=$1\`, [req.params.id]);`,
   'user email duplicate validation',
 );
 
