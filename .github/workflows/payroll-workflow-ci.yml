@@ -75,6 +75,8 @@ jobs:
           echo $! > runtime-server.pid
       - name: Exercise approval and payment persistence
         run: node scripts/runtime-payroll-smoke.mjs
+      - name: Exercise password reset and session revocation
+        run: node scripts/runtime-password-reset-smoke.mjs
       - name: Show server log on failure
         if: failure()
         run: cat runtime-server.log || true
