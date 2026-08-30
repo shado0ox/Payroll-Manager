@@ -1,0 +1,26 @@
+name: Payroll workflow CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [fix/payroll-workflow-password-reset]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20.19
+          cache: npm
+      - run: npm ci
+      - run: node scripts/apply-feature-hardening.mjs
+      - run: npm run test:security
+      - run: npm run lint
+      - run: npm run build
