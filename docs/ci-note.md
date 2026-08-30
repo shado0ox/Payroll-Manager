@@ -1,0 +1,1 @@
+The Docker build still invokes `npm run prepare:security`. On this branch that script now runs the full feature-hardening orchestrator, so tenant hardening, payroll workflow guards, and password-reset transforms are applied before tests/lint/build.
