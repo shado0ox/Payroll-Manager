@@ -38,6 +38,20 @@ replaceOnce(
   'make admin audit history server-owned',
 );
 
+replaceOnce(
+  `    state.users = userResult.rows
+      .filter(user => Array.isArray(user.company_ids) && user.company_ids.some(id => visibleCompanyIds.has(id)))
+      .map(user => ({ id:user.id, username:user.username, name:user.name, email:user.email, phone:user.phone, role:user.role,
+        companyIds:user.company_ids, permissions:permissionsFor(user), isActive:user.is_active, createdAt:user.created_at, lastLogin:user.last_login }));`,
+  `    state.users = userResult.rows
+      .filter(user => req.user.role === 'ADMIN'
+        ? user.id === req.user.id
+        : Array.isArray(user.company_ids) && user.company_ids.some(id => visibleCompanyIds.has(id)))
+      .map(user => ({ id:user.id, username:user.username, name:user.name, email:user.email, phone:user.phone, role:user.role,
+        companyIds:user.company_ids, permissions:permissionsFor(user), isActive:user.is_active, createdAt:user.created_at, lastLogin:user.last_login }));`,
+  'keep admin user listing self-only',
+);
+
 const rawRuntimeWrites = `    await replaceNormalizedPayrollData(client, state);
     await replaceNormalizedOperationsData(client, state);
     await replaceNormalizedCoreData(client, state);`;
