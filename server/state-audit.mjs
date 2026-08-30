@@ -1,3 +1,5 @@
+import crypto from 'node:crypto';
+
 const normalizeCompanyIds = (companyIds) => [...new Set(
   (Array.isArray(companyIds) ? companyIds : []).filter(id => typeof id === 'string' && id.trim())
 )];
