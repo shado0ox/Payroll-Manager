@@ -35,10 +35,11 @@ test('application audit history cannot be patched by clients', () => {
   assert.match(source, /next\.auditLogs = stored\?\.auditLogs \|\| \[\];/);
 });
 
-test('admin state user listing is self-only', () => {
+test('state user listing is limited to users in assigned companies', () => {
   const stateBlock = routeBlock('get', '/api/state', "app.put('/api/state'");
-  assert.match(stateBlock, /req\.user\.role === 'ADMIN'/);
-  assert.match(stateBlock, /user\.id === req\.user\.id/);
+  assert.match(stateBlock, /visibleCompanyIds/);
+  assert.match(stateBlock, /user\.company_ids\.some\(id => visibleCompanyIds\.has\(id\)\)/);
+  assert.doesNotMatch(stateBlock, /user\.id === req\.user\.id/);
 });
 
 test('user update checks existing target tenant scope', () => {
