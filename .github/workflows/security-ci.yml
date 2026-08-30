@@ -1,0 +1,26 @@
+name: Security hardening checks
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [security/tenant-storage-hardening]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.19'
+          cache: npm
+      - run: npm ci
+      - run: npm run prepare:security
+      - run: npm run test:security
+      - run: npm run lint
+      - run: npm run build
