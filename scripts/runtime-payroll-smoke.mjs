@@ -50,9 +50,6 @@ async function initializeCompatibilityStateIfMissing() {
   try {
     const existing = await pool.query(`SELECT 1 FROM "${schema}".app_state WHERE id=1`);
     if (!existing.rowCount) {
-      // A production database already has app_state. The CI database is intentionally
-      // brand new, so seed only the empty compatibility envelope and let the server
-      // hydrate the bootstrap company/user from normalized tables.
       await pool.query(
         `INSERT INTO "${schema}".app_state (id,state,version) VALUES (1,$1::jsonb,0)`,
         [JSON.stringify({ companies: [], employees: [], payrollRuns: [], attendance: [], leaves: [], loans: [], penalties: [], temporaryEarnings: [], journals: [], auditLogs: [] })],
@@ -239,7 +236,25 @@ assert.equal(persisted?.paymentBatches?.[0]?.status, 'PAID', 'Paid confirmation 
 assert.equal(persisted?.paymentBatches?.[0]?.totalAmount, 1000);
 assert.deepEqual(persisted?.paymentBatches?.[0]?.employeeIds, [employeeId]);
 
-const normalization = await request('/api/admin/database/normalization-status');
-assert.equal(normalization.body?.status?.counts_match, true, 'Normalized PostgreSQL tables must match compatibility state');
+const db = new Pool({ connectionString: process.env.DATABASE_URL, ssl: false });
+try {
+  const [runRow, itemRow, batchRow, batchItemRow] = await Promise.all([
+    db.query(`SELECT status,total_net_salaries::text,approved_at FROM "${schema}".payroll_runs WHERE id=$1`, [runId]),
+    db.query(`SELECT net_salary::text,entitlement_status FROM "${schema}".payroll_run_items WHERE payroll_run_id=$1 AND id=$2`, [runId, itemId]),
+    db.query(`SELECT status,total_amount::text,payment_date FROM "${schema}".payroll_payment_batches WHERE id=$1`, [batchId]),
+    db.query(`SELECT employee_id FROM "${schema}".payroll_payment_batch_items WHERE payment_batch_id=$1`, [batchId]),
+  ]);
+  assert.equal(runRow.rows[0]?.status, 'APPROVED', 'Normalized payroll run must remain approved');
+  assert.equal(Number(runRow.rows[0]?.total_net_salaries), 1000, 'Normalized payroll run total must match');
+  assert.ok(runRow.rows[0]?.approved_at, 'Normalized approval timestamp must persist');
+  assert.equal(Number(itemRow.rows[0]?.net_salary), 1000, 'Normalized payroll item net salary must match');
+  assert.equal(itemRow.rows[0]?.entitlement_status, 'PAYABLE');
+  assert.equal(batchRow.rows[0]?.status, 'PAID', 'Normalized payment batch must be paid');
+  assert.equal(Number(batchRow.rows[0]?.total_amount), 1000, 'Normalized payment amount must match');
+  assert.ok(batchRow.rows[0]?.payment_date, 'Normalized payment date must persist');
+  assert.deepEqual(batchItemRow.rows.map(row => row.employee_id), [employeeId], 'Normalized payment batch employees must match');
+} finally {
+  await db.end();
+}
 
-console.log('Runtime payroll smoke test passed: approval -> reload -> scheduled batch -> paid -> reload.');
+console.log('Runtime payroll smoke test passed: approval -> reload -> scheduled batch -> paid -> reload + normalized PostgreSQL verification.');
