@@ -10,3 +10,4 @@ import './apply-loan-adjustments.mjs';
 import './apply-granular-payroll-permissions.mjs';
 import './apply-stable-routing.mjs';
 import './apply-server-owned-financial-audit.mjs';
+import './apply-loan-adjustment-consistency.mjs';
