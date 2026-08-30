@@ -24,3 +24,60 @@ jobs:
       - run: npm run test:security
       - run: npm run lint
       - run: npm run build
+
+  runtime-postgres:
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: masar_runtime_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d masar_runtime_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      PORT: 3034
+      CI_BASE_URL: http://127.0.0.1:3034
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/masar_runtime_test
+      DB_SCHEMA: masar_payroll
+      DB_SSL: 'false'
+      ADMIN_USERNAME: admin
+      ADMIN_PASSWORD: 'TestAdmin1!'
+      ADMIN_NAME: CI Admin
+      ADMIN_EMAIL: ci-admin@example.test
+      COMPANY_ID: comp-1
+      COMPANY_CODE: '101'
+      COMPANY_NAME_AR: شركة اختبار
+      COMPANY_NAME_EN: CI Test Company
+      COOKIE_SECURE: 'false'
+      TRUST_PROXY: '0'
+      APP_ORIGIN: http://127.0.0.1:3034
+      ALLOW_PUBLIC_REGISTRATION: 'false'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20.19
+          cache: npm
+      - run: npm ci
+      - run: node scripts/apply-feature-hardening.mjs
+      - name: Start isolated Masar server
+        run: |
+          node server/index.mjs > runtime-server.log 2>&1 &
+          echo $! > runtime-server.pid
+      - name: Exercise approval and payment persistence
+        run: node scripts/runtime-payroll-smoke.mjs
+      - name: Show server log on failure
+        if: failure()
+        run: cat runtime-server.log || true
+      - name: Stop isolated Masar server
+        if: always()
+        run: kill "$(cat runtime-server.pid)" 2>/dev/null || true
