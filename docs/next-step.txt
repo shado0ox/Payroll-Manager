@@ -1,0 +1,1 @@
+Next implementation step: wire feature transforms into the normal Docker build, run branch CI, then implement server-confirmed payroll action endpoints before runtime testing.
