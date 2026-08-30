@@ -1,13 +1,9 @@
 import React from 'react';
 import { 
   Building2, 
-  ChevronDown,
   RefreshCw,
   Zap,
-  Layers,
   LogOut,
-  UserCheck,
-  Shield,
   Database,
   WifiOff,
   CheckCircle2
@@ -53,16 +49,16 @@ export const Navbar: React.FC<NavbarProps> = ({
   const canViewDatabaseStatus = isDeveloperAccount(currentUser);
 
   return (
-    <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-6 sm:px-8 shadow-xs shrink-0 z-20">
+    <header className="min-h-16 bg-white border-b border-slate-200 flex items-center justify-between gap-2 px-3 py-2 sm:px-5 lg:px-8 shadow-xs shrink-0 z-20">
       
       {/* Left: Summary Title & Company Badge */}
-      <div className="flex items-center space-x-4 space-x-reverse min-w-0">
-        <h2 className="text-base sm:text-lg font-semibold text-slate-800 truncate">
+      <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-4">
+        <h2 className="hidden text-base font-semibold text-slate-800 truncate xl:block xl:text-lg">
           {t('payrollSummary')}
         </h2>
 
         {/* Company Info Badge (Fixed per Login) */}
-        <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-100/90 border border-slate-200 text-xs font-semibold text-slate-800">
+        <div className="flex min-w-0 max-w-full items-center gap-2 rounded-xl border border-slate-200 bg-slate-100/90 px-2 py-1.5 text-xs font-semibold text-slate-800 sm:px-3">
           {activeCompany.logo ? (
             <img 
               src={activeCompany.logo} 
@@ -72,10 +68,10 @@ export const Navbar: React.FC<NavbarProps> = ({
           ) : (
             <Building2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
           )}
-          <span className="truncate max-w-[150px] sm:max-w-[220px] font-bold text-slate-900">
+          <span className="min-w-0 truncate max-w-[120px] sm:max-w-[220px] font-bold text-slate-900">
             {language === 'en' ? activeCompany.nameEn || activeCompany.nameAr : activeCompany.nameAr}
           </span>
-          <span className="px-1.5 py-0.5 rounded-md bg-emerald-100 text-emerald-800 font-mono text-[10px] font-bold shrink-0">
+          <span className="hidden rounded-md bg-emerald-100 px-1.5 py-0.5 font-mono text-[10px] font-bold text-emerald-800 sm:inline-block shrink-0">
             {t('companyCode')}: {activeCompany.companyCode || '101'}
           </span>
         </div>
@@ -108,8 +104,8 @@ export const Navbar: React.FC<NavbarProps> = ({
       </div>
 
       {/* Right: Actions & Logged-in User Profile */}
-      <div className="flex items-center gap-2.5 sm:gap-3 shrink-0">
-        <button data-no-translate onClick={toggleLanguage} className="px-3 py-2 rounded-lg border border-slate-200 bg-white text-slate-700 text-xs font-bold hover:bg-slate-50">
+      <div className="flex items-center gap-1.5 sm:gap-2.5 lg:gap-3 shrink-0">
+        <button data-no-translate onClick={toggleLanguage} className="min-h-10 rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 sm:px-3">
           {t('language')}
         </button>
         
@@ -118,9 +114,9 @@ export const Navbar: React.FC<NavbarProps> = ({
           <button
             onClick={onOpenDbModal}
             title={t('databaseStatus')}
-            className="lg:hidden p-2 text-amber-700 bg-amber-50 hover:bg-amber-100 rounded-lg border border-amber-200 transition-colors cursor-pointer"
+            className="lg:hidden min-h-10 min-w-10 p-2 text-amber-700 bg-amber-50 hover:bg-amber-100 rounded-lg border border-amber-200 transition-colors cursor-pointer"
           >
-            <Database className="w-3.5 h-3.5" />
+            <Database className="w-4 h-4 mx-auto" />
           </button>
         )}
 
@@ -137,11 +133,11 @@ export const Navbar: React.FC<NavbarProps> = ({
 
         {/* Real Logged In User Pill */}
         {currentUser && (
-          <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-50 rounded-xl border border-slate-200">
+          <div className="hidden items-center gap-2 px-3 py-1.5 bg-slate-50 rounded-xl border border-slate-200 sm:flex">
             <div className="w-6 h-6 rounded-lg bg-emerald-600 text-white text-[11px] font-bold flex items-center justify-center">
               {currentUser.name.charAt(0)}
             </div>
-            <div className="hidden sm:block text-right">
+            <div className="hidden lg:block text-right">
               <div className="text-xs font-bold text-slate-900 leading-tight">
                 {currentUser.name}
               </div>
@@ -156,10 +152,10 @@ export const Navbar: React.FC<NavbarProps> = ({
         <button
           onClick={onLogout}
           title={t('logoutTitle')}
-          className="flex items-center gap-1 px-3 py-2 text-rose-600 hover:text-rose-700 hover:bg-rose-50 rounded-lg border border-rose-200 text-xs font-bold transition-colors cursor-pointer"
+          className="flex min-h-10 min-w-10 items-center justify-center gap-1 rounded-lg border border-rose-200 px-2 text-xs font-bold text-rose-600 transition-colors hover:bg-rose-50 hover:text-rose-700 sm:px-3 cursor-pointer"
         >
-          <LogOut className="w-3.5 h-3.5" />
-          <span className="hidden sm:inline">{t('logout')}</span>
+          <LogOut className="w-4 h-4" />
+          <span className="hidden lg:inline">{t('logout')}</span>
         </button>
 
         {/* Reset Data Button */}
@@ -167,9 +163,9 @@ export const Navbar: React.FC<NavbarProps> = ({
           <button
             onClick={onResetData}
             title={t('resetData')}
-            className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg border border-slate-200 transition-colors cursor-pointer"
+            className="hidden min-h-10 min-w-10 p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg border border-slate-200 transition-colors cursor-pointer sm:block"
           >
-            <RefreshCw className="w-3.5 h-3.5" />
+            <RefreshCw className="w-4 h-4 mx-auto" />
           </button>
         )}
       </div>
