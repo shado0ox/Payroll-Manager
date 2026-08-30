@@ -35,6 +35,14 @@ test('application audit history cannot be patched by clients', () => {
   assert.match(source, /next\.auditLogs = stored\?\.auditLogs \|\| \[\];/);
 });
 
+test('state writes append server-owned audit events inside the transaction', () => {
+  assert.match(source, /appendStateAudit/);
+  const putBlock = routeBlock('put', '/api/state', "app.patch('/api/state/patch'");
+  const patchBlock = routeBlock('patch', '/api/state/patch', "app.delete('/api/employees/:id'");
+  assert.match(putBlock, /appendStateAudit\(client, q, \{ companyIds:req\.user\.company_ids, user:req\.user, action:'STATE_REPLACE', version:r\.rows\[0\]\.version \}\);\s*await client\.query\('COMMIT'\)/);
+  assert.match(patchBlock, /appendStateAudit\(client, q, \{ companyIds:req\.user\.company_ids, user:req\.user, action:'STATE_PATCH', version:result\.rows\[0\]\.version \}\);\s*await client\.query\('COMMIT'\)/);
+});
+
 test('state user listing is limited to users in assigned companies', () => {
   const stateBlock = routeBlock('get', '/api/state', "app.put('/api/state'");
   assert.match(stateBlock, /visibleCompanyIds/);
