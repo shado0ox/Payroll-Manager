@@ -38,6 +38,54 @@ replaceOnce(
   'make admin audit history server-owned',
 );
 
+replaceOnce(
+  "  // Integration secrets must never be returned to the browser.\n  if (state.qoyodConfig && typeof state.qoyodConfig === 'object') {\n    state.qoyodConfig = { ...state.qoyodConfig, apiKey: '', apiKeyConfigured: Boolean(state.qoyodConfig.apiKey) };\n  }",
+  "  // Each company has its own Qoyod configuration. Only expose the active assigned company's public settings.\n  const integrationCompanyId = state.activeCompanyId && assigned.has(state.activeCompanyId)\n    ? state.activeCompanyId\n    : ([...assigned][0] || '');\n  if (integrationCompanyId) state.activeCompanyId = integrationCompanyId;\n  const activeQoyodConfig = state.qoyodConfigsByCompany?.[integrationCompanyId] || {};\n  delete state.qoyodConfigsByCompany;\n  state.qoyodConfig = { ...activeQoyodConfig, apiKey: '', apiKeyConfigured: Boolean(activeQoyodConfig.apiKey) };",
+  'expose only active company Qoyod config',
+);
+
+replaceOnce(
+  "  next.qoyodConfig = stored?.qoyodConfig || {};",
+  "  next.qoyodConfig = can(user, 'MANAGE_JOURNALS') ? (incoming?.qoyodConfig || {}) : {};",
+  'allow tenant manager to update own Qoyod config',
+);
+
+replaceOnce(
+  "  const qoyodConfig = state?.qoyodConfig && typeof state.qoyodConfig === 'object' ? state.qoyodConfig : {};",
+  "  const qoyodConfig = state?.qoyodConfig && typeof state.qoyodConfig === 'object' ? state.qoyodConfig : {};\n  const companyIdsForConfig = new Set(companies.map(company => String(company?.id || '')).filter(Boolean));\n  const requestedQoyodCompanyId = String(state?.activeCompanyId || '');\n  const qoyodCompanyId = companyIdsForConfig.has(requestedQoyodCompanyId)\n    ? requestedQoyodCompanyId\n    : (String(companies[0]?.id || ''));",
+  'derive Qoyod company from scoped state',
+);
+
+replaceOnce(
+  "  const { apiKey = '', apiKeyConfigured: _ignored, ...publicConfig } = qoyodConfig;\n  await client.query(`INSERT INTO ${q('integration_configs')} (provider,public_config,secret_value,updated_at)\n    VALUES ('QOYOD',$1::jsonb,$2,now())\n    ON CONFLICT (provider) DO UPDATE SET public_config=EXCLUDED.public_config,\n      secret_value=CASE WHEN EXCLUDED.secret_value <> '' THEN EXCLUDED.secret_value ELSE ${q('integration_configs')}.secret_value END,\n      updated_at=now()`, [JSON.stringify(publicConfig), String(apiKey || '')]);",
+  "  const { apiKey = '', apiKeyConfigured: _ignored, ...publicConfig } = qoyodConfig;\n  if (qoyodCompanyId) {\n    await client.query(`INSERT INTO ${q('integration_configs')} (company_id,provider,public_config,secret_value,updated_at)\n      VALUES ($1,'QOYOD',$2::jsonb,$3,now())\n      ON CONFLICT (company_id,provider) DO UPDATE SET public_config=EXCLUDED.public_config,\n        secret_value=CASE WHEN EXCLUDED.secret_value <> '' THEN EXCLUDED.secret_value ELSE ${q('integration_configs')}.secret_value END,\n        updated_at=now()`, [qoyodCompanyId, JSON.stringify(publicConfig), String(apiKey || '')]);\n  }",
+  'persist Qoyod config per company',
+);
+
+replaceOnce(
+  "    client.query(`SELECT public_config,secret_value FROM ${q('integration_configs')} WHERE provider='QOYOD'`),",
+  "    client.query(`SELECT company_id,public_config,secret_value FROM ${q('integration_configs')} WHERE provider='QOYOD'`),",
+  'hydrate company-scoped Qoyod configs',
+);
+
+replaceOnce(
+  "  if (integration.rowCount) {\n    state.qoyodConfig = { ...integration.rows[0].public_config, apiKey: integration.rows[0].secret_value || '' };\n  }",
+  "  state.qoyodConfigsByCompany = Object.fromEntries(integration.rows\n    .filter(row => row.company_id)\n    .map(row => [row.company_id, { ...row.public_config, apiKey: row.secret_value || '' }]));",
+  'store Qoyod configs by company server-side',
+);
+
+replaceOnce(
+  "  await pool.query(`CREATE TABLE IF NOT EXISTS ${q('integration_configs')} (\n    provider text PRIMARY KEY, public_config jsonb NOT NULL DEFAULT '{}'::jsonb, secret_value text NOT NULL DEFAULT '',\n    updated_at timestamptz NOT NULL DEFAULT now(), CHECK (provider IN ('QOYOD'))\n  )`);",
+  "  await pool.query(`CREATE TABLE IF NOT EXISTS ${q('integration_configs')} (\n    provider text PRIMARY KEY, public_config jsonb NOT NULL DEFAULT '{}'::jsonb, secret_value text NOT NULL DEFAULT '',\n    updated_at timestamptz NOT NULL DEFAULT now(), CHECK (provider IN ('QOYOD'))\n  )`);\n  await pool.query(`ALTER TABLE ${q('integration_configs')} ADD COLUMN IF NOT EXISTS company_id text`);\n  await pool.query(`UPDATE ${q('integration_configs')} SET company_id=$1 WHERE company_id IS NULL`, [process.env.COMPANY_ID]);\n  await pool.query(`ALTER TABLE ${q('integration_configs')} ALTER COLUMN company_id SET NOT NULL`);\n  const integrationPk = await pool.query(`SELECT pg_get_constraintdef(oid) definition FROM pg_constraint\n    WHERE conrelid=$1::regclass AND contype='p'`, [q('integration_configs')]);\n  if (integrationPk.rows[0]?.definition === 'PRIMARY KEY (provider)') {\n    await pool.query(`ALTER TABLE ${q('integration_configs')} DROP CONSTRAINT integration_configs_pkey`);\n  }\n  const integrationPkAfter = await pool.query(`SELECT 1 FROM pg_constraint WHERE conrelid=$1::regclass AND contype='p'`, [q('integration_configs')]);\n  if (!integrationPkAfter.rowCount) {\n    await pool.query(`ALTER TABLE ${q('integration_configs')} ADD CONSTRAINT integration_configs_pkey PRIMARY KEY (company_id,provider)`);\n  }",
+  'migrate integration configs to company scope',
+);
+
+replaceOnce(
+  "    const configResult = await pool.query(`SELECT public_config,secret_value FROM ${q('integration_configs')} WHERE provider='QOYOD'`);",
+  "    const configResult = await pool.query(`SELECT public_config,secret_value FROM ${q('integration_configs')} WHERE company_id=$1 AND provider='QOYOD'`, [companyId]);",
+  'use company Qoyod credential for journal sync',
+);
+
 const rawRuntimeWrites = `    await replaceNormalizedPayrollData(client, state);
     await replaceNormalizedOperationsData(client, state);
     await replaceNormalizedCoreData(client, state);`;
