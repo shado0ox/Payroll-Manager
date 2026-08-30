@@ -22,8 +22,8 @@ const replaceExactly = (from, to, expectedCount, label) => {
 
 replaceOnce(
   "import pg from 'pg';",
-  "import pg from 'pg';\nimport { createTenantScopedClient, scopeStateForCompanies } from './tenant-storage.mjs';",
-  'tenant storage import',
+  "import pg from 'pg';\nimport { createTenantScopedClient, scopeStateForCompanies } from './tenant-storage.mjs';\nimport { appendStateAudit } from './state-audit.mjs';",
+  'tenant storage and audit imports',
 );
 
 replaceOnce(
@@ -97,6 +97,18 @@ const runtimeWrites = `    const tenantCompanyIds = Array.isArray(req.user.compa
     await replaceNormalizedCoreData(tenantClient, scopedState);`;
 
 replaceExactly(rawRuntimeWrites, runtimeWrites, 2, 'tenant-scope PUT and PATCH writes');
+
+replaceOnce(
+  "    await client.query(`INSERT INTO ${q('app_state_migration_backups')} (source_version,state,reason)\n      SELECT $1,$2::jsonb,'Normalized storage baseline'\n      WHERE NOT EXISTS (SELECT 1 FROM ${q('app_state_migration_backups')})\n      ON CONFLICT (source_version) DO NOTHING`,\n      [r.rows[0].version, JSON.stringify(compatibilityState)]);\n    await client.query('COMMIT');",
+  "    await client.query(`INSERT INTO ${q('app_state_migration_backups')} (source_version,state,reason)\n      SELECT $1,$2::jsonb,'Normalized storage baseline'\n      WHERE NOT EXISTS (SELECT 1 FROM ${q('app_state_migration_backups')})\n      ON CONFLICT (source_version) DO NOTHING`,\n      [r.rows[0].version, JSON.stringify(compatibilityState)]);\n    await appendStateAudit(client, q, { companyIds:req.user.company_ids, user:req.user, action:'STATE_REPLACE', version:r.rows[0].version });\n    await client.query('COMMIT');",
+  'append server audit for state replace',
+);
+
+replaceOnce(
+  "    const result = await client.query(`UPDATE ${q('app_state')}\n      SET state=$1::jsonb,version=version+1,updated_by=$2,updated_at=now()\n      WHERE id=1 RETURNING version,updated_at`, [JSON.stringify(compatibilityState), req.user.id]);\n    await client.query('COMMIT');",
+  "    const result = await client.query(`UPDATE ${q('app_state')}\n      SET state=$1::jsonb,version=version+1,updated_by=$2,updated_at=now()\n      WHERE id=1 RETURNING version,updated_at`, [JSON.stringify(compatibilityState), req.user.id]);\n    await appendStateAudit(client, q, { companyIds:req.user.company_ids, user:req.user, action:'STATE_PATCH', version:result.rows[0].version });\n    await client.query('COMMIT');",
+  'append server audit for state patch',
+);
 
 replaceOnce(
   "    const existing = await pool.query(`SELECT id,password_hash FROM ${q('users')} WHERE id=$1`, [req.params.id]);",
