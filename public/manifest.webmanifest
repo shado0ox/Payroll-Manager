@@ -1,0 +1,29 @@
+{
+  "id": "/",
+  "name": "مسار للرواتب | Masar Payroll",
+  "short_name": "مسار",
+  "description": "نظام مسار لإدارة الرواتب والموظفين والحضور والعمليات المالية.",
+  "lang": "ar",
+  "dir": "rtl",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#071521",
+  "theme_color": "#071521",
+  "categories": ["business", "finance", "productivity"],
+  "icons": [
+    {
+      "src": "/masar-favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/masar-favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}
