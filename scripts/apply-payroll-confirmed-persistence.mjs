@@ -25,8 +25,8 @@ function replaceOnce(source, before, after, label) {
   fs.writeFileSync(appUrl, source);
 }
 
-// Make the callback contract explicit for the payroll screen. Existing callers may
-// ignore the Promise, but the parent only updates visible state after server success.
+// Make the callback contract explicit for the payroll screen and ensure a bank file
+// is never exported for a payment batch that the server failed to persist.
 {
   let source = fs.readFileSync(payrollUrl, 'utf8');
   source = replaceOnce(
@@ -34,6 +34,18 @@ function replaceOnce(source, before, after, label) {
     `  onSavePayrollRun: (run: PayrollRun) => void;`,
     `  onSavePayrollRun: (run: PayrollRun) => Promise<boolean>;`,
     'payroll callback contract'
+  );
+  source = replaceOnce(
+    source,
+    `  const handleCreatePaymentBatch = () => {`,
+    `  const handleCreatePaymentBatch = async () => {`,
+    'async payment batch creation'
+  );
+  source = replaceOnce(
+    source,
+    `    onSavePayrollRun(updatedRun);\n    if (batch.method !== 'CASH') exportBankPayrollXlsx(updatedRun, company, batch, employees);`,
+    `    const saved = await onSavePayrollRun(updatedRun);\n    if (!saved) return;\n    if (batch.method !== 'CASH') exportBankPayrollXlsx(updatedRun, company, batch, employees);`,
+    'bank export after confirmed save'
   );
   fs.writeFileSync(payrollUrl, source);
 }
