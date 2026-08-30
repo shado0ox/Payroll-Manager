@@ -46,3 +46,18 @@ test('user update checks existing target tenant scope', () => {
   assert.match(source, /SELECT id,password_hash,company_ids,role FROM/);
   assert.match(source, /targetOutsideScope/);
 });
+
+test('Qoyod credentials are stored and loaded per company', () => {
+  assert.match(source, /PRIMARY KEY \(company_id,provider\)/);
+  assert.match(source, /INSERT INTO .*integration_configs.*\(company_id,provider,public_config,secret_value,updated_at\)/s);
+  assert.match(source, /ON CONFLICT \(company_id,provider\)/);
+  assert.match(source, /SELECT company_id,public_config,secret_value FROM .*integration_configs.*WHERE provider='QOYOD'/s);
+  assert.match(source, /qoyodConfigsByCompany/);
+});
+
+test('Qoyod journal sync selects only the requested company credential', () => {
+  const block = routeBlock('post', '/api/integrations/qoyod/journal', "const root = path.resolve");
+  assert.match(block, /req\.user\.company_ids\.includes\(companyId\)/);
+  assert.match(block, /WHERE company_id=\$1 AND provider='QOYOD'/);
+  assert.match(block, /\[companyId\]/);
+});
