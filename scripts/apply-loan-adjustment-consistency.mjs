@@ -18,7 +18,7 @@ patchFile('src/App.tsx', (initial) => {
   source = replaceOnce(
     source,
     `    if (!Number.isFinite(amount) || amount === 0 || !reason.trim() || !date) return;`,
-    `    const adjustmentDate = new Date(\`${date}T00:00:00Z\`);\n    if (!Number.isFinite(amount) || amount === 0 || !reason.trim() || !/^\\d{4}-\\d{2}-\\d{2}$/.test(date)\n      || Number.isNaN(adjustmentDate.getTime()) || adjustmentDate.toISOString().slice(0, 10) !== date) return;`,
+    `    const adjustmentDate = new Date(\`\${date}T00:00:00Z\`);\n    if (!Number.isFinite(amount) || amount === 0 || !reason.trim() || !/^\\d{4}-\\d{2}-\\d{2}$/.test(date)\n      || Number.isNaN(adjustmentDate.getTime()) || adjustmentDate.toISOString().slice(0, 10) !== date) return;`,
     'frontend real date validation',
   );
   source = replaceOnce(
@@ -41,7 +41,7 @@ patchFile('server/index.mjs', (initial) => {
   source = replaceOnce(
     source,
     `  if (expectedBalance < 0 || Number(afterLoan.remainingAmount) !== expectedBalance) return false;\n  if (afterLoan.status !== beforeLoan.status && !(expectedBalance === 0 && afterLoan.status === 'COMPLETED')) return false;\n  adjustment.createdAt = new Date().toISOString();`,
-    `  if (expectedBalance < 0 || Number(afterLoan.remainingAmount) !== expectedBalance) return false;\n  const parsedAdjustmentDate = new Date(\`${adjustment.date}T00:00:00Z\`);\n  if (Number.isNaN(parsedAdjustmentDate.getTime()) || parsedAdjustmentDate.toISOString().slice(0, 10) !== adjustment.date) return false;\n  const installment = Number(beforeLoan.monthlyInstallment || 0);\n  const expectedRemainingInstallments = expectedBalance === 0\n    ? 0\n    : installment > 0 ? Math.ceil(expectedBalance / installment) : Number(beforeLoan.remainingInstallments || 0);\n  if (Number(afterLoan.remainingInstallments) !== expectedRemainingInstallments) return false;\n  const expectedStatus = expectedBalance === 0\n    ? 'COMPLETED'\n    : beforeLoan.status === 'COMPLETED' ? 'ACTIVE' : beforeLoan.status;\n  if (afterLoan.status !== expectedStatus) return false;\n  adjustment.createdAt = new Date().toISOString();`,
+    `  if (expectedBalance < 0 || Number(afterLoan.remainingAmount) !== expectedBalance) return false;\n  const parsedAdjustmentDate = new Date(\`\${adjustment.date}T00:00:00Z\`);\n  if (Number.isNaN(parsedAdjustmentDate.getTime()) || parsedAdjustmentDate.toISOString().slice(0, 10) !== adjustment.date) return false;\n  const installment = Number(beforeLoan.monthlyInstallment || 0);\n  const expectedRemainingInstallments = expectedBalance === 0\n    ? 0\n    : installment > 0 ? Math.ceil(expectedBalance / installment) : Number(beforeLoan.remainingInstallments || 0);\n  if (Number(afterLoan.remainingInstallments) !== expectedRemainingInstallments) return false;\n  const expectedStatus = expectedBalance === 0\n    ? 'COMPLETED'\n    : beforeLoan.status === 'COMPLETED' ? 'ACTIVE' : beforeLoan.status;\n  if (afterLoan.status !== expectedStatus) return false;\n  adjustment.createdAt = new Date().toISOString();`,
     'server validate derived schedule and status',
   );
   return source;
