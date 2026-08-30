@@ -90,19 +90,17 @@ patchFile('src/App.tsx', (initial) => {
   return source;
 });
 
-patchFile('scripts/apply-payroll-server-authorization.mjs', (initial) => {
+patchFile('server/index.mjs', (initial) => {
   let source = initial;
-  const mergeAnchor = `const mergeAnchor = \`function mergeStateForUser(stored, incoming, user) {\`;`;
-  const validator = `\nconst lockedInputHelperAnchor = \`function validatePayrollWorkflowChanges(storedRuns, incomingRuns, user) {\`;\nconst lockedInputHelper = \`const hasOwn = (obj, key) => Object.prototype.hasOwnProperty.call(obj || {}, key);\nconst closedRunsFor = (stored, companyId) => asArray(stored?.payrollRuns).filter(run => run.companyId === companyId && ['APPROVED','POSTED'].includes(run.status));\nconst lockedInput = (stored, kind, record) => closedRunsFor(stored, record.companyId).some(run => {\n  const item = asArray(run.items).find(candidate => candidate.employeeId === record.employeeId);\n  if (!item) return false;\n  if (kind === 'attendance') return run.periodMonth === record.periodMonth;\n  if (kind === 'penalty') return run.periodMonth === record.periodMonth && Number(item.penaltiesDeduction || 0) !== 0;\n  if (kind === 'earning') return run.periodMonth === record.periodMonth && Number(item.bonuses || 0) !== 0;\n  return run.periodMonth >= record.startDate && Number(item.loanDeduction || 0) !== 0;\n});\nconst changedRows = (beforeRows, afterRows) => {\n  const before = new Map(asArray(beforeRows).map(row => [row.id, row]));\n  const after = new Map(asArray(afterRows).map(row => [row.id, row]));\n  const changed = [];\n  for (const [id, row] of before) {\n    const next = after.get(id);\n    if (!next || !sameJson(row, next)) changed.push(row);\n  }\n  for (const [id, row] of after) if (!before.has(id)) changed.push(row);\n  return changed;\n};\nfunction validateClosedPayrollInputs(stored, incoming) {\n  const checks = [\n    ['attendance', 'attendance'],\n    ['loans', 'loan'],\n    ['penalties', 'penalty'],\n    ['temporaryEarnings', 'earning'],\n  ];\n  for (const [key, kind] of checks) {\n    if (!hasOwn(incoming, key)) continue;\n    for (const row of changedRows(stored?.[key], incoming?.[key])) {\n      if (lockedInput(stored, kind, row)) throw workflowError(409, 'PAYROLL_SOURCE_ENTRY_LOCKED');\n    }\n  }\n}\n\n\${lockedInputHelperAnchor}\`;\nreplaceOnce(lockedInputHelperAnchor, lockedInputHelper, 'closed payroll input protection helper');\n`;
-  if (!source.includes('validateClosedPayrollInputs(stored, incoming);')) {
-    source = replaceOnce(source, mergeAnchor, `${validator}\n${mergeAnchor}`, 'server closed input helper injection');
-    source = replaceOnce(
-      source,
-      `  \`${mergeAnchor}\\n  validatePayrollWorkflowChanges(stored?.payrollRuns, incoming?.payrollRuns, user);\`,`,
-      `  \`${mergeAnchor}\\n  validateClosedPayrollInputs(stored, incoming);\\n  validatePayrollWorkflowChanges(stored?.payrollRuns, incoming?.payrollRuns, user);\`,`,
-      'server closed input validation call',
-    );
-  }
+  if (source.includes('function validateClosedPayrollInputs(stored, incoming)')) return source;
+
+  const workflowAnchor = `function validatePayrollWorkflowChanges(storedRuns, incomingRuns, user) {`;
+  const helper = `const hasOwnPayrollInputKey = (obj, key) => Object.prototype.hasOwnProperty.call(obj || {}, key);\nconst closedRunsForInput = (stored, companyId) => asArray(stored?.payrollRuns).filter(run => run.companyId === companyId && ['APPROVED','POSTED'].includes(run.status));\nconst payrollSourceLocked = (stored, kind, record) => closedRunsForInput(stored, record.companyId).some(run => {\n  const item = asArray(run.items).find(candidate => candidate.employeeId === record.employeeId);\n  if (!item) return false;\n  if (kind === 'attendance') return run.periodMonth === record.periodMonth;\n  if (kind === 'penalty') return run.periodMonth === record.periodMonth && Number(item.penaltiesDeduction || 0) !== 0;\n  if (kind === 'earning') return run.periodMonth === record.periodMonth && Number(item.bonuses || 0) !== 0;\n  return run.periodMonth >= record.startDate && Number(item.loanDeduction || 0) !== 0;\n});\nconst changedPayrollSourceRows = (beforeRows, afterRows) => {\n  const before = new Map(asArray(beforeRows).map(row => [row.id, row]));\n  const after = new Map(asArray(afterRows).map(row => [row.id, row]));\n  const changed = [];\n  for (const [id, row] of before) {\n    const next = after.get(id);\n    if (!next || !sameJson(row, next)) changed.push(row);\n  }\n  for (const [id, row] of after) if (!before.has(id)) changed.push(row);\n  return changed;\n};\nfunction validateClosedPayrollInputs(stored, incoming) {\n  const checks = [\n    ['attendance', 'attendance'],\n    ['loans', 'loan'],\n    ['penalties', 'penalty'],\n    ['temporaryEarnings', 'earning'],\n  ];\n  for (const [key, kind] of checks) {\n    if (!hasOwnPayrollInputKey(incoming, key)) continue;\n    for (const row of changedPayrollSourceRows(stored?.[key], incoming?.[key])) {\n      if (payrollSourceLocked(stored, kind, row)) throw workflowError(409, 'PAYROLL_SOURCE_ENTRY_LOCKED');\n    }\n  }\n}\n\n${workflowAnchor}`;
+  source = replaceOnce(source, workflowAnchor, helper, 'server closed input helper');
+
+  const mergeAnchor = `function mergeStateForUser(stored, incoming, user) {\n  validatePayrollWorkflowChanges(stored?.payrollRuns, incoming?.payrollRuns, user);`;
+  const mergeWithInputValidation = `function mergeStateForUser(stored, incoming, user) {\n  validateClosedPayrollInputs(stored, incoming);\n  validatePayrollWorkflowChanges(stored?.payrollRuns, incoming?.payrollRuns, user);`;
+  source = replaceOnce(source, mergeAnchor, mergeWithInputValidation, 'server closed input validation call');
   return source;
 });
 
