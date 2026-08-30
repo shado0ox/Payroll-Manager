@@ -1,5 +1,51 @@
 @import "tailwindcss";
 
+:root {
+  color-scheme: light;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  min-width: 0;
+  min-height: 100%;
+  margin: 0;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  background: #f8fafc;
+}
+
+body {
+  min-height: 100dvh;
+  overflow: hidden;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+img,
+svg,
+video,
+canvas {
+  max-width: 100%;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
 html[dir="ltr"] .space-x-reverse {
   --tw-space-x-reverse: 0;
 }
@@ -8,7 +54,82 @@ html[dir="ltr"] .text-right {
   text-align: left;
 }
 
+/* Smooth horizontal scrolling for wide payroll/report tables on touch screens. */
+.overflow-x-auto,
+.masar-mobile-nav {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-inline: contain;
+}
+
+.masar-mobile-nav {
+  scrollbar-width: none;
+}
+
+.masar-mobile-nav::-webkit-scrollbar {
+  display: none;
+}
+
+/* PWA/mobile safe areas and comfortable touch behaviour. */
+@media (max-width: 767px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+
+  button,
+  a,
+  input,
+  select,
+  textarea {
+    touch-action: manipulation;
+  }
+
+  /* The mobile navigation is fixed at the bottom. Keep the last rows/buttons visible above it. */
+  #root > div > main > .flex-1.overflow-y-auto {
+    padding: 1rem !important;
+    padding-bottom: calc(6.75rem + env(safe-area-inset-bottom)) !important;
+  }
+
+  /* Prevent wide content cards/tables from forcing the entire application off-screen. */
+  #root main,
+  #root main > *,
+  #root section,
+  #root article {
+    min-width: 0;
+  }
+
+  table {
+    white-space: nowrap;
+  }
+}
+
+@media (min-width: 768px) and (max-width: 1023px) {
+  #root > div > main > .flex-1.overflow-y-auto {
+    padding: 1.5rem !important;
+  }
+}
+
+@media (display-mode: standalone) {
+  body {
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  input,
+  textarea,
+  [contenteditable="true"] {
+    user-select: text;
+    -webkit-user-select: text;
+  }
+}
+
 .masar-login {
+  min-height: 100dvh;
+  padding-top: env(safe-area-inset-top);
+  padding-right: env(safe-area-inset-right);
+  padding-bottom: env(safe-area-inset-bottom);
+  padding-left: env(safe-area-inset-left);
   background: radial-gradient(circle at 18% 12%, rgba(16,185,129,.1), transparent 29rem), linear-gradient(145deg,#06101c 0%,#081421 52%,#07111d 100%);
 }
 .masar-grid {
@@ -34,4 +155,12 @@ html[dir="ltr"] .text-right {
 .masar-coin-four { --coin-size:54px; left:17%; bottom:49%; animation-delay:-5.8s; }
 .masar-coin-five { --coin-size:48px; left:56%; bottom:17%; animation-delay:-.3s; opacity:.72; }
 @keyframes masar-float { 0%,100% { transform:translate3d(0,0,0) rotate(-3deg); } 50% { transform:translate3d(0,-18px,0) rotate(4deg); } }
+
+@media (max-width: 640px) {
+  .masar-currency-stage,
+  .masar-orbit {
+    display: none;
+  }
+}
+
 @media (prefers-reduced-motion:reduce) { .masar-coin { animation:none; } }

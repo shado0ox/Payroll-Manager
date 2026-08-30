@@ -114,9 +114,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const avatarLetter = currentUser?.name ? currentUser.name.charAt(0) : (language === 'ar' ? 'م' : 'U');
 
   return (
-    <aside className="w-64 bg-[#1e293b] text-white flex flex-col shadow-xl shrink-0 h-screen sticky top-0">
-      {/* Brand Header */}
-      <div className="p-5 border-b border-slate-700/80">
+    <aside className="fixed inset-x-0 bottom-0 z-50 flex h-auto w-full shrink-0 flex-row border-t border-slate-700/80 bg-[#1e293b] text-white shadow-2xl md:sticky md:top-0 md:z-auto md:h-screen md:w-64 md:flex-col md:border-t-0 md:shadow-xl">
+      {/* Brand Header: desktop only. On phones the bottom navigation keeps the workspace wide. */}
+      <div className="hidden border-b border-slate-700/80 p-5 md:block">
         <div className="flex items-center gap-3">
           {company?.logo ? (
             <div className="w-10 h-10 rounded-xl bg-white p-1 border border-slate-600 shadow-sm flex items-center justify-center shrink-0 overflow-hidden">
@@ -142,8 +142,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </div>
       </div>
 
-      {/* Navigation */}
-      <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
+      {/* Navigation: vertical on desktop, horizontally scrollable bottom bar on mobile. */}
+      <nav className="masar-mobile-nav flex min-w-0 flex-1 gap-1 overflow-x-auto px-2 pb-[calc(.5rem+env(safe-area-inset-bottom))] pt-2 md:block md:space-y-1 md:overflow-y-auto md:p-4">
         {visibleNavItems.map((item) => {
           const Icon = item.icon;
           const isActive = activeTab === item.id;
@@ -152,27 +152,30 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <button
               key={item.id}
               onClick={() => onTabChange(item.id)}
-              className={`w-full flex items-center justify-between p-3 rounded-lg text-sm transition-colors text-right cursor-pointer ${
+              title={item.label}
+              aria-current={isActive ? 'page' : undefined}
+              className={`flex min-w-[76px] flex-col items-center justify-center gap-1 rounded-xl px-2 py-2 text-center text-[10px] transition-colors cursor-pointer md:w-full md:min-w-0 md:flex-row md:justify-between md:p-3 md:text-right md:text-sm ${
                 isActive
                   ? 'bg-emerald-600 text-white font-medium shadow-sm'
                   : 'text-slate-300 hover:bg-slate-800 hover:text-white'
               }`}
             >
-              <div className="flex items-center space-x-3 space-x-reverse min-w-0">
+              <div className="flex min-w-0 flex-col items-center gap-1 md:flex-row md:space-x-3 md:space-x-reverse">
+                <Icon className="h-5 w-5 shrink-0 md:hidden" />
                 <span 
-                  className={`w-2 h-2 rounded-full shrink-0 ${
+                  className={`hidden w-2 h-2 rounded-full shrink-0 md:block ${
                     isActive ? 'bg-white' : 'bg-slate-500'
                   }`} 
                 />
-                <span className="truncate">{item.label}</span>
+                <span className="max-w-[72px] truncate md:max-w-none">{item.label}</span>
               </div>
             </button>
           );
         })}
       </nav>
 
-      {/* User Profile Footer */}
-      <div className="p-4 border-t border-slate-700/80 bg-[#1e293b] space-y-2.5">
+      {/* User Profile Footer: desktop only; mobile uses the top navbar for session actions. */}
+      <div className="hidden p-4 border-t border-slate-700/80 bg-[#1e293b] space-y-2.5 md:block">
         <div className="flex items-center justify-between p-2.5 bg-slate-800/90 rounded-xl border border-slate-700/60">
           <div className="flex items-center min-w-0">
             <div className="w-8 h-8 rounded-lg bg-emerald-500 flex items-center justify-center font-bold text-white shrink-0 shadow-sm text-xs">
