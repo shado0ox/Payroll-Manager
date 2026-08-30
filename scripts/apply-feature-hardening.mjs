@@ -8,3 +8,4 @@ import './apply-payroll-roundtrip-compat.mjs';
 import './apply-payroll-input-locks.mjs';
 import './apply-loan-adjustments.mjs';
 import './apply-granular-payroll-permissions.mjs';
+import './apply-stable-routing.mjs';
