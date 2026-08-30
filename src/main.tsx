@@ -13,3 +13,11 @@ createRoot(document.getElementById('root')!).render(
     <LanguageProvider><App /></LanguageProvider>
   </StrictMode>,
 );
+
+// Keep PWA support isolated from development/AI Studio previews.
+// The worker never caches API requests or authentication responses.
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/service-worker.js').catch(() => undefined);
+  });
+}
