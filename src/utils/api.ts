@@ -13,7 +13,7 @@ async function request<T>(url: string, options: RequestInit = {}): Promise<T> {
 
 let stateVersion = 0;
 let syncedState: Record<string, any> | null = null;
-const MUTABLE_COLLECTIONS = ['companies', 'employees', 'attendance', 'loans', 'penalties', 'temporaryEarnings', 'leaves', 'payrollRuns', 'journals', 'auditLogs'] as const;
+const MUTABLE_COLLECTIONS = ['companies', 'employees', 'attendance', 'loans', 'penalties', 'temporaryEarnings', 'leaves', 'payrollRuns', 'journals'] as const;
 
 function cloneState<T>(value: T): T {
   return value == null ? value : structuredClone(value);
