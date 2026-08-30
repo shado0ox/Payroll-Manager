@@ -1,10 +1,15 @@
 import assert from 'node:assert/strict';
+import pg from 'pg';
 
+const { Pool } = pg;
 const baseUrl = process.env.CI_BASE_URL || 'http://127.0.0.1:3034';
 const adminUsername = process.env.ADMIN_USERNAME || 'admin';
 const adminPassword = process.env.ADMIN_PASSWORD || 'TestAdmin1!';
 const companyCode = process.env.COMPANY_CODE || '101';
 const companyId = process.env.COMPANY_ID || 'comp-1';
+const schema = process.env.DB_SCHEMA || 'masar_payroll';
+
+if (!/^[a-z_][a-z0-9_]*$/.test(schema)) throw new Error('DB_SCHEMA is invalid');
 
 let cookie = '';
 let version = 0;
@@ -40,6 +45,24 @@ async function loadState() {
   return body.state;
 }
 
+async function initializeCompatibilityStateIfMissing() {
+  const pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: false });
+  try {
+    const existing = await pool.query(`SELECT 1 FROM "${schema}".app_state WHERE id=1`);
+    if (!existing.rowCount) {
+      // A production database already has app_state. The CI database is intentionally
+      // brand new, so seed only the empty compatibility envelope and let the server
+      // hydrate the bootstrap company/user from normalized tables.
+      await pool.query(
+        `INSERT INTO "${schema}".app_state (id,state,version) VALUES (1,$1::jsonb,0)`,
+        [JSON.stringify({ companies: [], employees: [], payrollRuns: [], attendance: [], leaves: [], loans: [], penalties: [], temporaryEarnings: [], journals: [], auditLogs: [] })],
+      );
+    }
+  } finally {
+    await pool.end();
+  }
+}
+
 async function patchCollections(collections) {
   const { body } = await request('/api/state/patch', {
     method: 'PATCH',
@@ -53,6 +76,7 @@ function findRun(state, id) {
 }
 
 await waitForHealth();
+await initializeCompatibilityStateIfMissing();
 
 const login = await request('/api/auth/login', {
   method: 'POST',
