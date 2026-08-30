@@ -1,0 +1,21 @@
+{
+  "name": "مسار للرواتب | Masar Payroll",
+  "short_name": "Masar",
+  "description": "نظام مسار لإدارة الرواتب والموظفين",
+  "lang": "ar",
+  "dir": "rtl",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#071521",
+  "theme_color": "#059669",
+  "icons": [
+    {
+      "src": "/masar-favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
