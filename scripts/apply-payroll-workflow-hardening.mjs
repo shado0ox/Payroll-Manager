@@ -20,6 +20,8 @@ function replaceOnce(source, before, after, label) {
 }
 
 // 2) User administration: editing permissions must never reuse or require the employee password.
+// New-user fields must also not invite the browser/password manager to inject the
+// currently signed-in administrator credentials into the username/password hints.
 {
   let source = fs.readFileSync(files.users, 'utf8');
   source = replaceOnce(
@@ -33,6 +35,24 @@ function replaceOnce(source, before, after, label) {
     `      password: formData.password,`,
     `      password: editingUser ? '' : formData.password,`,
     'do not send password on edit'
+  );
+  source = replaceOnce(
+    source,
+    `                    placeholder={language === 'ar' ? 'مثال: ahmed_hr' : 'Example: ahmed_hr'}\n                    className=`,
+    `                    placeholder={language === 'ar' ? 'أدخل اسم مستخدم جديد' : 'Enter a new username'}\n                    autoComplete="off"\n                    name="new-user-username"\n                    className=`,
+    'neutral username hint and disable admin autofill'
+  );
+  source = replaceOnce(
+    source,
+    `                {/* Password */}\n                <div>\n                  <label className="block text-xs font-bold text-slate-700 mb-1">\n                    {language === 'ar' ? 'كلمة المرور' : 'Password'} <span className="text-rose-500">*</span>\n                  </label>\n                  <div className="relative">\n                    <input\n                      type={showPassword ? 'text' : 'password'}\n                      required\n                      value={formData.password}\n                      onChange={(e) => setFormData({ ...formData, password: e.target.value })}\n                      placeholder={language === 'ar' ? 'كلمة المرور' : 'Password'}\n                      className="w-full pl-8 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 font-mono focus:bg-white focus:outline-none focus:border-emerald-500"\n                      dir="ltr"\n                    />\n                    <button\n                      type="button"\n                      onClick={() => setShowPassword(!showPassword)}\n                      className="absolute left-2.5 top-2.5 text-slate-400 hover:text-slate-600 cursor-pointer"\n                    >\n                      {showPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}\n                    </button>\n                  </div>\n                </div>`,
+    `                {/* Password is only set when creating a user. Existing users reset it from the login screen. */}\n                {!editingUser && <div>\n                  <label className="block text-xs font-bold text-slate-700 mb-1">\n                    {language === 'ar' ? 'كلمة المرور' : 'Password'} <span className="text-rose-500">*</span>\n                  </label>\n                  <div className="relative">\n                    <input\n                      type={showPassword ? 'text' : 'password'}\n                      required\n                      value={formData.password}\n                      onChange={(e) => setFormData({ ...formData, password: e.target.value })}\n                      placeholder={language === 'ar' ? 'أنشئ كلمة مرور جديدة' : 'Create a new password'}\n                      autoComplete="new-password"\n                      name="new-user-password"\n                      className="w-full pl-8 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 font-mono focus:bg-white focus:outline-none focus:border-emerald-500"\n                      dir="ltr"\n                    />\n                    <button\n                      type="button"\n                      onClick={() => setShowPassword(!showPassword)}\n                      className="absolute left-2.5 top-2.5 text-slate-400 hover:text-slate-600 cursor-pointer"\n                    >\n                      {showPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}\n                    </button>\n                  </div>\n                </div>}`,
+    'hide password on edit and use new-password autocomplete'
+  );
+  source = replaceOnce(
+    source,
+    `title={language === 'ar' ? 'تعديل بيانات المستخدم وكلمة المرور' : 'Edit user details and password'}`,
+    `title={language === 'ar' ? 'تعديل بيانات المستخدم والصلاحيات' : 'Edit user details and permissions'}`,
+    'remove password-reset implication from edit action'
   );
   fs.writeFileSync(files.users, source);
 }
