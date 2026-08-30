@@ -6,3 +6,4 @@ import './apply-password-reset-safety.mjs';
 import './apply-payroll-server-authorization.mjs';
 import './apply-payroll-roundtrip-compat.mjs';
 import './apply-payroll-input-locks.mjs';
+import './apply-loan-adjustments.mjs';
