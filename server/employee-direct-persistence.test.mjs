@@ -16,10 +16,11 @@ function routeBlock(method, route, nextRouteMarker) {
   return serverSource.slice(start, end);
 }
 
-test('employee save uses a dedicated server endpoint', () => {
-  assert.match(apiSource, /saveEmployee:\s*\(employee:any\).*\/api\/employees\/\$\{encodeURIComponent\(employee\.id\)\}.*method:'PUT'/s);
+test('employee save uses a dedicated server endpoint and committed response', () => {
+  assert.match(apiSource, /saveEmployee:\s*async\s*\(employee:any\).*\/api\/employees\/\$\{encodeURIComponent\(employee\.id\)\}.*method:'PUT'/s);
+  assert.match(apiSource, /stateVersion = result\.version/);
   assert.match(appSource, /await api\.saveEmployee\(employee\)/);
-  assert.match(appSource, /EMPLOYEE_SAVE_NOT_CONFIRMED/);
+  assert.match(appSource, /EMPLOYEE_DIRECT_SAVE_FAILED/);
   assert.match(employeesViewSource, /await onSaveEmployee\(/);
 });
 
