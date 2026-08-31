@@ -23,5 +23,23 @@ if (identityMatches.length !== 1) {
 }
 
 source = source.slice(0, processedStart) + block + source.slice(processedEnd);
+
+const requiredIbanBlock = `                    <input\n                      type="text"\n                      required\n                      placeholder="SAXXXXXXXXXXXXXXXXXXXXXXXX"`;
+const optionalIbanBlock = `                    <input\n                      type="text"\n                      placeholder="SAXXXXXXXXXXXXXXXXXXXXXXXX"`;
+if (!source.includes(requiredIbanBlock) && !source.includes(optionalIbanBlock)) {
+  throw new Error('Employee IBAN input anchor not found');
+}
+source = source.replace(requiredIbanBlock, optionalIbanBlock);
+source = source.replace(
+  `{language === 'ar' ? 'رقم الآيبان (IBAN) *' : 'IBAN *'}`,
+  `{language === 'ar' ? 'رقم الآيبان (IBAN) — اختياري عند التسجيل' : 'IBAN — optional at registration'}`
+);
+
+const ibanInputStart = source.indexOf('placeholder="SAXXXXXXXXXXXXXXXXXXXXXXXX"');
+const ibanNearby = source.slice(Math.max(0, ibanInputStart - 120), ibanInputStart + 120);
+if (ibanInputStart < 0 || /\brequired\b/.test(ibanNearby)) {
+  throw new Error('Employee IBAN input is still required');
+}
+
 fs.writeFileSync(path, source);
-console.log('Employee add wizard duplicate identity property removed.');
+console.log('Employee add wizard cleanup applied; IBAN remains optional at registration.');
