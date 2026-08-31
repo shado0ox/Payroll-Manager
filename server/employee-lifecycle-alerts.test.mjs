@@ -9,7 +9,7 @@ test('employee lifecycle policy keeps the approved 30/60/90 day thresholds', () 
   assert.match(lifecycle, /remaining <= 30/);
   assert.match(lifecycle, /remaining <= 60/);
   assert.match(lifecycle, /addCalendarDays\(employee\.entryDate, 90\)/);
-  assert.match(lifecycle, /remaining <= 7/);
+  assert.match(lifecycle, /daysRemaining <= 7/);
   assert.match(lifecycle, /remaining <= 15/);
 });
 
