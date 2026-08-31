@@ -13,3 +13,4 @@ import './apply-server-owned-financial-audit.mjs';
 import './apply-loan-adjustment-consistency.mjs';
 import './apply-full-year-payroll-periods.mjs';
 import './apply-employee-lifecycle-model.mjs';
+import './apply-employee-lifecycle-ui.mjs';
