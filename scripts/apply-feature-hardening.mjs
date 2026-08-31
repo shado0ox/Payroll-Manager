@@ -20,6 +20,7 @@ import './apply-employee-onboarding-corrections.mjs';
 import './apply-employee-add-wizard.mjs';
 import './apply-employee-add-wizard-dedup.mjs';
 import './apply-lifecycle-dashboard-drilldown-v2.mjs';
+import './apply-dashboard-login-polish.mjs';
 import './apply-employee-lifecycle-email.mjs';
 import './apply-employee-lifecycle-email-syntax-fix.mjs';
 import './apply-held-payroll-entitlements.mjs';
