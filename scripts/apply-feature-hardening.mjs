@@ -16,6 +16,7 @@ import './apply-employee-lifecycle-model.mjs';
 import './apply-employee-lifecycle-ui.mjs';
 import './apply-employee-onboarding-form-v2.mjs';
 import './apply-employee-lifecycle-legacy-compat.mjs';
+import './apply-employee-onboarding-corrections.mjs';
 import './apply-lifecycle-dashboard-drilldown-v2.mjs';
 import './apply-employee-lifecycle-email.mjs';
 import './apply-employee-lifecycle-email-syntax-fix.mjs';
