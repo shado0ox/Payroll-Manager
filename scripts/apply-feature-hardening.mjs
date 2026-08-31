@@ -16,3 +16,4 @@ import './apply-employee-lifecycle-model.mjs';
 import './apply-employee-lifecycle-ui.mjs';
 import './apply-employee-lifecycle-email.mjs';
 import './apply-employee-lifecycle-email-syntax-fix.mjs';
+import './apply-held-payroll-entitlements.mjs';
