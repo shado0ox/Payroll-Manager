@@ -15,6 +15,7 @@ import './apply-full-year-payroll-periods.mjs';
 import './apply-employee-lifecycle-model.mjs';
 import './apply-employee-lifecycle-ui.mjs';
 import './apply-employee-onboarding-form-v2.mjs';
+import './apply-lifecycle-dashboard-drilldown.mjs';
 import './apply-employee-lifecycle-email.mjs';
 import './apply-employee-lifecycle-email-syntax-fix.mjs';
 import './apply-held-payroll-entitlements.mjs';
