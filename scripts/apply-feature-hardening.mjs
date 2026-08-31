@@ -29,3 +29,4 @@ import './apply-payroll-carryforward-server-validation.mjs';
 import './apply-employee-save-confirmation-dashboard-v2.mjs';
 import './apply-employee-direct-persistence.mjs';
 import './apply-onboarding-status-db-constraint.mjs';
+import './apply-employee-save-speed-legacy-compat.mjs';
