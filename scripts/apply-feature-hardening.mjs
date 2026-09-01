@@ -43,3 +43,5 @@ import './apply-editable-deduction-period.mjs';
 import './apply-payment-selection-prior-balance.mjs';
 
 import './apply-loan-payoff-month-filters.mjs';
+
+import './apply-onboarding-employee-activation.mjs';
