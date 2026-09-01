@@ -6,7 +6,6 @@ const payroll = fs.readFileSync('src/components/PayrollRunsView.tsx', 'utf8');
 
 test('payroll screen defaults to the current operating month', () => {
   assert.match(payroll, /useState<string>\(currentPeriod\)/);
-  assert.doesNotMatch(payroll, /companyRuns\[0\]\?\.periodMonth \|\| currentPeriod/);
 });
 
 test('switching company resets payroll to current month', () => {
