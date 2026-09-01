@@ -146,7 +146,9 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
 
   // Active selected run
   const currentRun = useMemo(() => {
-    return companyRuns.find(r => r.periodMonth === selectedPeriod) || companyRuns[0];
+    // A missing period is a new run. Reusing a different period's id makes the
+    // normalized database reject the resulting duplicate company/month state.
+    return companyRuns.find(r => r.periodMonth === selectedPeriod);
   }, [companyRuns, selectedPeriod]);
 
   const companyEmployees = useMemo(() => {
@@ -942,9 +944,14 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
                         <div className="min-w-0 grow">
                           <div className="font-bold text-slate-900 flex items-center gap-1 truncate">
                             <span className="truncate">{item.employeeName}</span>
-                            {item.nationality === 'SAUDI' && (
-                              <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${item.gosiEnabled === false ? 'bg-slate-300' : 'bg-emerald-500'}`} title={item.gosiEnabled === false ? tr('سعودي غير خاضع للتأمينات', 'Saudi employee not subject to GOSI') : `${tr('موظف', 'Employee')} ${((item.gosiEmployeeRate || 0) * 100).toFixed(2)}% / ${tr('شركة', 'Employer')} ${((item.gosiEmployerRate || 0) * 100).toFixed(2)}%`} />
-                            )}
+                            <span
+                              className={`w-1.5 h-1.5 rounded-full shrink-0 ${item.gosiEnabled === false ? 'bg-slate-300' : 'bg-emerald-500'}`}
+                              title={item.gosiEnabled === false
+                                ? tr('غير خاضع للتأمينات', 'Not subject to GOSI')
+                                : item.nationality === 'SAUDI'
+                                  ? `${tr('موظف', 'Employee')} ${((item.gosiEmployeeRate || 0) * 100).toFixed(2)}% / ${tr('شركة', 'Employer')} ${((item.gosiEmployerRate || 0) * 100).toFixed(2)}%`
+                                  : tr('غير سعودي: المخاطر المهنية على الشركة فقط', 'Non-Saudi: occupational hazards paid by employer only')}
+                            />
                           </div>
                           <div className="text-[10px] text-slate-400 font-mono">{item.employeeNo}</div>
                           {paymentBatch ? (
@@ -1018,6 +1025,10 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
                     <td className="py-2.5 px-1.5 text-slate-700 font-medium whitespace-nowrap">
                       {item.gosiEmployeeShare > 0 ? (
                         formatSAR(item.gosiEmployeeShare)
+                      ) : item.nationality === 'NON_SAUDI' && item.gosiEnabled !== false && item.gosiEmployerShare > 0 ? (
+                        <span className="text-[9px] font-bold text-purple-700" title={tr('لا يخصم من الموظف؛ حصة المخاطر المهنية تتحملها الشركة', 'No employee deduction; occupational hazards are employer-paid')}>
+                          {tr('على الشركة فقط', 'Employer only')}
+                        </span>
                       ) : (
                         <span className="text-slate-300">-</span>
                       )}
