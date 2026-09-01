@@ -18,7 +18,7 @@ replaceOnce(
 replaceOnce(
   `  const currentPeriod = new Date().toISOString().slice(0, 7);`,
   `  const currentDate = new Date();
-  const currentPeriod = \`${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}\`;`,
+  const currentPeriod = \`\${currentDate.getFullYear()}-\${String(currentDate.getMonth() + 1).padStart(2, '0')}\`;`,
   'local current period',
 );
 
