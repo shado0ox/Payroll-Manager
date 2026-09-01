@@ -6,6 +6,7 @@ const payroll = fs.readFileSync('src/components/PayrollRunsView.tsx', 'utf8');
 const app = fs.readFileSync('src/App.tsx', 'utf8');
 const hardening = fs.readFileSync('scripts/apply-feature-hardening.mjs', 'utf8');
 
+// Regression coverage for production carry-forward and posting refresh behavior.
 test('paid historical payroll periods are removed from carried balance before payment', () => {
   assert.match(payroll, /const priorPeriodTransferred = \(employeeId: string, periodMonth: string\)/);
   assert.match(payroll, /run\.periodMonth === periodMonth/);
