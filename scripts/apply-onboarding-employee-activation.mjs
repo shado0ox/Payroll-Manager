@@ -86,11 +86,8 @@ source = replaceOnce(
 
 source = replaceOnce(
   source,
-  `            <form onSubmit={handleFormSubmit} className="p-6 space-y-5 max-h-[80vh] overflow-y-auto">
-              
-              {/* Section 1: Basic Identity */}`,
-  `            <form onSubmit={handleFormSubmit} className="p-6 space-y-5 max-h-[80vh] overflow-y-auto">
-              {isCompletingOnboarding && (
+  `              {/* Section 1: Basic Identity */}`,
+  `              {isCompletingOnboarding && (
                 <div data-onboarding-activation className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-xs text-emerald-900">
                   <div className="flex items-center gap-2 font-black"><UserCheck className="h-4 w-4" />{language === 'ar' ? 'استكمال بيانات الإقامة وتفعيل الموظف' : 'Complete Iqama details and activate employee'}</div>
                   <p className="mt-1 text-[11px]">{language === 'ar' ? 'أدخل رقم الإقامة الجديد والآيبان السعودي الصحيح. عند الحفظ ستتغير الحالة تلقائيًا إلى نشط.' : 'Enter the new Iqama number and a valid Saudi IBAN. Saving will automatically set the employee to Active.'}</p>
