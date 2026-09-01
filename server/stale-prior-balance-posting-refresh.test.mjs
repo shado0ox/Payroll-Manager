@@ -5,6 +5,7 @@ import fs from 'node:fs';
 const payroll = fs.readFileSync('src/components/PayrollRunsView.tsx', 'utf8');
 const app = fs.readFileSync('src/App.tsx', 'utf8');
 const hardening = fs.readFileSync('scripts/apply-feature-hardening.mjs', 'utf8');
+const paymentHardening = fs.readFileSync('scripts/apply-payment-selection-prior-balance.mjs', 'utf8');
 
 // Regression coverage for production carry-forward and posting refresh behavior.
 test('paid historical payroll periods are removed from carried balance before payment', () => {
@@ -28,8 +29,9 @@ test('posting waits for preceding persistence and normalizes stale carry forward
   assert.match(app, /onFlushPersistence=\{async \(\) => \{ await persistenceQueueRef\.current\.catch\(\(\) => undefined\); \}\}/);
 });
 
-test('new hardening runs after payment selection hardening', () => {
-  const selection = hardening.indexOf('apply-payment-selection-prior-balance.mjs');
-  const stale = hardening.indexOf('apply-stale-prior-balance-posting-refresh.mjs');
-  assert.ok(selection >= 0 && stale > selection);
+test('stale carry cleanup is integrated into the existing final payment hardening transform', () => {
+  assert.match(hardening, /apply-payment-selection-prior-balance\.mjs/);
+  assert.doesNotMatch(hardening, /apply-stale-prior-balance-posting-refresh\.mjs/);
+  assert.match(paymentHardening, /normalizeCarriedBalance/);
+  assert.match(paymentHardening, /onFlushPersistence/);
 });
