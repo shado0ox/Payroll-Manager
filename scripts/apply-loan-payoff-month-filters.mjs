@@ -22,7 +22,7 @@ patchFile('src/components/PayrollRunsView.tsx', initial => replaceOnce(
           const employeeLoanRows = loans
             .filter(l => l.employeeId === employeeId && String(l.startDate || '').slice(0, 7) <= periodMonth)
             .sort((a, b) => a.startDate.localeCompare(b.startDate) || a.id.localeCompare(b.id));
-        const loanBalances = new Map(employeeLoanRows.map(loan => [loan.id, Math.max(0, Number(loan.remainingAmount) || 0)]));
+        const loanBalances = new Map<string, number>(employeeLoanRows.map(loan => [loan.id, Math.max(0, Number(loan.remainingAmount) || 0)]));
         payrollRuns
           .filter(candidate => candidate.companyId === company.id
             && candidate.periodMonth < periodMonth
@@ -105,12 +105,12 @@ patchFile('src/components/LoansPenaltiesView.tsx', initial => {
     const rows = loans
       .filter(loan => loan.companyId === company.id)
       .sort((a, b) => a.startDate.localeCompare(b.startDate) || a.id.localeCompare(b.id));
-    const balances = new Map(rows.map(loan => [loan.id, Math.max(0, Number(loan.remainingAmount) || 0)]));
+    const balances = new Map<string, number>(rows.map(loan => [loan.id, Math.max(0, Number(loan.remainingAmount) || 0)]));
     payrollRuns
       .filter(run => run.companyId === company.id && ['APPROVED', 'POSTED'].includes(run.status))
       .sort((a, b) => a.periodMonth.localeCompare(b.periodMonth))
       .forEach(run => {
-        const deductions = new Map(run.items.map(item => [item.employeeId, Math.max(0, Number(item.loanDeduction) || 0)]));
+        const deductions = new Map<string, number>(run.items.map(item => [item.employeeId, Math.max(0, Number(item.loanDeduction) || 0)]));
         for (const loan of rows) {
           if (loan.startDate > run.periodMonth) continue;
           const paid = deductions.get(loan.employeeId) || 0;
@@ -169,9 +169,19 @@ patchFile('src/components/LoansPenaltiesView.tsx', initial => {
 
 patchFile('src/App.tsx', initial => replaceOnce(
   initial,
-  `                temporaryEarnings={state.temporaryEarnings}
+  `              <LoansPenaltiesView
+                company={activeCompany}
+                employees={state.employees}
+                loans={state.loans}
+                penalties={state.penalties}
+                temporaryEarnings={state.temporaryEarnings}
                 activeRole={state.activeRole}`,
-  `                temporaryEarnings={state.temporaryEarnings}
+  `              <LoansPenaltiesView
+                company={activeCompany}
+                employees={state.employees}
+                loans={state.loans}
+                penalties={state.penalties}
+                temporaryEarnings={state.temporaryEarnings}
                 payrollRuns={state.payrollRuns}
                 activeRole={state.activeRole}`,
   'pass payroll history to loan screen',
