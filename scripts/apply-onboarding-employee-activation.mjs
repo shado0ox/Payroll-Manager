@@ -40,7 +40,7 @@ source = replaceOnce(
 
 source = replaceOnce(
   source,
-  `  const handleFormSubmit = (e: React.FormEvent) => {`,
+  `  const handleFormSubmit = async (e: React.FormEvent) => {`,
   `  const handleCompleteOnboarding = (emp: Employee) => {
     const empCopy = JSON.parse(JSON.stringify(emp)) as Employee;
     empCopy.status = 'ACTIVE';
@@ -55,7 +55,7 @@ source = replaceOnce(
     setIsModalOpen(true);
   };
 
-  const handleFormSubmit = (e: React.FormEvent) => {`,
+  const handleFormSubmit = async (e: React.FormEvent) => {`,
   'activation handler',
 );
 
