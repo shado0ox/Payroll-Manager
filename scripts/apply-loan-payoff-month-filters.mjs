@@ -17,14 +17,15 @@ function replaceOnce(source, before, after, label) {
 // deducted loan from appearing again while keeping payroll reversals auditable.
 patchFile('src/components/PayrollRunsView.tsx', initial => replaceOnce(
   initial,
-  `        const empLoans = loans.filter(l => l.employeeId === emp.id);`,
-  `        const employeeLoanRows = loans
-          .filter(l => l.employeeId === emp.id)
-          .sort((a, b) => a.startDate.localeCompare(b.startDate) || a.id.localeCompare(b.id));
+  `        const empLoans = loans.filter(l => l.employeeId === emp.id && String(l.startDate || '').slice(0, 7) <= selectedPeriod);`,
+  `        const effectiveLoansFor = (periodMonth: string, employeeId: string) => {
+          const employeeLoanRows = loans
+            .filter(l => l.employeeId === employeeId && String(l.startDate || '').slice(0, 7) <= periodMonth)
+            .sort((a, b) => a.startDate.localeCompare(b.startDate) || a.id.localeCompare(b.id));
         const loanBalances = new Map(employeeLoanRows.map(loan => [loan.id, Math.max(0, Number(loan.remainingAmount) || 0)]));
         payrollRuns
           .filter(candidate => candidate.companyId === company.id
-            && candidate.periodMonth < selectedPeriod
+            && candidate.periodMonth < periodMonth
             && ['APPROVED', 'POSTED'].includes(candidate.status))
           .sort((a, b) => a.periodMonth.localeCompare(b.periodMonth))
           .forEach(candidate => {
@@ -37,7 +38,7 @@ patchFile('src/components/PayrollRunsView.tsx', initial => replaceOnce(
               paid = Number((paid - applied).toFixed(2));
             }
           });
-        const empLoans = employeeLoanRows.map(loan => {
+          return employeeLoanRows.map(loan => {
           const remainingAmount = loanBalances.get(loan.id) || 0;
           return {
             ...loan,
@@ -47,8 +48,17 @@ patchFile('src/components/PayrollRunsView.tsx', initial => replaceOnce(
               : loan.monthlyInstallment > 0 ? Math.ceil(remainingAmount / loan.monthlyInstallment) : loan.remainingInstallments,
             status: remainingAmount === 0 ? 'COMPLETED' as const : loan.status,
           };
-        });`,
+          });
+        };
+        const empLoans = effectiveLoansFor(selectedPeriod, emp.id);`,
   'payroll effective loan balances',
+));
+
+patchFile('src/components/PayrollRunsView.tsx', initial => replaceOnce(
+  initial,
+  `              activeLoans: loans.filter(l => l.employeeId === emp.id && String(l.startDate || '').slice(0, 7) <= cursor),`,
+  `              activeLoans: effectiveLoansFor(cursor, emp.id),`,
+  'historical payroll effective loan balances',
 ));
 
 // Show the same derived balance/status in the loans screen.
