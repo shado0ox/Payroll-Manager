@@ -3,10 +3,15 @@ import fs from 'node:fs';
 const path = 'src/components/PayrollRunsView.tsx';
 let source = fs.readFileSync(path, 'utf8');
 
-const currentRunOld = `  const currentRun = useMemo(() => {\n    return companyRuns.find(r => r.periodMonth === selectedPeriod) || companyRuns[0];\n  }, [companyRuns, selectedPeriod]);`;
-const currentRunNew = `  const currentRun = useMemo(() => {\n    return companyRuns.find(r => r.periodMonth === selectedPeriod);\n  }, [companyRuns, selectedPeriod]);`;
-if (!source.includes(currentRunOld) && !source.includes(currentRunNew)) throw new Error('Selected payroll run anchor not found');
-source = source.replace(currentRunOld, currentRunNew);
+// Keep this transform tolerant of explanatory comments inside the useMemo body.
+// The only legacy behavior that must be removed is the cross-period fallback.
+source = source.replace(
+  `return companyRuns.find(r => r.periodMonth === selectedPeriod) || companyRuns[0];`,
+  `return companyRuns.find(r => r.periodMonth === selectedPeriod);`
+);
+if (!source.includes(`return companyRuns.find(r => r.periodMonth === selectedPeriod);`)) {
+  throw new Error('Selected payroll run anchor not found');
+}
 
 const previousStatusAnchor = `        const previousEntitlementStatus = previousItem?.entitlementStatus || 'PAYABLE';\n        const shouldApplyAutomaticHold = calculated.isSuspended && previousEntitlementStatus === 'PAYABLE';`;
 const previousStatusReplacement = `        const previousEntitlementStatus = previousItem?.entitlementStatus || 'PAYABLE';\n        const normalizedIban = String(emp.bankIban || '').replace(/\\s/g, '').toUpperCase();\n        const hasReadyBankAccount = /^SA\\d{22}$/.test(normalizedIban) && emp.bankAccountStatus !== 'PENDING';\n        const missingBankHold = !hasReadyBankAccount && previousEntitlementStatus === 'PAYABLE';\n        const suspensionHold = calculated.isSuspended && previousEntitlementStatus === 'PAYABLE';\n        const shouldApplyAutomaticHold = missingBankHold || suspensionHold;\n        const automaticHoldReason = missingBankHold\n          ? 'MISSING_BANK_ACCOUNT'\n          : (emp.suspensionReason?.trim() || tr('تعليق تلقائي من ملف الموظف', 'Automatically held from employee profile'));`;

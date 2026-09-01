@@ -262,7 +262,9 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
       `"${e.firstNameAr} ${e.lastNameAr}"`,
       `"${e.nationalIdOrIqama}"`,
       e.nationality === 'SAUDI' ? 'سعودي' : 'غير سعودي',
-      e.nationality === 'SAUDI' ? (e.gosiEnabled === false ? 'غير خاضع' : `${e.saudiGosiPaymentMode === 'COMPANY_FULL' ? 'الشركة كاملًا' : 'مشترك'} (${((e.gosiEmployeeRate ?? company.calculationRules?.saudiGosiEmployeeRate ?? 0.0975) * 100).toFixed(2)}% / ${((e.gosiEmployerRate ?? company.calculationRules?.saudiGosiEmployerRate ?? 0.1175) * 100).toFixed(2)}%)`) : 'غير مطبق',
+      e.nationality === 'SAUDI'
+        ? (e.gosiEnabled === false ? 'غير خاضع' : `${e.saudiGosiPaymentMode === 'COMPANY_FULL' ? 'الشركة كاملًا' : 'مشترك'} (${((e.gosiEmployeeRate ?? company.calculationRules?.saudiGosiEmployeeRate ?? 0.0975) * 100).toFixed(2)}% / ${((e.gosiEmployerRate ?? company.calculationRules?.saudiGosiEmployerRate ?? 0.1175) * 100).toFixed(2)}%)`)
+        : (e.gosiEnabled === false ? 'غير خاضع' : `مخاطر مهنية على الشركة (${((company.calculationRules?.nonSaudiGosiEmployerHazardRate ?? 0.02) * 100).toFixed(2)}%)`),
       `"${e.department}"`,
       `"${e.jobTitle}"`,
       `"${e.hireDate}"`,
@@ -973,6 +975,20 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                         <input type="number" min="0" max="100" step="0.01" disabled={formData.gosiEnabled === false} value={((formData.gosiEmployerRate ?? company.calculationRules?.saudiGosiEmployerRate ?? 0.1175) * 100)} onChange={(e) => setFormData({ ...formData, gosiEmployerRate: Math.max(0, Number(e.target.value) || 0) / 100 })} className="w-full px-3 py-2 text-xs bg-white border border-slate-200 rounded-xl font-mono" />
                       </div>
                       <div className="text-[11px] text-emerald-800 self-end pb-2">{language === 'ar' ? 'تُطبق النسب على الأساسي + بدل السكن حتى الحد الأعلى للمنشأة.' : 'Rates apply to basic salary + housing allowance up to the company ceiling.'}</div>
+                    </div>
+                  )}
+
+                  {formData.nationality === 'NON_SAUDI' && (
+                    <div className="sm:col-span-2 p-3 rounded-2xl bg-purple-50/60 border border-purple-200">
+                      <label className="flex items-center gap-2 font-bold text-purple-900">
+                        <input type="checkbox" checked={formData.gosiEnabled !== false} onChange={(e) => setFormData({ ...formData, gosiEnabled: e.target.checked })} />
+                        {language === 'ar' ? 'تطبيق تأمين المخاطر المهنية' : 'Apply occupational hazards insurance'}
+                      </label>
+                      <p className="mt-1 text-[11px] text-purple-800">
+                        {language === 'ar'
+                          ? `لا يُخصم اشتراك من راتب الموظف غير السعودي؛ تتحمل المنشأة فقط نسبة ${(Number(company.calculationRules?.nonSaudiGosiEmployerHazardRate ?? 0.02) * 100).toFixed(2)}% من الأساسي + بدل السكن.`
+                          : `No contribution is deducted from a non-Saudi employee. The employer pays ${(Number(company.calculationRules?.nonSaudiGosiEmployerHazardRate ?? 0.02) * 100).toFixed(2)}% of basic salary + housing for occupational hazards.`}
+                      </p>
                     </div>
                   )}
 

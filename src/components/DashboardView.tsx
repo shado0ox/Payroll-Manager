@@ -44,10 +44,20 @@ interface DashboardViewProps {
   activeRole: UserRole;
   onNavigate: (tab: NavigationTab) => void;
   onViewEmployeeStatement?: (emp: Employee) => void;
-  onOpenQoyodModal: () => void;
 }
 
 const PIE_COLORS = ['#10b981', '#0ea5e9', '#f59e0b', '#8b5cf6', '#ec4899'];
+
+function getCurrentPeriod(timeZone: string = 'Asia/Riyadh'): string {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+  }).formatToParts(new Date());
+  const year = parts.find(part => part.type === 'year')?.value;
+  const month = parts.find(part => part.type === 'month')?.value;
+  return `${year}-${month}`;
+}
 
 // Custom CustomTooltip for Recharts in Arabic RTL
 const CustomBarTooltip = ({ active, payload, label }: any) => {
@@ -115,7 +125,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   activeRole,
   onNavigate,
   onViewEmployeeStatement,
-  onOpenQoyodModal,
 }) => {
   const { language } = useLanguage();
   const tr = (ar: string, en: string) => language === 'ar' ? ar : en;
@@ -131,11 +140,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     return Math.round((ready / activeEmployees.length) * 100);
   }, [employees]);
 
-  // Get current active or latest payroll run
+  // The dashboard represents the month currently in progress for the company.
+  const currentPeriod = getCurrentPeriod(company.timezone || 'Asia/Riyadh');
   const companyPayrollRuns = payrollRuns
     .filter(r => r.companyId === company.id)
     .sort((a, b) => b.periodMonth.localeCompare(a.periodMonth));
-  const latestRun = companyPayrollRuns[0];
+  const currentRun = companyPayrollRuns.find(run => run.periodMonth === currentPeriod);
   const companyEmployees = employees.filter(e => e.companyId === company.id);
 
   // Department Salary Distribution Aggregation
@@ -207,16 +217,16 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     return acc + (pkg.baseSalary || e.basicSalary || 0) + (pkg.housingAllowance || e.housingAllowance || 0) + (pkg.transportAllowance || e.transportationAllowance || 0) + (pkg.otherFixedAllowances || e.otherAllowances || 0) + (pkg.nonGosiOtherAllowances || 0);
   }, 0);
   
-  const totalGross = latestRun ? latestRun.totalGrossSalaries : calculatedGross;
-  const totalDeductions = latestRun ? latestRun.totalDeductions : 0;
-  const totalNet = latestRun ? latestRun.totalNetSalaries : (totalGross - totalDeductions);
+  const totalGross = currentRun ? currentRun.totalGrossSalaries : calculatedGross;
+  const totalDeductions = currentRun ? currentRun.totalDeductions : 0;
+  const totalNet = currentRun ? currentRun.totalNetSalaries : (totalGross - totalDeductions);
 
   // Monthly Budget calculations
   const monthlyAllocatedBudget = Math.max(0, Number(company.monthlyBudgetCap) || 0);
   const rawBudgetUtilizationPercent = monthlyAllocatedBudget > 0 ? Math.round((totalGross / monthlyAllocatedBudget) * 100) : 0;
   const budgetUtilizationPercent = Math.min(100, rawBudgetUtilizationPercent);
   const remainingBudget = monthlyAllocatedBudget - totalGross;
-  const budgetPeriod = latestRun?.periodMonth || new Date().toISOString().slice(0, 7);
+  const budgetPeriod = currentPeriod;
   const budgetPeriodLabel = new Intl.DateTimeFormat(language === 'ar' ? 'ar-SA' : 'en-US', { month: 'long', year: 'numeric' })
     .format(new Date(`${budgetPeriod}-01T12:00:00`));
   const budgetIsConfigured = monthlyAllocatedBudget > 0;
@@ -224,8 +234,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
   // Sample items for table display
   const tableItems = useMemo(() => {
-    if (latestRun && latestRun.items.length > 0) {
-      return latestRun.items.slice(0, 6);
+    if (currentRun && currentRun.items.length > 0) {
+      return currentRun.items.slice(0, 6);
     }
     return companyEmployees.slice(0, 6).map(emp => {
       const basic = emp.salaryPackage?.baseSalary || emp.basicSalary || 0;
@@ -245,7 +255,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         status: 'ACTIVE' as const
       };
     });
-  }, [latestRun, companyEmployees]);
+  }, [currentRun, companyEmployees]);
 
   return (
     <div className="space-y-8 pb-10">
@@ -450,7 +460,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             <div>
               <h4 className="font-bold text-slate-800 text-base">{tr('مؤشر ميزانية الرواتب الشهرية', 'Monthly Payroll Budget')}</h4>
               <p className="text-xs text-slate-400">
-                {tr('مقارنة ميزانية المنشأة مع', 'Company budget compared with')} {latestRun ? tr('المسير الفعلي لفترة', 'actual payroll for') : tr('الرواتب الثابتة التقديرية لفترة', 'estimated fixed payroll for')} {budgetPeriodLabel}
+                {tr('مقارنة ميزانية المنشأة مع', 'Company budget compared with')} {currentRun ? tr('المسير الفعلي لفترة', 'actual payroll for') : tr('الرواتب الثابتة التقديرية لفترة', 'estimated fixed payroll for')} {budgetPeriodLabel}
               </p>
             </div>
           </div>
@@ -471,7 +481,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         {/* Progress Bar Gauge */}
         <div className="space-y-2 mb-6">
           <div className="flex justify-between items-center text-xs font-semibold">
-            <span className="text-slate-700">{latestRun ? tr('مصروف المسير الفعلي', 'Actual payroll spending') : tr('الرواتب الثابتة التقديرية', 'Estimated fixed payroll')}: <strong className={budgetIsExceeded ? 'text-rose-600' : 'text-emerald-600'}>{formatSAR(totalGross)}</strong></span>
+            <span className="text-slate-700">{currentRun ? tr('مصروف المسير الفعلي', 'Actual payroll spending') : tr('الرواتب الثابتة التقديرية', 'Estimated fixed payroll')}: <strong className={budgetIsExceeded ? 'text-rose-600' : 'text-emerald-600'}>{formatSAR(totalGross)}</strong></span>
             <span className="text-slate-500">{tr('الميزانية المحددة في ملف المنشأة', 'Budget configured in Company Profile')}: <strong className="text-slate-800">{budgetIsConfigured ? formatSAR(monthlyAllocatedBudget) : '—'}</strong></span>
           </div>
           
@@ -496,7 +506,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
 
           <div className="p-3.5 bg-emerald-50/50 rounded-xl border border-emerald-200/80">
-            <p className="text-xs text-emerald-800 font-medium">{latestRun ? tr('إنفاق المسير الفعلي', 'Actual payroll spending') : tr('إجمالي الرواتب التقديري', 'Estimated payroll total')}</p>
+            <p className="text-xs text-emerald-800 font-medium">{currentRun ? tr('إنفاق المسير الفعلي', 'Actual payroll spending') : tr('إجمالي الرواتب التقديري', 'Estimated payroll total')}</p>
             <p className="text-lg font-bold text-emerald-700 mt-1">{formatSAR(totalGross)}</p>
             <p className="text-[11px] text-emerald-600 font-medium mt-0.5">{budgetIsConfigured ? `${tr('يمثل', 'Represents')} ${rawBudgetUtilizationPercent}% ${tr('من الميزانية', 'of budget')}` : tr('حدد الميزانية لإظهار النسبة', 'Configure a budget to show utilization')}</p>
           </div>
@@ -605,32 +615,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
         </div>
 
-        {/* Right Col: Qoyod Card & Compliance Card */}
+        {/* Right Col: Payroll data readiness */}
         <div className="space-y-6">
-          
-          {/* Qoyod Integration Card */}
-          <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-xs">
-            <h4 className="font-bold text-slate-700 mb-4 text-base">{tr('تكامل نظام قيود', 'Qoyod Integration')}</h4>
-            <div className="space-y-3">
-              <div className="flex justify-between items-center p-3 bg-slate-50 rounded-lg border border-slate-100">
-                <span className="text-sm text-slate-600 font-medium">API</span>
-                <span className="text-xs font-bold text-emerald-600 flex items-center gap-1">
-                  <span>{tr('من إعدادات المنشأة', 'Company settings')}</span>
-                </span>
-              </div>
-              <div className="flex justify-between items-center p-3 bg-slate-50 rounded-lg border border-slate-100">
-                <span className="text-sm text-slate-600 font-medium">{tr('مزامنة القيود', 'Journal Synchronization')}</span>
-                <span className="text-xs font-bold text-slate-500">{tr('حسب الاعتماد', 'On approval')}</span>
-              </div>
-              <button
-                onClick={onOpenQoyodModal}
-                className="w-full py-2.5 bg-slate-800 hover:bg-slate-900 text-white font-medium rounded-lg text-sm transition-colors shadow-xs cursor-pointer mt-2"
-              >
-                {tr('فتح إعدادات قيود والترحيل', 'Open Qoyod Settings & Posting')}
-              </button>
-            </div>
-          </div>
-
           {/* Compliance Card */}
           <div className="bg-[#1e293b] p-6 rounded-xl text-white shadow-lg relative overflow-hidden">
             <div className="relative z-10">
