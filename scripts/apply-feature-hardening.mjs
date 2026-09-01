@@ -36,3 +36,4 @@ import './apply-pr21-statement-import-compat.mjs';
 import './apply-payroll-settlements-ledger.mjs';
 import './apply-pr21-patchable-anchor-restore.mjs';
 import './apply-settlement-reversal-audit.mjs';
+import './apply-post-batch-released-settlements.mjs';
