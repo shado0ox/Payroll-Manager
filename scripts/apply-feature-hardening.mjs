@@ -9,6 +9,7 @@ import './apply-payroll-input-locks.mjs';
 import './apply-loan-adjustments.mjs';
 import './apply-granular-payroll-permissions.mjs';
 import './apply-stable-routing.mjs';
+import './apply-pr21-stable-route-compat.mjs';
 import './apply-server-owned-financial-audit.mjs';
 import './apply-loan-adjustment-consistency.mjs';
 import './apply-full-year-payroll-periods.mjs';
