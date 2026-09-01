@@ -5,10 +5,13 @@ import fs from 'node:fs';
 const payrollView = fs.readFileSync(new URL('../src/components/PayrollRunsView.tsx', import.meta.url), 'utf8');
 const employeesView = fs.readFileSync(new URL('../src/components/EmployeesView.tsx', import.meta.url), 'utf8');
 const payrollEngine = fs.readFileSync(new URL('../src/utils/payrollEngine.ts', import.meta.url), 'utf8');
+const heldEntitlementsTransform = fs.readFileSync(new URL('../scripts/apply-held-payroll-entitlements.mjs', import.meta.url), 'utf8');
 
 test('recalculation never reuses a payroll run from a different period', () => {
   assert.match(payrollView, /return companyRuns\.find\(r => r\.periodMonth === selectedPeriod\);/);
   assert.doesNotMatch(payrollView, /periodMonth === selectedPeriod\) \|\| companyRuns\[0\]/);
+  assert.match(heldEntitlementsTransform, /source\.replace\([\s\S]*periodMonth === selectedPeriod\) \|\| companyRuns\[0\]/);
+  assert.match(heldEntitlementsTransform, /source\.includes\(`return companyRuns\.find/);
 });
 
 test('non-Saudi GOSI remains employer-only and is visible in employee and payroll views', () => {
