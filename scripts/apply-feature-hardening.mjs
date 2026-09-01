@@ -39,3 +39,5 @@ import './apply-settlement-reversal-audit.mjs';
 import './apply-post-batch-released-settlements.mjs';
 import './apply-unified-payroll-ledger.mjs';
 import './apply-unified-payroll-ledger-compat.mjs';
+import './apply-editable-deduction-period.mjs';
+import './apply-payment-selection-prior-balance.mjs';
