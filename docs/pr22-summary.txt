@@ -1,0 +1,1 @@
+Settlement reversal now preserves audit reason/date and reopens held entitlement. Retroactive settlement discovery covers every elapsed month from salary start date through previous month and prorates the first retroactive month from the actual start date.
