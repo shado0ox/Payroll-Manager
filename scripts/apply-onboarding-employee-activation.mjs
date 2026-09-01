@@ -115,10 +115,9 @@ source = replaceOnce(
                             type="button"
                             onClick={() => handleCompleteOnboarding(emp)}
                             title={language === 'ar' ? 'إدخال رقم الإقامة والآيبان وتحويل الموظف إلى نشط' : 'Enter Iqama and IBAN, then activate'}
-                            className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-1 text-[10px] font-black text-emerald-700 hover:bg-emerald-100"
+                            className="shrink-0 rounded-lg border border-emerald-200 bg-emerald-50 p-1 text-emerald-700 hover:bg-emerald-100"
                           >
                             <UserCheck className="h-3.5 w-3.5" />
-                            <span>{language === 'ar' ? 'استكمال وتفعيل' : 'Complete & activate'}</span>
                           </button>
                         )}
 
