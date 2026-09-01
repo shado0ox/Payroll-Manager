@@ -23,4 +23,18 @@ patch('src/App.tsx', source => {
   return source;
 });
 
+patch('server/index.mjs', source => {
+  const workflowAnchor = `function validatePayrollWorkflowChanges(storedRuns, incomingRuns, user) {`;
+  const canonicalHelper = `const payrollItemPaymentLockCore = (item) => {\n  if (!item || typeof item !== 'object') return item ?? null;\n  const number = (value) => Number(value ?? 0);\n  const text = (value) => String(value ?? '');\n  return {\n    id:text(item.id), payrollRunId:text(item.payrollRunId), employeeId:text(item.employeeId), employeeNo:text(item.employeeNo),\n    employeeName:text(item.employeeName), employeeNameEn:text(item.employeeNameEn), nationalIdOrIqama:text(item.nationalIdOrIqama),\n    department:text(item.department), costCenterId:text(item.costCenterId), nationality:text(item.nationality),\n    bankIban:text(item.bankIban), bankName:text(item.bankName), bankSwiftCode:text(item.bankSwiftCode),\n    baseSalary:number(item.baseSalary), housingAllowance:number(item.housingAllowance), transportAllowance:number(item.transportAllowance),\n    otherAllowances:number(item.otherAllowances), nonGosiAllowances:number(item.nonGosiAllowances), overtimeAmount:number(item.overtimeAmount),\n    overtimeHours:number(item.overtimeHours), bonuses:number(item.bonuses), totalGrossSalary:number(item.totalGrossSalary),\n    payableDays:number(item.payableDays), salaryProrationFactor:number(item.salaryProrationFactor),\n    delayMinutes:number(item.delayMinutes), delayDeduction:number(item.delayDeduction), absenceDays:number(item.absenceDays),\n    absenceDeduction:number(item.absenceDeduction), unpaidLeaveDays:number(item.unpaidLeaveDays), unpaidLeaveDeduction:number(item.unpaidLeaveDeduction),\n    gosiEmployeeShare:number(item.gosiEmployeeShare), gosiSubjectAmount:number(item.gosiSubjectAmount),\n    gosiEmployeeRate:number(item.gosiEmployeeRate), gosiEmployerRate:number(item.gosiEmployerRate), gosiEnabled:item.gosiEnabled !== false,\n    loanDeduction:number(item.loanDeduction), penaltiesDeduction:number(item.penaltiesDeduction), otherDeductions:number(item.otherDeductions),\n    totalDeductions:number(item.totalDeductions), netSalary:number(item.netSalary), gosiEmployerShare:number(item.gosiEmployerShare),\n    totalCompanyBurden:number(item.totalCompanyBurden), saudiGosiPaymentMode:text(item.saudiGosiPaymentMode),\n    manualAddition:number(item.manualAddition), manualDeduction:number(item.manualDeduction), adjustmentNotes:text(item.adjustmentNotes),\n    entitlementStatus:text(item.entitlementStatus || 'PAYABLE'), entitlementReason:text(item.entitlementReason),\n    entitlementDocumentRef:text(item.entitlementDocumentRef), isSuspended:Boolean(item.isSuspended),\n    priorPeriodGross:number(item.priorPeriodGross), priorPeriodDeductions:number(item.priorPeriodDeductions), priorPeriodNet:number(item.priorPeriodNet),\n    priorPeriodDetails:asArray(item.priorPeriodDetails).map(row => ({\n      periodMonth:text(row?.periodMonth), gross:number(row?.gross), deductions:number(row?.deductions), net:number(row?.net)\n    })),\n  };\n};\n\n${workflowAnchor}`;
+  if (!source.includes('const payrollItemPaymentLockCore = (item) => {') && source.includes(workflowAnchor)) {
+    source = source.replace(workflowAnchor, canonicalHelper);
+  }
+
+  source = source.replace(
+    `if (!sameJson(oldItemsByEmployee.get(employeeId), nextItemsByEmployee.get(employeeId))) {`,
+    `if (!sameJson(payrollItemPaymentLockCore(oldItemsByEmployee.get(employeeId)), payrollItemPaymentLockCore(nextItemsByEmployee.get(employeeId)))) {`
+  );
+  return source;
+});
+
 console.log('Unified payroll recalculation compatibility applied.');
