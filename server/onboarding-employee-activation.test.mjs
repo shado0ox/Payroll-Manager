@@ -21,3 +21,10 @@ test('activation requires a ten-digit Iqama and valid Saudi IBAN', () => {
 test('onboarding remains visible as an explicit employment status', () => {
   assert.match(view, /<option value="ONBOARDING">/);
 });
+
+
+test('non-Saudi edit mode is synchronized before the modal renders', () => {
+  assert.match(view, /setNonSaudiEntryMode\(emp\.iqamaNumber \|\| emp\.iqamaExpiryDate/);
+  assert.match(view, /setNonSaudiEntryMode\('IQAMA_HOLDER'\)/);
+  assert.match(view, /empCopy\.iqamaIssueStatus = 'ISSUED'/);
+});

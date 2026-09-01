@@ -34,6 +34,11 @@ source = replaceOnce(
     setEditingEmployee(emp);`,
   `  const handleOpenEdit = (emp: Employee) => {
     setIsCompletingOnboarding(false);
+    if (emp.nationality === 'NON_SAUDI') {
+      setNonSaudiEntryMode(emp.iqamaNumber || emp.iqamaExpiryDate || emp.iqamaIssueStatus === 'ISSUED' ? 'IQAMA_HOLDER' : 'NEW_ARRIVAL');
+    } else {
+      setNonSaudiEntryMode('');
+    }
     setEditingEmployee(emp);`,
   'normal edit reset',
 );
@@ -45,10 +50,13 @@ source = replaceOnce(
     const empCopy = JSON.parse(JSON.stringify(emp)) as Employee;
     empCopy.status = 'ACTIVE';
     empCopy.nationalIdOrIqama = '';
+    empCopy.iqamaNumber = '';
+    empCopy.iqamaIssueStatus = 'ISSUED';
     empCopy.bankIban = '';
     empCopy.bankCode = '';
     empCopy.bankName = '';
     empCopy.bankSwiftCode = '';
+    setNonSaudiEntryMode('IQAMA_HOLDER');
     setEditingEmployee(emp);
     setIsCompletingOnboarding(true);
     setFormData(empCopy);
