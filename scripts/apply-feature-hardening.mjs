@@ -41,3 +41,4 @@ import './apply-unified-payroll-ledger.mjs';
 import './apply-unified-payroll-ledger-compat.mjs';
 import './apply-editable-deduction-period.mjs';
 import './apply-payment-selection-prior-balance.mjs';
+import './apply-stale-prior-balance-posting-refresh.mjs';
