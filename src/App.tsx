@@ -164,15 +164,21 @@ export const App: React.FC = () => {
   useEffect(() => {
     if (!state.currentUser) return;
     let cancelled = false;
-    setDbStatus(prev => ({ ...prev, isChecking: true }));
-    api.health()
-      .then(() => {
+    const checkDatabaseHealth = async (showChecking: boolean = false) => {
+      if (showChecking) setDbStatus(prev => ({ ...prev, isChecking: true }));
+      try {
+        await api.health();
         if (!cancelled) setDbStatus(prev => ({ ...prev, isCloudConnected: true, isChecking: false, lastError: null }));
-      })
-      .catch((error: any) => {
+      } catch (error: any) {
         if (!cancelled) setDbStatus(prev => ({ ...prev, isCloudConnected: false, isChecking: false, lastError: error?.message || tr('تعذر الاتصال بقاعدة البيانات', 'Could not connect to the database') }));
-      });
-    return () => { cancelled = true; };
+      }
+    };
+    void checkDatabaseHealth(true);
+    const healthInterval = window.setInterval(() => { void checkDatabaseHealth(false); }, 30_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(healthInterval);
+    };
   }, [state.currentUser?.id]);
 
   // Persist immediately and serialize writes so rapid actions cannot cancel each other.
@@ -970,7 +976,6 @@ export const App: React.FC = () => {
                 activeRole={state.activeRole}
                 onNavigate={setActiveTab}
                 onViewEmployeeStatement={setStatementEmployee}
-                onOpenQoyodModal={() => setIsQoyodModalOpen(true)}
               />
             )}
 
