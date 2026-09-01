@@ -12,11 +12,21 @@ test('payroll status transitions are authorized on the server', () => {
   assert.match(server, /POST_PAYROLL_REQUIRED/);
 });
 
-test('approved payroll and paid payment batches are immutable on the server', () => {
-  assert.match(server, /APPROVED_PAYROLL_IMMUTABLE/);
+test('approved payroll locks transferred employees and paid payment batches, not the whole month', () => {
+  assert.match(server, /TRANSFERRED_EMPLOYEE_PAYROLL_IMMUTABLE/);
+  assert.match(server, /lockedEmployeeIds/);
+  assert.match(server, /\['SCHEDULED','PAID'\]\.includes\(batch\.status\)/);
   assert.match(server, /PAID_PAYROLL_CANNOT_REOPEN/);
   assert.match(server, /PAID_BATCH_IMMUTABLE/);
   assert.match(server, /PAYMENT_BATCH_CANNOT_BE_DELETED/);
+  assert.doesNotMatch(server, /APPROVED_PAYROLL_IMMUTABLE/);
+});
+
+test('payroll source inputs lock only for employees reserved or paid in a transfer batch', () => {
+  assert.match(server, /employeePaymentLocked/);
+  assert.match(server, /asArray\(batch\.employeeIds\)\.includes\(record\.employeeId\)/);
+  assert.match(server, /if \(!employeePaymentLocked\) return false/);
+  assert.match(server, /PAYROLL_SOURCE_ENTRY_LOCKED/);
 });
 
 test('payment execution requires an explicit scheduled-to-paid transition', () => {
