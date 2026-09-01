@@ -18,7 +18,8 @@ test('recalculation preserves employees already in active or paid transfer batch
 test('new and unpaid employees use the full payroll engine including prior period inputs', () => {
   assert.match(payroll, /priorPeriodDetails/);
   assert.match(payroll, /penalties\.filter\(p => p\.employeeId === emp\.id && p\.periodMonth === cursor/);
-  assert.match(payroll, /activeLoans: loans\.filter\(l => l\.employeeId === emp\.id && String\(l\.startDate \|\| ''\)\.slice\(0, 7\) <= cursor\)/);
+  assert.match(payroll, /activeLoans: effectiveLoansFor\(cursor, emp\.id\)/);
+  assert.match(payroll, /candidate\.periodMonth < periodMonth/);
   assert.match(payroll, /calculateEmployeePayrollItem/);
   assert.match(types, /priorPeriodNet\?: number/);
 });
