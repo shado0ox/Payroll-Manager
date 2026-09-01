@@ -44,8 +44,15 @@ test('settlement candidates cover held payroll and retroactive employees without
   assert.match(component, /reason: 'HELD_PAYROLL'/);
   assert.match(component, /reason: 'RETROACTIVE_EMPLOYEE'/);
   assert.match(component, /\['SCHEDULED', 'PAID'\]\.includes\(batch\.status\)/);
-  assert.match(component, /if \(run\.items\.some\(item => item\.employeeId === employee\.id\)\) continue/);
+  assert.match(component, /if \(existingRunItem\) continue/);
   assert.match(component, /calculateEmployeePayrollItem/);
+});
+
+test('released held employee after an existing payment batch is routed to settlements', () => {
+  assert.match(component, /const runHasClosedPaymentBatch = \(run\.paymentBatches \|\| \[\]\)\.some\(batch => \['SCHEDULED', 'PAID'\]\.includes\(batch\.status\)\)/);
+  assert.match(component, /const isReleasedAfterBatch = entitlementStatus === 'PAYABLE' && runHasClosedPaymentBatch/);
+  assert.match(component, /\(!isHeld && !isReleasedAfterBatch\)/);
+  assert.match(component, /paidPayrollKeys\.has\(`\$\{run\.id\}:\$\{item\.employeeId\}`\)/);
 });
 
 test('settlement payment stores period separately from payment date and method', () => {

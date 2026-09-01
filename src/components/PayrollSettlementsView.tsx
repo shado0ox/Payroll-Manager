@@ -47,6 +47,27 @@ const monthEnd = (periodMonth: string) => {
   return `${periodMonth}-${String(last).padStart(2, '0')}`;
 };
 
+const previousCalendarMonth = () => {
+  const now = new Date();
+  const date = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+  date.setUTCMonth(date.getUTCMonth() - 1);
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
+};
+
+const enumerateMonths = (startMonth: string, endMonth: string) => {
+  if (!/^\d{4}-\d{2}$/.test(startMonth) || !/^\d{4}-\d{2}$/.test(endMonth) || startMonth > endMonth) return [];
+  const [startYear, startMonthNumber] = startMonth.split('-').map(Number);
+  const [endYear, endMonthNumber] = endMonth.split('-').map(Number);
+  const cursor = new Date(Date.UTC(startYear, startMonthNumber - 1, 1));
+  const end = new Date(Date.UTC(endYear, endMonthNumber - 1, 1));
+  const months: string[] = [];
+  while (cursor <= end && months.length < 240) {
+    months.push(`${cursor.getUTCFullYear()}-${String(cursor.getUTCMonth() + 1).padStart(2, '0')}`);
+    cursor.setUTCMonth(cursor.getUTCMonth() + 1);
+  }
+  return months;
+};
+
 export const PayrollSettlementsView: React.FC<PayrollSettlementsViewProps> = ({
   company,
   employees,
@@ -66,6 +87,8 @@ export const PayrollSettlementsView: React.FC<PayrollSettlementsViewProps> = ({
   const [method, setMethod] = useState<PaymentMethod>('BANK_TRANSFER');
   const [paymentDate, setPaymentDate] = useState(new Date().toISOString().slice(0, 10));
   const [reference, setReference] = useState('');
+  const [reversingId, setReversingId] = useState('');
+  const [reversalReason, setReversalReason] = useState('');
 
   const companyEmployees = useMemo(() => employees.filter(employee => employee.companyId === company.id), [employees, company.id]);
   const companyRuns = useMemo(() => payrollRuns.filter(run => run.companyId === company.id), [payrollRuns, company.id]);
@@ -84,6 +107,8 @@ export const PayrollSettlementsView: React.FC<PayrollSettlementsViewProps> = ({
 
   const candidates = useMemo<Candidate[]>(() => {
     const result: Candidate[] = [];
+
+    // Existing held items remain tied to their approved/posted payroll source.
     for (const run of companyRuns.filter(item => ['APPROVED', 'POSTED'].includes(item.status))) {
       for (const item of run.items) {
         const employee = companyEmployees.find(candidate => candidate.id === item.employeeId);
@@ -104,34 +129,58 @@ export const PayrollSettlementsView: React.FC<PayrollSettlementsViewProps> = ({
           periodEnd: run.endDate || monthEnd(run.periodMonth),
         });
       }
+    }
 
-      for (const employee of companyEmployees) {
-        if (!employee.salaryStartDate || employee.salaryStartDate > (run.endDate || monthEnd(run.periodMonth))) continue;
-        if (run.items.some(item => item.employeeId === employee.id)) continue;
-        const key = `RETRO:${employee.id}:${run.periodMonth}`;
-        if (settlementKeys.has(key) || paidPayrollKeys.has(`${run.id}:${employee.id}`)) continue;
+    // Retroactive employees are accrued for every fully elapsed calendar month from salaryStartDate.
+    // This no longer depends on an APPROVED/POSTED payroll run existing for that month.
+    const lastClosedMonth = previousCalendarMonth();
+    for (const employee of companyEmployees) {
+      const salaryStartDate = String(employee.salaryStartDate || employee.hireDate || '');
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(salaryStartDate)) continue;
+      const salaryStartMonth = salaryStartDate.slice(0, 7);
+
+      for (const periodMonth of enumerateMonths(salaryStartMonth, lastClosedMonth)) {
+        const run = companyRuns.find(candidate => candidate.periodMonth === periodMonth);
+        const existingRunItem = run?.items.find(item => item.employeeId === employee.id);
+
+        // If the employee already has a payroll item, that item is the entitlement source.
+        // HELD items are handled above; payable/paid items must not be duplicated as retroactive settlements.
+        if (existingRunItem) continue;
+
+        const key = `RETRO:${employee.id}:${periodMonth}`;
+        if (settlementKeys.has(key)) continue;
+        if (run && paidPayrollKeys.has(`${run.id}:${employee.id}`)) continue;
+
+        // Retroactive first-month settlement always starts from the actual salary start date.
+        // The employee's normal payroll preference remains unchanged for future payroll runs.
+        const employeeForCalculation = periodMonth === salaryStartMonth
+          ? { ...employee, prorateFirstMonth: true }
+          : employee;
+
         const calculated = calculateEmployeePayrollItem({
-          employee,
+          employee: employeeForCalculation,
           company,
-          periodMonth: run.periodMonth,
-          attendanceRecords: attendance.filter(row => row.employeeId === employee.id && row.periodMonth === run.periodMonth),
-          activeLoans: loans.filter(row => row.employeeId === employee.id && row.startDate <= run.periodMonth),
-          penalties: penalties.filter(row => row.employeeId === employee.id && row.periodMonth === run.periodMonth && row.appliedInPayroll !== false),
-          temporaryEarnings: temporaryEarnings.filter(row => row.employeeId === employee.id && row.periodMonth === run.periodMonth && row.appliedInPayroll !== false),
+          periodMonth,
+          attendanceRecords: attendance.filter(row => row.employeeId === employee.id && row.periodMonth === periodMonth),
+          activeLoans: loans.filter(row => row.employeeId === employee.id && String(row.startDate || '').slice(0, 7) <= periodMonth),
+          penalties: penalties.filter(row => row.employeeId === employee.id && row.periodMonth === periodMonth && row.appliedInPayroll !== false),
+          temporaryEarnings: temporaryEarnings.filter(row => row.employeeId === employee.id && row.periodMonth === periodMonth && row.appliedInPayroll !== false),
         });
         if (Number(calculated.netSalary || 0) <= 0) continue;
+
         result.push({
           key,
           employee,
-          periodMonth: run.periodMonth,
+          periodMonth,
           amount: Number(calculated.netSalary || 0),
           reason: 'RETROACTIVE_EMPLOYEE',
-          sourcePayrollRunId: run.id,
-          periodStart: employee.salaryStartDate > `${run.periodMonth}-01` ? employee.salaryStartDate : `${run.periodMonth}-01`,
-          periodEnd: run.endDate || monthEnd(run.periodMonth),
+          sourcePayrollRunId: run?.id,
+          periodStart: periodMonth === salaryStartMonth ? salaryStartDate : `${periodMonth}-01`,
+          periodEnd: run?.endDate || monthEnd(periodMonth),
         });
       }
     }
+
     return result.sort((a, b) => a.periodMonth.localeCompare(b.periodMonth) || a.employee.employeeNo.localeCompare(b.employee.employeeNo));
   }, [companyRuns, companyEmployees, paidPayrollKeys, settlementKeys, attendance, loans, penalties, temporaryEarnings, company]);
 
@@ -140,6 +189,7 @@ export const PayrollSettlementsView: React.FC<PayrollSettlementsViewProps> = ({
     return haystack.includes(search.toLowerCase());
   });
   const selected = candidates.find(candidate => candidate.key === selectedKey);
+  const totalOutstanding = filtered.reduce((sum, candidate) => sum + Number(candidate.amount || 0), 0);
 
   const payCandidate = async () => {
     if (!selected) return;
@@ -189,6 +239,40 @@ export const PayrollSettlementsView: React.FC<PayrollSettlementsViewProps> = ({
     setReference('');
   };
 
+  const reverseSettlement = async (item: PayrollSettlement) => {
+    const reason = reversalReason.trim();
+    if (reason.length < 5) {
+      alert(tr('اكتب سبب التراجع/الحذف للتدقيق (5 أحرف على الأقل).', 'Enter an audit reason for reversal/deletion (at least 5 characters).'));
+      return;
+    }
+    const now = new Date().toISOString();
+    await onSaveSettlement({
+      ...item,
+      status: 'REVERSED',
+      reversedAt: now,
+      reversalReason: reason,
+    });
+
+    // Re-open a held source entitlement so it becomes payable again after reversal.
+    if (item.sourcePayrollRunId && item.sourcePayrollItemId) {
+      const run = companyRuns.find(candidate => candidate.id === item.sourcePayrollRunId);
+      if (run) {
+        onSavePayrollRun({
+          ...run,
+          items: run.items.map(runItem => runItem.id === item.sourcePayrollItemId ? {
+            ...runItem,
+            entitlementStatus: 'HELD',
+            entitlementReason: 'SETTLEMENT_REVERSED',
+            entitlementUpdatedAt: now,
+          } : runItem),
+        });
+      }
+    }
+
+    setReversingId('');
+    setReversalReason('');
+  };
+
   return (
     <div className="space-y-5" dir={language === 'ar' ? 'rtl' : 'ltr'}>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
@@ -196,8 +280,13 @@ export const PayrollSettlementsView: React.FC<PayrollSettlementsViewProps> = ({
           <h2 className="text-xl font-black text-slate-900">{tr('تسويات الرواتب', 'Payroll Settlements')}</h2>
           <p className="mt-1 text-xs text-slate-500">{tr('سداد الرواتب المعلقة والمستحقات بأثر رجعي بدون إعادة فتح ما تم تحويله سابقًا.', 'Pay held and retroactive salary without reopening payroll already transferred.')}</p>
         </div>
-        <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-900">
-          {tr('مستحقات جاهزة للتسوية:', 'Ready to settle:')} {filtered.length}
+        <div className="flex flex-wrap gap-2">
+          <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-900">
+            {tr('مستحقات جاهزة للتسوية:', 'Ready to settle:')} {filtered.length}
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-900">
+            {tr('إجمالي الرصيد المستحق:', 'Outstanding balance:')} {formatSAR(totalOutstanding)}
+          </div>
         </div>
       </div>
 
@@ -237,8 +326,23 @@ export const PayrollSettlementsView: React.FC<PayrollSettlementsViewProps> = ({
       </div>}
 
       {companySettlements.length > 0 && <div className="rounded-2xl border border-slate-200 bg-white p-4">
-        <div className="mb-3 flex items-center gap-2 font-black text-slate-900"><Clock3 className="h-4 w-4" />{tr('آخر التسويات المسددة', 'Recent paid settlements')}</div>
-        <div className="space-y-2">{companySettlements.slice().sort((a,b) => b.createdAt.localeCompare(a.createdAt)).slice(0,20).map(item => <div key={item.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-slate-50 px-3 py-2 text-xs"><span><strong>{item.employeeName}</strong> · {item.periodMonth} · {item.paymentDate}</span><span className="font-black">{formatSAR(item.amount)}</span></div>)}</div>
+        <div className="mb-3 flex items-center gap-2 font-black text-slate-900"><Clock3 className="h-4 w-4" />{tr('سجل التسويات', 'Settlement history')}</div>
+        <div className="space-y-2">{companySettlements.slice().sort((a,b) => b.createdAt.localeCompare(a.createdAt)).slice(0,30).map(item => <div key={item.id} className="rounded-xl bg-slate-50 px-3 py-2 text-xs">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span><strong>{item.employeeName}</strong> · {item.periodMonth} · {item.paymentDate || '-'}</span>
+            <div className="flex items-center gap-2">
+              <span className={`font-black ${item.status === 'REVERSED' ? 'text-rose-700 line-through' : ''}`}>{formatSAR(item.amount)}</span>
+              {item.status === 'PAID' && <button onClick={() => { setReversingId(item.id); setReversalReason(''); }} className="flex items-center gap-1 rounded-lg border border-rose-200 bg-white px-2 py-1 font-bold text-rose-700"><RefreshCcw className="h-3.5 w-3.5" />{tr('تراجع/حذف', 'Reverse')}</button>}
+              {item.status === 'REVERSED' && <span className="rounded-lg bg-rose-100 px-2 py-1 font-bold text-rose-700">{tr('ملغاة', 'Reversed')}</span>}
+            </div>
+          </div>
+          {item.status === 'REVERSED' && <div className="mt-1 text-[11px] text-rose-700">{tr('سبب الإلغاء:', 'Reversal reason:')} {item.reversalReason || '-'}</div>}
+          {reversingId === item.id && <div className="mt-3 rounded-xl border border-rose-200 bg-white p-3">
+            <div className="mb-2 text-[11px] font-bold text-rose-800">{tr('لن يُحذف السجل نهائيًا. سيتم عكسه مع حفظ السبب والتاريخ للتدقيق.', 'The record will not be physically deleted. It will be reversed with reason and date preserved for audit.')}</div>
+            <textarea value={reversalReason} onChange={event => setReversalReason(event.target.value)} placeholder={tr('سبب التراجع أو الحذف', 'Reason for reversal/deletion')} className="min-h-20 w-full rounded-xl border border-slate-200 px-3 py-2 text-xs" />
+            <div className="mt-2 flex justify-end gap-2"><button onClick={() => { setReversingId(''); setReversalReason(''); }} className="rounded-lg border border-slate-200 px-3 py-1.5 font-bold">{tr('إلغاء', 'Cancel')}</button><button onClick={() => reverseSettlement(item)} className="rounded-lg bg-rose-600 px-3 py-1.5 font-black text-white">{tr('تأكيد التراجع', 'Confirm reversal')}</button></div>
+          </div>}
+        </div>)}</div>
       </div>}
     </div>
   );
