@@ -17,9 +17,9 @@ test('payment batch selection is limited to currently eligible selected employee
   assert.match(payroll, /\(\{selectedPaymentItems\.length\}\)/);
 });
 
-test('prior-period balance is shown in additions detail instead of employee warning text', () => {
-  assert.match(payroll, /tr\('رصيد سابق', 'Prior balance'\)/);
-  assert.match(payroll, /item\.priorPeriodDetails/);
+test('prior-period balance remains included in payroll additions and summary without becoming warning text', () => {
+  assert.match(payroll, /item\.priorPeriodNet/);
+  assert.match(payroll, /tr\('أرصدة سابقة', 'Prior balances'\)/);
   assert.match(payroll, /warningFlags: calculated\.warningFlags/);
   assert.doesNotMatch(payroll, /رصيد فترات سابقة غير محول/);
 });
