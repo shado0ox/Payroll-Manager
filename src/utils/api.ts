@@ -52,6 +52,36 @@ function removeFromSyncedCollection(key: string, id: string) {
   syncedState = { ...syncedState, [key]: collection };
 }
 
+function withoutKeys(value: any, keys: string[]) {
+  const copy = cloneState(value || {});
+  for (const key of keys) delete copy[key];
+  return copy;
+}
+
+function classifyPayrollCommand(previous: any, next: any) {
+  if (!previous) return { kind:'aggregate' as const };
+  if (previous.status !== next.status
+    && JSON.stringify(withoutKeys(previous,['status','approvedAt','approvedBy','postedAt','postedBy'])) === JSON.stringify(withoutKeys(next,['status','approvedAt','approvedBy','postedAt','postedBy']))) {
+    return { kind:'status' as const };
+  }
+  const oldBatches = Array.isArray(previous.paymentBatches) ? previous.paymentBatches : [];
+  const newBatches = Array.isArray(next.paymentBatches) ? next.paymentBatches : [];
+  const sameRunOutsideBatches = JSON.stringify(withoutKeys(previous,['paymentBatches'])) === JSON.stringify(withoutKeys(next,['paymentBatches']));
+  if (sameRunOutsideBatches && newBatches.length === oldBatches.length + 1) {
+    const added = newBatches.find((batch:any) => !oldBatches.some((candidate:any) => candidate.id === batch.id));
+    if (added && oldBatches.every((batch:any) => JSON.stringify(batch) === JSON.stringify(newBatches.find((candidate:any) => candidate.id === batch.id)))) {
+      return { kind:'createBatch' as const,batch:added };
+    }
+  }
+  if (sameRunOutsideBatches && oldBatches.length === newBatches.length) {
+    const changed = newBatches.filter((batch:any) => JSON.stringify(batch) !== JSON.stringify(oldBatches.find((candidate:any) => candidate.id === batch.id)));
+    if (changed.length === 1 && oldBatches.some((batch:any) => batch.id === changed[0].id)) {
+      return { kind:'batchStatus' as const,batch:changed[0] };
+    }
+  }
+  return { kind:'aggregate' as const };
+}
+
 export const api = {
   publicConfig: () => request<{registrationEnabled:boolean; trialDays:number; developerContactPhone:string}>('/api/public/config'),
   startRegistration: (data: Record<string, unknown>) => request<{requestId:string; maskedEmail:string; expiresInSeconds:number}>('/api/auth/register/start', { method:'POST', body:JSON.stringify(data) }),
@@ -118,7 +148,18 @@ export const api = {
     return result;
   },
   savePayrollRun: async (record: any) => {
-    const result = await request<{record:any;created:boolean;version:number;updated_at:string}>(`/api/payroll-runs/${encodeURIComponent(record.id)}`, { method:'PUT', body:JSON.stringify(record) });
+    const previous = Array.isArray(syncedState?.payrollRuns) ? syncedState!.payrollRuns.find((item:any) => item?.id === record.id) : null;
+    const command = classifyPayrollCommand(previous,record);
+    let result;
+    if (command.kind === 'status') {
+      result = await request<{record:any;created:boolean;version:number;updated_at:string}>(`/api/payroll-runs/${encodeURIComponent(record.id)}/status`, { method:'POST',body:JSON.stringify({ status:record.status }) });
+    } else if (command.kind === 'createBatch') {
+      result = await request<{record:any;created:boolean;version:number;updated_at:string}>(`/api/payroll-runs/${encodeURIComponent(record.id)}/payment-batches`, { method:'POST',body:JSON.stringify(command.batch) });
+    } else if (command.kind === 'batchStatus') {
+      result = await request<{record:any;created:boolean;version:number;updated_at:string}>(`/api/payroll-runs/${encodeURIComponent(record.id)}/payment-batches/${encodeURIComponent(command.batch.id)}/status`, { method:'PATCH',body:JSON.stringify({ status:command.batch.status,paymentDate:command.batch.paymentDate,paymentReversalReason:command.batch.paymentReversalReason }) });
+    } else {
+      result = await request<{record:any;created:boolean;version:number;updated_at:string}>(`/api/payroll-runs/${encodeURIComponent(record.id)}`, { method:'PUT', body:JSON.stringify(record) });
+    }
     stateVersion = result.version;
     updateSyncedCollection('payrollRuns', result.record);
     return result;
