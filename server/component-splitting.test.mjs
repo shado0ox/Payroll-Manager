@@ -21,3 +21,14 @@ test('prior balance details remain owned by the payroll item table', () => {
   assert.match(payrollTable, /priorPeriodDetails/);
   assert.match(payrollTable, /رصيد سابق/);
 });
+
+test('large-view render filters and reductions are memoized', () => {
+  assert.match(payroll, /const paymentSummary = useMemo/);
+  assert.match(payroll, /const eligibleFilteredItems = useMemo/);
+  assert.match(payroll, /const selectedPaymentItems = useMemo/);
+  assert.match(payroll, /const totalWarnings = useMemo/);
+  assert.match(company, /const departmentEmployeesByName = useMemo/);
+  assert.match(company, /const costCenterEmployeeCounts = useMemo/);
+  assert.match(company, /const activeBankDefinitions = useMemo/);
+  assert.match(company, /const assignableRoles = useMemo/);
+});
