@@ -1929,6 +1929,85 @@ app.delete('/api/attendance/:id', auth, writeLimiter, async (req, res, next) => 
   } finally { client.release(); }
 });
 
+function validateLeaveRecord(record, user) {
+  if (!record || typeof record !== 'object' || typeof record.id !== 'string' || !record.id
+    || typeof record.companyId !== 'string' || !user.company_ids.includes(record.companyId)
+    || typeof record.employeeId !== 'string' || !record.employeeId
+    || !['ANNUAL','SICK','UNPAID','EMERGENCY','MATERNITY'].includes(record.type)
+    || !validIsoDate(record.startDate) || !validIsoDate(record.endDate) || record.endDate < record.startDate
+    || !Number.isInteger(Number(record.daysCount)) || Number(record.daysCount) < 1
+    || !['PENDING','APPROVED','REJECTED'].includes(record.status)
+    || typeof record.isPaid !== 'boolean') {
+    throw workflowError(400,'INVALID_LEAVE_REQUEST');
+  }
+  const expectedDays = Math.floor((Date.parse(`${record.endDate}T00:00:00Z`) - Date.parse(`${record.startDate}T00:00:00Z`)) / 86_400_000) + 1;
+  if (Number(record.daysCount) > expectedDays) throw workflowError(400,'INVALID_LEAVE_DAYS_COUNT');
+}
+
+app.put('/api/leaves/:id', auth, writeLimiter, async (req, res, next) => {
+  const client = await pool.connect();
+  try {
+    if (!can(req.user,'MANAGE_ATTENDANCE')) return res.status(403).json({ error:'FORBIDDEN' });
+    const record = req.body || {};
+    if (record.id !== req.params.id) return res.status(400).json({ error:'INVALID_LEAVE_REQUEST' });
+    validateLeaveRecord(record,req.user);
+    await client.query('BEGIN');
+    const employee = await client.query(`SELECT company_id FROM ${q('employees')} WHERE id=$1 AND is_archived=false`, [record.employeeId]);
+    if (!employee.rowCount || employee.rows[0].company_id !== record.companyId) throw workflowError(400,'INVALID_LEAVE_EMPLOYEE');
+    const existing = await client.query(`SELECT company_id,status,sort_order FROM ${q('leave_requests')} WHERE id=$1 FOR UPDATE`, [record.id]);
+    if (existing.rowCount && existing.rows[0].company_id !== record.companyId) throw workflowError(409,'LEAVE_COMPANY_IMMUTABLE');
+    if (existing.rowCount && existing.rows[0].status !== record.status) throw workflowError(409,'LEAVE_STATUS_ENDPOINT_REQUIRED');
+    if (!existing.rowCount && record.status !== 'PENDING') throw workflowError(400,'NEW_LEAVE_MUST_BE_PENDING');
+    const sortOrder = existing.rowCount ? existing.rows[0].sort_order : Number((await client.query(
+      `SELECT COALESCE(min(sort_order),0)-1 AS sort_order FROM ${q('leave_requests')} WHERE company_id=$1`, [record.companyId]
+    )).rows[0]?.sort_order || 0);
+    await client.query(`INSERT INTO ${q('leave_requests')} (
+        id,company_id,employee_id,leave_type,start_date,end_date,days_count,status,is_paid,reason,payload,sort_order,updated_at
+      ) VALUES ($1,$2,$3,$4,$5::date,$6::date,$7,$8,$9,$10,$11::jsonb,$12,now())
+      ON CONFLICT (id) DO UPDATE SET employee_id=EXCLUDED.employee_id,leave_type=EXCLUDED.leave_type,
+        start_date=EXCLUDED.start_date,end_date=EXCLUDED.end_date,days_count=EXCLUDED.days_count,
+        is_paid=EXCLUDED.is_paid,reason=EXCLUDED.reason,payload=EXCLUDED.payload,updated_at=now()`, [
+      record.id,record.companyId,record.employeeId,record.type,record.startDate,record.endDate,Number(record.daysCount),
+      record.status,record.isPaid,record.reason || null,JSON.stringify(record),sortOrder
+    ]);
+    const updated = await updateCompatibilityCollectionRecord(client,'leaves',record,req.user.id);
+    await appendStateAudit(client,q,{ companyIds:req.user.company_ids,user:req.user,action:existing.rowCount ? 'UPDATE_LEAVE' : 'CREATE_LEAVE',version:updated.rows[0].version });
+    await client.query('COMMIT');
+    broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at });
+    res.json({ record,created:!existing.rowCount,version:Number(updated.rows[0].version),updated_at:updated.rows[0].updated_at });
+  } catch (e) {
+    try { await client.query('ROLLBACK'); } catch {}
+    if (Number.isInteger(e?.status) && e.status >= 400 && e.status < 500) return res.status(e.status).json({ error:e.message });
+    next(e);
+  } finally { client.release(); }
+});
+
+app.patch('/api/leaves/:id/status', auth, writeLimiter, async (req, res, next) => {
+  const client = await pool.connect();
+  try {
+    if (!can(req.user,'MANAGE_ATTENDANCE')) return res.status(403).json({ error:'FORBIDDEN' });
+    const status = String(req.body?.status || '');
+    if (!['PENDING','APPROVED','REJECTED'].includes(status)) return res.status(400).json({ error:'INVALID_LEAVE_STATUS' });
+    await client.query('BEGIN');
+    const existing = await client.query(`SELECT company_id,payload FROM ${q('leave_requests')} WHERE id=$1 FOR UPDATE`, [req.params.id]);
+    if (!existing.rowCount) throw workflowError(404,'LEAVE_NOT_FOUND');
+    if (!req.user.company_ids.includes(existing.rows[0].company_id)) throw workflowError(403,'FORBIDDEN');
+    if (existing.rows[0].payload?.status === status) throw workflowError(409,'LEAVE_STATUS_UNCHANGED');
+    const record = { ...existing.rows[0].payload,status };
+    validateLeaveRecord(record,req.user);
+    await client.query(`UPDATE ${q('leave_requests')} SET status=$2,payload=$3::jsonb,updated_at=now() WHERE id=$1`, [record.id,status,JSON.stringify(record)]);
+    const updated = await updateCompatibilityCollectionRecord(client,'leaves',record,req.user.id);
+    await appendStateAudit(client,q,{ companyIds:req.user.company_ids,user:req.user,action:'LEAVE_STATUS_TRANSITION',version:updated.rows[0].version });
+    await client.query('COMMIT');
+    broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at });
+    res.json({ record,created:false,version:Number(updated.rows[0].version),updated_at:updated.rows[0].updated_at });
+  } catch (e) {
+    try { await client.query('ROLLBACK'); } catch {}
+    if (Number.isInteger(e?.status) && e.status >= 400 && e.status < 500) return res.status(e.status).json({ error:e.message });
+    next(e);
+  } finally { client.release(); }
+});
+
 app.put('/api/penalties/:id', auth, writeLimiter, async (req, res, next) => {
   const client = await pool.connect();
   try {
