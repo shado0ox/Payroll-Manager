@@ -713,10 +713,15 @@ async function migrate() {
   await pool.query(`CREATE INDEX IF NOT EXISTS payroll_runs_company_period_idx ON ${q('payroll_runs')}(company_id,period_month DESC)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS payroll_items_employee_idx ON ${q('payroll_run_items')}(employee_id,payroll_run_id)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS attendance_employee_period_idx ON ${q('attendance_records')}(employee_id,period_month)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS attendance_company_period_idx ON ${q('attendance_records')}(company_id,period_month)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS leaves_employee_dates_idx ON ${q('leave_requests')}(employee_id,start_date,end_date)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS leaves_company_idx ON ${q('leave_requests')}(company_id)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS loans_employee_status_idx ON ${q('loans')}(employee_id,status)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS loans_company_idx ON ${q('loans')}(company_id)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS penalties_employee_period_idx ON ${q('penalties')}(employee_id,period_month)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS penalties_company_period_idx ON ${q('penalties')}(company_id,period_month)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS earnings_employee_period_idx ON ${q('temporary_earnings')}(employee_id,period_month)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS earnings_company_period_idx ON ${q('temporary_earnings')}(company_id,period_month)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS journal_batches_company_period_idx ON ${q('journal_batches')}(company_id,period_month)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS application_audit_logs_company_time_idx ON ${q('application_audit_logs')}(company_id,occurred_at DESC)`);
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS company_departments_code_unique_idx
