@@ -206,6 +206,27 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
     return merged;
   }, [formData.departments, companyEmployees]);
 
+  const departmentEmployeesByName = useMemo(() => {
+    const grouped = new Map<string, Employee[]>();
+    companyEmployees.forEach(employee => grouped.set(employee.department, [...(grouped.get(employee.department) || []), employee]));
+    return grouped;
+  }, [companyEmployees]);
+  const costCenterEmployeeCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    companyEmployees.forEach(employee => {
+      if (employee.costCenterId) counts.set(employee.costCenterId, (counts.get(employee.costCenterId) || 0) + 1);
+    });
+    return counts;
+  }, [companyEmployees]);
+  const activeBankDefinitions = useMemo(
+    () => getBankDefinitions(formData.bankDefinitions).filter(bank => bank.isActive !== false),
+    [formData.bankDefinitions]
+  );
+  const assignableRoles = useMemo(
+    () => Object.entries(ROLE_INFO).filter(([key]) => key !== 'ADMIN' && (activeRole === 'ADMIN' || key === 'OPERATIONS_MANAGER')),
+    [activeRole]
+  );
+
   // Modals state
   const [isUserModalOpen, setIsUserModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<UserAccount | null>(null);
@@ -876,7 +897,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
                 className="w-full px-3.5 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:border-emerald-500 font-semibold text-slate-900"
               >
                 <option value="">{tr('-- اختر البنك --', '-- Select bank --')}</option>
-                {getBankDefinitions(formData.bankDefinitions).filter(b => b.isActive !== false).map(b => (
+                {activeBankDefinitions.map(b => (
                   <option key={b.ibanBankCode} value={b.ibanBankCode}>
                     {language === 'en' ? b.nameEn || b.nameAr : b.nameAr} ({b.swiftCode})
                   </option>
@@ -1603,7 +1624,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {departmentsList.map((dept) => {
-              const assignedEmployees = companyEmployees.filter(e => e.department === dept.nameAr);
+              const assignedEmployees = departmentEmployeesByName.get(dept.nameAr) || [];
 
               return (
                 <div key={dept.id} className="p-4 rounded-2xl border border-slate-200/80 bg-white hover:shadow-md transition-all">
@@ -1681,7 +1702,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {(formData.costCenters || []).map((cc) => {
-              const assignedEmpCount = companyEmployees.filter(e => e.costCenterId === cc.id).length;
+              const assignedEmpCount = costCenterEmployeeCounts.get(cc.id) || 0;
 
               return (
                 <div key={cc.id} className="p-4 rounded-2xl border border-slate-200/80 bg-white hover:shadow-md transition-all">
@@ -2263,7 +2284,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
                     onChange={(e) => setUserFormData({ ...userFormData, role: e.target.value as UserRole })}
                     className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white font-semibold"
                   >
-                    {Object.entries(ROLE_INFO).filter(([key]) => key !== 'ADMIN' && (activeRole === 'ADMIN' || key === 'OPERATIONS_MANAGER')).map(([key, info]) => (
+                    {assignableRoles.map(([key, info]) => (
                       <option key={key} value={key}>
                         {language === 'ar' ? info.labelAr : info.labelEn}
                       </option>
