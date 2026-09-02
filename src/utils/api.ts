@@ -1,5 +1,5 @@
 import { AppState } from './storage';
-import { UserAccount } from '../types';
+import { AttendanceRecord, PenaltyRecord, UserAccount } from '../types';
 
 class ApiError extends Error {
   constructor(message: string, public status: number) { super(message); this.name = 'ApiError'; }
@@ -37,6 +37,21 @@ function buildStatePatch(previous: Record<string, any> | null, next: Record<stri
   return { collections, objects };
 }
 
+function updateSyncedCollection(key: string, record: any) {
+  if (!syncedState) return;
+  const collection = Array.isArray(syncedState[key]) ? [...syncedState[key]] : [];
+  const index = collection.findIndex((item:any) => item?.id === record.id);
+  if (index >= 0) collection[index] = cloneState(record);
+  else collection.unshift(cloneState(record));
+  syncedState = { ...syncedState, [key]: collection };
+}
+
+function removeFromSyncedCollection(key: string, id: string) {
+  if (!syncedState) return;
+  const collection = Array.isArray(syncedState[key]) ? syncedState[key].filter((item:any) => item?.id !== id) : [];
+  syncedState = { ...syncedState, [key]: collection };
+}
+
 export const api = {
   publicConfig: () => request<{registrationEnabled:boolean; trialDays:number; developerContactPhone:string}>('/api/public/config'),
   startRegistration: (data: Record<string, unknown>) => request<{requestId:string; maskedEmail:string; expiresInSeconds:number}>('/api/auth/register/start', { method:'POST', body:JSON.stringify(data) }),
@@ -52,6 +67,30 @@ export const api = {
       else employees.push(cloneState(result.employee));
       syncedState = { ...syncedState, employees };
     }
+    return result;
+  },
+  saveAttendanceRecord: async (record: AttendanceRecord) => {
+    const result = await request<{record:AttendanceRecord;created:boolean;version:number;updated_at:string}>(`/api/attendance/${encodeURIComponent(record.id)}`, { method:'PUT', body:JSON.stringify(record) });
+    stateVersion = result.version;
+    updateSyncedCollection('attendance', result.record);
+    return result;
+  },
+  deleteAttendanceRecord: async (id: string) => {
+    const result = await request<{deleted:boolean;version:number;updated_at:string}>(`/api/attendance/${encodeURIComponent(id)}`, { method:'DELETE' });
+    stateVersion = result.version;
+    removeFromSyncedCollection('attendance', id);
+    return result;
+  },
+  savePenaltyRecord: async (record: PenaltyRecord) => {
+    const result = await request<{record:PenaltyRecord;created:boolean;version:number;updated_at:string}>(`/api/penalties/${encodeURIComponent(record.id)}`, { method:'PUT', body:JSON.stringify(record) });
+    stateVersion = result.version;
+    updateSyncedCollection('penalties', result.record);
+    return result;
+  },
+  deletePenaltyRecord: async (id: string) => {
+    const result = await request<{deleted:boolean;version:number;updated_at:string}>(`/api/penalties/${encodeURIComponent(id)}`, { method:'DELETE' });
+    stateVersion = result.version;
+    removeFromSyncedCollection('penalties', id);
     return result;
   },
   deleteEmployee: (employeeId:string) => request<{deleted:boolean;archived:boolean}>(`/api/employees/${encodeURIComponent(employeeId)}`, { method:'DELETE' }),
