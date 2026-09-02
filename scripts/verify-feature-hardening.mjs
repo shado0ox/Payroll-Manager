@@ -15,10 +15,11 @@ const requirements = {
     "from './payroll/PayrollPaymentBatchModal'",
     'const paymentSummary = useMemo',
     'currentDate.getFullYear()',
+    'priorPeriodNet',
   ],
   'src/components/EmployeesView.tsx': ['IQAMA_HOLDER', 'onboardingStatus'],
   'src/components/LoansPenaltiesView.tsx': ['penaltyPeriodFrom', 'penaltyPeriodTo'],
-  'src/components/payroll/PayrollRunItemsTable.tsx': ['React.memo', 'priorPeriodDetails'],
+  'src/components/payroll/PayrollRunItemsTable.tsx': ['React.memo', 'priorPeriodNet'],
   'src/components/payroll/PayrollPaymentBatchModal.tsx': ['React.memo'],
   'src/components/company/CompanyProfileTabs.tsx': ['React.memo'],
 };
