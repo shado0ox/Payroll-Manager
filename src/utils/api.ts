@@ -1,5 +1,5 @@
 import { AppState } from './storage';
-import { AttendanceRecord, JournalBatch, LoanSchedule, PenaltyRecord, TemporaryEarningRecord, UserAccount } from '../types';
+import { AttendanceRecord, JournalBatch, LeaveRequest, LoanSchedule, PenaltyRecord, TemporaryEarningRecord, UserAccount } from '../types';
 
 class ApiError extends Error {
   constructor(message: string, public status: number) { super(message); this.name = 'ApiError'; }
@@ -109,6 +109,18 @@ export const api = {
     const result = await request<{deleted:boolean;version:number;updated_at:string}>(`/api/attendance/${encodeURIComponent(id)}`, { method:'DELETE' });
     stateVersion = result.version;
     removeFromSyncedCollection('attendance', id);
+    return result;
+  },
+  saveLeaveRequest: async (record: LeaveRequest) => {
+    const result = await request<{record:LeaveRequest;created:boolean;version:number;updated_at:string}>(`/api/leaves/${encodeURIComponent(record.id)}`, { method:'PUT',body:JSON.stringify(record) });
+    stateVersion = result.version;
+    updateSyncedCollection('leaves',result.record);
+    return result;
+  },
+  updateLeaveStatus: async (id: string,status: LeaveRequest['status']) => {
+    const result = await request<{record:LeaveRequest;created:boolean;version:number;updated_at:string}>(`/api/leaves/${encodeURIComponent(id)}/status`, { method:'PATCH',body:JSON.stringify({ status }) });
+    stateVersion = result.version;
+    updateSyncedCollection('leaves',result.record);
     return result;
   },
   savePenaltyRecord: async (record: PenaltyRecord) => {

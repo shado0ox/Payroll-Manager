@@ -353,6 +353,10 @@ export const AttendanceLeavesView: React.FC<AttendanceLeavesViewProps> = ({
                         <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-bold text-[10px] border border-emerald-200 whitespace-nowrap">
                           {tr('معتمدة', 'Approved')}
                         </span>
+                      ) : leave.status === 'REJECTED' ? (
+                        <span className="px-2 py-0.5 rounded-full bg-rose-50 text-rose-700 font-bold text-[10px] border border-rose-200 whitespace-nowrap">
+                          {tr('مرفوضة', 'Rejected')}
+                        </span>
                       ) : (
                         <span className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 font-bold text-[10px] border border-amber-200 whitespace-nowrap">
                           {tr('مراجعة', 'Pending')}

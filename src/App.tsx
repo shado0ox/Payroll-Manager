@@ -710,22 +710,41 @@ export const App: React.FC = () => {
     }
   };
 
-  const handleUpdateLeaveStatus = (leaveId: string, status: 'PENDING' | 'APPROVED' | 'REJECTED') => {
-    setState(prev => {
-      const updated = prev.leaves.map(l => l.id === leaveId ? { ...l, status } : l);
-      saveLeaves(updated);
-      return { ...prev, leaves: updated };
-    });
+  const handleUpdateLeaveStatus = async (leaveId: string, status: 'PENDING' | 'APPROVED' | 'REJECTED') => {
+    const operation = persistenceQueueRef.current.catch(() => undefined).then(() => api.updateLeaveStatus(leaveId,status));
+    persistenceQueueRef.current = operation.then(() => undefined, () => undefined);
+    try {
+      const result = await operation;
+      setState(prev => {
+        const next = { ...prev,leaves:prev.leaves.map(item => item.id === result.record.id ? result.record : item) };
+        remoteStateSnapshotRef.current = next;
+        return next;
+      });
+      setDbStatus(prev => ({ ...prev,isCloudConnected:true,isChecking:false,lastError:null,lastSavedAt:result.updated_at }));
+    } catch (error:any) {
+      setDbStatus(prev => ({ ...prev,isChecking:false,lastError:`${tr('تعذر تحديث حالة الإجازة:', 'Could not update leave status:')} ${error?.message || 'UNKNOWN_ERROR'}` }));
+      alert(tr('تعذر تحديث حالة طلب الإجازة. لم يتم تطبيق التغيير.', 'Could not update the leave request. No change was applied.'));
+    }
   };
 
-  const handleAddLeave = (leave: LeaveRequest) => {
-    setState(prev => {
-      const updated = prev.leaves.some(item => item.id === leave.id)
-        ? prev.leaves.map(item => item.id === leave.id ? leave : item)
-        : [leave, ...prev.leaves];
-      saveLeaves(updated);
-      return { ...prev, leaves: updated };
-    });
+  const handleAddLeave = async (leave: LeaveRequest) => {
+    const operation = persistenceQueueRef.current.catch(() => undefined).then(() => api.saveLeaveRequest(leave));
+    persistenceQueueRef.current = operation.then(() => undefined, () => undefined);
+    try {
+      const result = await operation;
+      setState(prev => {
+        const leaves = prev.leaves.some(item => item.id === result.record.id)
+          ? prev.leaves.map(item => item.id === result.record.id ? result.record : item)
+          : [result.record,...prev.leaves];
+        const next = { ...prev,leaves };
+        remoteStateSnapshotRef.current = next;
+        return next;
+      });
+      setDbStatus(prev => ({ ...prev,isCloudConnected:true,isChecking:false,lastError:null,lastSavedAt:result.updated_at }));
+    } catch (error:any) {
+      setDbStatus(prev => ({ ...prev,isChecking:false,lastError:`${tr('تعذر حفظ طلب الإجازة:', 'Could not save leave request:')} ${error?.message || 'UNKNOWN_ERROR'}` }));
+      alert(tr('تعذر حفظ طلب الإجازة. لم يتم تطبيق التغيير.', 'Could not save the leave request. No change was applied.'));
+    }
   };
 
   const commitLoanRecord = async (loan: LoanSchedule) => {
