@@ -1,3 +1,6 @@
+// HISTORICAL MIGRATION ENTRYPOINT ONLY.
+// Production builds validate the already-migrated source through
+// verify-feature-hardening.mjs and must not execute these mutating transforms.
 import './apply-tenant-hardening.mjs';
 import './apply-payroll-workflow-hardening.mjs';
 import './apply-payroll-confirmed-persistence.mjs';
