@@ -1755,6 +1755,173 @@ app.put('/api/state', auth, writeLimiter, async (req, res, next) => {
   } finally { client.release(); }
 });
 
+async function updateCompatibilityCollectionRecord(client, key, record, userId) {
+  const stateRow = await client.query(`SELECT state FROM ${q('app_state')} WHERE id=1 FOR UPDATE`);
+  if (!stateRow.rowCount) throw workflowError(409, 'STATE_NOT_INITIALIZED');
+  const state = clone(stateRow.rows[0].state || {});
+  const records = asArray(state[key]);
+  const index = records.findIndex(item => item?.id === record.id);
+  if (index >= 0) records[index] = clone(record); else records.unshift(clone(record));
+  state[key] = records;
+  return client.query(`UPDATE ${q('app_state')} SET state=$1::jsonb,version=version+1,updated_by=$2,updated_at=now()
+    WHERE id=1 RETURNING version,updated_at`, [JSON.stringify(state),userId]);
+}
+
+async function deleteCompatibilityCollectionRecord(client, key, id, userId) {
+  const stateRow = await client.query(`SELECT state FROM ${q('app_state')} WHERE id=1 FOR UPDATE`);
+  if (!stateRow.rowCount) throw workflowError(409, 'STATE_NOT_INITIALIZED');
+  const state = clone(stateRow.rows[0].state || {});
+  state[key] = asArray(state[key]).filter(item => item?.id !== id);
+  return client.query(`UPDATE ${q('app_state')} SET state=$1::jsonb,version=version+1,updated_by=$2,updated_at=now()
+    WHERE id=1 RETURNING version,updated_at`, [JSON.stringify(state),userId]);
+}
+
+const validPeriodMonth = value => typeof value === 'string' && /^[0-9]{4}-(0[1-9]|1[0-2])$/.test(value);
+const validIsoDate = value => {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const parsed = new Date(`${value}T00:00:00Z`);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0,10) === value;
+};
+
+app.put('/api/attendance/:id', auth, writeLimiter, async (req, res, next) => {
+  const client = await pool.connect();
+  try {
+    if (!can(req.user,'MANAGE_ATTENDANCE')) return res.status(403).json({ error:'FORBIDDEN' });
+    const record = req.body || {};
+    if (record.id !== req.params.id || typeof record.companyId !== 'string' || !req.user.company_ids.includes(record.companyId)
+      || typeof record.employeeId !== 'string' || !validPeriodMonth(record.periodMonth) || !validIsoDate(record.date)
+      || (record.endDate && !validIsoDate(record.endDate)) || (record.endDate && record.endDate < record.date)
+      || !Number.isInteger(Number(record.daysCount ?? 1)) || Number(record.daysCount ?? 1) < 0
+      || !Number.isInteger(Number(record.delayMinutes ?? 0)) || Number(record.delayMinutes ?? 0) < 0
+      || !Number.isFinite(Number(record.overtimeHours ?? 0)) || Number(record.overtimeHours ?? 0) < 0
+      || !['STANDARD','WEEKEND'].includes(record.overtimeType || 'STANDARD')) {
+      return res.status(400).json({ error:'INVALID_ATTENDANCE_RECORD' });
+    }
+    await client.query('BEGIN');
+    const stateRow = await client.query(`SELECT state FROM ${q('app_state')} WHERE id=1 FOR UPDATE`);
+    if (!stateRow.rowCount) throw workflowError(409, 'STATE_NOT_INITIALIZED');
+    const stored = await hydrateNormalizedStateData(client, stateRow.rows[0].state);
+    const existingRecord = asArray(stored.attendance).find(item => item.id === record.id);
+    if ((existingRecord && payrollSourceLocked(stored,'attendance',existingRecord)) || payrollSourceLocked(stored,'attendance',record)) {
+      throw workflowError(409, 'PAYROLL_SOURCE_ENTRY_LOCKED');
+    }
+    const employee = await client.query(`SELECT company_id FROM ${q('employees')} WHERE id=$1 AND is_archived=false`, [record.employeeId]);
+    if (!employee.rowCount || employee.rows[0].company_id !== record.companyId) throw workflowError(400, 'INVALID_ATTENDANCE_EMPLOYEE');
+    const existing = await client.query(`SELECT company_id,sort_order FROM ${q('attendance_records')} WHERE id=$1 FOR UPDATE`, [record.id]);
+    if (existing.rowCount && existing.rows[0].company_id !== record.companyId) throw workflowError(409, 'ATTENDANCE_COMPANY_IMMUTABLE');
+    const sortOrder = existing.rowCount ? existing.rows[0].sort_order : Number((await client.query(`SELECT COALESCE(min(sort_order),0)-1 AS sort_order FROM ${q('attendance_records')} WHERE company_id=$1`, [record.companyId])).rows[0]?.sort_order || 0);
+    await client.query(`INSERT INTO ${q('attendance_records')} (
+      id,company_id,employee_id,period_month,record_date,end_date,days_count,delay_minutes,absence,unpaid_leave,overtime_hours,overtime_type,notes,payload,sort_order,updated_at
+    ) VALUES ($1,$2,$3,$4,$5::date,NULLIF($6,'')::date,$7,$8,$9,$10,$11,$12,$13,$14::jsonb,$15,now())
+    ON CONFLICT (id) DO UPDATE SET employee_id=EXCLUDED.employee_id,period_month=EXCLUDED.period_month,
+      record_date=EXCLUDED.record_date,end_date=EXCLUDED.end_date,days_count=EXCLUDED.days_count,delay_minutes=EXCLUDED.delay_minutes,
+      absence=EXCLUDED.absence,unpaid_leave=EXCLUDED.unpaid_leave,overtime_hours=EXCLUDED.overtime_hours,
+      overtime_type=EXCLUDED.overtime_type,notes=EXCLUDED.notes,payload=EXCLUDED.payload,updated_at=now()`, [
+      record.id,record.companyId,record.employeeId,record.periodMonth,record.date,record.endDate || '',Number(record.daysCount ?? 1),
+      Number(record.delayMinutes || 0),Boolean(record.absence),Boolean(record.unpaidLeave),Number(record.overtimeHours || 0),
+      record.overtimeType || 'STANDARD',record.notes || null,JSON.stringify(record),sortOrder
+    ]);
+    const updated = await updateCompatibilityCollectionRecord(client,'attendance',record,req.user.id);
+    await appendStateAudit(client,q,{ companyIds:req.user.company_ids,user:req.user,action:existing.rowCount ? 'UPDATE_ATTENDANCE' : 'CREATE_ATTENDANCE',version:updated.rows[0].version });
+    await client.query('COMMIT');
+    broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at });
+    res.json({ record,created:!existing.rowCount,version:Number(updated.rows[0].version),updated_at:updated.rows[0].updated_at });
+  } catch (e) {
+    try { await client.query('ROLLBACK'); } catch {}
+    if (Number.isInteger(e?.status) && e.status >= 400 && e.status < 500) return res.status(e.status).json({ error:e.message });
+    next(e);
+  } finally { client.release(); }
+});
+
+app.delete('/api/attendance/:id', auth, writeLimiter, async (req, res, next) => {
+  const client = await pool.connect();
+  try {
+    if (!can(req.user,'MANAGE_ATTENDANCE')) return res.status(403).json({ error:'FORBIDDEN' });
+    await client.query('BEGIN');
+    const row = await client.query(`SELECT company_id,payload FROM ${q('attendance_records')} WHERE id=$1 FOR UPDATE`, [req.params.id]);
+    if (!row.rowCount) throw workflowError(404, 'ATTENDANCE_NOT_FOUND');
+    if (!req.user.company_ids.includes(row.rows[0].company_id)) throw workflowError(403, 'FORBIDDEN');
+    const stateRow = await client.query(`SELECT state FROM ${q('app_state')} WHERE id=1 FOR UPDATE`);
+    const stored = await hydrateNormalizedStateData(client,stateRow.rows[0]?.state || {});
+    if (payrollSourceLocked(stored,'attendance',row.rows[0].payload)) throw workflowError(409, 'PAYROLL_SOURCE_ENTRY_LOCKED');
+    await client.query(`DELETE FROM ${q('attendance_records')} WHERE id=$1`, [req.params.id]);
+    const updated = await deleteCompatibilityCollectionRecord(client,'attendance',req.params.id,req.user.id);
+    await appendStateAudit(client,q,{ companyIds:req.user.company_ids,user:req.user,action:'DELETE_ATTENDANCE',version:updated.rows[0].version });
+    await client.query('COMMIT');
+    broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at });
+    res.json({ deleted:true,version:Number(updated.rows[0].version),updated_at:updated.rows[0].updated_at });
+  } catch (e) {
+    try { await client.query('ROLLBACK'); } catch {}
+    if (Number.isInteger(e?.status) && e.status >= 400 && e.status < 500) return res.status(e.status).json({ error:e.message });
+    next(e);
+  } finally { client.release(); }
+});
+
+app.put('/api/penalties/:id', auth, writeLimiter, async (req, res, next) => {
+  const client = await pool.connect();
+  try {
+    if (!can(req.user,'MANAGE_LOANS_PENALTIES')) return res.status(403).json({ error:'FORBIDDEN' });
+    const record = req.body || {};
+    if (record.id !== req.params.id || typeof record.companyId !== 'string' || !req.user.company_ids.includes(record.companyId)
+      || typeof record.employeeId !== 'string' || !validPeriodMonth(record.periodMonth) || !validIsoDate(record.date)
+      || typeof record.reason !== 'string' || !record.reason.trim() || !Number.isFinite(Number(record.amount)) || Number(record.amount) < 0) {
+      return res.status(400).json({ error:'INVALID_PENALTY_RECORD' });
+    }
+    await client.query('BEGIN');
+    const stateRow = await client.query(`SELECT state FROM ${q('app_state')} WHERE id=1 FOR UPDATE`);
+    if (!stateRow.rowCount) throw workflowError(409, 'STATE_NOT_INITIALIZED');
+    const stored = await hydrateNormalizedStateData(client,stateRow.rows[0].state);
+    const existingRecord = asArray(stored.penalties).find(item => item.id === record.id);
+    if ((existingRecord && payrollSourceLocked(stored,'penalty',existingRecord)) || payrollSourceLocked(stored,'penalty',record)) {
+      throw workflowError(409, 'PAYROLL_SOURCE_ENTRY_LOCKED');
+    }
+    const employee = await client.query(`SELECT company_id FROM ${q('employees')} WHERE id=$1 AND is_archived=false`, [record.employeeId]);
+    if (!employee.rowCount || employee.rows[0].company_id !== record.companyId) throw workflowError(400, 'INVALID_PENALTY_EMPLOYEE');
+    const existing = await client.query(`SELECT company_id,sort_order FROM ${q('penalties')} WHERE id=$1 FOR UPDATE`, [record.id]);
+    if (existing.rowCount && existing.rows[0].company_id !== record.companyId) throw workflowError(409, 'PENALTY_COMPANY_IMMUTABLE');
+    const sortOrder = existing.rowCount ? existing.rows[0].sort_order : Number((await client.query(`SELECT COALESCE(min(sort_order),0)-1 AS sort_order FROM ${q('penalties')} WHERE company_id=$1`, [record.companyId])).rows[0]?.sort_order || 0);
+    await client.query(`INSERT INTO ${q('penalties')} (id,company_id,employee_id,period_month,record_date,reason,amount,applied_in_payroll,payload,sort_order,updated_at)
+      VALUES ($1,$2,$3,$4,$5::date,$6,$7,$8,$9::jsonb,$10,now())
+      ON CONFLICT (id) DO UPDATE SET employee_id=EXCLUDED.employee_id,period_month=EXCLUDED.period_month,record_date=EXCLUDED.record_date,
+        reason=EXCLUDED.reason,amount=EXCLUDED.amount,applied_in_payroll=EXCLUDED.applied_in_payroll,payload=EXCLUDED.payload,updated_at=now()`, [
+      record.id,record.companyId,record.employeeId,record.periodMonth,record.date,record.reason.trim(),Number(record.amount),Boolean(record.appliedInPayroll),JSON.stringify(record),sortOrder
+    ]);
+    const updated = await updateCompatibilityCollectionRecord(client,'penalties',record,req.user.id);
+    await appendStateAudit(client,q,{ companyIds:req.user.company_ids,user:req.user,action:existing.rowCount ? 'UPDATE_PENALTY' : 'CREATE_PENALTY',version:updated.rows[0].version });
+    await client.query('COMMIT');
+    broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at });
+    res.json({ record,created:!existing.rowCount,version:Number(updated.rows[0].version),updated_at:updated.rows[0].updated_at });
+  } catch (e) {
+    try { await client.query('ROLLBACK'); } catch {}
+    if (Number.isInteger(e?.status) && e.status >= 400 && e.status < 500) return res.status(e.status).json({ error:e.message });
+    next(e);
+  } finally { client.release(); }
+});
+
+app.delete('/api/penalties/:id', auth, writeLimiter, async (req, res, next) => {
+  const client = await pool.connect();
+  try {
+    if (!can(req.user,'MANAGE_LOANS_PENALTIES')) return res.status(403).json({ error:'FORBIDDEN' });
+    await client.query('BEGIN');
+    const row = await client.query(`SELECT company_id,payload FROM ${q('penalties')} WHERE id=$1 FOR UPDATE`, [req.params.id]);
+    if (!row.rowCount) throw workflowError(404, 'PENALTY_NOT_FOUND');
+    if (!req.user.company_ids.includes(row.rows[0].company_id)) throw workflowError(403, 'FORBIDDEN');
+    const stateRow = await client.query(`SELECT state FROM ${q('app_state')} WHERE id=1 FOR UPDATE`);
+    const stored = await hydrateNormalizedStateData(client,stateRow.rows[0]?.state || {});
+    if (payrollSourceLocked(stored,'penalty',row.rows[0].payload)) throw workflowError(409, 'PAYROLL_SOURCE_ENTRY_LOCKED');
+    await client.query(`DELETE FROM ${q('penalties')} WHERE id=$1`, [req.params.id]);
+    const updated = await deleteCompatibilityCollectionRecord(client,'penalties',req.params.id,req.user.id);
+    await appendStateAudit(client,q,{ companyIds:req.user.company_ids,user:req.user,action:'DELETE_PENALTY',version:updated.rows[0].version });
+    await client.query('COMMIT');
+    broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at });
+    res.json({ deleted:true,version:Number(updated.rows[0].version),updated_at:updated.rows[0].updated_at });
+  } catch (e) {
+    try { await client.query('ROLLBACK'); } catch {}
+    if (Number.isInteger(e?.status) && e.status >= 400 && e.status < 500) return res.status(e.status).json({ error:e.message });
+    next(e);
+  } finally { client.release(); }
+});
+
 // Record-level mutations avoid overwriting unrelated work when several users save
 // employees, attendance or payroll operations at the same time.
 app.patch('/api/state/patch', auth, writeLimiter, async (req, res, next) => {

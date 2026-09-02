@@ -749,18 +749,28 @@ export const App: React.FC = () => {
     if (duplicate) throw new Error('DUPLICATE_PAYROLL_SETTLEMENT');
   };
 
-  const handleAddAttendance = (record: AttendanceRecord) => {
+  const handleAddAttendance = async (record: AttendanceRecord) => {
     if (isClosedPayrollInputLocked(state.payrollRuns, 'attendance', record)) {
       alert(payrollInputLockMessage(language));
       return;
     }
-    setState(prev => {
-      const updated = prev.attendance.some(item => item.id === record.id)
-        ? prev.attendance.map(item => item.id === record.id ? record : item)
-        : [record, ...prev.attendance];
-      saveAttendance(updated);
-      return { ...prev, attendance: updated };
-    });
+    const operation = persistenceQueueRef.current.catch(() => undefined).then(() => api.saveAttendanceRecord(record));
+    persistenceQueueRef.current = operation.then(() => undefined, () => undefined);
+    try {
+      const result = await operation;
+      setState(prev => {
+        const attendance = prev.attendance.some(item => item.id === result.record.id)
+          ? prev.attendance.map(item => item.id === result.record.id ? result.record : item)
+          : [result.record, ...prev.attendance];
+        const next = { ...prev, attendance };
+        remoteStateSnapshotRef.current = next;
+        return next;
+      });
+      setDbStatus(prev => ({ ...prev, isCloudConnected:true, isChecking:false, lastError:null, lastSavedAt:result.updated_at }));
+    } catch (error:any) {
+      setDbStatus(prev => ({ ...prev, isChecking:false, lastError:`${tr('تعذر حفظ حركة الحضور:', 'Could not save attendance record:')} ${error?.message || 'UNKNOWN_ERROR'}` }));
+      throw error;
+    }
   };
 
   const handleBulkImportAttendance = (records: AttendanceRecord[]) => {
@@ -775,32 +785,26 @@ export const App: React.FC = () => {
     });
   };
 
-  const handleDeleteAttendance = (recordId: string) => {
+  const handleDeleteAttendance = async (recordId: string) => {
     const existingRecord = state.attendance.find(item => item.id === recordId);
     if (existingRecord && isClosedPayrollInputLocked(state.payrollRuns, 'attendance', existingRecord)) {
       alert(payrollInputLockMessage(language));
       return;
     }
-    setState(prev => {
-      const record = prev.attendance.find(item => item.id === recordId);
-      const updated = prev.attendance.filter(item => item.id !== recordId);
-      saveAttendance(updated);
-      if (!record) return { ...prev, attendance: updated };
-      const employee = prev.employees.find(item => item.id === record.employeeId);
-      const log: AuditLog = {
-        id: `log-${Date.now()}`,
-        timestamp: new Date().toISOString(),
-        userName: prev.currentUser?.name || 'مسؤول الموارد البشرية',
-        userRole: prev.activeRole,
-        action: record.absence ? tr('إلغاء غياب مسجل', 'Cancelled recorded absence') : tr('حذف حركة حضور', 'Deleted attendance record'),
-        entityType: 'EMPLOYEE',
-        entityId: record.employeeId,
-        details: `${employee ? `${employee.firstNameAr} ${employee.lastNameAr}` : record.employeeId} - ${record.date}`,
-      };
-      const auditLogs = [log, ...prev.auditLogs];
-      saveAuditLogs(auditLogs);
-      return { ...prev, attendance: updated, auditLogs };
-    });
+    const operation = persistenceQueueRef.current.catch(() => undefined).then(() => api.deleteAttendanceRecord(recordId));
+    persistenceQueueRef.current = operation.then(() => undefined, () => undefined);
+    try {
+      const result = await operation;
+      setState(prev => {
+        const next = { ...prev, attendance:prev.attendance.filter(item => item.id !== recordId) };
+        remoteStateSnapshotRef.current = next;
+        return next;
+      });
+      setDbStatus(prev => ({ ...prev, isCloudConnected:true, isChecking:false, lastError:null, lastSavedAt:result.updated_at }));
+    } catch (error:any) {
+      setDbStatus(prev => ({ ...prev, isChecking:false, lastError:`${tr('تعذر حذف حركة الحضور:', 'Could not delete attendance record:')} ${error?.message || 'UNKNOWN_ERROR'}` }));
+      throw error;
+    }
   };
 
   const handleUpdateLeaveStatus = (leaveId: string, status: 'PENDING' | 'APPROVED' | 'REJECTED') => {
@@ -897,45 +901,61 @@ export const App: React.FC = () => {
     });
   };
 
-  const handleAddPenalty = (penalty: PenaltyRecord) => {
+  const handleAddPenalty = async (penalty: PenaltyRecord) => {
     const existingPenalty = state.penalties.find(item => item.id === penalty.id);
     if (existingPenalty && isClosedPayrollInputLocked(state.payrollRuns, 'penalty', existingPenalty)) {
       alert(payrollInputLockMessage(language));
       return;
     }
-    setState(prev => {
-      const updated = prev.penalties.some(item => item.id === penalty.id)
-        ? prev.penalties.map(item => item.id === penalty.id ? penalty : item)
-        : [penalty, ...prev.penalties];
-      savePenalties(updated);
-      return { ...prev, penalties: updated };
-    });
+    const operation = persistenceQueueRef.current.catch(() => undefined).then(() => api.savePenaltyRecord(penalty));
+    persistenceQueueRef.current = operation.then(() => undefined, () => undefined);
+    try {
+      const result = await operation;
+      setState(prev => {
+        const penalties = prev.penalties.some(item => item.id === result.record.id)
+          ? prev.penalties.map(item => item.id === result.record.id ? result.record : item)
+          : [result.record, ...prev.penalties];
+        const next = { ...prev, penalties };
+        remoteStateSnapshotRef.current = next;
+        return next;
+      });
+      setDbStatus(prev => ({ ...prev, isCloudConnected:true, isChecking:false, lastError:null, lastSavedAt:result.updated_at }));
+    } catch (error:any) {
+      setDbStatus(prev => ({ ...prev, isChecking:false, lastError:`${tr('تعذر حفظ الجزاء:', 'Could not save penalty:')} ${error?.message || 'UNKNOWN_ERROR'}` }));
+      throw error;
+    }
   };
 
-  const handleCancelPenalty = (penaltyId: string) => {
+  const handleCancelPenalty = async (penaltyId: string) => {
     const existingPenalty = state.penalties.find(item => item.id === penaltyId);
     if (existingPenalty && isClosedPayrollInputLocked(state.payrollRuns, 'penalty', existingPenalty)) {
       alert(payrollInputLockMessage(language));
       return;
     }
-    setState(prev => {
-      const updated = prev.penalties.map(item => item.id === penaltyId ? { ...item, appliedInPayroll: false } : item);
-      savePenalties(updated);
-      return { ...prev, penalties: updated };
-    });
+    if (!existingPenalty) return;
+    await handleAddPenalty({ ...existingPenalty, appliedInPayroll:false });
   };
 
-  const handleDeletePenalty = (penaltyId: string) => {
+  const handleDeletePenalty = async (penaltyId: string) => {
     const existingPenalty = state.penalties.find(item => item.id === penaltyId);
     if (existingPenalty && isClosedPayrollInputLocked(state.payrollRuns, 'penalty', existingPenalty)) {
       alert(payrollInputLockMessage(language));
       return;
     }
-    setState(prev => {
-      const updated = prev.penalties.filter(item => item.id !== penaltyId);
-      savePenalties(updated);
-      return { ...prev, penalties: updated };
-    });
+    const operation = persistenceQueueRef.current.catch(() => undefined).then(() => api.deletePenaltyRecord(penaltyId));
+    persistenceQueueRef.current = operation.then(() => undefined, () => undefined);
+    try {
+      const result = await operation;
+      setState(prev => {
+        const next = { ...prev, penalties:prev.penalties.filter(item => item.id !== penaltyId) };
+        remoteStateSnapshotRef.current = next;
+        return next;
+      });
+      setDbStatus(prev => ({ ...prev, isCloudConnected:true, isChecking:false, lastError:null, lastSavedAt:result.updated_at }));
+    } catch (error:any) {
+      setDbStatus(prev => ({ ...prev, isChecking:false, lastError:`${tr('تعذر حذف الجزاء:', 'Could not delete penalty:')} ${error?.message || 'UNKNOWN_ERROR'}` }));
+      throw error;
+    }
   };
 
   const handleSaveTemporaryEarning = (earning: TemporaryEarningRecord) => {
