@@ -13,7 +13,7 @@ import {
   FileText,
   Printer
 } from 'lucide-react';
-import { Company, Employee, LoanSchedule, PenaltyRecord, TemporaryEarningRecord, UserRole } from '../types';
+import { Company, Employee, LoanSchedule, PenaltyRecord, TemporaryEarningRecord, PayrollRun, UserRole } from '../types';
 import { formatSAR } from '../utils/payrollEngine';
 import { SearchableEmployeeSelect } from './SearchableEmployeeSelect';
 import { useLanguage } from '../i18n/LanguageContext';
@@ -26,10 +26,12 @@ interface LoansPenaltiesViewProps {
   loans: LoanSchedule[];
   penalties: PenaltyRecord[];
   temporaryEarnings: TemporaryEarningRecord[];
+  payrollRuns: PayrollRun[];
   activeRole: UserRole;
   onSaveLoan: (loan: LoanSchedule) => void;
   onUpdateLoanStatus: (loanId: string, status: LoanSchedule['status']) => void;
   onDeleteLoan: (loanId: string) => void;
+  onAdjustLoan: (loanId: string, amount: number, reason: string, date: string) => void;
   onSavePenalty: (penalty: PenaltyRecord) => void;
   onCancelPenalty: (penaltyId: string) => void;
   onDeletePenalty: (penaltyId: string) => void;
@@ -44,10 +46,12 @@ export const LoansPenaltiesView: React.FC<LoansPenaltiesViewProps> = ({
   loans,
   penalties,
   temporaryEarnings,
+  payrollRuns,
   activeRole,
   onSaveLoan,
   onUpdateLoanStatus,
   onDeleteLoan,
+  onAdjustLoan,
   onSavePenalty,
   onCancelPenalty,
   onDeletePenalty,
@@ -64,18 +68,53 @@ export const LoansPenaltiesView: React.FC<LoansPenaltiesViewProps> = ({
   const [isPenaltyModalOpen, setIsPenaltyModalOpen] = useState(false);
   const [editingLoan, setEditingLoan] = useState<LoanSchedule | null>(null);
   const [editingPenalty, setEditingPenalty] = useState<PenaltyRecord | null>(null);
+  const [penaltyPeriodFrom, setPenaltyPeriodFrom] = useState(currentPeriod);
+  const [penaltyPeriodTo, setPenaltyPeriodTo] = useState(currentPeriod);
 
   const companyEmployees = useMemo(() => {
     return employees.filter(e => e.companyId === company.id);
   }, [employees, company.id]);
 
   const companyLoans = useMemo(() => {
-    return loans.filter(l => l.companyId === company.id);
-  }, [loans, company.id]);
+    const rows = loans
+      .filter(loan => loan.companyId === company.id)
+      .sort((a, b) => a.startDate.localeCompare(b.startDate) || a.id.localeCompare(b.id));
+    const balances = new Map<string, number>(rows.map(loan => [loan.id, Math.max(0, Number(loan.remainingAmount) || 0)]));
+    payrollRuns
+      .filter(run => run.companyId === company.id && ['APPROVED', 'POSTED'].includes(run.status))
+      .sort((a, b) => a.periodMonth.localeCompare(b.periodMonth))
+      .forEach(run => {
+        const deductions = new Map<string, number>(run.items.map(item => [item.employeeId, Math.max(0, Number(item.loanDeduction) || 0)]));
+        for (const loan of rows) {
+          if (loan.startDate > run.periodMonth) continue;
+          const paid = deductions.get(loan.employeeId) || 0;
+          if (paid <= 0) continue;
+          const balance = balances.get(loan.id) || 0;
+          const applied = Math.min(balance, paid);
+          balances.set(loan.id, Number((balance - applied).toFixed(2)));
+          deductions.set(loan.employeeId, Number((paid - applied).toFixed(2)));
+        }
+      });
+    return rows.map(loan => {
+      const remainingAmount = balances.get(loan.id) || 0;
+      return {
+        ...loan,
+        remainingAmount,
+        remainingInstallments: remainingAmount === 0
+          ? 0
+          : loan.monthlyInstallment > 0 ? Math.ceil(remainingAmount / loan.monthlyInstallment) : loan.remainingInstallments,
+        status: remainingAmount === 0 ? 'COMPLETED' as const : loan.status,
+      };
+    });
+  }, [loans, payrollRuns, company.id]);
 
   const companyPenalties = useMemo(() => {
     return penalties.filter(p => p.companyId === company.id);
   }, [penalties, company.id]);
+
+  const filteredPenalties = useMemo(() => companyPenalties.filter(penalty =>
+    penalty.periodMonth >= penaltyPeriodFrom && penalty.periodMonth <= penaltyPeriodTo
+  ), [companyPenalties, penaltyPeriodFrom, penaltyPeriodTo]);
 
   // New Loan Form
   const [loanForm, setLoanForm] = useState({
@@ -296,7 +335,10 @@ export const LoansPenaltiesView: React.FC<LoansPenaltiesViewProps> = ({
                           <div className="text-[10px] text-slate-400">{emp?.employeeNo} - {emp?.department}</div>
                         </td>
 
-                        <td className="py-3 px-4 font-bold text-slate-900">{formatSAR(loan.totalAmount)}</td>
+                        <td className="py-3 px-4 font-bold text-slate-900">
+                          {formatSAR(loan.totalAmount + (loan.adjustments || []).reduce((sum, item) => sum + item.amount, 0))}
+                          {(loan.adjustments || []).length > 0 && <div className="text-[10px] font-medium text-slate-400">{tr('الأصل', 'Original')}: {formatSAR(loan.totalAmount)} · {tr('تسويات', 'Adjustments')}: {(loan.adjustments || []).length}</div>}
+                        </td>
                         <td className="py-3 px-4 font-semibold text-rose-700">{formatSAR(loan.monthlyInstallment)}</td>
                         <td className="py-3 px-4 font-mono font-bold text-slate-700">{loan.remainingInstallments} {tr('من', 'of')} {loan.totalInstallments}</td>
                         <td className="py-3 px-4 font-extrabold text-amber-800 font-mono">{formatSAR(loan.remainingAmount)}</td>
@@ -318,6 +360,17 @@ export const LoansPenaltiesView: React.FC<LoansPenaltiesViewProps> = ({
                         <td className="py-3 px-4 text-center">
                           <div className="flex items-center justify-center gap-2">
                           <button disabled={!emp} onClick={() => emp && !printLoanAcknowledgement(company, emp, loan) && alert(tr('يرجى السماح بالنوافذ المنبثقة لطباعة النموذج.', 'Please allow pop-ups to print the form.'))} className="text-emerald-700 disabled:text-slate-300" title={tr('طباعة إقرار السلفة PDF', 'Print loan acknowledgment PDF')}><Printer className="w-4 h-4" /></button>
+                          <button onClick={() => {
+                            const raw = prompt(tr('أدخل مبلغ التسوية: قيمة سالبة لتخفيض السلفة أو موجبة لزيادتها', 'Enter adjustment amount: negative to reduce the loan or positive to increase it'));
+                            if (raw == null) return;
+                            const amount = Number(raw);
+                            if (!Number.isFinite(amount) || amount === 0) return alert(tr('مبلغ التسوية غير صحيح.', 'Invalid adjustment amount.'));
+                            const reason = prompt(tr('سبب التسوية *', 'Adjustment reason *')) || '';
+                            if (!reason.trim()) return alert(tr('سبب التسوية مطلوب.', 'Adjustment reason is required.'));
+                            const date = prompt(tr('تاريخ التسوية YYYY-MM-DD', 'Adjustment date YYYY-MM-DD'), new Date().toISOString().slice(0,10)) || '';
+                            if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return alert(tr('تاريخ التسوية غير صحيح.', 'Invalid adjustment date.'));
+                            onAdjustLoan(loan.id, amount, reason, date);
+                          }} className="text-violet-700" title={tr('تسوية السلفة', 'Adjust loan balance')}><DollarSign className="w-4 h-4" /></button>
                           <button onClick={() => openEditLoan(loan)} className="text-blue-700" title={tr('تعديل السلفة', 'Edit loan')}><Edit3 className="w-4 h-4" /></button>
                           <button onClick={() => { if (confirm(tr('حذف السلفة نهائيًا وإزالة أقساطها من المسير القادم؟', 'Permanently delete this loan and remove its installments from future payroll?'))) onDeleteLoan(loan.id); }} className="text-rose-700" title={tr('حذف السلفة', 'Delete loan')}><Trash2 className="w-4 h-4" /></button>
                           {loan.status === 'ACTIVE' ? (
@@ -348,6 +401,12 @@ export const LoansPenaltiesView: React.FC<LoansPenaltiesViewProps> = ({
       ) : activeTab === 'penalties' ? (
         /* Penalties Table */
         <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+          <div data-penalty-period-filter className="flex flex-wrap items-end gap-3 border-b border-slate-200 bg-slate-50/70 p-4">
+            <div><label className="mb-1 block text-[11px] font-bold text-slate-600">{tr('من شهر', 'From month')}</label><input type="month" value={penaltyPeriodFrom} onChange={event => setPenaltyPeriodFrom(event.target.value)} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs" /></div>
+            <div><label className="mb-1 block text-[11px] font-bold text-slate-600">{tr('إلى شهر', 'To month')}</label><input type="month" value={penaltyPeriodTo} min={penaltyPeriodFrom} onChange={event => setPenaltyPeriodTo(event.target.value)} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs" /></div>
+            <button type="button" onClick={() => { setPenaltyPeriodFrom(currentPeriod); setPenaltyPeriodTo(currentPeriod); }} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600">{tr('الشهر الحالي', 'Current month')}</button>
+            <span className="text-[11px] text-slate-500">{tr('النتائج', 'Results')}: {filteredPenalties.length}</span>
+          </div>
           <div className="overflow-x-auto">
             <table className="w-full text-right text-xs">
               <thead>
@@ -362,7 +421,7 @@ export const LoansPenaltiesView: React.FC<LoansPenaltiesViewProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {companyPenalties.map((pen) => {
+                {filteredPenalties.map((pen) => {
                   const emp = companyEmployees.find(e => e.id === pen.employeeId);
                   return (
                     <tr key={pen.id} className="hover:bg-slate-50">
@@ -538,6 +597,20 @@ export const LoansPenaltiesView: React.FC<LoansPenaltiesViewProps> = ({
                     className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl"
                   />
                 </div>
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">{tr('فترة الراتب التي يطبق عليها الخصم *', 'Payroll period for this deduction *')}</label>
+                <input
+                  type="month"
+                  required
+                  value={penaltyForm.periodMonth}
+                  onChange={(e) => setPenaltyForm({ ...penaltyForm, periodMonth: e.target.value })}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-mono"
+                />
+                <p className="mt-1 text-[10px] text-slate-500">
+                  {tr('يمكن اختيار شهر سابق مثل 2026-07؛ سيُطبق الخصم على رصيد هذا الشهر عند إعادة الاحتساب طالما الموظف لم يتم تحويل راتبه.', 'You can select a prior month such as 2026-07; the deduction will affect that period on recalculation as long as the employee has not been transferred.')}
+                </p>
               </div>
 
               <div>
