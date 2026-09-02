@@ -2,7 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
-const payroll = fs.readFileSync('src/components/PayrollRunsView.tsx', 'utf8');
+const payroll = [
+  fs.readFileSync('src/components/PayrollRunsView.tsx', 'utf8'),
+  fs.readFileSync('src/components/payroll/PayrollRunItemsTable.tsx', 'utf8'),
+  fs.readFileSync('src/components/payroll/PayrollPaymentBatchModal.tsx', 'utf8'),
+].join('\n');
 const hardening = fs.readFileSync('scripts/apply-feature-hardening.mjs', 'utf8');
 
 test('payment batch selection is limited to currently eligible selected employees', () => {
