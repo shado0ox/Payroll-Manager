@@ -24,7 +24,7 @@ interface AccountingJournalsViewProps {
   journals: JournalBatch[];
   activeRole: UserRole;
   onUpdateCompany: (company: Company) => void;
-  onOpenQoyodModal: () => void;
+  onOpenQoyodModal: (batch: JournalBatch) => void;
 }
 
 export const AccountingJournalsView: React.FC<AccountingJournalsViewProps> = ({
@@ -63,6 +63,10 @@ export const AccountingJournalsView: React.FC<AccountingJournalsViewProps> = ({
   }, [company, currentRun, journalType]);
 
   const isBalanced = activeBatch ? Math.abs(activeBatch.totalDebit - activeBatch.totalCredit) < 0.01 : false;
+  const persistedBatch = useMemo(
+    () => activeBatch ? journals.find(journal => journal.id === activeBatch.id) : undefined,
+    [activeBatch,journals]
+  );
 
   // Chart of accounts form state
   const [accountsForm, setAccountsForm] = useState(company.chartOfAccounts);
@@ -123,7 +127,7 @@ export const AccountingJournalsView: React.FC<AccountingJournalsViewProps> = ({
           {activeBatch && (
             <>
               <button
-                onClick={onOpenQoyodModal}
+                onClick={() => onOpenQoyodModal(activeBatch)}
                 className="px-3.5 py-2 bg-sky-600 hover:bg-sky-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
               >
                 <Sparkles className="w-4 h-4" />
@@ -178,6 +182,11 @@ export const AccountingJournalsView: React.FC<AccountingJournalsViewProps> = ({
               <span className="text-xs text-slate-500 font-medium">
                 {ui('تاريخ القيد', 'Journal date')}: {activeBatch.date}
               </span>
+              {persistedBatch?.status === 'POSTED' && (
+                <span className="text-[11px] font-bold px-2 py-1 rounded-md bg-sky-50 text-sky-700 border border-sky-200">
+                  {ui('مرحّل إلى قيود', 'Posted to Qoyod')} #{persistedBatch.qoyodSyncStatus?.qoyodJournalId || ''}
+                </span>
+              )}
             </div>
             <h3 className="font-bold text-sm text-slate-900">{language === 'en' ? activeBatch.descriptionEn || activeBatch.description : activeBatch.description}</h3>
           </div>

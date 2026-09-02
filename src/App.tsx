@@ -151,6 +151,7 @@ export const App: React.FC = () => {
   };
   const [statementEmployee, setStatementEmployee] = useState<Employee | null>(null);
   const [isQoyodModalOpen, setIsQoyodModalOpen] = useState(false);
+  const [qoyodJournalBatch, setQoyodJournalBatch] = useState<JournalBatch | null>(null);
   const [isDbModalOpen, setIsDbModalOpen] = useState(false);
   const [showDbWarningBanner, setShowDbWarningBanner] = useState(true);
   const [authReady, setAuthReady] = useState(false);
@@ -622,6 +623,21 @@ export const App: React.FC = () => {
   };
 
   const handleSavePayrollRun = async (run: PayrollRun) => { await handleSavePayrollRunConfirmed(run); };
+
+  const handleSaveJournal = async (journal: JournalBatch) => {
+    const operation = persistenceQueueRef.current.catch(() => undefined).then(() => api.saveJournalRecord(journal));
+    persistenceQueueRef.current = operation.then(() => undefined, () => undefined);
+    const result = await operation;
+    setState(prev => {
+      const journals = prev.journals.some(item => item.id === result.record.id)
+        ? prev.journals.map(item => item.id === result.record.id ? result.record : item)
+        : [result.record,...prev.journals];
+      const next = { ...prev,journals };
+      remoteStateSnapshotRef.current = next;
+      return next;
+    });
+    setDbStatus(prev => ({ ...prev,isCloudConnected:true,isChecking:false,lastError:null,lastSavedAt:result.updated_at }));
+  };
 
   const handleSavePayrollSettlement = async (settlement: PayrollSettlement) => {
     let duplicate = false;
@@ -1277,7 +1293,10 @@ export const App: React.FC = () => {
                 journals={state.journals}
                 activeRole={state.activeRole}
                 onUpdateCompany={handleUpdateCompany}
-                onOpenQoyodModal={() => setIsQoyodModalOpen(true)}
+                onOpenQoyodModal={(batch) => {
+                  setQoyodJournalBatch(batch);
+                  setIsQoyodModalOpen(true);
+                }}
               />
             )}
 
@@ -1341,9 +1360,15 @@ export const App: React.FC = () => {
         <QoyodIntegrationModal
           company={activeCompany}
           latestRun={latestCompanyRun}
+          journalBatch={qoyodJournalBatch}
+          existingJournal={qoyodJournalBatch ? state.journals.find(journal => journal.id === qoyodJournalBatch.id) : undefined}
           qoyodConfig={state.qoyodConfig}
           onSaveConfig={handleSaveQoyodConfig}
-          onClose={() => setIsQoyodModalOpen(false)}
+          onJournalSynced={handleSaveJournal}
+          onClose={() => {
+            setIsQoyodModalOpen(false);
+            setQoyodJournalBatch(null);
+          }}
         />
       )}
 
