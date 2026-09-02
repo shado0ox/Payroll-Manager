@@ -1,5 +1,5 @@
 import { AppState } from './storage';
-import { AttendanceRecord, PenaltyRecord, UserAccount } from '../types';
+import { AttendanceRecord, LoanSchedule, PenaltyRecord, TemporaryEarningRecord, UserAccount } from '../types';
 
 class ApiError extends Error {
   constructor(message: string, public status: number) { super(message); this.name = 'ApiError'; }
@@ -91,6 +91,30 @@ export const api = {
     const result = await request<{deleted:boolean;version:number;updated_at:string}>(`/api/penalties/${encodeURIComponent(id)}`, { method:'DELETE' });
     stateVersion = result.version;
     removeFromSyncedCollection('penalties', id);
+    return result;
+  },
+  saveLoanRecord: async (record: LoanSchedule) => {
+    const result = await request<{record:LoanSchedule;created:boolean;version:number;updated_at:string}>(`/api/loans/${encodeURIComponent(record.id)}`, { method:'PUT', body:JSON.stringify(record) });
+    stateVersion = result.version;
+    updateSyncedCollection('loans', result.record);
+    return result;
+  },
+  deleteLoanRecord: async (id: string) => {
+    const result = await request<{deleted:boolean;version:number;updated_at:string}>(`/api/loans/${encodeURIComponent(id)}`, { method:'DELETE' });
+    stateVersion = result.version;
+    removeFromSyncedCollection('loans', id);
+    return result;
+  },
+  saveTemporaryEarningRecord: async (record: TemporaryEarningRecord) => {
+    const result = await request<{record:TemporaryEarningRecord;created:boolean;version:number;updated_at:string}>(`/api/temporary-earnings/${encodeURIComponent(record.id)}`, { method:'PUT', body:JSON.stringify(record) });
+    stateVersion = result.version;
+    updateSyncedCollection('temporaryEarnings', result.record);
+    return result;
+  },
+  deleteTemporaryEarningRecord: async (id: string) => {
+    const result = await request<{deleted:boolean;version:number;updated_at:string}>(`/api/temporary-earnings/${encodeURIComponent(id)}`, { method:'DELETE' });
+    stateVersion = result.version;
+    removeFromSyncedCollection('temporaryEarnings', id);
     return result;
   },
   deleteEmployee: (employeeId:string) => request<{deleted:boolean;archived:boolean}>(`/api/employees/${encodeURIComponent(employeeId)}`, { method:'DELETE' }),

@@ -825,80 +825,84 @@ export const App: React.FC = () => {
     });
   };
 
-  const handleAddLoan = (loan: LoanSchedule) => {
+  const commitLoanRecord = async (loan: LoanSchedule) => {
+    const operation = persistenceQueueRef.current.catch(() => undefined).then(() => api.saveLoanRecord(loan));
+    persistenceQueueRef.current = operation.then(() => undefined, () => undefined);
+    try {
+      const result = await operation;
+      setState(prev => {
+        const loans = prev.loans.some(item => item.id === result.record.id)
+          ? prev.loans.map(item => item.id === result.record.id ? result.record : item)
+          : [result.record, ...prev.loans];
+        const next = { ...prev, loans };
+        remoteStateSnapshotRef.current = next;
+        return next;
+      });
+      setDbStatus(prev => ({ ...prev, isCloudConnected:true, isChecking:false, lastError:null, lastSavedAt:result.updated_at }));
+      return result.record;
+    } catch (error:any) {
+      setDbStatus(prev => ({ ...prev, isChecking:false, lastError:`${tr('تعذر حفظ السلفة:', 'Could not save loan:')} ${error?.message || 'UNKNOWN_ERROR'}` }));
+      throw error;
+    }
+  };
+
+  const handleAddLoan = async (loan: LoanSchedule) => {
     const existingLoan = state.loans.find(item => item.id === loan.id);
     if (existingLoan && isClosedPayrollInputLocked(state.payrollRuns, 'loan', existingLoan)) {
       alert(payrollInputLockMessage(language));
       return;
     }
-    setState(prev => {
-      const updated = prev.loans.some(item => item.id === loan.id)
-        ? prev.loans.map(item => item.id === loan.id ? loan : item)
-        : [loan, ...prev.loans];
-      saveLoans(updated);
-      return { ...prev, loans: updated };
-    });
+    await commitLoanRecord(loan);
   };
 
-  const handleUpdateLoanStatus = (loanId: string, status: LoanSchedule['status']) => {
+  const handleUpdateLoanStatus = async (loanId: string, status: LoanSchedule['status']) => {
     const existingLoan = state.loans.find(item => item.id === loanId);
     if (existingLoan && isClosedPayrollInputLocked(state.payrollRuns, 'loan', existingLoan)) {
       alert(payrollInputLockMessage(language));
       return;
     }
-    setState(prev => {
-      const updated = prev.loans.map(l => l.id === loanId ? { ...l, status } : l);
-      saveLoans(updated);
-      return { ...prev, loans: updated };
-    });
+    if (!existingLoan) return;
+    await commitLoanRecord({ ...existingLoan, status });
   };
 
-  const handleDeleteLoan = (loanId: string) => {
+  const handleDeleteLoan = async (loanId: string) => {
     const existingLoan = state.loans.find(item => item.id === loanId);
     if (existingLoan && isClosedPayrollInputLocked(state.payrollRuns, 'loan', existingLoan)) {
       alert(payrollInputLockMessage(language));
       return;
     }
-    setState(prev => {
-      const updated = prev.loans.filter(item => item.id !== loanId);
-      saveLoans(updated);
-      return { ...prev, loans: updated };
-    });
+    const operation = persistenceQueueRef.current.catch(() => undefined).then(() => api.deleteLoanRecord(loanId));
+    persistenceQueueRef.current = operation.then(() => undefined, () => undefined);
+    try {
+      const result = await operation;
+      setState(prev => {
+        const next = { ...prev, loans:prev.loans.filter(item => item.id !== loanId) };
+        remoteStateSnapshotRef.current = next;
+        return next;
+      });
+      setDbStatus(prev => ({ ...prev, isCloudConnected:true, isChecking:false, lastError:null, lastSavedAt:result.updated_at }));
+    } catch (error:any) {
+      setDbStatus(prev => ({ ...prev, isChecking:false, lastError:`${tr('تعذر حذف السلفة:', 'Could not delete loan:')} ${error?.message || 'UNKNOWN_ERROR'}` }));
+      throw error;
+    }
   };
 
-  const handleAdjustLoan = (loanId: string, amount: number, reason: string, date: string) => {
+  const handleAdjustLoan = async (loanId: string, amount: number, reason: string, date: string) => {
     const adjustmentDate = new Date(`${date}T00:00:00Z`);
     if (!Number.isFinite(amount) || amount === 0 || !reason.trim() || !/^\d{4}-\d{2}-\d{2}$/.test(date)
       || Number.isNaN(adjustmentDate.getTime()) || adjustmentDate.toISOString().slice(0, 10) !== date) return;
-    setState(prev => {
-      const existing = prev.loans.find(item => item.id === loanId);
-      if (!existing) return prev;
-      const nextBalance = Number((existing.remainingAmount + amount).toFixed(2));
-      if (nextBalance < 0) {
-        alert(tr('لا يمكن أن تجعل التسوية رصيد السلفة أقل من صفر.', 'The adjustment cannot make the loan balance negative.'));
-        return prev;
-      }
-      const adjustment = {
-        id: `loan-adj-${Date.now()}`, amount, date, reason: reason.trim(),
-        createdAt: new Date().toISOString(), createdBy: prev.currentUser?.id,
-      };
-      const installment = Number(existing.monthlyInstallment || 0);
-      const nextRemainingInstallments = nextBalance === 0
-        ? 0
-        : installment > 0 ? Math.ceil(nextBalance / installment) : existing.remainingInstallments;
-      const nextStatus = nextBalance === 0
-        ? 'COMPLETED' as const
-        : existing.status === 'COMPLETED' ? 'ACTIVE' as const : existing.status;
-      const updated = prev.loans.map(item => item.id === loanId ? {
-        ...item,
-        remainingAmount: nextBalance,
-        remainingInstallments: nextRemainingInstallments,
-        status: nextStatus,
-        adjustments: [...(item.adjustments || []), adjustment],
-      } : item);
-      saveLoans(updated);
-      return { ...prev, loans: updated };
-    });
+    const existing = state.loans.find(item => item.id === loanId);
+    if (!existing) return;
+    const nextBalance = Number((existing.remainingAmount + amount).toFixed(2));
+    if (nextBalance < 0) {
+      alert(tr('لا يمكن أن تجعل التسوية رصيد السلفة أقل من صفر.', 'The adjustment cannot make the loan balance negative.'));
+      return;
+    }
+    const adjustment = { id:`loan-adj-${Date.now()}`,amount,date,reason:reason.trim(),createdAt:new Date().toISOString(),createdBy:state.currentUser?.id };
+    const installment = Number(existing.monthlyInstallment || 0);
+    const remainingInstallments = nextBalance === 0 ? 0 : installment > 0 ? Math.ceil(nextBalance / installment) : existing.remainingInstallments;
+    const status = nextBalance === 0 ? 'COMPLETED' as const : existing.status === 'COMPLETED' ? 'ACTIVE' as const : existing.status;
+    await commitLoanRecord({ ...existing,remainingAmount:nextBalance,remainingInstallments,status,adjustments:[...(existing.adjustments || []),adjustment] });
   };
 
   const handleAddPenalty = async (penalty: PenaltyRecord) => {
@@ -958,42 +962,66 @@ export const App: React.FC = () => {
     }
   };
 
-  const handleSaveTemporaryEarning = (earning: TemporaryEarningRecord) => {
+  const commitTemporaryEarningRecord = async (earning: TemporaryEarningRecord) => {
+    const operation = persistenceQueueRef.current.catch(() => undefined).then(() => api.saveTemporaryEarningRecord(earning));
+    persistenceQueueRef.current = operation.then(() => undefined, () => undefined);
+    try {
+      const result = await operation;
+      setState(prev => {
+        const temporaryEarnings = prev.temporaryEarnings.some(item => item.id === result.record.id)
+          ? prev.temporaryEarnings.map(item => item.id === result.record.id ? result.record : item)
+          : [result.record, ...prev.temporaryEarnings];
+        const next = { ...prev, temporaryEarnings };
+        remoteStateSnapshotRef.current = next;
+        return next;
+      });
+      setDbStatus(prev => ({ ...prev, isCloudConnected:true, isChecking:false, lastError:null, lastSavedAt:result.updated_at }));
+      return result.record;
+    } catch (error:any) {
+      setDbStatus(prev => ({ ...prev, isChecking:false, lastError:`${tr('تعذر حفظ العمولة أو المكافأة:', 'Could not save temporary earning:')} ${error?.message || 'UNKNOWN_ERROR'}` }));
+      throw error;
+    }
+  };
+
+  const handleSaveTemporaryEarning = async (earning: TemporaryEarningRecord) => {
     const existingEarning = state.temporaryEarnings.find(item => item.id === earning.id);
     if (existingEarning && isClosedPayrollInputLocked(state.payrollRuns, 'earning', existingEarning)) {
       alert(payrollInputLockMessage(language));
       return;
     }
-    setState(prev => {
-      const updated = prev.temporaryEarnings.some(item => item.id === earning.id)
-        ? prev.temporaryEarnings.map(item => item.id === earning.id ? earning : item)
-        : [earning, ...prev.temporaryEarnings];
-      return { ...prev, temporaryEarnings: updated };
-    });
+    await commitTemporaryEarningRecord(earning);
   };
 
-  const handleCancelTemporaryEarning = (earningId: string) => {
+  const handleCancelTemporaryEarning = async (earningId: string) => {
     const existingEarning = state.temporaryEarnings.find(item => item.id === earningId);
     if (existingEarning && isClosedPayrollInputLocked(state.payrollRuns, 'earning', existingEarning)) {
       alert(payrollInputLockMessage(language));
       return;
     }
-    setState(prev => {
-      const updated = prev.temporaryEarnings.map(item => item.id === earningId ? { ...item, appliedInPayroll: false } : item);
-      return { ...prev, temporaryEarnings: updated };
-    });
+    if (!existingEarning) return;
+    await commitTemporaryEarningRecord({ ...existingEarning, appliedInPayroll:false });
   };
 
-  const handleDeleteTemporaryEarning = (earningId: string) => {
+  const handleDeleteTemporaryEarning = async (earningId: string) => {
     const existingEarning = state.temporaryEarnings.find(item => item.id === earningId);
     if (existingEarning && isClosedPayrollInputLocked(state.payrollRuns, 'earning', existingEarning)) {
       alert(payrollInputLockMessage(language));
       return;
     }
-    setState(prev => {
-      const updated = prev.temporaryEarnings.filter(item => item.id !== earningId);
-      return { ...prev, temporaryEarnings: updated };
-    });
+    const operation = persistenceQueueRef.current.catch(() => undefined).then(() => api.deleteTemporaryEarningRecord(earningId));
+    persistenceQueueRef.current = operation.then(() => undefined, () => undefined);
+    try {
+      const result = await operation;
+      setState(prev => {
+        const next = { ...prev, temporaryEarnings:prev.temporaryEarnings.filter(item => item.id !== earningId) };
+        remoteStateSnapshotRef.current = next;
+        return next;
+      });
+      setDbStatus(prev => ({ ...prev, isCloudConnected:true, isChecking:false, lastError:null, lastSavedAt:result.updated_at }));
+    } catch (error:any) {
+      setDbStatus(prev => ({ ...prev, isChecking:false, lastError:`${tr('تعذر حذف العمولة أو المكافأة:', 'Could not delete temporary earning:')} ${error?.message || 'UNKNOWN_ERROR'}` }));
+      throw error;
+    }
   };
 
   const handleDeleteEmployee = async (empId: string) => {
