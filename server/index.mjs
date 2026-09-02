@@ -2063,12 +2063,133 @@ app.delete('/api/temporary-earnings/:id', auth, writeLimiter, async (req, res, n
   } finally { client.release(); }
 });
 
+async function commitPayrollCommandState(client, stored, record, user, action) {
+  const nextRuns = asArray(stored.payrollRuns).map(item => item.id === record.id ? record : item);
+  const nextState = { ...stored,payrollRuns:nextRuns };
+  await appendPayrollFinancialAudit(client,q,{ stored,next:nextState,user });
+  const updated = await updateCompatibilityCollectionRecord(client,'payrollRuns',record,user.id);
+  await appendStateAudit(client,q,{ companyIds:user.company_ids,user,action,version:updated.rows[0].version });
+  return updated;
+}
+
+app.post('/api/payroll-runs/:id/status', auth, writeLimiter, async (req, res, next) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const stateRow = await client.query(`SELECT state FROM ${q('app_state')} WHERE id=1 FOR UPDATE`);
+    if (!stateRow.rowCount) throw workflowError(409,'STATE_NOT_INITIALIZED');
+    const stored = await hydrateNormalizedStateData(client,stateRow.rows[0].state);
+    const previous = asArray(stored.payrollRuns).find(item => item.id === req.params.id);
+    if (!previous) throw workflowError(404,'PAYROLL_RUN_NOT_FOUND');
+    if (!req.user.company_ids.includes(previous.companyId)) throw workflowError(403,'FORBIDDEN');
+    const status = String(req.body?.status || '');
+    if (status === previous.status) throw workflowError(409,'PAYROLL_STATUS_UNCHANGED');
+    const record = { ...previous,status };
+    if (status === 'APPROVED' && previous.status === 'UNDER_REVIEW') {
+      record.approvedAt = new Date().toISOString();
+      record.approvedBy = req.user.name || req.user.username || req.user.id;
+    } else if (status === 'UNDER_REVIEW' && previous.status === 'APPROVED') {
+      delete record.approvedAt; delete record.approvedBy;
+    } else if (status === 'POSTED' && previous.status === 'APPROVED') {
+      record.postedAt = new Date().toISOString();
+      record.postedBy = req.user.name || req.user.username || req.user.id;
+    } else if (status === 'APPROVED' && previous.status === 'POSTED') {
+      delete record.postedAt; delete record.postedBy;
+    }
+    const nextRuns = asArray(stored.payrollRuns).map(item => item.id === record.id ? record : item);
+    validatePayrollWorkflowChanges(stored.payrollRuns,nextRuns,req.user);
+    validatePayrollCarryForwardState(stored.payrollRuns,nextRuns);
+    const payload = clone(record); delete payload.items; delete payload.paymentBatches;
+    await client.query(`UPDATE ${q('payroll_runs')} SET status=$2,approved_at=NULLIF($3,'')::timestamptz,posted_at=NULLIF($4,'')::timestamptz,payload=$5::jsonb,updated_at=now() WHERE id=$1`, [record.id,record.status,record.approvedAt || '',record.postedAt || '',JSON.stringify(payload)]);
+    const updated = await commitPayrollCommandState(client,stored,record,req.user,'PAYROLL_STATUS_TRANSITION');
+    await client.query('COMMIT');
+    broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at });
+    res.json({ record,created:false,version:Number(updated.rows[0].version),updated_at:updated.rows[0].updated_at });
+  } catch (e) {
+    try { await client.query('ROLLBACK'); } catch {}
+    if (Number.isInteger(e?.status) && e.status >= 400 && e.status < 500) return res.status(e.status).json({ error:e.message });
+    next(e);
+  } finally { client.release(); }
+});
+
+app.post('/api/payroll-runs/:id/payment-batches', auth, writeLimiter, async (req, res, next) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const stateRow = await client.query(`SELECT state FROM ${q('app_state')} WHERE id=1 FOR UPDATE`);
+    if (!stateRow.rowCount) throw workflowError(409,'STATE_NOT_INITIALIZED');
+    const stored = await hydrateNormalizedStateData(client,stateRow.rows[0].state);
+    const previous = asArray(stored.payrollRuns).find(item => item.id === req.params.id);
+    if (!previous) throw workflowError(404,'PAYROLL_RUN_NOT_FOUND');
+    if (!req.user.company_ids.includes(previous.companyId)) throw workflowError(403,'FORBIDDEN');
+    const batch = req.body || {};
+    if (typeof batch.id !== 'string' || !batch.id || batch.payrollRunId !== previous.id || batch.companyId !== previous.companyId
+      || batch.status !== 'SCHEDULED' || !['WPS','BANK_TRANSFER','CASH'].includes(batch.method)
+      || !Array.isArray(batch.employeeIds) || !batch.employeeIds.length || !(Number(batch.totalAmount) > 0)
+      || !validIsoDate(batch.scheduledDate)) throw workflowError(400,'INVALID_PAYMENT_BATCH');
+    const record = { ...previous,paymentBatches:[...asArray(previous.paymentBatches),batch] };
+    const nextRuns = asArray(stored.payrollRuns).map(item => item.id === record.id ? record : item);
+    validatePayrollWorkflowChanges(stored.payrollRuns,nextRuns,req.user);
+    validatePayrollCarryForwardState(stored.payrollRuns,nextRuns);
+    const payload = clone(batch); delete payload.employeeIds;
+    const sortOrder = Number((await client.query(`SELECT COALESCE(max(sort_order),-1)+1 AS sort_order FROM ${q('payroll_payment_batches')} WHERE payroll_run_id=$1`, [previous.id])).rows[0]?.sort_order || 0);
+    await client.query(`INSERT INTO ${q('payroll_payment_batches')} (id,payroll_run_id,company_id,batch_number,status,method,total_amount,scheduled_date,payment_date,payload,sort_order)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8::date,NULLIF($9,'')::date,$10::jsonb,$11)`, [batch.id,previous.id,batch.companyId,batch.batchNumber || '',batch.status,batch.method,Number(batch.totalAmount),batch.scheduledDate,batch.paymentDate || '',JSON.stringify(payload),sortOrder]);
+    await client.query(`INSERT INTO ${q('payroll_payment_batch_items')} (payment_batch_id,employee_id,sort_order)
+      SELECT $1,employee_id,(ordinality-1)::integer FROM jsonb_array_elements_text($2::jsonb) WITH ORDINALITY AS ids(employee_id,ordinality)`, [batch.id,JSON.stringify(batch.employeeIds)]);
+    const updated = await commitPayrollCommandState(client,stored,record,req.user,'CREATE_PAYMENT_BATCH');
+    await client.query('COMMIT');
+    broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at });
+    res.json({ record,created:false,version:Number(updated.rows[0].version),updated_at:updated.rows[0].updated_at });
+  } catch (e) {
+    try { await client.query('ROLLBACK'); } catch {}
+    if (Number.isInteger(e?.status) && e.status >= 400 && e.status < 500) return res.status(e.status).json({ error:e.message });
+    if (e?.code === '23505') return res.status(409).json({ error:'PAYMENT_BATCH_DUPLICATE',detail:e.constraint });
+    next(e);
+  } finally { client.release(); }
+});
+
+app.patch('/api/payroll-runs/:id/payment-batches/:batchId/status', auth, writeLimiter, async (req, res, next) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const stateRow = await client.query(`SELECT state FROM ${q('app_state')} WHERE id=1 FOR UPDATE`);
+    if (!stateRow.rowCount) throw workflowError(409,'STATE_NOT_INITIALIZED');
+    const stored = await hydrateNormalizedStateData(client,stateRow.rows[0].state);
+    const previous = asArray(stored.payrollRuns).find(item => item.id === req.params.id);
+    if (!previous) throw workflowError(404,'PAYROLL_RUN_NOT_FOUND');
+    if (!req.user.company_ids.includes(previous.companyId)) throw workflowError(403,'FORBIDDEN');
+    const oldBatch = asArray(previous.paymentBatches).find(item => item.id === req.params.batchId);
+    if (!oldBatch) throw workflowError(404,'PAYMENT_BATCH_NOT_FOUND');
+    const status = String(req.body?.status || '');
+    let nextBatch = { ...oldBatch,status };
+    if (oldBatch.status === 'SCHEDULED' && status === 'PAID') {
+      nextBatch.paymentDate = validIsoDate(req.body?.paymentDate) ? req.body.paymentDate : new Date().toISOString().slice(0,10);
+    } else if (oldBatch.status === 'PAID' && status === 'SCHEDULED') {
+      nextBatch = { ...nextBatch,reversedPaymentDate:oldBatch.paymentDate,paymentDate:undefined,paymentReversalReason:String(req.body?.paymentReversalReason || '').trim() };
+    }
+    const record = { ...previous,paymentBatches:asArray(previous.paymentBatches).map(item => item.id === nextBatch.id ? nextBatch : item) };
+    const nextRuns = asArray(stored.payrollRuns).map(item => item.id === record.id ? record : item);
+    validatePayrollWorkflowChanges(stored.payrollRuns,nextRuns,req.user);
+    validatePayrollCarryForwardState(stored.payrollRuns,nextRuns);
+    nextBatch = record.paymentBatches.find(item => item.id === nextBatch.id);
+    const payload = clone(nextBatch); delete payload.employeeIds;
+    await client.query(`UPDATE ${q('payroll_payment_batches')} SET status=$3,payment_date=NULLIF($4,'')::date,payload=$5::jsonb,updated_at=now() WHERE id=$1 AND payroll_run_id=$2`, [nextBatch.id,previous.id,nextBatch.status,nextBatch.paymentDate || '',JSON.stringify(payload)]);
+    const updated = await commitPayrollCommandState(client,stored,record,req.user,'PAYMENT_BATCH_STATUS_TRANSITION');
+    await client.query('COMMIT');
+    broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at });
+    res.json({ record,created:false,version:Number(updated.rows[0].version),updated_at:updated.rows[0].updated_at });
+  } catch (e) {
+    try { await client.query('ROLLBACK'); } catch {}
+    if (Number.isInteger(e?.status) && e.status >= 400 && e.status < 500) return res.status(e.status).json({ error:e.message });
+    next(e);
+  } finally { client.release(); }
+});
+
 app.put('/api/payroll-runs/:id', auth, writeLimiter, async (req, res, next) => {
   const client = await pool.connect();
   try {
-    if (!['MANAGE_PAYROLL','APPROVE_PAYROLL','REVERSE_PAYROLL_APPROVAL','POST_PAYROLL','CONFIRM_PAYROLL_PAYMENT','REVERSE_PAYROLL_PAYMENT'].some(permission => can(req.user,permission))) {
-      return res.status(403).json({ error:'FORBIDDEN' });
-    }
+    if (!can(req.user,'MANAGE_PAYROLL')) return res.status(403).json({ error:'FORBIDDEN' });
     const record = req.body || {};
     if (record.id !== req.params.id || typeof record.companyId !== 'string' || !req.user.company_ids.includes(record.companyId)
       || !validPeriodMonth(record.periodMonth) || !['DRAFT','UNDER_REVIEW','APPROVED','POSTED'].includes(record.status)
@@ -2081,6 +2202,9 @@ app.put('/api/payroll-runs/:id', auth, writeLimiter, async (req, res, next) => {
     const stored = await hydrateNormalizedStateData(client,stateRow.rows[0].state);
     const existingRecord = asArray(stored.payrollRuns).find(item => item.id === record.id);
     if (existingRecord && existingRecord.companyId !== record.companyId) throw workflowError(409, 'PAYROLL_COMPANY_IMMUTABLE');
+    if (existingRecord && (existingRecord.status !== record.status || !sameJson(existingRecord.paymentBatches,record.paymentBatches))) {
+      throw workflowError(409,'PAYROLL_COMMAND_ENDPOINT_REQUIRED');
+    }
     const nextRuns = existingRecord
       ? asArray(stored.payrollRuns).map(item => item.id === record.id ? record : item)
       : [record,...asArray(stored.payrollRuns)];

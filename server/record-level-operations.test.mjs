@@ -87,3 +87,25 @@ test('payroll UI commits through the direct run API without conflict retry reloa
   assert.match(app, /api\.savePayrollRun\(run\)/);
   assert.doesNotMatch(app, /const retryRuns =/);
 });
+
+test('payroll workflow commands have dedicated server endpoints', () => {
+  const status = routeBlock('post', '/api/payroll-runs/:id/status', "app.post('/api/payroll-runs/:id/payment-batches'");
+  const createBatch = routeBlock('post', '/api/payroll-runs/:id/payment-batches', "app.patch('/api/payroll-runs/:id/payment-batches/:batchId/status'");
+  const batchStatus = routeBlock('patch', '/api/payroll-runs/:id/payment-batches/:batchId/status', "app.put('/api/payroll-runs/:id'");
+  assert.match(status, /validatePayrollWorkflowChanges/);
+  assert.match(status, /PAYROLL_STATUS_TRANSITION/);
+  assert.match(createBatch, /CREATE_PAYMENT_BATCH/);
+  assert.match(createBatch, /INSERT INTO.*payroll_payment_batches/);
+  assert.match(batchStatus, /PAYMENT_BATCH_STATUS_TRANSITION/);
+  assert.match(batchStatus, /UPDATE.*payroll_payment_batches/);
+  assert.doesNotMatch(status + createBatch + batchStatus, /replaceNormalized(?:Operations|Core|Payroll)Data/);
+});
+
+test('frontend routes status and payment-only changes to command endpoints', () => {
+  assert.match(api, /classifyPayrollCommand/);
+  assert.match(api, /\/payroll-runs\/\$\{encodeURIComponent\(record\.id\)\}\/status/);
+  assert.match(api, /\/payment-batches`/);
+  assert.match(api, /\/payment-batches\/\$\{encodeURIComponent\(command\.batch\.id\)\}\/status/);
+  const aggregate = routeBlock('put', '/api/payroll-runs/:id', '// Record-level mutations');
+  assert.match(aggregate, /PAYROLL_COMMAND_ENDPOINT_REQUIRED/);
+});
