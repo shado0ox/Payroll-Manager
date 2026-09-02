@@ -2063,6 +2063,84 @@ app.delete('/api/temporary-earnings/:id', auth, writeLimiter, async (req, res, n
   } finally { client.release(); }
 });
 
+app.put('/api/payroll-runs/:id', auth, writeLimiter, async (req, res, next) => {
+  const client = await pool.connect();
+  try {
+    if (!['MANAGE_PAYROLL','APPROVE_PAYROLL','REVERSE_PAYROLL_APPROVAL','POST_PAYROLL','CONFIRM_PAYROLL_PAYMENT','REVERSE_PAYROLL_PAYMENT'].some(permission => can(req.user,permission))) {
+      return res.status(403).json({ error:'FORBIDDEN' });
+    }
+    const record = req.body || {};
+    if (record.id !== req.params.id || typeof record.companyId !== 'string' || !req.user.company_ids.includes(record.companyId)
+      || !validPeriodMonth(record.periodMonth) || !['DRAFT','UNDER_REVIEW','APPROVED','POSTED'].includes(record.status)
+      || !Array.isArray(record.items) || !Array.isArray(record.paymentBatches || [])) {
+      return res.status(400).json({ error:'INVALID_PAYROLL_RUN' });
+    }
+    await client.query('BEGIN');
+    const stateRow = await client.query(`SELECT state FROM ${q('app_state')} WHERE id=1 FOR UPDATE`);
+    if (!stateRow.rowCount) throw workflowError(409, 'STATE_NOT_INITIALIZED');
+    const stored = await hydrateNormalizedStateData(client,stateRow.rows[0].state);
+    const existingRecord = asArray(stored.payrollRuns).find(item => item.id === record.id);
+    if (existingRecord && existingRecord.companyId !== record.companyId) throw workflowError(409, 'PAYROLL_COMPANY_IMMUTABLE');
+    const nextRuns = existingRecord
+      ? asArray(stored.payrollRuns).map(item => item.id === record.id ? record : item)
+      : [record,...asArray(stored.payrollRuns)];
+    validatePayrollWorkflowChanges(stored.payrollRuns,nextRuns,req.user);
+    validatePayrollCarryForwardState(stored.payrollRuns,nextRuns);
+    const nextState = { ...stored,payrollRuns:nextRuns };
+    await appendPayrollFinancialAudit(client,q,{ stored,next:nextState,user:req.user });
+
+    const existing = await client.query(`SELECT company_id,sort_order FROM ${q('payroll_runs')} WHERE id=$1 FOR UPDATE`, [record.id]);
+    const sortOrder = existing.rowCount ? existing.rows[0].sort_order : Number((await client.query(`SELECT COALESCE(min(sort_order),0)-1 AS sort_order FROM ${q('payroll_runs')} WHERE company_id=$1`, [record.companyId])).rows[0]?.sort_order || 0);
+    const runPayload = clone(record);
+    delete runPayload.items;
+    delete runPayload.paymentBatches;
+    await client.query(`INSERT INTO ${q('payroll_runs')} (
+      id,company_id,period_month,status,employees_count,total_gross_salaries,total_deductions,total_net_salaries,total_company_cost,
+      created_at,calculated_at,approved_at,posted_at,payload,sort_order,updated_at
+    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NULLIF($10,'')::timestamptz,NULLIF($11,'')::timestamptz,NULLIF($12,'')::timestamptz,NULLIF($13,'')::timestamptz,$14::jsonb,$15,now())
+    ON CONFLICT (id) DO UPDATE SET period_month=EXCLUDED.period_month,status=EXCLUDED.status,employees_count=EXCLUDED.employees_count,
+      total_gross_salaries=EXCLUDED.total_gross_salaries,total_deductions=EXCLUDED.total_deductions,total_net_salaries=EXCLUDED.total_net_salaries,
+      total_company_cost=EXCLUDED.total_company_cost,calculated_at=EXCLUDED.calculated_at,approved_at=EXCLUDED.approved_at,
+      posted_at=EXCLUDED.posted_at,payload=EXCLUDED.payload,updated_at=now()`, [
+      record.id,record.companyId,record.periodMonth,record.status,Number(record.employeesCount || record.items.length),
+      Number(record.totalGrossSalaries || 0),Number(record.totalDeductions || 0),Number(record.totalNetSalaries || 0),Number(record.totalCompanyCost || 0),
+      record.createdAt || '',record.calculatedAt || '',record.approvedAt || '',record.postedAt || '',JSON.stringify(runPayload),sortOrder
+    ]);
+
+    await client.query(`DELETE FROM ${q('payroll_payment_batch_items')} WHERE payment_batch_id IN (SELECT id FROM ${q('payroll_payment_batches')} WHERE payroll_run_id=$1)`, [record.id]);
+    await client.query(`DELETE FROM ${q('payroll_payment_batches')} WHERE payroll_run_id=$1`, [record.id]);
+    await client.query(`DELETE FROM ${q('payroll_run_items')} WHERE payroll_run_id=$1`, [record.id]);
+    await client.query(`INSERT INTO ${q('payroll_run_items')} (
+      payroll_run_id,id,employee_id,employee_no,employee_name,entitlement_status,entitlement_reason,base_salary,total_gross_salary,total_deductions,net_salary,payload,sort_order
+    ) SELECT $1,item->>'id',item->>'employeeId',COALESCE(item->>'employeeNo',''),COALESCE(item->>'employeeName',''),
+      COALESCE(item->>'entitlementStatus','PAYABLE'),NULLIF(item->>'entitlementReason',''),COALESCE(NULLIF(item->>'baseSalary','')::numeric,0),
+      COALESCE(NULLIF(item->>'totalGrossSalary','')::numeric,0),COALESCE(NULLIF(item->>'totalDeductions','')::numeric,0),
+      COALESCE(NULLIF(item->>'netSalary','')::numeric,0),item,(ordinality-1)::integer
+      FROM jsonb_array_elements($2::jsonb) WITH ORDINALITY AS source(item,ordinality)`, [record.id,JSON.stringify(record.items)]);
+    await client.query(`INSERT INTO ${q('payroll_payment_batches')} (
+      id,payroll_run_id,company_id,batch_number,status,method,total_amount,scheduled_date,payment_date,payload,sort_order
+    ) SELECT batch->>'id',$1,batch->>'companyId',COALESCE(batch->>'batchNumber',''),COALESCE(batch->>'status','SCHEDULED'),
+      COALESCE(batch->>'method','BANK_TRANSFER'),COALESCE(NULLIF(batch->>'totalAmount','')::numeric,0),NULLIF(batch->>'scheduledDate','')::date,
+      NULLIF(batch->>'paymentDate','')::date,batch-'employeeIds',(ordinality-1)::integer
+      FROM jsonb_array_elements($2::jsonb) WITH ORDINALITY AS source(batch,ordinality)`, [record.id,JSON.stringify(record.paymentBatches || [])]);
+    await client.query(`INSERT INTO ${q('payroll_payment_batch_items')} (payment_batch_id,employee_id,sort_order)
+      SELECT batch->>'id',employee_id,(employee_ordinality-1)::integer
+      FROM jsonb_array_elements($1::jsonb) AS source(batch)
+      CROSS JOIN LATERAL jsonb_array_elements_text(COALESCE(batch->'employeeIds','[]'::jsonb)) WITH ORDINALITY AS employee_ids(employee_id,employee_ordinality)`, [JSON.stringify(record.paymentBatches || [])]);
+
+    const updated = await updateCompatibilityCollectionRecord(client,'payrollRuns',record,req.user.id);
+    await appendStateAudit(client,q,{ companyIds:req.user.company_ids,user:req.user,action:existing.rowCount ? 'UPDATE_PAYROLL_RUN' : 'CREATE_PAYROLL_RUN',version:updated.rows[0].version });
+    await client.query('COMMIT');
+    broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at });
+    res.json({ record,created:!existing.rowCount,version:Number(updated.rows[0].version),updated_at:updated.rows[0].updated_at });
+  } catch (e) {
+    try { await client.query('ROLLBACK'); } catch {}
+    if (Number.isInteger(e?.status) && e.status >= 400 && e.status < 500) return res.status(e.status).json({ error:e.message });
+    if (e?.code === '23505') return res.status(409).json({ error:'PAYROLL_RUN_DUPLICATE',detail:e.constraint });
+    next(e);
+  } finally { client.release(); }
+});
+
 // Record-level mutations avoid overwriting unrelated work when several users save
 // employees, attendance or payroll operations at the same time.
 app.patch('/api/state/patch', auth, writeLimiter, async (req, res, next) => {

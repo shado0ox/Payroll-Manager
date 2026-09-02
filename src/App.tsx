@@ -593,148 +593,35 @@ export const App: React.FC = () => {
   };
 
   const handleSavePayrollRunConfirmed = async (run: PayrollRun): Promise<boolean> => {
-    const previousRun = state.payrollRuns.find(r => r.id === run.id);
-    const updated = previousRun
-      ? state.payrollRuns.map(r => r.id === run.id ? run : r)
-      : [run, ...state.payrollRuns];
-    const nextState = { ...state, payrollRuns: updated } as MasarAppState;
-
+    const operation = persistenceQueueRef.current.catch(() => undefined).then(() => api.savePayrollRun(run));
+    persistenceQueueRef.current = operation.then(() => undefined, () => undefined);
     try {
-      // Finish any older autosave first so it cannot overwrite this financial action.
-      await persistenceQueueRef.current.catch(() => undefined);
       setDbStatus(prev => ({ ...prev, isChecking: true }));
-      await api.saveState(nextState);
-
-      // Mark this exact object as already persisted so the generic autosave effect
-      // does not issue a duplicate write after setState.
-      remoteStateSnapshotRef.current = nextState;
-      savePayrollRuns(updated);
-      setState(nextState);
+      const result = await operation;
+      setState(prev => {
+        const payrollRuns = prev.payrollRuns.some(candidate => candidate.id === result.record.id)
+          ? prev.payrollRuns.map(candidate => candidate.id === result.record.id ? result.record as PayrollRun : candidate)
+          : [result.record as PayrollRun, ...prev.payrollRuns];
+        const next = { ...prev, payrollRuns };
+        remoteStateSnapshotRef.current = next;
+        return next;
+      });
       setDbStatus(prev => ({
         ...prev,
         isCloudConnected: true,
         isChecking: false,
-        lastSavedAt: new Date().toISOString(),
+        lastSavedAt: result.updated_at,
         lastError: null,
       }));
       return true;
-    } catch (firstError: any) {
-      // The browser can hold an older persistence baseline after a manual database
-      // repair or another user's save. Refresh that baseline and replay only this
-      // payroll run once instead of forcing the user to hard-refresh the page.
-      try {
-        const remote = await api.getState();
-        if (!remote.state) throw firstError;
-        const remoteRuns = Array.isArray(remote.state.payrollRuns) ? remote.state.payrollRuns : [];
-        const retryRuns = remoteRuns.some(candidate => candidate.id === run.id)
-          ? remoteRuns.map(candidate => candidate.id === run.id ? run : candidate)
-          : [run, ...remoteRuns];
-        const retryState = {
-          ...state,
-          ...remote.state,
-          payrollRuns: retryRuns,
-          currentUser: state.currentUser,
-          activeRole: state.currentUser?.role || state.activeRole,
-          activeCompanyId: state.activeCompanyId,
-        } as MasarAppState;
-
-        await api.saveState(retryState);
-        remoteStateSnapshotRef.current = retryState;
-        savePayrollRuns(retryRuns);
-        setState(retryState);
-        setDbStatus(prev => ({
-          ...prev,
-          isCloudConnected: true,
-          isChecking: false,
-          lastSavedAt: new Date().toISOString(),
-          lastError: null,
-        }));
-        return true;
-      } catch (retryError: any) {
-        setDbStatus(prev => ({
-          ...prev,
-          isChecking: false,
-          lastError: retryError?.message || firstError?.message || tr('تعذر حفظ عملية الرواتب', 'Could not save the payroll action'),
-        }));
-        alert(tr('تعذر حفظ تعديل المسير بعد تحديث البيانات من الخادم. حاول مرة أخرى.', 'The payroll change could not be saved after refreshing server data. Please try again.'));
-        return false;
-      }
+    } catch (error: any) {
+      setDbStatus(prev => ({ ...prev,isChecking:false,lastError:error?.message || tr('تعذر حفظ عملية الرواتب', 'Could not save the payroll action') }));
+      alert(tr('تعذر حفظ تعديل المسير. لم يتم اعتماد أي تغيير غير مؤكد.', 'The payroll change could not be saved. No unconfirmed change was applied.'));
+      return false;
     }
   };
 
-  const handleSavePayrollRun = (run: PayrollRun) => {
-    setState(prev => {
-      const previousRun = prev.payrollRuns.find(r => r.id === run.id);
-      const exists = Boolean(previousRun);
-      const updated = exists
-        ? prev.payrollRuns.map(r => r.id === run.id ? run : r)
-        : [run, ...prev.payrollRuns];
-
-      savePayrollRuns(updated);
-
-      const previousBatches = previousRun?.paymentBatches || [];
-      const currentBatches = run.paymentBatches || [];
-      const createdBatch = currentBatches.find(batch => !previousBatches.some(previous => previous.id === batch.id));
-      const changedBatch = currentBatches.find(batch => {
-        const previous = previousBatches.find(candidate => candidate.id === batch.id);
-        return previous && previous.status !== batch.status;
-      });
-      const adjustedItem = run.items.find(item => {
-        const previous = previousRun?.items.find(candidate => candidate.id === item.id);
-        return previous && (
-          (previous.manualAddition || 0) !== (item.manualAddition || 0) ||
-          (previous.manualDeduction || 0) !== (item.manualDeduction || 0) ||
-          (previous.adjustmentNotes || '') !== (item.adjustmentNotes || '')
-        );
-      });
-      const entitlementChangedItem = run.items.find(item => {
-        const previous = previousRun?.items.find(candidate => candidate.id === item.id);
-        return previous && (previous.entitlementStatus || 'PAYABLE') !== (item.entitlementStatus || 'PAYABLE');
-      });
-
-      let auditAction = `${tr('تحديث مسير الرواتب', 'Updated payroll run')} (${run.status})`;
-      let auditDetails = `${tr('مسير فترة', 'Payroll period')} ${run.periodMonth} - ${tr('إجمالي الصافي:', 'Total net:')} ${run.totalNetSalaries.toLocaleString('en-US')} SR`;
-
-      if (previousRun?.status === 'POSTED' && run.status === 'UNDER_REVIEW') {
-        auditAction = tr('التراجع عن ترحيل مسير الرواتب', 'Reversed payroll posting');
-        auditDetails = `${tr('تم فتح المسير المرحل للتعديل وإعادة الاعتماد:', 'Posted payroll reopened for editing and reapproval:')} ${run.periodMonth} - ${run.totalNetSalaries.toLocaleString('en-US')} SR`;
-      } else if (previousRun?.status === 'APPROVED' && run.status === 'UNDER_REVIEW') {
-        auditAction = tr('التراجع عن اعتماد مسير الرواتب', 'Reversed payroll approval');
-        auditDetails = `${tr('تم فتح المسير للتعديل وإعادة الاعتماد:', 'Payroll reopened for editing and reapproval:')} ${run.periodMonth} - ${run.totalNetSalaries.toLocaleString('en-US')} SR`;
-      } else if (entitlementChangedItem) {
-        auditAction = tr('تغيير حالة استحقاق راتب موظف', 'Changed employee salary entitlement');
-        auditDetails = `${entitlementChangedItem.employeeName} (${entitlementChangedItem.employeeNo}) - ${tr('الحالة:', 'Status:')} ${entitlementChangedItem.entitlementStatus || 'PAYABLE'} - ${entitlementChangedItem.entitlementReason || tr('بدون سبب', 'No reason')}`;
-      } else if (adjustedItem) {
-        auditAction = tr('تعديل إضافات وخصومات موظف في المسير', 'Changed employee payroll adjustments');
-        auditDetails = `${adjustedItem.employeeName} (${adjustedItem.employeeNo}) - ${tr('إضافة', 'Addition')} ${(adjustedItem.manualAddition || 0).toLocaleString('en-US')} - ${tr('خصم', 'Deduction')} ${(adjustedItem.manualDeduction || 0).toLocaleString('en-US')} SR - ${adjustedItem.adjustmentNotes || tr('بدون ملاحظات', 'No notes')}`;
-      } else if (createdBatch) {
-        auditAction = tr('إنشاء دفعة تحويل رواتب', 'Created salary transfer batch');
-        auditDetails = `${createdBatch.batchNumber} - ${createdBatch.employeesCount} ${tr('موظف', 'employees')} - ${createdBatch.totalAmount.toLocaleString('en-US')} SR - ${tr('الحالة:', 'Status:')} ${createdBatch.status}`;
-      } else if (changedBatch) {
-        auditAction = tr('تحديث حالة دفعة تحويل رواتب', 'Updated salary transfer batch status');
-        auditDetails = `${changedBatch.batchNumber} - ${tr('الحالة الجديدة:', 'New status:')} ${changedBatch.status} - ${changedBatch.totalAmount.toLocaleString('en-US')} SR`;
-      }
-
-      const log: AuditLog = {
-        id: `log-${Date.now()}`,
-        timestamp: new Date().toISOString(),
-        userName: prev.currentUser?.name || 'مسؤول الرواتب',
-        userRole: prev.activeRole,
-        action: auditAction,
-        entityType: 'PAYROLL_RUN',
-        entityId: run.id,
-        details: auditDetails,
-      };
-      const updatedLogs = [log, ...prev.auditLogs];
-      saveAuditLogs(updatedLogs);
-
-      return {
-        ...prev,
-        payrollRuns: updated,
-        auditLogs: updatedLogs,
-      };
-    });
-  };
+  const handleSavePayrollRun = async (run: PayrollRun) => { await handleSavePayrollRunConfirmed(run); };
 
   const handleSavePayrollSettlement = async (settlement: PayrollSettlement) => {
     let duplicate = false;

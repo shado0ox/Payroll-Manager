@@ -69,3 +69,21 @@ test('loan and temporary earning UI actions use direct committed APIs', () => {
   assert.match(app, /await commitLoanRecord/);
   assert.match(app, /await commitTemporaryEarningRecord/);
 });
+
+test('payroll saves replace only one run aggregate instead of every payroll table', () => {
+  const put = routeBlock('put', '/api/payroll-runs/:id', '// Record-level mutations');
+  assert.match(put, /INSERT INTO.*payroll_runs[\s\S]*ON CONFLICT \(id\) DO UPDATE/);
+  assert.match(put, /DELETE FROM.*payroll_run_items.*WHERE payroll_run_id=\$1/);
+  assert.match(put, /DELETE FROM.*payroll_payment_batches.*WHERE payroll_run_id=\$1/);
+  assert.doesNotMatch(put, /replaceNormalized(?:Operations|Core|Payroll)Data/);
+  assert.match(put, /validatePayrollWorkflowChanges/);
+  assert.match(put, /validatePayrollCarryForwardState/);
+  assert.match(put, /appendPayrollFinancialAudit/);
+});
+
+test('payroll UI commits through the direct run API without conflict retry reloads', () => {
+  assert.match(api, /savePayrollRun: async/);
+  assert.match(api, /\/api\/payroll-runs\/\$\{encodeURIComponent\(record\.id\)\}/);
+  assert.match(app, /api\.savePayrollRun\(run\)/);
+  assert.doesNotMatch(app, /const retryRuns =/);
+});
