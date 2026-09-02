@@ -35,6 +35,7 @@ import {
 import { Company, Employee, PayrollRun, LoanSchedule, UserRole, NavigationTab } from '../types';
 import { formatSAR, formatNumber } from '../utils/payrollEngine';
 import { useLanguage } from '../i18n/LanguageContext';
+import { getEmployeeLifecycleAlerts } from '../utils/employeeLifecycle';
 
 interface DashboardViewProps {
   company: Company;
@@ -147,6 +148,24 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     .sort((a, b) => b.periodMonth.localeCompare(a.periodMonth));
   const currentRun = companyPayrollRuns.find(run => run.periodMonth === currentPeriod);
   const companyEmployees = employees.filter(e => e.companyId === company.id);
+  const lifecycleAlerts = useMemo(() => getEmployeeLifecycleAlerts(companyEmployees), [companyEmployees]);
+  const iqamaAlerts = lifecycleAlerts.filter(a => a.type === 'IQAMA_EXPIRY').length;
+  const contractAlerts = lifecycleAlerts.filter(a => a.type === 'SAUDI_CONTRACT_EXPIRY').length;
+  const arrivalAlerts = lifecycleAlerts.filter(a => a.type === 'NEW_HIRE_ENTRY_DEADLINE').length;
+  const missingBankAlerts = lifecycleAlerts.filter(a => a.type === 'MISSING_BANK_ACCOUNT').length;
+  const topLifecycleAlerts = lifecycleAlerts
+    .slice()
+    .sort((a, b) => {
+      const rank = { EXPIRED: 0, URGENT: 1, WARNING: 2, INFO: 3 } as const;
+      const severityDiff = rank[a.severity] - rank[b.severity];
+      if (severityDiff !== 0) return severityDiff;
+      return String(a.dueDate || '9999-12-31').localeCompare(String(b.dueDate || '9999-12-31'));
+    })
+    .slice(0, 8);
+  const onboardingEmployees = companyEmployees
+    .filter(employee => employee.status === 'ONBOARDING' || employee.onboardingStatus === 'NEW_ARRIVAL' || employee.onboardingStatus === 'WAITING_IQAMA' || employee.onboardingStatus === 'WAITING_BANK')
+    .sort((a, b) => String(b.entryDate || b.hireDate || '').localeCompare(String(a.entryDate || a.hireDate || '')))
+    .slice(0, 4);
 
   // Department Salary Distribution Aggregation
   const departmentChartData = useMemo(() => {
@@ -227,7 +246,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const budgetUtilizationPercent = Math.min(100, rawBudgetUtilizationPercent);
   const remainingBudget = monthlyAllocatedBudget - totalGross;
   const budgetPeriod = currentPeriod;
-  const budgetPeriodLabel = new Intl.DateTimeFormat(language === 'ar' ? 'ar-SA' : 'en-US', { month: 'long', year: 'numeric' })
+  const budgetPeriodLabel = new Intl.DateTimeFormat(language === 'ar' ? 'ar-SA-u-ca-gregory' : 'en-US', { month: 'long', year: 'numeric' })
     .format(new Date(`${budgetPeriod}-01T12:00:00`));
   const budgetIsConfigured = monthlyAllocatedBudget > 0;
   const budgetIsExceeded = budgetIsConfigured && totalGross > monthlyAllocatedBudget;
@@ -258,10 +277,79 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   }, [currentRun, companyEmployees]);
 
   return (
-    <div className="space-y-8 pb-10">
+    <div className="space-y-5 pb-8">
       
+      {(
+        <section data-dashboard-hr-focus className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xs">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-5 py-4">
+            <div>
+              <h3 className="text-sm font-black text-slate-900">{tr('متابعة الموارد البشرية', 'HR attention')}</h3>
+              <p className="mt-0.5 text-[11px] text-slate-500">{tr('ملخص تنفيذي ثابت للحالات التي تحتاج استكمال أو متابعة، حتى عندما تكون الأعداد صفرًا', 'A persistent executive summary for records needing completion or follow-up, including zero-state visibility')}</p>
+            </div>
+            <button type="button" onClick={() => onNavigate('employees')} className="rounded-xl border border-slate-200 px-3 py-1.5 text-[11px] font-bold text-slate-700 hover:bg-slate-50">{tr('فتح الموظفين', 'Open employees')}</button>
+          </div>
+
+          <div className="grid gap-0 lg:grid-cols-[auto_1fr]">
+            <div className="grid grid-cols-2 gap-2 border-b border-slate-100 p-4 sm:grid-cols-4 lg:w-[430px] lg:grid-cols-2 lg:border-b-0 lg:border-e">
+              {[
+                { value: iqamaAlerts, ar: 'إقامات', en: 'Iqamas' },
+                { value: contractAlerts, ar: 'عقود سعوديين', en: 'Saudi contracts' },
+                { value: arrivalAlerts, ar: 'قادمون جدد', en: 'New arrivals' },
+                { value: missingBankAlerts, ar: 'بدون IBAN', en: 'Missing IBAN' },
+              ].map(card => (
+                <button key={card.en} type="button" onClick={() => onNavigate('employees')} className="flex items-center justify-between gap-3 rounded-xl border border-slate-100 bg-slate-50/70 px-3 py-2.5 text-start transition hover:border-amber-200 hover:bg-amber-50/40">
+                  <span className="text-[11px] font-semibold text-slate-600">{tr(card.ar, card.en)}</span>
+                  <span className={`min-w-7 rounded-lg px-2 py-1 text-center text-xs font-black ${card.value > 0 ? 'bg-amber-100 text-amber-800' : 'bg-emerald-50 text-emerald-700'}`}>{formatNumber(card.value)}</span>
+                </button>
+              ))}
+            </div>
+
+            <div className="grid min-w-0 md:grid-cols-2">
+              <div className="min-w-0 p-4 md:border-e">
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <span className="text-[11px] font-black text-slate-700">{tr('الأكثر إلحاحًا', 'Highest priority')}</span>
+                  <span className="text-[10px] text-slate-400">{Math.min(topLifecycleAlerts.length, 4)}</span>
+                </div>
+                <div className="space-y-1.5">
+                  {topLifecycleAlerts.slice(0, 4).map(alert => {
+                    const emp = companyEmployees.find(employee => employee.id === alert.employeeId);
+                    const label = alert.type === 'IQAMA_EXPIRY' ? tr('إقامة', 'Iqama') : alert.type === 'SAUDI_CONTRACT_EXPIRY' ? tr('عقد', 'Contract') : alert.type === 'NEW_HIRE_ENTRY_DEADLINE' ? tr('مهلة دخول', 'Entry deadline') : tr('IBAN', 'IBAN');
+                    return (
+                      <button key={alert.type + '-' + alert.employeeId + '-' + (alert.dueDate || 'none')} type="button" onClick={() => emp && onViewEmployeeStatement ? onViewEmployeeStatement(emp) : onNavigate('employees')} className="flex w-full items-center justify-between gap-3 rounded-lg px-2 py-1.5 text-start hover:bg-slate-50">
+                        <span className="min-w-0 truncate text-[11px] font-semibold text-slate-700">{emp ? (emp.firstNameAr + ' ' + emp.lastNameAr) : alert.employeeName}</span>
+                        <span className="shrink-0 text-[10px] font-bold text-amber-700">{label}{typeof alert.daysRemaining === 'number' ? ' · ' + alert.daysRemaining : ''}</span>
+                      </button>
+                    );
+                  })}
+                  {topLifecycleAlerts.length === 0 && <div className="rounded-lg bg-emerald-50 px-3 py-2 text-[11px] font-semibold text-emerald-700">{tr('لا توجد تنبيهات عاجلة', 'No urgent alerts')}</div>}
+                </div>
+              </div>
+
+              <div className="min-w-0 border-t border-slate-100 p-4 md:border-t-0">
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <span className="text-[11px] font-black text-slate-700">{tr('موظفون تحت الاستكمال', 'Onboarding')}</span>
+                  <span className="text-[10px] text-slate-400">{onboardingEmployees.length}</span>
+                </div>
+                <div className="space-y-1.5">
+                  {onboardingEmployees.map(emp => {
+                    const state = emp.onboardingStatus === 'WAITING_IQAMA' || emp.onboardingStatus === 'NEW_ARRIVAL' ? tr('بانتظار الإقامة', 'Waiting for iqama') : emp.onboardingStatus === 'WAITING_BANK' ? tr('بانتظار IBAN', 'Waiting for IBAN') : tr('تحت الاستكمال', 'In progress');
+                    return (
+                      <button key={emp.id} type="button" onClick={() => onViewEmployeeStatement ? onViewEmployeeStatement(emp) : onNavigate('employees')} className="flex w-full items-center justify-between gap-3 rounded-lg px-2 py-1.5 text-start hover:bg-slate-50">
+                        <span className="min-w-0 truncate text-[11px] font-semibold text-slate-700">{emp.firstNameAr + ' ' + emp.lastNameAr}</span>
+                        <span className="shrink-0 text-[10px] font-bold text-sky-700">{state}</span>
+                      </button>
+                    );
+                  })}
+                  {onboardingEmployees.length === 0 && <div className="rounded-lg bg-slate-50 px-3 py-2 text-[11px] text-slate-500">{tr('لا توجد ملفات جديدة تحت الاستكمال', 'No onboarding records pending')}</div>}
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+      )}
+
       {/* 1. Top 4 KPI Cards - Professional Polish */}
-      <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+      <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         
         {/* Total Employees */}
         <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-xs hover:border-slate-300 transition-all">
