@@ -30,6 +30,8 @@ export const TemporaryEarningsPanel: React.FC<TemporaryEarningsPanelProps> = ({ 
   const companyEarnings = useMemo(() => earnings.filter(earning => earning.companyId === companyId), [earnings, companyId]);
   const [editing, setEditing] = useState<TemporaryEarningRecord | null>(null);
   const [isOpen, setIsOpen] = useState(false);
+  const [periodFrom, setPeriodFrom] = useState(currentPeriod);
+  const [periodTo, setPeriodTo] = useState(currentPeriod);
   const [form, setForm] = useState({ employeeId: '', periodMonth: currentPeriod, date: today, type: 'COMMISSION' as TemporaryEarningType, amount: 0, reason: '' });
 
   const openNew = () => {
@@ -62,7 +64,8 @@ export const TemporaryEarningsPanel: React.FC<TemporaryEarningsPanelProps> = ({ 
     setEditing(null);
   };
 
-  const totalActive = companyEarnings.filter(item => item.appliedInPayroll).reduce((sum, item) => sum + item.amount, 0);
+  const filteredEarnings = companyEarnings.filter(item => item.periodMonth >= periodFrom && item.periodMonth <= periodTo);
+  const totalActive = filteredEarnings.filter(item => item.appliedInPayroll).reduce((sum, item) => sum + item.amount, 0);
 
   return (
     <div className="space-y-4">
@@ -78,13 +81,19 @@ export const TemporaryEarningsPanel: React.FC<TemporaryEarningsPanelProps> = ({ 
       </div>
 
       <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xs">
+        <div className="flex flex-wrap items-end gap-3 border-b border-slate-200 bg-slate-50/70 p-4">
+          <div><label className="mb-1 block text-[11px] font-bold text-slate-600">{tr('من شهر', 'From month')}</label><input type="month" value={periodFrom} onChange={event => setPeriodFrom(event.target.value)} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs" /></div>
+          <div><label className="mb-1 block text-[11px] font-bold text-slate-600">{tr('إلى شهر', 'To month')}</label><input type="month" value={periodTo} min={periodFrom} onChange={event => setPeriodTo(event.target.value)} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs" /></div>
+          <button type="button" onClick={() => { setPeriodFrom(currentPeriod); setPeriodTo(currentPeriod); }} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600">{tr('الشهر الحالي', 'Current month')}</button>
+          <span className="text-[11px] text-slate-500">{tr('النتائج', 'Results')}: {filteredEarnings.length}</span>
+        </div>
         <div className="overflow-x-auto">
           <table className="w-full text-right text-xs">
             <thead><tr className="border-b border-slate-200 bg-slate-50 font-bold text-slate-500">
               <th className="px-4 py-3">{tr('الموظف', 'Employee')}</th><th className="px-4 py-3">{tr('النوع', 'Type')}</th><th className="px-4 py-3">{tr('فترة المسير', 'Payroll period')}</th><th className="px-4 py-3">{tr('التاريخ', 'Date')}</th><th className="px-4 py-3">{tr('البيان / السبب', 'Description / reason')}</th><th className="px-4 py-3">{tr('المبلغ', 'Amount')}</th><th className="px-4 py-3">{tr('الحالة', 'Status')}</th><th className="px-4 py-3 text-center">{tr('الإجراء', 'Action')}</th>
             </tr></thead>
             <tbody className="divide-y divide-slate-100">
-              {companyEarnings.length === 0 ? <tr><td colSpan={8} className="px-4 py-12 text-center text-slate-400">{tr('لا توجد إضافات مؤقتة مسجلة', 'No temporary earnings recorded')}</td></tr> : companyEarnings.map(earning => {
+              {filteredEarnings.length === 0 ? <tr><td colSpan={8} className="px-4 py-12 text-center text-slate-400">{tr('لا توجد إضافات في الفترة المحددة', 'No earnings in the selected period')}</td></tr> : filteredEarnings.map(earning => {
                 const employee = companyEmployees.find(item => item.id === earning.employeeId);
                 const employeeName = employee ? (language === 'en' && (employee.firstNameEn || employee.lastNameEn) ? `${employee.firstNameEn || ''} ${employee.lastNameEn || ''}`.trim() : `${employee.firstNameAr} ${employee.lastNameAr}`) : tr('موظف', 'Employee');
                 return <tr key={earning.id} className="hover:bg-slate-50">
