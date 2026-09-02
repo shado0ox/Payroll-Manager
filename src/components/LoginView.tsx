@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useLanguage } from '../i18n/LanguageContext';
 import { AlertCircle, ArrowRight, Building2, CheckCircle2, Eye, EyeOff, Hash, KeyRound, Lock, Mail, Phone, Route, ShieldCheck, Sparkles, User as UserIcon } from 'lucide-react';
 import { api } from '../utils/api';
+import { isStrongPassword, passwordPolicyMessage } from '../utils/passwordPolicy';
 
 interface LoginViewProps { defaultCompanyCode?: string; onLogin: (companyCode: string, username: string, password: string) => Promise<void>; }
 
@@ -20,6 +21,41 @@ const normalizeArabicNumbers = (val: string): string => {
 
 export const LoginView: React.FC<LoginViewProps> = ({ defaultCompanyCode = '101', onLogin }) => {
   const { language, toggleLanguage, t } = useLanguage();
+  const [forgotOpen, setForgotOpen] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [forgotMessage, setForgotMessage] = useState('');
+  const [resetPassword, setResetPassword] = useState('');
+  const [resetPasswordConfirm, setResetPasswordConfirm] = useState('');
+  const [resetBusy, setResetBusy] = useState(false);
+  const resetToken = new URLSearchParams(window.location.search).get('reset_token') || '';
+
+  const passwordResetRequest = async () => {
+    if (!forgotEmail.trim()) return;
+    setResetBusy(true);
+    try {
+      await api.passwordResetRequest(forgotEmail.trim());
+      setForgotMessage(language === 'ar' ? 'إذا كان البريد مسجلًا، تم إرسال رابط إعادة تعيين كلمة المرور.' : 'If the email is registered, a password reset link has been sent.');
+    } catch {
+      setForgotMessage(language === 'ar' ? 'تعذر إرسال الطلب الآن. حاول مرة أخرى.' : 'Could not submit the request. Please try again.');
+    } finally { setResetBusy(false); }
+  };
+
+  const passwordResetConfirm = async () => {
+    if (!resetToken || resetPassword !== resetPasswordConfirm || !isStrongPassword(resetPassword)) {
+      setForgotMessage(language === 'ar' ? (resetPassword !== resetPasswordConfirm ? 'كلمتا المرور غير متطابقتين.' : passwordPolicyMessage) : 'Passwords must match and meet the password policy.');
+      return;
+    }
+    setResetBusy(true);
+    try {
+      await api.passwordResetConfirm(resetToken, resetPassword);
+      window.history.replaceState({}, '', window.location.pathname);
+      setForgotMessage(language === 'ar' ? 'تم تغيير كلمة المرور. يمكنك تسجيل الدخول الآن.' : 'Password changed. You can sign in now.');
+      setResetPassword('');
+      setResetPasswordConfirm('');
+    } catch {
+      setForgotMessage(language === 'ar' ? 'الرابط غير صالح أو منتهي. اطلب رابطًا جديدًا.' : 'The link is invalid or expired. Request a new link.');
+    } finally { setResetBusy(false); }
+  };
   const isArabic = language === 'ar';
   const [companyInput, setCompanyInput] = useState(defaultCompanyCode);
   const [username, setUsername] = useState('');
@@ -85,15 +121,15 @@ export const LoginView: React.FC<LoginViewProps> = ({ defaultCompanyCode = '101'
   const inputClass = 'w-full h-12 ps-11 pe-4 bg-slate-950/45 border border-white/10 rounded-2xl text-white placeholder:text-slate-500 text-sm focus:outline-none focus:border-emerald-400/70 focus:ring-4 focus:ring-emerald-400/10 transition-all font-mono';
 
   return (
-    <main className="masar-login min-h-screen w-full text-slate-100 relative overflow-hidden" dir={isArabic ? 'rtl' : 'ltr'}>
+    <main className="masar-login min-h-[100dvh] w-full text-slate-100 relative overflow-x-hidden overflow-y-auto" dir={isArabic ? 'rtl' : 'ltr'}>
       <div className="masar-grid absolute inset-0 pointer-events-none" />
       <div className="absolute -top-48 -start-40 h-[32rem] w-[32rem] rounded-full bg-emerald-500/15 blur-[110px] pointer-events-none" />
       <div className="absolute -bottom-56 -end-32 h-[34rem] w-[34rem] rounded-full bg-cyan-500/10 blur-[120px] pointer-events-none" />
-      <div className="relative z-10 mx-auto grid min-h-screen max-w-[1440px] lg:grid-cols-[1.08fr_.92fr]">
-        <section className="relative hidden overflow-hidden border-e border-white/5 px-10 py-12 lg:flex xl:px-20 xl:py-16">
+      <div className="relative z-10 mx-auto grid min-h-[100dvh] w-full max-w-[1440px] lg:grid-cols-[1.08fr_.92fr]">
+        <section className="relative hidden min-w-0 overflow-hidden border-e border-white/5 px-8 py-8 lg:flex xl:px-14 xl:py-12 2xl:px-20 2xl:py-16">
           <div className="relative z-10 flex w-full flex-col">
             <MasarLogo />
-            <div className="my-auto max-w-xl py-16">
+            <div className="my-auto max-w-xl py-8 xl:py-12 2xl:py-16">
               <div className="mb-7 inline-flex items-center gap-2 rounded-full border border-emerald-300/20 bg-emerald-400/10 px-3.5 py-2 text-xs font-bold text-emerald-200 backdrop-blur-sm">
                 <Sparkles className="h-3.5 w-3.5" />{isArabic ? 'رحلة مالية أكثر وضوحًا' : 'A clearer financial journey'}
               </div>
@@ -116,13 +152,13 @@ export const LoginView: React.FC<LoginViewProps> = ({ defaultCompanyCode = '101'
           </div>
         </section>
 
-        <section className="flex min-h-screen items-center justify-center px-4 py-8 sm:px-8 lg:px-12 xl:px-20">
-          <div className="w-full max-w-[460px]">
+        <section className="flex min-h-[100dvh] min-w-0 items-center justify-center px-4 py-6 sm:px-8 lg:px-10 xl:px-16 2xl:px-20">
+          <div className="w-full min-w-0 max-w-[460px] py-2 sm:py-4">
             <div className="mb-8 flex items-center justify-between lg:justify-end">
               <div className="lg:hidden"><MasarLogo compact /></div>
               <button type="button" data-no-translate onClick={toggleLanguage} className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs font-bold text-slate-300 backdrop-blur-md transition hover:border-emerald-400/30 hover:bg-white/10 hover:text-white">{isArabic ? 'English' : 'العربية'}</button>
             </div>
-            <div className="masar-login-card rounded-[2rem] border border-white/10 bg-slate-900/60 p-6 shadow-2xl shadow-black/30 backdrop-blur-2xl sm:p-9">
+            <div className="masar-login-card w-full min-w-0 rounded-[2rem] border border-white/10 bg-slate-900/60 p-5 shadow-2xl shadow-black/30 backdrop-blur-2xl sm:p-8 xl:p-9">
               <div className="mb-8">
                 <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-2xl border border-emerald-300/20 bg-emerald-400/10 text-emerald-300"><KeyRound className="h-5 w-5" /></div>
                 <h2 className="text-2xl font-black tracking-tight text-white">{mode === 'LOGIN' ? t('loginTitle') : mode === 'VERIFY' ? (isArabic ? 'تحقق من بريدك' : 'Verify your email') : mode === 'CREATED' ? (isArabic ? 'تم إنشاء شركتك' : 'Company created') : (isArabic ? 'ابدأ تجربتك المجانية' : 'Start your free trial')}</h2>
@@ -141,6 +177,24 @@ export const LoginView: React.FC<LoginViewProps> = ({ defaultCompanyCode = '101'
                 </button>
                 {registrationEnabled && <button type="button" onClick={() => { setError(null); setMode('REGISTER'); }} className="w-full text-center text-xs font-bold text-emerald-300 hover:text-emerald-200">{isArabic ? `شركة جديدة؟ ابدأ تجربة ${trialDays} يومًا` : `New company? Start a ${trialDays}-day trial`}</button>}
               </form>}
+              {resetToken ? (
+                <div className="mt-4 rounded-xl border border-white/10 bg-white/5 p-4 space-y-3">
+                  <div className="text-sm font-bold text-white">{isArabic ? 'تعيين كلمة مرور جديدة' : 'Set a new password'}</div>
+                  <input type="password" value={resetPassword} onChange={e => setResetPassword(e.target.value)} placeholder={isArabic ? 'كلمة المرور الجديدة' : 'New password'} className={inputClass} />
+                  <input type="password" value={resetPasswordConfirm} onChange={e => setResetPasswordConfirm(e.target.value)} placeholder={isArabic ? 'تأكيد كلمة المرور' : 'Confirm password'} className={inputClass} />
+                  <button type="button" disabled={resetBusy} onClick={passwordResetConfirm} className="w-full h-11 rounded-xl bg-emerald-500 text-slate-950 font-black disabled:opacity-50">{isArabic ? 'حفظ كلمة المرور الجديدة' : 'Save new password'}</button>
+                  {forgotMessage && <p className="text-xs text-slate-300">{forgotMessage}</p>}
+                </div>
+              ) : mode === 'LOGIN' && (
+                <div className="mt-3">
+                  <button type="button" onClick={() => setForgotOpen(v => !v)} className="w-full text-center text-xs font-bold text-emerald-300 hover:text-emerald-200">{isArabic ? 'نسيت كلمة المرور؟' : 'Forgot password?'}</button>
+                  {forgotOpen && <div className="mt-3 rounded-xl border border-white/10 bg-white/5 p-3 space-y-2">
+                    <input type="email" value={forgotEmail} onChange={e => setForgotEmail(e.target.value)} placeholder={isArabic ? 'البريد الإلكتروني المسجل' : 'Registered email'} className={inputClass} />
+                    <button type="button" disabled={resetBusy || !forgotEmail.trim()} onClick={passwordResetRequest} className="w-full h-11 rounded-xl bg-slate-100 text-slate-900 font-black disabled:opacity-50">{isArabic ? 'إرسال رابط إعادة التعيين' : 'Send reset link'}</button>
+                    {forgotMessage && <p className="text-xs text-slate-300">{forgotMessage}</p>}
+                  </div>}
+                </div>
+              )}
               {mode === 'REGISTER' && <form onSubmit={handleRegistration} className="grid grid-cols-2 gap-3">
                 <RegisterInput icon={<Building2 className="h-4 w-4" />} placeholder={isArabic ? 'اسم الشركة بالعربية' : 'Company Arabic name'} value={registration.companyNameAr} onChange={v => updateRegistration('companyNameAr',v)} required wide />
                 <RegisterInput icon={<Building2 className="h-4 w-4" />} placeholder={isArabic ? 'اسم الشركة بالإنجليزية (اختياري)' : 'English company name (optional)'} value={registration.companyNameEn} onChange={v => updateRegistration('companyNameEn',v)} wide />
