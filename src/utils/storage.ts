@@ -6,6 +6,7 @@ import {
   PenaltyRecord, 
   LeaveRequest, 
   PayrollRun, 
+  PayrollSettlement,
   JournalBatch, 
   AuditLog, 
   QoyodApiConfig, 
@@ -48,6 +49,7 @@ export interface AppState {
   penalties: PenaltyRecord[];
   leaves: LeaveRequest[];
   payrollRuns: PayrollRun[];
+  payrollSettlements: PayrollSettlement[];
   journals: JournalBatch[];
   auditLogs: AuditLog[];
   qoyodConfig: QoyodApiConfig;
@@ -89,6 +91,7 @@ export function loadInitialState(): AppState {
       const penalties: PenaltyRecord[] = JSON.parse(localStorage.getItem(STORAGE_KEYS.PENALTIES) || '[]');
       const leaves: LeaveRequest[] = JSON.parse(localStorage.getItem(STORAGE_KEYS.LEAVES) || '[]');
       const payrollRuns: PayrollRun[] = JSON.parse(localStorage.getItem(STORAGE_KEYS.PAYROLL_RUNS) || '[]');
+      const payrollSettlements: PayrollSettlement[] = [];
       const journals: JournalBatch[] = JSON.parse(localStorage.getItem(STORAGE_KEYS.JOURNALS) || '[]');
       const auditLogs: AuditLog[] = JSON.parse(localStorage.getItem(STORAGE_KEYS.AUDIT_LOGS) || '[]');
       const qoyodConfig: QoyodApiConfig = JSON.parse(localStorage.getItem(STORAGE_KEYS.QOYOD_CONFIG) || JSON.stringify(INITIAL_QOYOD_CONFIG));
@@ -105,6 +108,7 @@ export function loadInitialState(): AppState {
         penalties,
         leaves,
         payrollRuns,
+        payrollSettlements,
         journals,
         auditLogs,
         qoyodConfig,
@@ -127,6 +131,7 @@ export function loadInitialState(): AppState {
   const penalties: PenaltyRecord[] = [];
   const leaves: LeaveRequest[] = [];
   const payrollRuns: PayrollRun[] = [];
+  const payrollSettlements: PayrollSettlement[] = [];
   const journals: JournalBatch[] = [];
 
   const auditLogs: AuditLog[] = [
@@ -155,6 +160,7 @@ export function loadInitialState(): AppState {
     penalties,
     leaves,
     payrollRuns,
+    payrollSettlements,
     journals,
     auditLogs,
     qoyodConfig,
