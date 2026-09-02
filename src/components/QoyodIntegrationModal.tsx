@@ -29,16 +29,22 @@ import { useLanguage } from '../i18n/LanguageContext';
 interface QoyodIntegrationModalProps {
   company: Company;
   latestRun: PayrollRun | undefined;
+  journalBatch?: JournalBatch | null;
+  existingJournal?: JournalBatch;
   qoyodConfig: QoyodApiConfig;
   onSaveConfig: (config: QoyodApiConfig) => void;
+  onJournalSynced: (journal: JournalBatch) => Promise<void>;
   onClose: () => void;
 }
 
 export const QoyodIntegrationModal: React.FC<QoyodIntegrationModalProps> = ({
   company,
   latestRun,
+  journalBatch,
+  existingJournal,
   qoyodConfig,
   onSaveConfig,
+  onJournalSynced,
   onClose,
 }) => {
   const { language } = useLanguage();
@@ -59,7 +65,8 @@ export const QoyodIntegrationModal: React.FC<QoyodIntegrationModalProps> = ({
   const [copiedJson, setCopiedJson] = useState(false);
   const [activeViewTab, setActiveViewTab] = useState<'config' | 'curl' | 'payload' | 'response'>('config');
 
-  const activeBatch: JournalBatch | null = latestRun ? generatePayrollJournalBatch(company, latestRun) : null;
+  const activeBatch: JournalBatch | null = journalBatch || (latestRun ? generatePayrollJournalBatch(company, latestRun) : null);
+  const isAlreadyPosted = existingJournal?.status === 'POSTED' && Boolean(existingJournal.qoyodSyncStatus?.synced);
   const currentPayload = activeBatch ? buildQoyodJournalPayload(activeBatch, company) : null;
   const currentCurl = currentPayload ? generateQoyodCurlCommand(currentPayload, config.apiKey, config.baseUrl) : '';
 
@@ -107,8 +114,17 @@ export const QoyodIntegrationModal: React.FC<QoyodIntegrationModalProps> = ({
 
     try {
       const res = await sendJournalEntryToQoyod(activeBatch, company, config);
-      setIsSyncing(false);
       if (res.success) {
+        const postedJournal: JournalBatch = {
+          ...activeBatch,
+          status: 'POSTED',
+          qoyodSyncStatus: {
+            synced: true,
+            syncedAt: new Date().toISOString(),
+            qoyodJournalId: String(res.responseData?.id || ''),
+          },
+        };
+        await onJournalSynced(postedJournal);
         setSyncSuccess(res.message);
         if (res.responseData) {
           setLastResponse(res.responseData);
@@ -118,8 +134,9 @@ export const QoyodIntegrationModal: React.FC<QoyodIntegrationModalProps> = ({
         alert(res.message);
       }
     } catch (e: any) {
+      alert(`${tr('تم الاتصال بقيود لكن تعذر تثبيت حالة القيد محلياً:', 'Qoyod was contacted but the local journal status could not be committed:')} ${e.message || e}`);
+    } finally {
       setIsSyncing(false);
-      alert(`${tr('حدث خطأ أثناء الاتصال بخادم قيود:', 'Qoyod connection error:')} ${e.message || e}`);
     }
   };
 
@@ -373,11 +390,11 @@ export const QoyodIntegrationModal: React.FC<QoyodIntegrationModalProps> = ({
                   <button
                     type="button"
                     onClick={handleSyncToQoyod}
-                    disabled={isSyncing || !activeBatch}
-                    className="px-4 py-2 bg-sky-600 hover:bg-sky-700 text-white rounded-xl font-bold flex items-center gap-1.5 transition-all shadow-md cursor-pointer"
+                    disabled={isSyncing || !activeBatch || isAlreadyPosted}
+                    className="px-4 py-2 bg-sky-600 hover:bg-sky-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white rounded-xl font-bold flex items-center gap-1.5 transition-all shadow-md cursor-pointer"
                   >
                     <Send className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
-                    <span>{isSyncing ? tr('جاري المزامنة...', 'Synchronizing...') : tr('ترحيل القيد لقيود API', 'Post Journal to Qoyod API')}</span>
+                    <span>{isAlreadyPosted ? tr('تم ترحيل هذا القيد', 'Journal already posted') : isSyncing ? tr('جاري المزامنة...', 'Synchronizing...') : tr('ترحيل القيد لقيود API', 'Post Journal to Qoyod API')}</span>
                   </button>
                 </div>
               </div>

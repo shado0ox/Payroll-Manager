@@ -1,5 +1,5 @@
 import { AppState } from './storage';
-import { AttendanceRecord, LoanSchedule, PenaltyRecord, TemporaryEarningRecord, UserAccount } from '../types';
+import { AttendanceRecord, JournalBatch, LoanSchedule, PenaltyRecord, TemporaryEarningRecord, UserAccount } from '../types';
 
 class ApiError extends Error {
   constructor(message: string, public status: number) { super(message); this.name = 'ApiError'; }
@@ -145,6 +145,18 @@ export const api = {
     const result = await request<{deleted:boolean;version:number;updated_at:string}>(`/api/temporary-earnings/${encodeURIComponent(id)}`, { method:'DELETE' });
     stateVersion = result.version;
     removeFromSyncedCollection('temporaryEarnings', id);
+    return result;
+  },
+  saveJournalRecord: async (record: JournalBatch) => {
+    const result = await request<{record:JournalBatch;created:boolean;version:number;updated_at:string}>(`/api/journals/${encodeURIComponent(record.id)}`, { method:'PUT',body:JSON.stringify(record) });
+    stateVersion = result.version;
+    updateSyncedCollection('journals',result.record);
+    return result;
+  },
+  deleteJournalRecord: async (id: string) => {
+    const result = await request<{deleted:boolean;version:number;updated_at:string}>(`/api/journals/${encodeURIComponent(id)}`, { method:'DELETE' });
+    stateVersion = result.version;
+    removeFromSyncedCollection('journals',id);
     return result;
   },
   savePayrollRun: async (record: any) => {
