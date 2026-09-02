@@ -20,7 +20,7 @@ jobs:
           node-version: 20.19
           cache: npm
       - run: npm ci
-      - run: node scripts/apply-feature-hardening.mjs
+      - run: npm run prepare:security
       - run: npm run test:security
       - run: npm run lint
       - run: npm run build
@@ -68,7 +68,7 @@ jobs:
           node-version: 20.19
           cache: npm
       - run: npm ci
-      - run: node scripts/apply-feature-hardening.mjs
+      - run: npm run prepare:security
       - name: Start isolated Masar server
         run: |
           node server/index.mjs > runtime-server.log 2>&1 &
