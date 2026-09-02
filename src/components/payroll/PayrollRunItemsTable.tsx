@@ -45,7 +45,8 @@ export const PayrollRunItemsTable = React.memo(function PayrollRunItemsTable({
   const togglePaymentEmployee = onTogglePaymentEmployee;
   const handleEntitlementStatusChange = onEntitlementStatusChange;
   const openAdjustmentModal = onOpenAdjustment;
-    {/* Itemized Payroll Run Table */}
+
+  return (
     <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden w-full">
       <table className="w-full text-right text-xs table-fixed divide-y divide-slate-100">
         <thead>
@@ -80,19 +81,18 @@ export const PayrollRunItemsTable = React.memo(function PayrollRunItemsTable({
           ) : (
             filteredItems.map((item, idx) => {
               const emp = employees.find(e => e.id === item.employeeId);
-              const hasWarning = item.warningFlags.length > 0;
+              const hasWarning = (item.warningFlags || []).length > 0;
               const paymentBatch = getEmployeePaymentBatch(item.employeeId);
               const entitlementStatus = item.entitlementStatus || 'PAYABLE';
               const canSelectForPayment = entitlementStatus === 'PAYABLE' && item.netSalary > 0 && !committedEmployeeIds.has(item.employeeId);
 
               return (
-                <tr 
-                  key={`${item.id || 'item'}-${idx}`} 
+                <tr
+                  key={`${item.id || 'item'}-${idx}`}
                   className={`hover:bg-slate-50 transition-colors text-[11px] ${
                     item.isSuspended ? 'bg-amber-50/40' : (hasWarning ? 'bg-amber-50/20' : '')
                   }`}
                 >
-                  {/* Name & Flags */}
                   <td className="py-2.5 px-2 truncate">
                     <div className="flex items-start gap-2">
                       <input
@@ -135,28 +135,14 @@ export const PayrollRunItemsTable = React.memo(function PayrollRunItemsTable({
                       </div>
                     </div>
                     {hasWarning && (
-                      <div className="text-[9px] text-amber-700 font-semibold truncate mt-0.5" title={item.warningFlags.join(' • ')}>
-                        ⚠️ {item.warningFlags[0]}
+                      <div className="text-[9px] text-amber-700 font-semibold truncate mt-0.5" title={(item.warningFlags || []).join(' • ')}>
+                        ⚠️ {(item.warningFlags || [])[0]}
                       </div>
                     )}
                   </td>
-
-                  {/* Department */}
-                  <td className="py-2.5 px-1.5 text-slate-600 truncate font-medium">
-                    {item.department}
-                  </td>
-
-                  {/* Base Salary */}
-                  <td className="py-2.5 px-1.5 font-semibold text-slate-800 whitespace-nowrap">
-                    {formatSAR(item.baseSalary)}
-                  </td>
-
-                  {/* Housing & Transport */}
-                  <td className="py-2.5 px-1.5 text-slate-600 whitespace-nowrap">
-                    {formatSAR(item.housingAllowance + item.transportAllowance + item.otherAllowances)}
-                  </td>
-
-                  {/* Overtime */}
+                  <td className="py-2.5 px-1.5 text-slate-600 truncate font-medium">{item.department}</td>
+                  <td className="py-2.5 px-1.5 font-semibold text-slate-800 whitespace-nowrap">{formatSAR(item.baseSalary)}</td>
+                  <td className="py-2.5 px-1.5 text-slate-600 whitespace-nowrap">{formatSAR(item.housingAllowance + item.transportAllowance + item.otherAllowances)}</td>
                   <td className="py-2.5 px-1.5 whitespace-nowrap">
                     {(item.overtimeAmount + item.bonuses + Number(item.priorPeriodNet || 0)) > 0 ? (
                       <div>
@@ -172,75 +158,33 @@ export const PayrollRunItemsTable = React.memo(function PayrollRunItemsTable({
                           </div>
                         )}
                       </div>
-                    ) : (
-                      <span className="text-slate-300">-</span>
-                    )}
+                    ) : <span className="text-slate-300">-</span>}
                   </td>
-
-                  {/* Gross */}
-                  <td className="py-2.5 px-1.5 font-bold text-slate-900 whitespace-nowrap">
-                    {formatSAR(item.totalGrossSalary)}
-                  </td>
-
-                  {/* Absence & Delay */}
+                  <td className="py-2.5 px-1.5 font-bold text-slate-900 whitespace-nowrap">{formatSAR(item.totalGrossSalary)}</td>
                   <td className="py-2.5 px-1.5 text-rose-600 whitespace-nowrap">
-                    {(item.delayDeduction + item.absenceDeduction + item.unpaidLeaveDeduction) > 0 ? (
-                      formatSAR(item.delayDeduction + item.absenceDeduction + item.unpaidLeaveDeduction)
-                    ) : (
-                      <span className="text-slate-300">-</span>
-                    )}
+                    {(item.delayDeduction + item.absenceDeduction + item.unpaidLeaveDeduction) > 0
+                      ? formatSAR(item.delayDeduction + item.absenceDeduction + item.unpaidLeaveDeduction)
+                      : <span className="text-slate-300">-</span>}
                   </td>
-
-                  {/* GOSI Employee */}
                   <td className="py-2.5 px-1.5 text-slate-700 font-medium whitespace-nowrap">
-                    {item.gosiEmployeeShare > 0 ? (
-                      formatSAR(item.gosiEmployeeShare)
-                    ) : item.nationality === 'NON_SAUDI' && item.gosiEnabled !== false && item.gosiEmployerShare > 0 ? (
-                      <span className="text-[9px] font-bold text-purple-700" title={tr('لا يخصم من الموظف؛ حصة المخاطر المهنية تتحملها الشركة', 'No employee deduction; occupational hazards are employer-paid')}>
-                        {tr('على الشركة فقط', 'Employer only')}
-                      </span>
-                    ) : (
-                      <span className="text-slate-300">-</span>
-                    )}
+                    {item.gosiEmployeeShare > 0 ? formatSAR(item.gosiEmployeeShare)
+                      : item.nationality === 'NON_SAUDI' && item.gosiEnabled !== false && item.gosiEmployerShare > 0
+                        ? <span className="text-[9px] font-bold text-purple-700" title={tr('لا يخصم من الموظف؛ حصة المخاطر المهنية تتحملها الشركة', 'No employee deduction; occupational hazards are employer-paid')}>{tr('على الشركة فقط', 'Employer only')}</span>
+                        : <span className="text-slate-300">-</span>}
                   </td>
-
-                  {/* Loan Deduction */}
-                  <td className="py-2.5 px-1.5 text-slate-700 whitespace-nowrap">
-                    {item.loanDeduction > 0 ? (
-                      formatSAR(item.loanDeduction)
-                    ) : (
-                      <span className="text-slate-300">-</span>
-                    )}
-                  </td>
-
-                  {/* Total Deductions */}
-                  <td className="py-2.5 px-1.5 font-bold text-rose-700 whitespace-nowrap">
-                    {formatSAR(item.totalDeductions)}
-                  </td>
-
-                  {/* Net Salary */}
-                  <td className="py-2.5 px-1.5 font-extrabold text-emerald-800 font-mono bg-emerald-50/40 whitespace-nowrap">
-                    {formatSAR(item.netSalary)}
-                  </td>
-
-                  {/* GOSI Employer Share */}
-                  <td className="py-2.5 px-1.5 text-purple-700 font-medium whitespace-nowrap">
-                    {formatSAR(item.gosiEmployerShare)}
-                  </td>
-
-                  {/* Payslip Modal Trigger */}
+                  <td className="py-2.5 px-1.5 text-slate-700 whitespace-nowrap">{item.loanDeduction > 0 ? formatSAR(item.loanDeduction) : <span className="text-slate-300">-</span>}</td>
+                  <td className="py-2.5 px-1.5 font-bold text-rose-700 whitespace-nowrap">{formatSAR(item.totalDeductions)}</td>
+                  <td className="py-2.5 px-1.5 font-extrabold text-emerald-800 font-mono bg-emerald-50/40 whitespace-nowrap">{formatSAR(item.netSalary)}</td>
+                  <td className="py-2.5 px-1.5 text-purple-700 font-medium whitespace-nowrap">{formatSAR(item.gosiEmployerShare)}</td>
                   <td className="py-2.5 px-1 text-center">
                     <button
-                      onClick={() => {
-                        if (emp) onViewEmployeeStatement(emp);
-                      }}
+                      onClick={() => { if (emp) onViewEmployeeStatement(emp); }}
                       title={tr('عرض وطباعة قسيمة الراتب', 'View and print payslip')}
                       className="p-1 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors cursor-pointer"
                     >
                       <FileText className="w-3.5 h-3.5" />
                     </button>
                   </td>
-
                 </tr>
               );
             })
@@ -248,4 +192,5 @@ export const PayrollRunItemsTable = React.memo(function PayrollRunItemsTable({
         </tbody>
       </table>
     </div>
+  );
 });
