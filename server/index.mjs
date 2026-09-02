@@ -2,10 +2,14 @@ import crypto from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import express from 'express';
+import { validatePayrollCarryForwardState } from './payroll-carryforward-validation.mjs';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import bcrypt from 'bcryptjs';
 import pg from 'pg';
+import { createTenantScopedClient, scopeStateForCompanies } from './tenant-storage.mjs';
+import { appendStateAudit } from './state-audit.mjs';
+import { appendPayrollFinancialAudit } from './payroll-financial-audit.mjs';
 
 const { Pool } = pg;
 const port = Number(process.env.PORT || 3000);
@@ -13,10 +17,10 @@ const schema = process.env.DB_SCHEMA || 'masar_payroll';
 if (!/^[a-z_][a-z0-9_]*$/.test(schema)) throw new Error('DB_SCHEMA is invalid');
 if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL is required');
 const ALLOWED_ROLES = new Set(['ADMIN', 'COMPANY_MANAGER', 'OPERATIONS_MANAGER']);
-const ALL_PERMISSIONS = new Set(['VIEW_DASHBOARD','MANAGE_COMPANY_PROFILE','MANAGE_COMPANIES','MANAGE_EMPLOYEES','MANAGE_ATTENDANCE','MANAGE_LOANS_PENALTIES','MANAGE_PAYROLL','APPROVE_PAYROLL','POST_PAYROLL','MANAGE_JOURNALS','VIEW_REPORTS','MANAGE_USERS','VIEW_AUDIT_LOGS']);
+const ALL_PERMISSIONS = new Set(['VIEW_DASHBOARD','MANAGE_COMPANY_PROFILE','MANAGE_COMPANIES','MANAGE_EMPLOYEES','MANAGE_ATTENDANCE','MANAGE_LOANS_PENALTIES','MANAGE_PAYROLL','APPROVE_PAYROLL','REVERSE_PAYROLL_APPROVAL','POST_PAYROLL','CONFIRM_PAYROLL_PAYMENT','REVERSE_PAYROLL_PAYMENT','MANAGE_JOURNALS','VIEW_REPORTS','MANAGE_USERS','RECEIVE_HR_EXPIRY_EMAILS','VIEW_AUDIT_LOGS']);
 const DEFAULT_PERMISSIONS = {
   COMPANY_MANAGER: [...ALL_PERMISSIONS].filter(value => value !== 'MANAGE_COMPANIES'),
-  OPERATIONS_MANAGER: ['VIEW_DASHBOARD','MANAGE_EMPLOYEES','MANAGE_ATTENDANCE','MANAGE_LOANS_PENALTIES','MANAGE_PAYROLL','POST_PAYROLL','VIEW_REPORTS'],
+  OPERATIONS_MANAGER: ['VIEW_DASHBOARD','MANAGE_EMPLOYEES','MANAGE_ATTENDANCE','MANAGE_LOANS_PENALTIES','MANAGE_PAYROLL','POST_PAYROLL','CONFIRM_PAYROLL_PAYMENT','VIEW_REPORTS'],
 };
 const trialDays = Math.max(1, Math.min(90, Number(process.env.TRIAL_DAYS || 14)));
 const publicRegistrationEnabled = process.env.ALLOW_PUBLIC_REGISTRATION === 'true';
@@ -43,14 +47,256 @@ const pool = new Pool({
 const q = (name) => `"${schema}".${name}`;
 const sha256 = (value) => crypto.createHash('sha256').update(value).digest('hex');
 const cookieValue = (req, key) => (req.headers.cookie || '').split(';').map(v => v.trim()).find(v => v.startsWith(`${key}=`))?.slice(key.length + 1);
-const COMPANY_SCOPED_KEYS = ['employees', 'attendance', 'loans', 'penalties', 'temporaryEarnings', 'leaves', 'payrollRuns', 'journals'];
-const OPERATIONS_MUTABLE_KEYS = new Set(['employees', 'attendance', 'loans', 'penalties', 'temporaryEarnings', 'leaves', 'payrollRuns']);
-const PATCHABLE_COLLECTIONS = new Set(['companies', 'employees', 'attendance', 'loans', 'penalties', 'temporaryEarnings', 'leaves', 'payrollRuns', 'journals', 'auditLogs']);
+const COMPANY_SCOPED_KEYS = ['employees', 'attendance', 'loans', 'penalties', 'temporaryEarnings', 'leaves', 'payrollRuns', 'payrollSettlements', 'journals'];
+const OPERATIONS_MUTABLE_KEYS = new Set(['employees', 'attendance', 'loans', 'penalties', 'temporaryEarnings', 'leaves', 'payrollRuns', 'payrollSettlements']);
+const PATCHABLE_COLLECTIONS = new Set(['companies', 'employees', 'attendance', 'loans', 'penalties', 'temporaryEarnings', 'leaves', 'payrollRuns', 'payrollSettlements', 'journals']);
 const clone = (value) => value == null ? value : structuredClone(value);
 const allowedCompanyIds = (user) => new Set(user.role === 'ADMIN' ? [] : (Array.isArray(user.company_ids) ? user.company_ids : []));
 const itemCompanyId = (item) => item && typeof item.companyId === 'string' ? item.companyId : '';
 const permissionsFor = (user) => user.role === 'ADMIN' ? [...ALL_PERMISSIONS] : (Array.isArray(user.permissions) ? user.permissions : DEFAULT_PERMISSIONS[user.role] || []);
 const can = (user, permission) => user.role === 'ADMIN' || permissionsFor(user).includes(permission);
+
+const workflowError = (status, code) => Object.assign(new Error(code), { status });
+const sameJson = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+const payrollFinancialCore = (run) => {
+  if (!run || typeof run !== 'object') return run;
+  const number = (value) => Number(value ?? 0);
+  const text = (value) => String(value ?? '');
+  return {
+    companyId:text(run.companyId), periodMonth:text(run.periodMonth), startDate:text(run.startDate), endDate:text(run.endDate),
+    employeesCount:number(run.employeesCount), totalBaseSalaries:number(run.totalBaseSalaries),
+    totalAllowances:number(run.totalAllowances), totalOvertime:number(run.totalOvertime),
+    totalGrossSalaries:number(run.totalGrossSalaries), totalAbsenceDeductions:number(run.totalAbsenceDeductions),
+    totalDelayDeductions:number(run.totalDelayDeductions), totalGosiEmployee:number(run.totalGosiEmployee),
+    totalGosiEmployer:number(run.totalGosiEmployer), totalLoanDeductions:number(run.totalLoanDeductions),
+    totalPenalties:number(run.totalPenalties), totalDeductions:number(run.totalDeductions),
+    totalNetSalaries:number(run.totalNetSalaries), totalCompanyCost:number(run.totalCompanyCost),
+  };
+};
+
+const hasOwnPayrollInputKey = (obj, key) => Object.prototype.hasOwnProperty.call(obj || {}, key);
+const closedRunsForInput = (stored, companyId) => asArray(stored?.payrollRuns).filter(run => run.companyId === companyId && ['APPROVED','POSTED'].includes(run.status));
+const payrollSourceLocked = (stored, kind, record) => closedRunsForInput(stored, record.companyId).some(run => {
+  const item = asArray(run.items).find(candidate => candidate.employeeId === record.employeeId);
+  if (!item) return false;
+  // Payroll inputs remain editable for unpaid/held employees. Once the employee is reserved
+  // in a SCHEDULED batch or actually PAID, source entries used by that payroll item are locked.
+  const employeePaymentLocked = asArray(run.paymentBatches).some(batch =>
+    ['SCHEDULED','PAID'].includes(batch.status) && asArray(batch.employeeIds).includes(record.employeeId)
+  );
+  if (!employeePaymentLocked) return false;
+  if (kind === 'attendance') return run.periodMonth === record.periodMonth;
+  if (kind === 'penalty') return run.periodMonth === record.periodMonth && Number(item.penaltiesDeduction || 0) !== 0;
+  if (kind === 'earning') return run.periodMonth === record.periodMonth && Number(item.bonuses || 0) !== 0;
+  return run.periodMonth >= record.startDate && Number(item.loanDeduction || 0) !== 0;
+});
+const changedPayrollSourceRows = (beforeRows, afterRows) => {
+  const before = new Map(asArray(beforeRows).map(row => [row.id, row]));
+  const after = new Map(asArray(afterRows).map(row => [row.id, row]));
+  const changed = [];
+  for (const [id, row] of before) {
+    const next = after.get(id);
+    if (!next || !sameJson(row, next)) changed.push(row);
+  }
+  for (const [id, row] of after) if (!before.has(id)) changed.push(row);
+  return changed;
+};
+const isAppendOnlyLoanAdjustment = (beforeLoan, afterLoan, user) => {
+  if (!beforeLoan || !afterLoan) return false;
+  const beforeAdjustments = asArray(beforeLoan.adjustments);
+  const afterAdjustments = asArray(afterLoan.adjustments);
+  if (afterAdjustments.length !== beforeAdjustments.length + 1) return false;
+  if (!sameJson(beforeAdjustments, afterAdjustments.slice(0, -1))) return false;
+  const adjustment = afterAdjustments[afterAdjustments.length - 1];
+  if (!adjustment || typeof adjustment.id !== 'string' || !adjustment.id
+    || !Number.isFinite(Number(adjustment.amount)) || Number(adjustment.amount) === 0
+    || typeof adjustment.reason !== 'string' || !adjustment.reason.trim()
+    || typeof adjustment.date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(adjustment.date)) return false;
+  const immutableKeys = ['id','companyId','employeeId','totalAmount','monthlyInstallment','totalInstallments','startDate','reason'];
+  if (immutableKeys.some(key => !sameJson(beforeLoan[key], afterLoan[key]))) return false;
+  const expectedBalance = Number((Number(beforeLoan.remainingAmount || 0) + Number(adjustment.amount)).toFixed(2));
+  if (expectedBalance < 0 || Number(afterLoan.remainingAmount) !== expectedBalance) return false;
+  const parsedAdjustmentDate = new Date(`${adjustment.date}T00:00:00Z`);
+  if (Number.isNaN(parsedAdjustmentDate.getTime()) || parsedAdjustmentDate.toISOString().slice(0, 10) !== adjustment.date) return false;
+  const installment = Number(beforeLoan.monthlyInstallment || 0);
+  const expectedRemainingInstallments = expectedBalance === 0
+    ? 0
+    : installment > 0 ? Math.ceil(expectedBalance / installment) : Number(beforeLoan.remainingInstallments || 0);
+  if (Number(afterLoan.remainingInstallments) !== expectedRemainingInstallments) return false;
+  const expectedStatus = expectedBalance === 0
+    ? 'COMPLETED'
+    : beforeLoan.status === 'COMPLETED' ? 'ACTIVE' : beforeLoan.status;
+  if (afterLoan.status !== expectedStatus) return false;
+  adjustment.createdAt = new Date().toISOString();
+  adjustment.createdBy = String(user?.id || '');
+  return true;
+};
+
+function validateClosedPayrollInputs(stored, incoming) {
+  const checks = [
+    ['attendance', 'attendance'],
+    ['loans', 'loan'],
+    ['penalties', 'penalty'],
+    ['temporaryEarnings', 'earning'],
+  ];
+  for (const [key, kind] of checks) {
+    if (!hasOwnPayrollInputKey(incoming, key)) continue;
+    const beforeById = new Map(asArray(stored?.[key]).map(row => [row.id, row]));
+    const afterById = new Map(asArray(incoming?.[key]).map(row => [row.id, row]));
+    for (const row of changedPayrollSourceRows(stored?.[key], incoming?.[key])) {
+      if (!payrollSourceLocked(stored, kind, row)) continue;
+      if (kind === 'loan' && isAppendOnlyLoanAdjustment(beforeById.get(row.id), afterById.get(row.id), user)) continue;
+      throw workflowError(409, 'PAYROLL_SOURCE_ENTRY_LOCKED');
+    }
+  }
+}
+
+const payrollItemPaymentLockCore = (item) => {
+  if (!item || typeof item !== 'object') return item ?? null;
+  const number = (value) => Number(value ?? 0);
+  const text = (value) => String(value ?? '');
+  return {
+    id:text(item.id), payrollRunId:text(item.payrollRunId), employeeId:text(item.employeeId), employeeNo:text(item.employeeNo),
+    employeeName:text(item.employeeName), employeeNameEn:text(item.employeeNameEn), nationalIdOrIqama:text(item.nationalIdOrIqama),
+    department:text(item.department), costCenterId:text(item.costCenterId), nationality:text(item.nationality),
+    bankIban:text(item.bankIban), bankName:text(item.bankName), bankSwiftCode:text(item.bankSwiftCode),
+    baseSalary:number(item.baseSalary), housingAllowance:number(item.housingAllowance), transportAllowance:number(item.transportAllowance),
+    otherAllowances:number(item.otherAllowances), nonGosiAllowances:number(item.nonGosiAllowances), overtimeAmount:number(item.overtimeAmount),
+    overtimeHours:number(item.overtimeHours), bonuses:number(item.bonuses), totalGrossSalary:number(item.totalGrossSalary),
+    payableDays:number(item.payableDays), salaryProrationFactor:number(item.salaryProrationFactor),
+    delayMinutes:number(item.delayMinutes), delayDeduction:number(item.delayDeduction), absenceDays:number(item.absenceDays),
+    absenceDeduction:number(item.absenceDeduction), unpaidLeaveDays:number(item.unpaidLeaveDays), unpaidLeaveDeduction:number(item.unpaidLeaveDeduction),
+    gosiEmployeeShare:number(item.gosiEmployeeShare), gosiSubjectAmount:number(item.gosiSubjectAmount),
+    gosiEmployeeRate:number(item.gosiEmployeeRate), gosiEmployerRate:number(item.gosiEmployerRate), gosiEnabled:item.gosiEnabled !== false,
+    loanDeduction:number(item.loanDeduction), penaltiesDeduction:number(item.penaltiesDeduction), otherDeductions:number(item.otherDeductions),
+    totalDeductions:number(item.totalDeductions), netSalary:number(item.netSalary), gosiEmployerShare:number(item.gosiEmployerShare),
+    totalCompanyBurden:number(item.totalCompanyBurden), saudiGosiPaymentMode:text(item.saudiGosiPaymentMode),
+    manualAddition:number(item.manualAddition), manualDeduction:number(item.manualDeduction), adjustmentNotes:text(item.adjustmentNotes),
+    entitlementStatus:text(item.entitlementStatus || 'PAYABLE'), entitlementReason:text(item.entitlementReason),
+    entitlementDocumentRef:text(item.entitlementDocumentRef), isSuspended:Boolean(item.isSuspended),
+    priorPeriodGross:number(item.priorPeriodGross), priorPeriodDeductions:number(item.priorPeriodDeductions), priorPeriodNet:number(item.priorPeriodNet),
+    priorPeriodDetails:asArray(item.priorPeriodDetails).map(row => ({
+      periodMonth:text(row?.periodMonth), gross:number(row?.gross), deductions:number(row?.deductions), net:number(row?.net)
+    })),
+  };
+};
+
+function validatePayrollWorkflowChanges(storedRuns, incomingRuns, user) {
+  const before = new Map(asArray(storedRuns).map(run => [run.id, run]));
+  const after = new Map(asArray(incomingRuns).map(run => [run.id, run]));
+
+  for (const [runId, oldRun] of before) {
+    const nextRun = after.get(runId);
+    if (!nextRun) {
+      if (['APPROVED','POSTED'].includes(oldRun.status) || asArray(oldRun.paymentBatches).some(batch => ['SCHEDULED','PAID'].includes(batch.status))) {
+        throw workflowError(409, 'PAYROLL_RUN_LOCKED');
+      }
+      continue;
+    }
+
+    const oldStatus = String(oldRun.status || 'DRAFT');
+    const nextStatus = String(nextRun.status || 'DRAFT');
+    if (oldStatus !== nextStatus) {
+      const transition = oldStatus + '->' + nextStatus;
+      const allowed = new Set(['DRAFT->UNDER_REVIEW','UNDER_REVIEW->DRAFT','UNDER_REVIEW->APPROVED','APPROVED->UNDER_REVIEW','APPROVED->POSTED','POSTED->APPROVED']);
+      if (!allowed.has(transition)) throw workflowError(409, 'INVALID_PAYROLL_STATUS_TRANSITION');
+      if (transition === 'UNDER_REVIEW->APPROVED' && !can(user, 'APPROVE_PAYROLL')) {
+        throw workflowError(403, 'APPROVE_PAYROLL_REQUIRED');
+      }
+      if ((transition === 'APPROVED->UNDER_REVIEW' || transition === 'POSTED->APPROVED') && !can(user, 'REVERSE_PAYROLL_APPROVAL')) {
+        throw workflowError(403, 'REVERSE_PAYROLL_APPROVAL_REQUIRED');
+      }
+      if (transition === 'APPROVED->POSTED' && !can(user, 'POST_PAYROLL')) {
+        throw workflowError(403, 'POST_PAYROLL_REQUIRED');
+      }
+      if ((transition === 'DRAFT->UNDER_REVIEW' || transition === 'UNDER_REVIEW->DRAFT') && !can(user, 'MANAGE_PAYROLL')) {
+        throw workflowError(403, 'MANAGE_PAYROLL_REQUIRED');
+      }
+      if ((transition === 'APPROVED->UNDER_REVIEW' || transition === 'POSTED->APPROVED')
+        && asArray(oldRun.paymentBatches).some(batch => batch.status === 'PAID')) {
+        throw workflowError(409, 'PAID_PAYROLL_CANNOT_REOPEN');
+      }
+    }
+
+    // Approved/posting no longer freezes the whole month. Only employees already reserved/paid
+    // in an active transfer batch are immutable; unpaid/new employees may be recalculated or added.
+    if (['APPROVED','POSTED'].includes(oldStatus)) {
+      if (oldRun.companyId !== nextRun.companyId || oldRun.periodMonth !== nextRun.periodMonth) {
+        throw workflowError(409, 'APPROVED_PAYROLL_IDENTITY_IMMUTABLE');
+      }
+      const lockedEmployeeIds = new Set(
+        asArray(oldRun.paymentBatches)
+          .filter(batch => ['SCHEDULED','PAID'].includes(batch.status))
+          .flatMap(batch => asArray(batch.employeeIds))
+      );
+      const oldItemsByEmployee = new Map(asArray(oldRun.items).map(item => [item.employeeId, item]));
+      const nextItemsByEmployee = new Map(asArray(nextRun.items).map(item => [item.employeeId, item]));
+      for (const employeeId of lockedEmployeeIds) {
+        if (!sameJson(payrollItemPaymentLockCore(oldItemsByEmployee.get(employeeId)), payrollItemPaymentLockCore(nextItemsByEmployee.get(employeeId)))) {
+          throw workflowError(409, 'TRANSFERRED_EMPLOYEE_PAYROLL_IMMUTABLE');
+        }
+      }
+    }
+
+    const oldBatches = new Map(asArray(oldRun.paymentBatches).map(batch => [batch.id, batch]));
+    const nextBatches = new Map(asArray(nextRun.paymentBatches).map(batch => [batch.id, batch]));
+    for (const [batchId, oldBatch] of oldBatches) {
+      const nextBatch = nextBatches.get(batchId);
+      if (!nextBatch) {
+        if (['SCHEDULED','PAID'].includes(oldBatch.status)) throw workflowError(409, 'PAYMENT_BATCH_CANNOT_BE_DELETED');
+        continue;
+      }
+      const isPaidReversal = oldBatch.status === 'PAID' && nextBatch.status === 'SCHEDULED';
+      if (oldBatch.status === 'PAID' && !sameJson(oldBatch, nextBatch) && !isPaidReversal) throw workflowError(409, 'PAID_BATCH_IMMUTABLE');
+      if (oldBatch.status !== nextBatch.status) {
+        const paymentTransition = String(oldBatch.status) + '->' + String(nextBatch.status);
+        if (paymentTransition === 'SCHEDULED->PAID') {
+          if (!can(user, 'CONFIRM_PAYROLL_PAYMENT')) throw workflowError(403, 'CONFIRM_PAYROLL_PAYMENT_REQUIRED');
+          if (Number(oldBatch.totalAmount || 0) !== Number(nextBatch.totalAmount || 0)
+            || !sameJson(asArray(oldBatch.employeeIds), asArray(nextBatch.employeeIds))) {
+            throw workflowError(409, 'PAYMENT_BATCH_SCOPE_CHANGED');
+          }
+        } else if (paymentTransition === 'PAID->SCHEDULED') {
+          if (!can(user, 'REVERSE_PAYROLL_PAYMENT')) throw workflowError(403, 'REVERSE_PAYROLL_PAYMENT_REQUIRED');
+          if (Number(oldBatch.totalAmount || 0) !== Number(nextBatch.totalAmount || 0)
+            || !sameJson(asArray(oldBatch.employeeIds), asArray(nextBatch.employeeIds))
+            || !sameJson(oldBatch.method, nextBatch.method)
+            || !sameJson(oldBatch.scheduledDate, nextBatch.scheduledDate)
+            || !sameJson(oldBatch.reference, nextBatch.reference)
+            || !sameJson(oldBatch.notes, nextBatch.notes)) throw workflowError(409, 'PAYMENT_BATCH_SCOPE_CHANGED');
+          if (typeof nextBatch.paymentReversalReason !== 'string' || !nextBatch.paymentReversalReason.trim()
+            || nextBatch.paymentDate != null
+            || String(nextBatch.reversedPaymentDate || '') !== String(oldBatch.paymentDate || '')) {
+            throw workflowError(409, 'PAYMENT_REVERSAL_METADATA_REQUIRED');
+          }
+          nextBatch.paymentReversedAt = new Date().toISOString();
+          nextBatch.paymentReversedBy = String(user?.id || '');
+          nextBatch.paymentReversedByName = String(user?.name || user?.username || '');
+        } else if (paymentTransition === 'SCHEDULED->FAILED' || paymentTransition === 'SCHEDULED->CANCELLED') {
+          if (!can(user, 'MANAGE_PAYROLL')) throw workflowError(403, 'MANAGE_PAYROLL_REQUIRED');
+        } else {
+          throw workflowError(409, 'INVALID_PAYMENT_BATCH_TRANSITION');
+        }
+      } else if (oldBatch.status === 'SCHEDULED' && !sameJson(oldBatch, nextBatch)) {
+        throw workflowError(409, 'SCHEDULED_BATCH_IMMUTABLE');
+      }
+    }
+
+    for (const [batchId, batch] of nextBatches) {
+      if (oldBatches.has(batchId)) continue;
+      if (!can(user, 'MANAGE_PAYROLL')) throw workflowError(403, 'MANAGE_PAYROLL_REQUIRED');
+      if (batch.status !== 'SCHEDULED') throw workflowError(409, 'NEW_PAYMENT_BATCH_MUST_BE_SCHEDULED');
+    }
+  }
+
+  for (const [runId, run] of after) {
+    if (before.has(runId)) continue;
+    if (!can(user, 'MANAGE_PAYROLL')) throw workflowError(403, 'MANAGE_PAYROLL_REQUIRED');
+    if (!['DRAFT','UNDER_REVIEW'].includes(run.status)) throw workflowError(409, 'NEW_PAYROLL_RUN_INVALID_STATUS');
+    if (asArray(run.paymentBatches).length) throw workflowError(409, 'NEW_PAYROLL_RUN_CANNOT_HAVE_PAYMENTS');
+  }
+}
+
 const stateEventClients = new Set();
 const broadcastStateUpdate = (payload) => {
   const message = `data: ${JSON.stringify(payload)}\n\n`;
@@ -94,10 +340,14 @@ function publicStateForUser(rawState, user) {
     if (state.activeCompanyId && !allowed.has(state.activeCompanyId)) state.activeCompanyId = [...allowed][0] || '';
   }
   if (Array.isArray(state.users)) state.users = state.users.map(({ password, ...item }) => item);
-  // Integration secrets must never be returned to the browser.
-  if (state.qoyodConfig && typeof state.qoyodConfig === 'object') {
-    state.qoyodConfig = { ...state.qoyodConfig, apiKey: '', apiKeyConfigured: Boolean(state.qoyodConfig.apiKey) };
-  }
+  // Each company has its own Qoyod configuration. Only expose the active assigned company's public settings.
+  const integrationCompanyId = state.activeCompanyId && assigned.has(state.activeCompanyId)
+    ? state.activeCompanyId
+    : ([...assigned][0] || '');
+  if (integrationCompanyId) state.activeCompanyId = integrationCompanyId;
+  const activeQoyodConfig = state.qoyodConfigsByCompany?.[integrationCompanyId] || {};
+  delete state.qoyodConfigsByCompany;
+  state.qoyodConfig = { ...activeQoyodConfig, apiKey: '', apiKeyConfigured: Boolean(activeQoyodConfig.apiKey) };
   return state;
 }
 
@@ -107,7 +357,41 @@ function mergeCompanyScoped(storedItems, incomingItems, allowed) {
   return [...preserved, ...accepted];
 }
 
+function validatePayrollSettlementChanges(storedSettlements, incomingSettlements) {
+  const before = asArray(storedSettlements);
+  const after = asArray(incomingSettlements);
+  const beforeById = new Map(before.map(item => [item.id, item]));
+  const seenDedupe = new Set();
+  for (const settlement of after) {
+    if (!settlement || typeof settlement.id !== 'string' || !settlement.id || typeof settlement.companyId !== 'string' || !settlement.companyId
+      || typeof settlement.employeeId !== 'string' || !settlement.employeeId || typeof settlement.dedupeKey !== 'string' || !settlement.dedupeKey
+      || !/^\d{4}-\d{2}$/.test(String(settlement.periodMonth || '')) || !(Number(settlement.amount) > 0)) {
+      throw workflowError(400, 'INVALID_PAYROLL_SETTLEMENT');
+    }
+    if (settlement.status !== 'REVERSED') {
+      const key = settlement.companyId + ':' + settlement.dedupeKey;
+      if (seenDedupe.has(key)) throw workflowError(409, 'DUPLICATE_PAYROLL_SETTLEMENT');
+      seenDedupe.add(key);
+    }
+    const previous = beforeById.get(settlement.id);
+    if (previous?.status === 'PAID' && settlement.status === 'PAID' && !sameJson(previous, settlement)) {
+      throw workflowError(409, 'PAID_SETTLEMENT_LOCKED');
+    }
+    if (previous?.status === 'PAID' && settlement.status === 'REVERSED') {
+      if (!settlement.reversedAt) throw workflowError(400, 'SETTLEMENT_REVERSAL_DATE_REQUIRED');
+      if (String(settlement.reversalReason || '').trim().length < 5) throw workflowError(400, 'SETTLEMENT_REVERSAL_REASON_REQUIRED');
+    }
+    if (previous?.status === 'REVERSED' && !sameJson(previous, settlement)) {
+      throw workflowError(409, 'REVERSED_SETTLEMENT_LOCKED');
+    }
+  }
+}
+
 function mergeStateForUser(stored, incoming, user) {
+  if (Object.prototype.hasOwnProperty.call(incoming || {}, 'payrollSettlements')) validatePayrollSettlementChanges(stored?.payrollSettlements, incoming?.payrollSettlements);
+  validateClosedPayrollInputs(stored, incoming);
+  validatePayrollWorkflowChanges(stored?.payrollRuns, incoming?.payrollRuns, user);
+  validatePayrollCarryForwardState(stored?.payrollRuns, incoming?.payrollRuns);
   if (user.role === 'ADMIN') {
     const next = clone(stored || {});
     const assigned = new Set(Array.isArray(user.company_ids) ? user.company_ids : []);
@@ -115,7 +399,7 @@ function mergeStateForUser(stored, incoming, user) {
     const oldCompanies = asArray(stored?.companies);
     const incomingById = new Map(asArray(incoming?.companies).filter(item => assigned.has(item.id)).map(item => [item.id,item]));
     next.companies = oldCompanies.map(item => assigned.has(item.id) && incomingById.has(item.id) ? incomingById.get(item.id) : item);
-    next.auditLogs = mergeCompanyScoped(stored?.auditLogs,incoming?.auditLogs,assigned);
+    next.auditLogs = stored?.auditLogs || [];
     next.users = stored?.users || [];
     next.qoyodConfig = incoming?.qoyodConfig || stored?.qoyodConfig || {};
     if (incoming?.activeCompanyId && assigned.has(incoming.activeCompanyId)) next.activeCompanyId = incoming.activeCompanyId;
@@ -125,7 +409,7 @@ function mergeStateForUser(stored, incoming, user) {
   const allowed = allowedCompanyIds(user);
   const keyPermissions = {
     employees:'MANAGE_EMPLOYEES', attendance:'MANAGE_ATTENDANCE', leaves:'MANAGE_ATTENDANCE',
-    loans:'MANAGE_LOANS_PENALTIES', penalties:'MANAGE_LOANS_PENALTIES', temporaryEarnings:'MANAGE_LOANS_PENALTIES', payrollRuns:'MANAGE_PAYROLL', journals:'MANAGE_JOURNALS',
+    loans:'MANAGE_LOANS_PENALTIES', penalties:'MANAGE_LOANS_PENALTIES', temporaryEarnings:'MANAGE_LOANS_PENALTIES', payrollRuns:'MANAGE_PAYROLL', payrollSettlements:'MANAGE_PAYROLL', journals:'MANAGE_JOURNALS',
   };
   const roleKeys = user.role === 'OPERATIONS_MANAGER' ? OPERATIONS_MUTABLE_KEYS : new Set(COMPANY_SCOPED_KEYS);
   const mutableKeys = [...roleKeys].filter(key => can(user, keyPermissions[key]));
@@ -141,7 +425,7 @@ function mergeStateForUser(stored, incoming, user) {
   // Users, audit history and integration secrets use dedicated server-owned paths.
   next.users = stored?.users || [];
   next.auditLogs = stored?.auditLogs || [];
-  next.qoyodConfig = stored?.qoyodConfig || {};
+  next.qoyodConfig = can(user, 'MANAGE_JOURNALS') ? (incoming?.qoyodConfig || {}) : {};
   if (incoming?.activeCompanyId && allowed.has(incoming.activeCompanyId)) next.activeCompanyId = incoming.activeCompanyId;
 
   if (!can(user, 'APPROVE_PAYROLL') && Array.isArray(next.payrollRuns)) {
@@ -352,6 +636,11 @@ async function replaceNormalizedCoreData(client, state) {
   const journals = asArray(state?.journals);
   const auditLogs = asArray(state?.auditLogs);
   const qoyodConfig = state?.qoyodConfig && typeof state.qoyodConfig === 'object' ? state.qoyodConfig : {};
+  const companyIdsForConfig = new Set(companies.map(company => String(company?.id || '')).filter(Boolean));
+  const requestedQoyodCompanyId = String(state?.activeCompanyId || '');
+  const qoyodCompanyId = companyIdsForConfig.has(requestedQoyodCompanyId)
+    ? requestedQoyodCompanyId
+    : (String(companies[0]?.id || ''));
 
   await client.query(`UPDATE ${q('companies')} SET is_archived=true,updated_at=now()`);
   await client.query(`INSERT INTO ${q('companies')} (id,company_code,name_ar,name_en,payload,sort_order,is_archived)
@@ -413,11 +702,13 @@ async function replaceNormalizedCoreData(client, state) {
     FROM jsonb_array_elements($1::jsonb) WITH ORDINALITY AS source(log,ordinality)`, [JSON.stringify(auditLogs)]);
 
   const { apiKey = '', apiKeyConfigured: _ignored, ...publicConfig } = qoyodConfig;
-  await client.query(`INSERT INTO ${q('integration_configs')} (provider,public_config,secret_value,updated_at)
-    VALUES ('QOYOD',$1::jsonb,$2,now())
-    ON CONFLICT (provider) DO UPDATE SET public_config=EXCLUDED.public_config,
-      secret_value=CASE WHEN EXCLUDED.secret_value <> '' THEN EXCLUDED.secret_value ELSE ${q('integration_configs')}.secret_value END,
-      updated_at=now()`, [JSON.stringify(publicConfig), String(apiKey || '')]);
+  if (qoyodCompanyId) {
+    await client.query(`INSERT INTO ${q('integration_configs')} (company_id,provider,public_config,secret_value,updated_at)
+      VALUES ($1,'QOYOD',$2::jsonb,$3,now())
+      ON CONFLICT (company_id,provider) DO UPDATE SET public_config=EXCLUDED.public_config,
+        secret_value=CASE WHEN EXCLUDED.secret_value <> '' THEN EXCLUDED.secret_value ELSE ${q('integration_configs')}.secret_value END,
+        updated_at=now()`, [qoyodCompanyId, JSON.stringify(publicConfig), String(apiKey || '')]);
+  }
 }
 
 async function hydrateNormalizedPayrollData(client, rawState) {
@@ -481,7 +772,7 @@ async function hydrateNormalizedCoreData(client, rawState) {
     client.query(`SELECT id,payload FROM ${q('journal_batches')} ORDER BY sort_order,id`),
     client.query(`SELECT journal_batch_id,payload FROM ${q('journal_lines')} ORDER BY journal_batch_id,sort_order,id`),
     client.query(`SELECT payload FROM ${q('application_audit_logs')} ORDER BY sort_order,id`),
-    client.query(`SELECT public_config,secret_value FROM ${q('integration_configs')} WHERE provider='QOYOD'`),
+    client.query(`SELECT company_id,public_config,secret_value FROM ${q('integration_configs')} WHERE provider='QOYOD'`),
   ]);
   const linesByJournal = new Map();
   for (const row of journalLines.rows) {
@@ -514,9 +805,9 @@ async function hydrateNormalizedCoreData(client, rawState) {
   }));
   state.journals = journals.rows.map(row => ({ ...row.payload, lines: linesByJournal.get(row.id) || [] }));
   state.auditLogs = auditLogs.rows.map(row => row.payload);
-  if (integration.rowCount) {
-    state.qoyodConfig = { ...integration.rows[0].public_config, apiKey: integration.rows[0].secret_value || '' };
-  }
+  state.qoyodConfigsByCompany = Object.fromEntries(integration.rows
+    .filter(row => row.company_id)
+    .map(row => [row.company_id, { ...row.public_config, apiKey: row.secret_value || '' }]));
   return state;
 }
 
@@ -557,10 +848,31 @@ async function migrate() {
     expires_at timestamptz NOT NULL, created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now()
   )`);
   await pool.query(`DELETE FROM ${q('registration_requests')} WHERE expires_at < now()-interval '1 day'`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS ${q('password_reset_tokens')} (
+    id text PRIMARY KEY, user_id text NOT NULL REFERENCES ${q('users')}(id) ON DELETE CASCADE,
+    token_hash text NOT NULL UNIQUE, expires_at timestamptz NOT NULL, used_at timestamptz, created_at timestamptz NOT NULL DEFAULT now()
+  )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS password_reset_tokens_user_idx ON ${q('password_reset_tokens')}(user_id,expires_at)`);
+  const duplicateUserEmails = await pool.query(`SELECT lower(email) AS email_key,count(*)::integer AS duplicate_count
+    FROM ${q('users')} WHERE email IS NOT NULL AND btrim(email) <> ''
+    GROUP BY lower(email) HAVING count(*) > 1 LIMIT 1`);
+  if (!duplicateUserEmails.rowCount) {
+    await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS users_email_ci_unique ON ${q('users')} (lower(email)) WHERE email IS NOT NULL AND btrim(email) <> ''`);
+  } else {
+    console.warn('Skipping users_email_ci_unique because duplicate user emails already exist; resolve duplicates before enforcing the index.');
+  }
+
   await pool.query(`CREATE TABLE IF NOT EXISTS ${q('sessions')} (
     token_hash text PRIMARY KEY, user_id text NOT NULL REFERENCES ${q('users')}(id) ON DELETE CASCADE,
     expires_at timestamptz NOT NULL, created_at timestamptz NOT NULL DEFAULT now()
   )`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS ${q('hr_lifecycle_alert_deliveries')} (
+    event_key text PRIMARY KEY, company_id text NOT NULL, employee_id text NOT NULL, alert_type text NOT NULL,
+    due_date date, recipients jsonb NOT NULL DEFAULT '[]', sent_at timestamptz NOT NULL DEFAULT now()
+  )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS hr_lifecycle_alert_deliveries_company_idx
+    ON ${q('hr_lifecycle_alert_deliveries')}(company_id,sent_at DESC)`);
+
   await pool.query(`CREATE TABLE IF NOT EXISTS ${q('app_state')} (
     id smallint PRIMARY KEY DEFAULT 1 CHECK (id = 1), state jsonb NOT NULL DEFAULT '{}',
     version bigint NOT NULL DEFAULT 1, updated_by text, updated_at timestamptz NOT NULL DEFAULT now()
@@ -582,9 +894,28 @@ async function migrate() {
     other_fixed_allowances numeric(14,2) NOT NULL DEFAULT 0, bank_iban text NOT NULL DEFAULT '', payload jsonb NOT NULL,
     sort_order integer NOT NULL DEFAULT 0, is_archived boolean NOT NULL DEFAULT false,
     created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
-    CHECK (status IN ('ACTIVE','SUSPENDED','ON_LEAVE','TERMINATED','ABSCONDED'))
+    CHECK (status IN ('ONBOARDING','ACTIVE','SUSPENDED','ON_LEAVE','TERMINATED','ABSCONDED'))
   )`);
   await pool.query(`ALTER TABLE ${q('employees')} ADD COLUMN IF NOT EXISTS is_archived boolean NOT NULL DEFAULT false`);
+  await pool.query(`ALTER TABLE ${q('employees')} DROP CONSTRAINT IF EXISTS employees_status_check`);
+  await pool.query(`ALTER TABLE ${q('employees')} ADD CONSTRAINT employees_status_check CHECK (status IN ('ONBOARDING','ACTIVE','SUSPENDED','ON_LEAVE','TERMINATED','ABSCONDED'))`);
+
+  // LEGACY_EMPLOYEE_IDENTITY_COMPAT: records created before the lifecycle wizard already
+  // have a valid national ID/iqama. Never reinterpret them as new arrivals solely because
+  // lifecycle fields did not exist at the time. No expiry date is invented.
+  await pool.query(`UPDATE ${q('employees')}
+    SET payload = jsonb_set(
+      jsonb_set(
+        jsonb_set(payload, '{iqamaNumber}', to_jsonb(national_id_or_iqama), true),
+        '{iqamaIssueStatus}', '"ISSUED"'::jsonb, true
+      ),
+      '{onboardingStatus}', to_jsonb(CASE WHEN COALESCE(bank_iban,'') <> '' THEN 'COMPLETE' ELSE 'WAITING_BANK' END::text), true
+    ), updated_at=now()
+    WHERE is_archived=false
+      AND payload->>'nationality'='NON_SAUDI'
+      AND COALESCE(national_id_or_iqama,'') <> ''
+      AND COALESCE(payload->>'iqamaNumber','')=''
+      AND COALESCE(payload->>'entryNumber','')=''`);
   await pool.query(`CREATE TABLE IF NOT EXISTS ${q('payroll_runs')} (
     id text PRIMARY KEY, company_id text NOT NULL REFERENCES ${q('companies')}(id) ON DELETE RESTRICT,
     period_month text NOT NULL CHECK (period_month ~ '^[0-9]{4}-(0[1-9]|1[0-2])$'), status text NOT NULL,
@@ -702,6 +1033,18 @@ async function migrate() {
     provider text PRIMARY KEY, public_config jsonb NOT NULL DEFAULT '{}'::jsonb, secret_value text NOT NULL DEFAULT '',
     updated_at timestamptz NOT NULL DEFAULT now(), CHECK (provider IN ('QOYOD'))
   )`);
+  await pool.query(`ALTER TABLE ${q('integration_configs')} ADD COLUMN IF NOT EXISTS company_id text`);
+  await pool.query(`UPDATE ${q('integration_configs')} SET company_id=$1 WHERE company_id IS NULL`, [process.env.COMPANY_ID]);
+  await pool.query(`ALTER TABLE ${q('integration_configs')} ALTER COLUMN company_id SET NOT NULL`);
+  const integrationPk = await pool.query(`SELECT pg_get_constraintdef(oid) definition FROM pg_constraint
+    WHERE conrelid=$1::regclass AND contype='p'`, [q('integration_configs')]);
+  if (integrationPk.rows[0]?.definition === 'PRIMARY KEY (provider)') {
+    await pool.query(`ALTER TABLE ${q('integration_configs')} DROP CONSTRAINT integration_configs_pkey`);
+  }
+  const integrationPkAfter = await pool.query(`SELECT 1 FROM pg_constraint WHERE conrelid=$1::regclass AND contype='p'`, [q('integration_configs')]);
+  if (!integrationPkAfter.rowCount) {
+    await pool.query(`ALTER TABLE ${q('integration_configs')} ADD CONSTRAINT integration_configs_pkey PRIMARY KEY (company_id,provider)`);
+  }
   await pool.query(`CREATE TABLE IF NOT EXISTS ${q('audit_log')} (
     id bigserial PRIMARY KEY, user_id text, action text NOT NULL, ip inet, created_at timestamptz NOT NULL DEFAULT now()
   )`);
@@ -885,6 +1228,130 @@ const subscriptionState = (company) => {
   };
 };
 
+
+const HR_DAY_MS = 86400000;
+const hrDateOnly = (value) => {
+  if (!value) return null;
+  const date = new Date(String(value) + 'T00:00:00Z');
+  return Number.isNaN(date.getTime()) ? null : date;
+};
+const hrDaysUntil = (value, now = new Date()) => {
+  const due = hrDateOnly(value);
+  if (!due) return null;
+  const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  return Math.ceil((due.getTime() - today.getTime()) / HR_DAY_MS);
+};
+const hrAddDays = (value, days) => {
+  const date = hrDateOnly(value);
+  if (!date) return null;
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0,10);
+};
+const hrEscape = (value) => String(value ?? '').replace(/[&<>"']/g, ch => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[ch]));
+const hrRecipientHasPermission = (user) => {
+  if (!user || user.role === 'ADMIN' || !user.is_active || !String(user.email || '').trim()) return false;
+  if (Array.isArray(user.permissions)) return user.permissions.includes('RECEIVE_HR_EXPIRY_EMAILS');
+  return user.role === 'COMPANY_MANAGER';
+};
+const buildHrLifecycleAlerts = (employees, now = new Date()) => {
+  const alerts = [];
+  for (const employee of Array.isArray(employees) ? employees : []) {
+    if (!employee?.id || !employee?.companyId || employee.status === 'TERMINATED' || employee.status === 'ABSCONDED') continue;
+    const common = { companyId:employee.companyId, employeeId:employee.id, employeeNo:employee.employeeNo || '', employeeName:(employee.firstNameAr + ' ' + employee.lastNameAr).trim() };
+    if (employee.nationality === 'NON_SAUDI') {
+      if (employee.iqamaExpiryDate) {
+        const days = hrDaysUntil(employee.iqamaExpiryDate, now);
+        if (days !== null && days <= 30) alerts.push({ ...common, type:'IQAMA_EXPIRY', dueDate:employee.iqamaExpiryDate, daysRemaining:days });
+      } else if (employee.entryDate && employee.iqamaIssueStatus !== 'ISSUED') {
+        const dueDate = hrAddDays(employee.entryDate, 90);
+        const days = dueDate ? hrDaysUntil(dueDate, now) : null;
+        if (dueDate && days !== null && days <= 30) alerts.push({ ...common, type:'NEW_HIRE_ENTRY_DEADLINE', dueDate, daysRemaining:days });
+      }
+    }
+    if (employee.nationality === 'SAUDI' && employee.contractEndDate) {
+      const days = hrDaysUntil(employee.contractEndDate, now);
+      if (days !== null && days <= 60) alerts.push({ ...common, type:'SAUDI_CONTRACT_EXPIRY', dueDate:employee.contractEndDate, daysRemaining:days });
+    }
+    if (!String(employee.bankIban || '').replace(/\s/g,'') || employee.bankAccountStatus === 'PENDING') {
+      alerts.push({ ...common, type:'MISSING_BANK_ACCOUNT', dueDate:null, daysRemaining:null });
+    }
+  }
+  return alerts;
+};
+const hrAlertEventKey = (alert) => [alert.companyId, alert.type, alert.employeeId, alert.dueDate || 'NO-DATE'].join(':');
+let hrAlertRunInProgress = false;
+async function sendHrLifecycleDigest(to, company, alerts) {
+  if (!resendApiKey || !verificationEmailFrom || !to.length || !alerts.length) return false;
+  const label = (alert) => alert.type === 'IQAMA_EXPIRY' ? 'انتهاء الإقامة'
+    : alert.type === 'SAUDI_CONTRACT_EXPIRY' ? 'انتهاء عقد موظف سعودي'
+    : alert.type === 'NEW_HIRE_ENTRY_DEADLINE' ? 'مهلة القادم الجديد'
+    : 'الحساب البنكي غير مكتمل';
+  const rows = alerts.map(alert => '<tr>'
+    + '<td style="padding:8px;border-bottom:1px solid #e5e7eb">' + hrEscape(alert.employeeNo) + '</td>'
+    + '<td style="padding:8px;border-bottom:1px solid #e5e7eb">' + hrEscape(alert.employeeName) + '</td>'
+    + '<td style="padding:8px;border-bottom:1px solid #e5e7eb">' + hrEscape(label(alert)) + '</td>'
+    + '<td style="padding:8px;border-bottom:1px solid #e5e7eb">' + hrEscape(alert.dueDate || '-') + '</td>'
+    + '<td style="padding:8px;border-bottom:1px solid #e5e7eb">' + hrEscape(alert.daysRemaining ?? '-') + '</td>'
+    + '</tr>').join('');
+  const response = await fetch('https://api.resend.com/emails', {
+    method:'POST',
+    headers:{ Authorization:'Bearer ' + resendApiKey, 'Content-Type':'application/json' },
+    body:JSON.stringify({
+      from:verificationEmailFrom,
+      to,
+      subject:'مسار - تنبيهات الموارد البشرية - ' + (company?.nameAr || company?.nameEn || company?.id || ''),
+      html:'<div dir="rtl" style="font-family:Arial,sans-serif;max-width:760px;margin:auto;padding:24px">'
+        + '<h2 style="margin:0 0 12px">تنبيهات الموارد البشرية</h2>'
+        + '<p>هذه الرسالة أُرسلت للمستخدمين المصرح لهم باستقبال تنبيهات انتهاء الوثائق والقادمين الجدد.</p>'
+        + '<table style="width:100%;border-collapse:collapse"><thead><tr><th>الرقم</th><th>الموظف</th><th>التنبيه</th><th>التاريخ</th><th>الأيام المتبقية</th></tr></thead><tbody>' + rows + '</tbody></table>'
+        + '</div>'
+    })
+  });
+  if (!response.ok) throw new Error('HR_ALERT_EMAIL_FAILED_' + response.status);
+  return true;
+}
+async function runHrLifecycleAlerts() {
+  if (hrAlertRunInProgress || !resendApiKey || !verificationEmailFrom) return;
+  hrAlertRunInProgress = true;
+  try {
+    const [stateResult, usersResult] = await Promise.all([
+      pool.query(`SELECT state FROM ${q('app_state')} WHERE id=1`),
+      pool.query(`SELECT id,name,email,role,company_ids,permissions,is_active FROM ${q('users')} WHERE is_active=true AND email<>''`),
+    ]);
+    if (!stateResult.rowCount) return;
+    const hydrated = await hydrateNormalizedStateData(pool, stateResult.rows[0].state);
+    const alerts = buildHrLifecycleAlerts(hydrated?.employees || []);
+    if (!alerts.length) return;
+    const existing = await pool.query(`SELECT event_key FROM ${q('hr_lifecycle_alert_deliveries')} WHERE event_key = ANY($1::text[])`, [alerts.map(hrAlertEventKey)]);
+    const alreadySent = new Set(existing.rows.map(row => row.event_key));
+    const unsent = alerts.filter(alert => !alreadySent.has(hrAlertEventKey(alert)));
+    if (!unsent.length) return;
+    const companies = new Map((hydrated?.companies || []).map(company => [company.id, company]));
+    const grouped = new Map();
+    for (const alert of unsent) {
+      if (!grouped.has(alert.companyId)) grouped.set(alert.companyId, []);
+      grouped.get(alert.companyId).push(alert);
+    }
+    for (const [companyId, companyAlerts] of grouped) {
+      const recipients = usersResult.rows
+        .filter(user => hrRecipientHasPermission(user) && Array.isArray(user.company_ids) && user.company_ids.includes(companyId))
+        .map(user => String(user.email).trim().toLowerCase());
+      const uniqueRecipients = [...new Set(recipients)];
+      if (!uniqueRecipients.length) continue;
+      await sendHrLifecycleDigest(uniqueRecipients, companies.get(companyId), companyAlerts);
+      for (const alert of companyAlerts) {
+        await pool.query(`INSERT INTO ${q('hr_lifecycle_alert_deliveries')} (event_key,company_id,employee_id,alert_type,due_date,recipients)
+          VALUES ($1,$2,$3,$4,$5,$6::jsonb) ON CONFLICT (event_key) DO NOTHING`,
+          [hrAlertEventKey(alert), alert.companyId, alert.employeeId, alert.type, alert.dueDate, JSON.stringify(uniqueRecipients)]);
+      }
+    }
+  } catch (error) {
+    console.error('HR lifecycle alert scheduler failed', error?.message || error);
+  } finally {
+    hrAlertRunInProgress = false;
+  }
+}
+
 async function sendVerificationEmail(email, code, language = 'ar') {
   if (!resendApiKey || !verificationEmailFrom) throw Object.assign(new Error('EMAIL_SERVICE_NOT_CONFIGURED'), { status:503 });
   const isArabic = language !== 'en';
@@ -1062,6 +1529,57 @@ app.post('/api/auth/register/verify', registrationLimiter, async (req, res, next
   } finally { client.release(); }
 });
 
+app.post('/api/auth/password-reset/request', loginLimiter, async (req, res, next) => {
+  try {
+    const email = String(req.body?.email || '').trim().toLowerCase();
+    const accepted = () => res.json({ ok:true, message:'PASSWORD_RESET_REQUEST_ACCEPTED' });
+    if (!email || !email.includes('@')) return accepted();
+    const r = await pool.query(`SELECT id,email,name FROM ${q('users')} WHERE lower(email)=lower($1) AND is_active=true LIMIT 1`, [email]);
+    if (!r.rowCount) return accepted();
+    const user = r.rows[0];
+    const token = crypto.randomBytes(32).toString('base64url');
+    const tokenHash = sha256(token);
+    await pool.query(`DELETE FROM ${q('password_reset_tokens')} WHERE user_id=$1 OR expires_at <= now() OR used_at IS NOT NULL`, [user.id]);
+    await pool.query(`INSERT INTO ${q('password_reset_tokens')} (id,user_id,token_hash,expires_at) VALUES ($1,$2,$3,now()+interval '30 minutes')`, [`reset-${crypto.randomUUID()}`, user.id, tokenHash]);
+    const origin = String(process.env.APP_ORIGIN || '').replace(/\/$/, '');
+    const resetUrl = `${origin}/?reset_token=${encodeURIComponent(token)}`;
+    if (resendApiKey && verificationEmailFrom && origin) {
+      try {
+        await fetch('https://api.resend.com/emails', {
+          method:'POST',
+          headers:{ Authorization:`Bearer ${resendApiKey}`, 'Content-Type':'application/json' },
+          body:JSON.stringify({
+            from:verificationEmailFrom,
+            to:[user.email],
+            subject:'Masar Payroll - Password reset',
+            html:`<p>مرحبًا ${String(user.name || '').replace(/[<>&"']/g,'')}</p><p>تم طلب إعادة تعيين كلمة المرور لحسابك في مسار.</p><p><a href="${resetUrl}">إعادة تعيين كلمة المرور</a></p><p>الرابط صالح لمدة 30 دقيقة ولمرة واحدة فقط.</p>`,
+          }),
+        });
+      } catch {}
+    }
+    return accepted();
+  } catch (e) { next(e); }
+});
+
+app.post('/api/auth/password-reset/confirm', loginLimiter, async (req, res, next) => {
+  const client = await pool.connect();
+  try {
+    const token = String(req.body?.token || '');
+    const password = String(req.body?.password || '');
+    if (!token || !isStrongPassword(password)) return res.status(400).json({ error:'INVALID_PASSWORD_RESET' });
+    await client.query('BEGIN');
+    const r = await client.query(`SELECT id,user_id FROM ${q('password_reset_tokens')} WHERE token_hash=$1 AND used_at IS NULL AND expires_at > now() FOR UPDATE`, [sha256(token)]);
+    if (!r.rowCount) { await client.query('ROLLBACK'); return res.status(400).json({ error:'PASSWORD_RESET_TOKEN_INVALID_OR_EXPIRED' }); }
+    const row = r.rows[0];
+    const passwordHash = await bcrypt.hash(password, 12);
+    await client.query(`UPDATE ${q('users')} SET password_hash=$1,updated_at=now() WHERE id=$2`, [passwordHash,row.user_id]);
+    await client.query(`UPDATE ${q('password_reset_tokens')} SET used_at=now() WHERE id=$1`, [row.id]);
+    await client.query(`DELETE FROM ${q('sessions')} WHERE user_id=$1`, [row.user_id]);
+    await client.query('COMMIT');
+    res.json({ ok:true });
+  } catch (e) { try { await client.query('ROLLBACK'); } catch {} next(e); } finally { client.release(); }
+});
+
 app.post('/api/auth/login', loginLimiter, async (req, res, next) => {
   try {
     const username = String(req.body?.username || '').trim().toLowerCase();
@@ -1204,9 +1722,13 @@ app.put('/api/state', auth, writeLimiter, async (req, res, next) => {
     }
     delete state.qoyodConfig?.apiKeyConfigured;
     state = mergeStateForUser(stored, state, req.user);
-    await replaceNormalizedPayrollData(client, state);
-    await replaceNormalizedOperationsData(client, state);
-    await replaceNormalizedCoreData(client, state);
+    await appendPayrollFinancialAudit(client, q, { stored, next:state, user:req.user });
+    const tenantCompanyIds = Array.isArray(req.user.company_ids) ? req.user.company_ids : [];
+    const scopedState = scopeStateForCompanies(state, tenantCompanyIds);
+    const tenantClient = createTenantScopedClient(client, q, tenantCompanyIds);
+    await replaceNormalizedPayrollData(tenantClient, scopedState);
+    await replaceNormalizedOperationsData(tenantClient, scopedState);
+    await replaceNormalizedCoreData(tenantClient, scopedState);
     const compatibilityState = clone(state);
     if (compatibilityState.qoyodConfig && typeof compatibilityState.qoyodConfig === 'object') {
       compatibilityState.qoyodConfig = { ...compatibilityState.qoyodConfig, apiKey:'', apiKeyConfigured:Boolean(state.qoyodConfig?.apiKey) };
@@ -1221,11 +1743,13 @@ app.put('/api/state', auth, writeLimiter, async (req, res, next) => {
       WHERE NOT EXISTS (SELECT 1 FROM ${q('app_state_migration_backups')})
       ON CONFLICT (source_version) DO NOTHING`,
       [r.rows[0].version, JSON.stringify(compatibilityState)]);
+    await appendStateAudit(client, q, { companyIds:req.user.company_ids, user:req.user, action:'STATE_REPLACE', version:r.rows[0].version });
     await client.query('COMMIT');
     broadcastStateUpdate({ version:r.rows[0].version, updatedBy:req.user.id, updatedAt:r.rows[0].updated_at });
     res.json(r.rows[0]);
   } catch (e) {
     try { await client.query('ROLLBACK'); } catch {}
+    if (Number.isInteger(e?.status) && e.status >= 400 && e.status < 500) return res.status(e.status).json({ error:e.message });
     if (e?.code === '23505') return res.status(409).json({ error:'NORMALIZED_DATA_DUPLICATE', detail:e.constraint });
     next(e);
   } finally { client.release(); }
@@ -1246,12 +1770,16 @@ app.patch('/api/state/patch', auth, writeLimiter, async (req, res, next) => {
     const visible = publicStateForUser(stored, req.user);
     const patchedVisible = applyRecordPatch(visible, req.body?.patch);
     let state = mergeStateForUser(stored, patchedVisible, req.user);
+    await appendPayrollFinancialAudit(client, q, { stored, next:state, user:req.user });
     if (stored.qoyodConfig?.apiKey && !state.qoyodConfig?.apiKey) {
       state.qoyodConfig = { ...(state.qoyodConfig || {}), apiKey:stored.qoyodConfig.apiKey };
     }
-    await replaceNormalizedPayrollData(client, state);
-    await replaceNormalizedOperationsData(client, state);
-    await replaceNormalizedCoreData(client, state);
+    const tenantCompanyIds = Array.isArray(req.user.company_ids) ? req.user.company_ids : [];
+    const scopedState = scopeStateForCompanies(state, tenantCompanyIds);
+    const tenantClient = createTenantScopedClient(client, q, tenantCompanyIds);
+    await replaceNormalizedPayrollData(tenantClient, scopedState);
+    await replaceNormalizedOperationsData(tenantClient, scopedState);
+    await replaceNormalizedCoreData(tenantClient, scopedState);
     const compatibilityState = clone(state);
     if (compatibilityState.qoyodConfig && typeof compatibilityState.qoyodConfig === 'object') {
       compatibilityState.qoyodConfig = { ...compatibilityState.qoyodConfig, apiKey:'', apiKeyConfigured:Boolean(state.qoyodConfig?.apiKey) };
@@ -1259,6 +1787,7 @@ app.patch('/api/state/patch', auth, writeLimiter, async (req, res, next) => {
     const result = await client.query(`UPDATE ${q('app_state')}
       SET state=$1::jsonb,version=version+1,updated_by=$2,updated_at=now()
       WHERE id=1 RETURNING version,updated_at`, [JSON.stringify(compatibilityState), req.user.id]);
+    await appendStateAudit(client, q, { companyIds:req.user.company_ids, user:req.user, action:'STATE_PATCH', version:result.rows[0].version });
     await client.query('COMMIT');
     broadcastStateUpdate({ version:result.rows[0].version, updatedBy:req.user.id, updatedAt:result.rows[0].updated_at });
     res.json(result.rows[0]);
@@ -1266,6 +1795,85 @@ app.patch('/api/state/patch', auth, writeLimiter, async (req, res, next) => {
     try { await client.query('ROLLBACK'); } catch {}
     if (e?.status === 400) return res.status(400).json({ error:e.message });
     if (e?.code === '23505') return res.status(409).json({ error:'NORMALIZED_DATA_DUPLICATE', detail:e.constraint });
+    next(e);
+  } finally { client.release(); }
+});
+
+app.put('/api/employees/:id', auth, writeLimiter, async (req, res, next) => {
+  const client = await pool.connect();
+  try {
+    if (!can(req.user,'MANAGE_EMPLOYEES')) return res.status(403).json({ error:'FORBIDDEN' });
+    const employee = req.body || {};
+    if (!employee || typeof employee !== 'object' || employee.id !== req.params.id
+      || typeof employee.companyId !== 'string' || !req.user.company_ids.includes(employee.companyId)
+      || typeof employee.employeeNo !== 'string' || !employee.employeeNo.trim()
+      || typeof employee.firstNameAr !== 'string' || !employee.firstNameAr.trim()
+      || typeof employee.lastNameAr !== 'string' || !employee.lastNameAr.trim()) {
+      return res.status(400).json({ error:'INVALID_EMPLOYEE' });
+    }
+    const allowedStatuses = new Set(['ACTIVE','SUSPENDED','ON_LEAVE','TERMINATED','ABSCONDED','ONBOARDING']);
+    if (!allowedStatuses.has(employee.status || 'ACTIVE')) return res.status(400).json({ error:'INVALID_EMPLOYEE_STATUS' });
+
+    await client.query('BEGIN');
+    const existing = await client.query(`SELECT id,company_id,sort_order FROM ${q('employees')} WHERE id=$1 FOR UPDATE`, [employee.id]);
+    if (existing.rowCount && existing.rows[0].company_id !== employee.companyId) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error:'EMPLOYEE_COMPANY_IMMUTABLE' });
+    }
+    const orderResult = existing.rowCount
+      ? { rows:[{ sort_order:existing.rows[0].sort_order }] }
+      : await client.query(`SELECT COALESCE(max(sort_order),-1)+1 AS sort_order FROM ${q('employees')} WHERE company_id=$1`, [employee.companyId]);
+    const sortOrder = Number(orderResult.rows[0]?.sort_order || 0);
+    const salary = employee.salaryPackage || {};
+
+    await client.query(`INSERT INTO ${q('employees')} (
+      id,company_id,employee_no,national_id_or_iqama,status,first_name_ar,last_name_ar,first_name_en,last_name_en,
+      department,job_title,hire_date,salary_start_date,termination_date,suspension_start_date,suspension_end_date,
+      base_salary,housing_allowance,transport_allowance,other_fixed_allowances,bank_iban,payload,sort_order,is_archived,updated_at
+    ) VALUES (
+      $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,NULLIF($12,'')::date,NULLIF($13,'')::date,NULLIF($14,'')::date,
+      NULLIF($15,'')::date,NULLIF($16,'')::date,$17,$18,$19,$20,$21,$22::jsonb,$23,false,now()
+    ) ON CONFLICT (id) DO UPDATE SET
+      employee_no=EXCLUDED.employee_no,national_id_or_iqama=EXCLUDED.national_id_or_iqama,status=EXCLUDED.status,
+      first_name_ar=EXCLUDED.first_name_ar,last_name_ar=EXCLUDED.last_name_ar,first_name_en=EXCLUDED.first_name_en,last_name_en=EXCLUDED.last_name_en,
+      department=EXCLUDED.department,job_title=EXCLUDED.job_title,hire_date=EXCLUDED.hire_date,salary_start_date=EXCLUDED.salary_start_date,
+      termination_date=EXCLUDED.termination_date,suspension_start_date=EXCLUDED.suspension_start_date,suspension_end_date=EXCLUDED.suspension_end_date,
+      base_salary=EXCLUDED.base_salary,housing_allowance=EXCLUDED.housing_allowance,transport_allowance=EXCLUDED.transport_allowance,
+      other_fixed_allowances=EXCLUDED.other_fixed_allowances,bank_iban=EXCLUDED.bank_iban,payload=EXCLUDED.payload,is_archived=false,updated_at=now()`, [
+      employee.id, employee.companyId, employee.employeeNo.trim(), employee.nationalIdOrIqama || '', employee.status || 'ACTIVE',
+      employee.firstNameAr.trim(), employee.lastNameAr.trim(), employee.firstNameEn || '', employee.lastNameEn || '',
+      employee.department || '', employee.jobTitle || '', employee.hireDate || '', employee.salaryStartDate || '', employee.terminationDate || '',
+      employee.suspensionStartDate || '', employee.suspensionEndDate || '', Number(salary.baseSalary || 0), Number(salary.housingAllowance || 0),
+      Number(salary.transportAllowance || 0), Number(salary.otherFixedAllowances || 0), employee.bankIban || '', JSON.stringify(employee), sortOrder
+    ]);
+
+    const stateRow = await client.query(`SELECT state FROM ${q('app_state')} WHERE id=1 FOR UPDATE`);
+    const compatibilityState = clone(stateRow.rows[0]?.state || {});
+    const employees = asArray(compatibilityState.employees);
+    const employeeIndex = employees.findIndex(item => item?.id === employee.id);
+    if (employeeIndex >= 0) employees[employeeIndex] = clone(employee); else employees.push(clone(employee));
+    compatibilityState.employees = employees;
+    const updated = await client.query(`UPDATE ${q('app_state')} SET state=$1::jsonb,version=version+1,updated_by=$2,updated_at=now()
+      WHERE id=1 RETURNING version,updated_at`, [JSON.stringify(compatibilityState),req.user.id]);
+
+    const auditId = 'employee-save-' + crypto.randomUUID();
+    const action = existing.rowCount ? 'UPDATE_EMPLOYEE' : 'CREATE_EMPLOYEE';
+    await client.query(`INSERT INTO ${q('audit_log')} (user_id,action,ip) VALUES ($1,$2,$3)`, [req.user.id, action + ':' + employee.id, req.ip]);
+    await client.query(`INSERT INTO ${q('application_audit_logs')}
+      (id,company_id,user_id,user_name,user_role,action,entity_type,entity_id,occurred_at,details,payload,sort_order)
+      VALUES ($1,$2,$3,$4,$5,$6,'EMPLOYEE',$7,now(),$8,$9::jsonb,
+        COALESCE((SELECT max(sort_order)+1 FROM ${q('application_audit_logs')}),0))`, [
+      auditId, employee.companyId, req.user.id, req.user.name || req.user.username || '', req.user.role,
+      existing.rowCount ? 'تعديل بيانات موظف' : 'إضافة موظف جديد', employee.id,
+      `${employee.firstNameAr} ${employee.lastNameAr} (${employee.employeeNo})`, JSON.stringify({ id:auditId, companyId:employee.companyId, userId:req.user.id, userName:req.user.name || req.user.username || '', userRole:req.user.role, action:existing.rowCount ? 'تعديل بيانات موظف' : 'إضافة موظف جديد', entityType:'EMPLOYEE', entityId:employee.id, timestamp:new Date().toISOString(), details:`${employee.firstNameAr} ${employee.lastNameAr} (${employee.employeeNo})` })
+    ]);
+
+    await client.query('COMMIT');
+    if (updated.rowCount) broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at });
+    res.json({ employee, created:!existing.rowCount, version:Number(updated.rows[0]?.version || 0), updated_at:updated.rows[0]?.updated_at || new Date().toISOString() });
+  } catch (e) {
+    try { await client.query('ROLLBACK'); } catch {}
+    if (e?.code === '23505') return res.status(409).json({ error:'EMPLOYEE_NUMBER_EXISTS' });
     next(e);
   } finally { client.release(); }
 });
@@ -1304,6 +1912,16 @@ app.delete('/api/employees/:id', auth, writeLimiter, async (req, res, next) => {
       WHERE id=1 RETURNING version,updated_at`, [JSON.stringify(compatibilityState),req.user.id]);
     await client.query(`INSERT INTO ${q('audit_log')} (user_id,action,ip) VALUES ($1,$2,$3)`,
       [req.user.id,`${archived ? 'ARCHIVE' : 'DELETE'}_EMPLOYEE:${req.params.id}`,req.ip]);
+    const deleteAuditId = 'employee-delete-' + crypto.randomUUID();
+    await client.query(`INSERT INTO ${q('application_audit_logs')}
+      (id,company_id,user_id,user_name,user_role,action,entity_type,entity_id,occurred_at,details,payload,sort_order)
+      VALUES ($1,$2,$3,$4,$5,$6,'EMPLOYEE',$7,now(),$8,$9::jsonb,
+        COALESCE((SELECT max(sort_order)+1 FROM ${q('application_audit_logs')}),0))`, [
+      deleteAuditId, employee.rows[0].company_id, req.user.id, req.user.name || req.user.username || '', req.user.role,
+      archived ? 'أرشفة موظف' : 'حذف موظف', req.params.id,
+      archived ? 'تمت أرشفة الموظف لوجود حركات مرتبطة' : 'تم حذف الموظف نهائيًا',
+      JSON.stringify({ id:deleteAuditId, companyId:employee.rows[0].company_id, userId:req.user.id, userName:req.user.name || req.user.username || '', userRole:req.user.role, action:archived ? 'أرشفة موظف' : 'حذف موظف', entityType:'EMPLOYEE', entityId:req.params.id, timestamp:new Date().toISOString(), details:archived ? 'تمت أرشفة الموظف لوجود حركات مرتبطة' : 'تم حذف الموظف نهائيًا' })
+    ]);
     await client.query('COMMIT');
     if (updated.rowCount) broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at });
     res.json({ deleted:!archived,archived });
@@ -1328,7 +1946,19 @@ app.put('/api/users/:id', auth, writeLimiter, async (req, res, next) => {
       return res.status(403).json({ error:'FORBIDDEN' });
     }
     if (req.user.role !== 'ADMIN' && permissions.some(permission => !permissionsFor(req.user).includes(permission))) return res.status(403).json({ error:'CANNOT_GRANT_UNOWNED_PERMISSION' });
-    const existing = await pool.query(`SELECT id,password_hash FROM ${q('users')} WHERE id=$1`, [req.params.id]);
+    const normalizedEmail = String(u.email || '').trim().toLowerCase();
+    if (normalizedEmail) {
+      const duplicateEmail = await pool.query(`SELECT id FROM ${q('users')} WHERE lower(email)=lower($1) AND id<>$2 LIMIT 1`, [normalizedEmail, req.params.id]);
+      if (duplicateEmail.rowCount) return res.status(409).json({ error:'USER_EMAIL_EXISTS' });
+    }
+    const existing = await pool.query(`SELECT id,password_hash,company_ids,role FROM ${q('users')} WHERE id=$1`, [req.params.id]);
+    if (existing.rowCount) {
+      const existingCompanyIds = Array.isArray(existing.rows[0].company_ids) ? existing.rows[0].company_ids : [];
+      const targetOutsideScope = existingCompanyIds.some(id => !req.user.company_ids.includes(id));
+      if (targetOutsideScope || (req.user.role !== 'ADMIN' && existing.rows[0].role !== 'OPERATIONS_MANAGER')) {
+        return res.status(403).json({ error:'FORBIDDEN' });
+      }
+    }
     if ((!existing.rowCount || u.password) && !isStrongPassword(u.password)) return res.status(400).json({ error:'PASSWORD_POLICY_FAILED' });
     const passwordHash = u.password ? await bcrypt.hash(u.password, 12) : existing.rows[0]?.password_hash;
     const r = await pool.query(`INSERT INTO ${q('users')} (id,username,password_hash,name,email,phone,role,company_ids,permissions,is_active)
@@ -1336,11 +1966,17 @@ app.put('/api/users/:id', auth, writeLimiter, async (req, res, next) => {
       ON CONFLICT (id) DO UPDATE SET username=EXCLUDED.username,password_hash=EXCLUDED.password_hash,name=EXCLUDED.name,
       email=EXCLUDED.email,phone=EXCLUDED.phone,role=EXCLUDED.role,company_ids=EXCLUDED.company_ids,permissions=EXCLUDED.permissions,is_active=EXCLUDED.is_active,updated_at=now()
       RETURNING id,username,name,email,phone,role,company_ids,permissions,is_active,created_at,last_login`, [
-      req.params.id, String(u.username).toLowerCase(), passwordHash, u.name, u.email || '', u.phone || '', u.role, JSON.stringify(u.companyIds), JSON.stringify(permissions), u.isActive !== false
+      req.params.id, String(u.username).toLowerCase(), passwordHash, u.name, normalizedEmail, u.phone || '', u.role, JSON.stringify(u.companyIds), JSON.stringify(permissions), u.isActive !== false
     ]);
     const row = r.rows[0];
     res.json({ id:row.id,username:row.username,name:row.name,email:row.email,phone:row.phone,role:row.role,companyIds:row.company_ids,permissions:row.permissions,isActive:row.is_active,createdAt:row.created_at,lastLogin:row.last_login });
-  } catch (e) { if (e?.code === '23505') return res.status(409).json({ error:'USERNAME_EXISTS' }); next(e); }
+  } catch (e) {
+    if (e?.code === '23505') {
+      const constraint = String(e.constraint || '');
+      return res.status(409).json({ error:constraint.includes('email') ? 'USER_EMAIL_EXISTS' : 'USERNAME_EXISTS' });
+    }
+    next(e);
+  }
 });
 
 app.delete('/api/users/:id', auth, writeLimiter, async (req, res, next) => {
@@ -1362,7 +1998,7 @@ app.post('/api/integrations/qoyod/journal', auth, writeLimiter, async (req, res,
     if (!companyId || !req.user.company_ids.includes(companyId)) {
       return res.status(403).json({ error:'FORBIDDEN' });
     }
-    const configResult = await pool.query(`SELECT public_config,secret_value FROM ${q('integration_configs')} WHERE provider='QOYOD'`);
+    const configResult = await pool.query(`SELECT public_config,secret_value FROM ${q('integration_configs')} WHERE company_id=$1 AND provider='QOYOD'`, [companyId]);
     const config = configResult.rows[0]?.public_config || {};
     const apiKey = String(configResult.rows[0]?.secret_value || '').trim();
     if (apiKey.length < 5) return res.status(400).json({ error:'QOYOD_NOT_CONFIGURED' });
@@ -1400,7 +2036,9 @@ app.use((error, _req, res, _next) => {
 });
 
 await migrate();
+const hrAlertTimer = setInterval(() => { void runHrLifecycleAlerts(); }, 6 * 60 * 60 * 1000);
+setTimeout(() => { void runHrLifecycleAlerts(); }, 60 * 1000);
 const server = app.listen(port, '0.0.0.0', () => console.log(`Masar Payroll listening on ${port}`));
-const shutdown = async () => { server.close(); await pool.end(); process.exit(0); };
+const shutdown = async () => { clearInterval(hrAlertTimer); server.close(); await pool.end(); process.exit(0); };
 process.on('SIGTERM', shutdown);
 process.on('SIGINT', shutdown);
