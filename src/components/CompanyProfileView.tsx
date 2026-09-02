@@ -67,6 +67,7 @@ import { buildQoyodJournalPayload, generateQoyodCurlCommand, sendJournalEntryToQ
 import { exportQoyodJournalCsv } from '../utils/exportUtils';
 import { generatePayrollJournalBatch } from '../utils/accountingEngine';
 import { useLanguage } from '../i18n/LanguageContext';
+import { CompanyProfileTabs, type ProfileSubTab } from './company/CompanyProfileTabs';
 import { hasPermission } from '../utils/permissions';
 
 interface CompanyProfileViewProps {
@@ -85,8 +86,6 @@ interface CompanyProfileViewProps {
   onDeleteUser?: (userId: string) => void;
   onDeleteAllCompanyEmployees?: (companyId: string) => void;
 }
-
-type ProfileSubTab = 'details' | 'banking' | 'qoyod' | 'users' | 'departments' | 'cost_centers' | 'policies' | 'accounts' | 'danger';
 
 const ROLE_INFO: Record<UserRole, { labelAr: string; labelEn: string; descAr: string; descEn: string; color: string; badgeBg: string }> = {
   ADMIN: { 
@@ -206,6 +205,27 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
     });
     return merged;
   }, [formData.departments, companyEmployees]);
+
+  const departmentEmployeesByName = useMemo(() => {
+    const grouped = new Map<string, Employee[]>();
+    companyEmployees.forEach(employee => grouped.set(employee.department, [...(grouped.get(employee.department) || []), employee]));
+    return grouped;
+  }, [companyEmployees]);
+  const costCenterEmployeeCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    companyEmployees.forEach(employee => {
+      if (employee.costCenterId) counts.set(employee.costCenterId, (counts.get(employee.costCenterId) || 0) + 1);
+    });
+    return counts;
+  }, [companyEmployees]);
+  const activeBankDefinitions = useMemo(
+    () => getBankDefinitions(formData.bankDefinitions).filter(bank => bank.isActive !== false),
+    [formData.bankDefinitions]
+  );
+  const assignableRoles = useMemo(
+    () => Object.entries(ROLE_INFO).filter(([key]) => key !== 'ADMIN' && (activeRole === 'ADMIN' || key === 'OPERATIONS_MANAGER')),
+    [activeRole]
+  );
 
   // Modals state
   const [isUserModalOpen, setIsUserModalOpen] = useState(false);
@@ -595,118 +615,15 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
           </div>
         )}
 
-        {/* Sub-tabs Navigation */}
-        <div className="flex items-center gap-1.5 mt-6 pt-4 border-t border-slate-100 overflow-x-auto pb-1">
-          <button
-            onClick={() => setActiveSubTab('details')}
-            className={`px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap flex items-center gap-2 transition-all cursor-pointer ${
-              activeSubTab === 'details'
-                ? 'bg-slate-900 text-white shadow-sm'
-                : 'text-slate-600 hover:bg-slate-100'
-            }`}
-          >
-            <Building2 className="w-4 h-4" />
-            <span>{tr('البيانات الأساسية والحكومية', 'Company & government details')}</span>
-          </button>
-
-          <button
-            onClick={() => setActiveSubTab('banking')}
-            className={`px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap flex items-center gap-2 transition-all cursor-pointer ${
-              activeSubTab === 'banking'
-                ? 'bg-slate-900 text-white shadow-sm'
-                : 'text-slate-600 hover:bg-slate-100'
-            }`}
-          >
-            <CreditCard className="w-4 h-4" />
-            <span>{tr('الحساب البنكي والسويفت (WPS)', 'Banking & SWIFT (WPS)')}</span>
-          </button>
-
-          {hasPermission(currentUser, 'MANAGE_JOURNALS') && <button
-            onClick={() => setActiveSubTab('qoyod')}
-            className={`px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap flex items-center gap-2 transition-all cursor-pointer ${
-              activeSubTab === 'qoyod'
-                ? 'bg-slate-900 text-white shadow-sm'
-                : 'text-slate-600 hover:bg-slate-100'
-            }`}
-          >
-            <Sparkles className="w-4 h-4 text-sky-400" />
-            <span>{tr('تكامل برنامج قيود (Qoyod API)', 'Qoyod integration (API)')}</span>
-          </button>}
-
-          {hasPermission(currentUser, 'MANAGE_USERS') && <button
-            onClick={() => setActiveSubTab('users')}
-            className={`px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap flex items-center gap-2 transition-all cursor-pointer ${
-              activeSubTab === 'users'
-                ? 'bg-slate-900 text-white shadow-sm'
-                : 'text-slate-600 hover:bg-slate-100'
-            }`}
-          >
-            <Users className="w-4 h-4" />
-            <span>{tr('المستخدمون المفوضون', 'Authorized users')} ({companyUsers.length})</span>
-          </button>}
-
-          <button
-            onClick={() => setActiveSubTab('departments')}
-            className={`px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap flex items-center gap-2 transition-all cursor-pointer ${
-              activeSubTab === 'departments'
-                ? 'bg-slate-900 text-white shadow-sm'
-                : 'text-slate-600 hover:bg-slate-100'
-            }`}
-          >
-            <FolderTree className="w-4 h-4" />
-            <span>{tr('الأقسام الإدارية', 'Departments')} ({departmentsList.length})</span>
-          </button>
-
-          <button
-            onClick={() => setActiveSubTab('cost_centers')}
-            className={`px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap flex items-center gap-2 transition-all cursor-pointer ${
-              activeSubTab === 'cost_centers'
-                ? 'bg-slate-900 text-white shadow-sm'
-                : 'text-slate-600 hover:bg-slate-100'
-            }`}
-          >
-            <Layers className="w-4 h-4" />
-            <span>{tr('مراكز التكلفة', 'Cost centers')} ({formData.costCenters?.length || 0})</span>
-          </button>
-
-          <button
-            onClick={() => setActiveSubTab('policies')}
-            className={`px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap flex items-center gap-2 transition-all cursor-pointer ${
-              activeSubTab === 'policies'
-                ? 'bg-slate-900 text-white shadow-sm'
-                : 'text-slate-600 hover:bg-slate-100'
-            }`}
-          >
-            <Sliders className="w-4 h-4" />
-            <span>{tr('قواعد الاحتساب والتأمينات (GOSI)', 'Calculation rules & GOSI')}</span>
-          </button>
-
-          <button
-            onClick={() => setActiveSubTab('accounts')}
-            className={`px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap flex items-center gap-2 transition-all cursor-pointer ${
-              activeSubTab === 'accounts'
-                ? 'bg-slate-900 text-white shadow-sm'
-                : 'text-slate-600 hover:bg-slate-100'
-            }`}
-          >
-            <Settings2 className="w-4 h-4" />
-            <span>{tr('شجرة الحسابات', 'Chart of accounts')}</span>
-          </button>
-
-          {hasPermission(currentUser, 'MANAGE_EMPLOYEES') && (
-            <button
-              onClick={() => setActiveSubTab('danger')}
-              className={`px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap flex items-center gap-2 transition-all cursor-pointer ${
-                activeSubTab === 'danger'
-                  ? 'bg-rose-700 text-white shadow-sm'
-                  : 'text-rose-700 hover:bg-rose-50'
-              }`}
-            >
-              <AlertCircle className="w-4 h-4" />
-              <span>{tr('إدارة البيانات الحساسة', 'Sensitive data')}</span>
-            </button>
-          )}
-        </div>
+        <CompanyProfileTabs
+          activeTab={activeSubTab}
+          currentUser={currentUser}
+          userCount={companyUsers.length}
+          departmentCount={departmentsList.length}
+          costCenterCount={formData.costCenters?.length || 0}
+          onChange={setActiveSubTab}
+          tr={tr}
+        />
       </div>
 
       {/* SUB-TAB 1: Basic & Government Details */}
@@ -980,7 +897,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
                 className="w-full px-3.5 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:border-emerald-500 font-semibold text-slate-900"
               >
                 <option value="">{tr('-- اختر البنك --', '-- Select bank --')}</option>
-                {getBankDefinitions(formData.bankDefinitions).filter(b => b.isActive !== false).map(b => (
+                {activeBankDefinitions.map(b => (
                   <option key={b.ibanBankCode} value={b.ibanBankCode}>
                     {language === 'en' ? b.nameEn || b.nameAr : b.nameAr} ({b.swiftCode})
                   </option>
@@ -1707,7 +1624,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {departmentsList.map((dept) => {
-              const assignedEmployees = companyEmployees.filter(e => e.department === dept.nameAr);
+              const assignedEmployees = departmentEmployeesByName.get(dept.nameAr) || [];
 
               return (
                 <div key={dept.id} className="p-4 rounded-2xl border border-slate-200/80 bg-white hover:shadow-md transition-all">
@@ -1785,7 +1702,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {(formData.costCenters || []).map((cc) => {
-              const assignedEmpCount = companyEmployees.filter(e => e.costCenterId === cc.id).length;
+              const assignedEmpCount = costCenterEmployeeCounts.get(cc.id) || 0;
 
               return (
                 <div key={cc.id} className="p-4 rounded-2xl border border-slate-200/80 bg-white hover:shadow-md transition-all">
@@ -2367,7 +2284,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
                     onChange={(e) => setUserFormData({ ...userFormData, role: e.target.value as UserRole })}
                     className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white font-semibold"
                   >
-                    {Object.entries(ROLE_INFO).filter(([key]) => key !== 'ADMIN' && (activeRole === 'ADMIN' || key === 'OPERATIONS_MANAGER')).map(([key, info]) => (
+                    {assignableRoles.map(([key, info]) => (
                       <option key={key} value={key}>
                         {language === 'ar' ? info.labelAr : info.labelEn}
                       </option>

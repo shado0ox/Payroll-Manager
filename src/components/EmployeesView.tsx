@@ -18,7 +18,8 @@ import {
   Briefcase,
   UserPlus,
   Upload,
-  FileSpreadsheet
+  FileSpreadsheet,
+  UserCheck
 } from 'lucide-react';
 import { Company, Employee, EmploymentStatus, NationalityType, UserRole } from '../types';
 import { formatSAR, roundAmount } from '../utils/payrollEngine';
@@ -43,7 +44,7 @@ interface EmployeesViewProps {
   employees: Employee[];
   loans?: any[];
   activeRole: UserRole;
-  onSaveEmployee?: (emp: Employee) => void;
+  onSaveEmployee?: (emp: Employee) => Promise<void> | void;
   onBulkImportEmployees?: (employees: Employee[]) => void;
   onViewStatement?: (emp: Employee) => void;
   onAddEmployee?: (emp: Employee) => void;
@@ -84,6 +85,8 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
+  const [isCompletingOnboarding, setIsCompletingOnboarding] = useState(false);
+  const [nonSaudiEntryMode, setNonSaudiEntryMode] = useState<'NEW_ARRIVAL' | 'IQAMA_HOLDER' | ''>('');
   const importInputRef = useRef<HTMLInputElement>(null);
   const [importSheet, setImportSheet] = useState<ParsedEmployeeSheet | null>(null);
   const [importMapping, setImportMapping] = useState<Record<number, EmployeeImportField | ''>>({});
@@ -99,28 +102,37 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
     firstNameEn: '',
     lastNameEn: '',
     nationalIdOrIqama: '',
-    nationality: 'SAUDI',
-    country: 'المملكة العربية السعودية',
+    nationality: '' as any,
+    country: '',
     email: '',
     phone: '',
-    department: 'تقنية المعلومات',
+    department: '',
     jobTitle: '',
     costCenterId: company.costCenters[0]?.id || '',
-    hireDate: '2026-01-01',
-    salaryStartDate: '2026-01-01',
+    hireDate: '',
+    salaryStartDate: '',
     prorateFirstMonth: false,
-    status: 'ACTIVE',
-    bankName: 'مصرف الراجحي',
-    bankIban: 'SA',
-    bankSwiftCode: 'RJHISARI',
-    gosiEnabled: true,
+    entryDate: '',
+    entryNumber: '',
+    iqamaNumber: '',
+    iqamaIssueStatus: 'PENDING',
+    iqamaExpiryDate: '',
+    contractStartDate: '',
+    contractEndDate: '',
+    bankAccountStatus: 'PENDING',
+    onboardingStatus: 'COMPLETE',
+    status: '' as any,
+    bankName: '',
+    bankIban: '',
+    bankSwiftCode: '',
+    gosiEnabled: false,
     gosiEmployeeRate: company.calculationRules?.saudiGosiEmployeeRate ?? 0.0975,
     gosiEmployerRate: company.calculationRules?.saudiGosiEmployerRate ?? 0.1175,
     saudiGosiPaymentMode: 'SHARED',
     salaryPackage: {
-      baseSalary: 6000,
-      housingAllowance: 1500,
-      transportAllowance: 600,
+      baseSalary: 0,
+      housingAllowance: 0,
+      transportAllowance: 0,
       otherFixedAllowances: 0,
       nonGosiOtherAllowances: 0,
       customAllowances: [],
@@ -157,52 +169,95 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
     return Array.from(new Set(companyEmployees.map(e => e.department)));
   }, [companyEmployees]);
 
+  const getNextEmployeeNo = () => {
+    let highest = 1000;
+    let prefix = 'EMP-';
+    for (const employee of companyEmployees) {
+      const value = String(employee.employeeNo || '').trim();
+      const match = value.match(/^(.*?)(\d+)$/);
+      if (!match) continue;
+      const numeric = Number(match[2]);
+      if (Number.isFinite(numeric) && numeric >= highest) {
+        highest = numeric;
+        prefix = match[1] || '';
+      }
+    }
+    return prefix + String(highest + 1);
+  };
+
   const handleOpenAdd = () => {
-    const nextNum = companyEmployees.length + 1;
-    const isComp1 = company.id === 'comp-1';
     setEditingEmployee(null);
+    setNonSaudiEntryMode('');
     setFormData({
       companyId: company.id,
-      employeeNo: `${isComp1 ? 'EMP' : 'LOG'}-${1000 + nextNum}`,
+      employeeNo: getNextEmployeeNo(),
       firstNameAr: '',
       lastNameAr: '',
       firstNameEn: '',
       lastNameEn: '',
-      nationalIdOrIqama: '10' + Math.floor(10000000 + Math.random() * 90000000),
-      nationality: 'SAUDI',
-      country: 'المملكة العربية السعودية',
-      email: `emp${nextNum}@advtech.sa`,
-      phone: '05' + Math.floor(10000000 + Math.random() * 90000000),
-      department: departments[0] || 'الموارد البشرية',
-      jobTitle: 'أخصائي شؤون إدارية',
-      costCenterId: company.costCenters[0]?.id || '',
-      hireDate: '2026-01-01',
-      salaryStartDate: '2026-01-01',
+      nationalIdOrIqama: '',
+      nationality: undefined,
+      country: '',
+      email: '',
+      phone: '',
+      department: '',
+      jobTitle: '',
+      costCenterId: '',
+      hireDate: '',
+      salaryStartDate: '',
       prorateFirstMonth: false,
+      entryDate: '',
+      entryNumber: '',
+      iqamaNumber: '',
+      iqamaIssueStatus: 'PENDING',
+      iqamaExpiryDate: '',
+      contractStartDate: '',
+      contractEndDate: '',
+      bankAccountStatus: 'PENDING',
+      onboardingStatus: 'NEW_ARRIVAL',
       status: 'ACTIVE',
-      bankName: 'مصرف الراجحي',
-      bankIban: 'SA4480000' + Math.floor(100000000000 + Math.random() * 900000000000),
-      bankSwiftCode: 'RJHISARI',
-      gosiEnabled: true,
+      bankName: '',
+      bankIban: '',
+      bankSwiftCode: '',
+      gosiEnabled: false,
       gosiEmployeeRate: company.calculationRules?.saudiGosiEmployeeRate ?? 0.0975,
       gosiEmployerRate: company.calculationRules?.saudiGosiEmployerRate ?? 0.1175,
       saudiGosiPaymentMode: 'SHARED',
       salaryPackage: {
-        baseSalary: 7000,
-        housingAllowance: 1750,
-        transportAllowance: 700,
+        baseSalary: 0,
+        housingAllowance: 0,
+        transportAllowance: 0,
         otherFixedAllowances: 0,
         nonGosiOtherAllowances: 0,
         customAllowances: [],
         customDeductions: [],
-      }
+      },
     });
     setIsModalOpen(true);
   };
 
   const handleOpenEdit = (emp: Employee) => {
+    setIsCompletingOnboarding(false);
+    if (emp.nationality === 'NON_SAUDI') {
+      setNonSaudiEntryMode(emp.iqamaNumber || emp.iqamaExpiryDate || emp.iqamaIssueStatus === 'ISSUED' ? 'IQAMA_HOLDER' : 'NEW_ARRIVAL');
+    } else {
+      setNonSaudiEntryMode('');
+    }
     setEditingEmployee(emp);
     const empCopy = JSON.parse(JSON.stringify(emp));
+    const legacyIdentity = String(empCopy.nationalIdOrIqama || '').trim();
+    const explicitNewArrival = empCopy.nationality === 'NON_SAUDI' && Boolean(empCopy.entryNumber) && empCopy.iqamaIssueStatus !== 'ISSUED';
+    if (empCopy.nationality === 'NON_SAUDI' && legacyIdentity && !explicitNewArrival) {
+      // Employees imported before lifecycle/onboarding fields already store the iqama
+      // in nationalIdOrIqama. Preserve that identity and treat them as iqama holders.
+      if (!empCopy.iqamaNumber) empCopy.iqamaNumber = legacyIdentity;
+      if (!empCopy.iqamaIssueStatus || empCopy.iqamaIssueStatus === 'PENDING') empCopy.iqamaIssueStatus = 'ISSUED';
+      if (!empCopy.onboardingStatus || empCopy.onboardingStatus === 'NEW_ARRIVAL' || empCopy.onboardingStatus === 'WAITING_IQAMA') {
+        empCopy.onboardingStatus = empCopy.bankIban ? 'COMPLETE' : 'WAITING_BANK';
+      }
+    }
+    // Saudi legacy employees keep their existing nationalIdOrIqama unchanged.
+    setNonSaudiEntryMode(empCopy.nationality === 'NON_SAUDI' ? (explicitNewArrival ? 'NEW_ARRIVAL' : (empCopy.iqamaNumber || legacyIdentity ? 'IQAMA_HOLDER' : 'NEW_ARRIVAL')) : '');
     // Auto-detect swift code if not present
     if (!empCopy.bankSwiftCode && empCopy.bankIban) {
       const detected = detectBankFromIBAN(empCopy.bankIban, company.bankDefinitions);
@@ -216,8 +271,38 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
     setIsModalOpen(true);
   };
 
-  const handleFormSubmit = (e: React.FormEvent) => {
+  const handleCompleteOnboarding = (emp: Employee) => {
+    const empCopy = JSON.parse(JSON.stringify(emp)) as Employee;
+    empCopy.status = 'ACTIVE';
+    empCopy.nationalIdOrIqama = '';
+    empCopy.iqamaNumber = '';
+    empCopy.iqamaIssueStatus = 'ISSUED';
+    empCopy.bankIban = '';
+    empCopy.bankCode = '';
+    empCopy.bankName = '';
+    empCopy.bankSwiftCode = '';
+    setNonSaudiEntryMode('IQAMA_HOLDER');
+    setEditingEmployee(emp);
+    setIsCompletingOnboarding(true);
+    setFormData(empCopy);
+    setIsModalOpen(true);
+  };
+
+  const handleFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!editingEmployee && !formData.nationality) {
+      alert(language === 'ar' ? 'اختر أولًا نوع الموظف: سعودي أو غير سعودي' : 'Choose the employee type first: Saudi or non-Saudi');
+      return;
+    }
+    if (!editingEmployee && formData.nationality === 'NON_SAUDI' && !nonSaudiEntryMode) {
+      alert(language === 'ar' ? 'اختر حالة الموظف غير السعودي: قادم جديد برقم الدخول أو لديه إقامة' : 'Choose the non-Saudi path: new arrival or iqama holder');
+      return;
+    }
+    const normalizedEmployeeNo = String(formData.employeeNo || '').trim().toUpperCase();
+    if (employees.some(emp => emp.companyId === company.id && emp.id !== editingEmployee?.id && String(emp.employeeNo || '').trim().toUpperCase() === normalizedEmployeeNo)) {
+      alert(language === 'ar' ? 'الرقم الوظيفي مستخدم لموظف آخر' : 'Employee number is already used by another employee');
+      return; // EMPLOYEE_NUMBER_LOCAL_DUPLICATE
+    }
     if (!formData.firstNameAr || !formData.lastNameAr || !formData.employeeNo) {
       alert(language === 'ar' ? 'يرجى تعبئة الحقول الإلزامية' : 'Please complete all required fields');
       return;
@@ -231,27 +316,90 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
       return;
     }
 
+    if (!editingEmployee && formData.nationality === 'NON_SAUDI') {
+      if (!formData.iqamaExpiryDate && !formData.entryDate) {
+        alert(language === 'ar' ? 'أدخل تاريخ انتهاء الإقامة أو تاريخ الدخول للقادم الجديد' : 'Enter the iqama expiry date or the new arrival entry date');
+        return;
+      }
+      if (!formData.iqamaExpiryDate && !formData.entryNumber) {
+        alert(language === 'ar' ? 'رقم الدخول مطلوب للقادم الجديد قبل إصدار الإقامة' : 'Entry number is required before iqama issuance');
+        return;
+      }
+    }
+    if (!editingEmployee && formData.nationality === 'SAUDI' && !formData.contractEndDate) {
+      alert(language === 'ar' ? 'تاريخ انتهاء العقد مطلوب للموظف السعودي' : 'Contract end date is required for Saudi employees');
+      return;
+    }
+
+    const normalizedIdentity = formData.nationality === 'NON_SAUDI'
+      ? (nonSaudiEntryMode === 'NEW_ARRIVAL' ? String(formData.entryNumber || '').trim() : String(formData.iqamaNumber || '').trim())
+      : String(formData.nationalIdOrIqama || '').trim();
+
+    const normalizedIban = String(formData.bankIban || '').replace(/\s/g, '').toUpperCase();
+    if (normalizedIban && !validateSaudiIBAN(normalizedIban)) {
+      alert(language === 'ar' ? 'رقم IBAN المدخل غير صحيح. اتركه فارغًا إذا لم يصدر الحساب البنكي بعد.' : 'The entered IBAN is invalid. Leave it empty if the bank account has not been issued yet.');
+      return;
+    }
+    const hasBankAccount = Boolean(normalizedIban) && validateSaudiIBAN(normalizedIban);
+    const hasIqama = formData.nationality !== 'NON_SAUDI' || Boolean(formData.iqamaExpiryDate);
+    const derivedOnboardingStatus = formData.nationality === 'NON_SAUDI' && !hasIqama
+      ? 'WAITING_IQAMA' as const
+      : !hasBankAccount ? 'WAITING_BANK' as const : 'COMPLETE' as const;
+
     // Standardize SWIFT code uppercase
     const processedForm = {
       ...formData,
+      nationalIdOrIqama: normalizedIdentity,
+      iqamaIssueStatus: formData.nationality === 'NON_SAUDI' && hasIqama ? 'ISSUED' as const : 'PENDING' as const,
+      bankAccountStatus: hasBankAccount ? 'READY' as const : 'PENDING' as const,
+      onboardingStatus: derivedOnboardingStatus,
+      status: editingEmployee
+        ? (formData.status === 'ONBOARDING'
+            ? (derivedOnboardingStatus === 'COMPLETE' ? 'ACTIVE' as const : 'ONBOARDING' as const)
+            : (formData.status || 'ACTIVE'))
+        : (derivedOnboardingStatus !== 'COMPLETE' ? 'ONBOARDING' as const : (formData.status || 'ACTIVE')),
       employmentEndReason: formData.status === 'ABSCONDED' ? 'ABSCONDED' as const : formData.employmentEndReason,
       suspensionReason: formData.status === 'ABSCONDED' ? (formData.suspensionReason || 'هروب') : formData.suspensionReason,
+      bankIban: normalizedIban,
       bankSwiftCode: formData.bankSwiftCode ? formData.bankSwiftCode.trim().toUpperCase() : ''
     };
 
-    if (editingEmployee) {
-      const updated = processedForm as Employee;
-      if (onSaveEmployee) onSaveEmployee(updated);
-      else if (onUpdateEmployee) onUpdateEmployee(updated);
-    } else {
-      const newEmp: Employee = {
-        ...processedForm as Employee,
-        id: `emp-${company.id}-${Date.now()}`,
-      };
-      if (onSaveEmployee) onSaveEmployee(newEmp);
-      else if (onAddEmployee) onAddEmployee(newEmp);
+    if (isCompletingOnboarding) {
+      const iqama = String(processedForm.nationalIdOrIqama || '').replace(/\D/g, '');
+      const iban = String(processedForm.bankIban || '').replace(/\s/g, '').toUpperCase();
+      if (!/^\d{10}$/.test(iqama)) {
+        alert(language === 'ar' ? 'رقم الإقامة يجب أن يتكون من 10 أرقام.' : 'Iqama number must contain exactly 10 digits.');
+        return;
+      }
+      if (!validateSaudiIBAN(iban)) {
+        alert(language === 'ar' ? 'أدخل رقم آيبان سعودي صحيح ومكتمل قبل تفعيل الموظف.' : 'Enter a complete valid Saudi IBAN before activating the employee.');
+        return;
+      }
+      processedForm.nationalIdOrIqama = iqama;
+      processedForm.bankIban = iban;
+      processedForm.status = 'ACTIVE';
     }
-    setIsModalOpen(false);
+
+    try {
+      if (editingEmployee) {
+        const updated = processedForm as Employee;
+        if (onSaveEmployee) await onSaveEmployee(updated);
+        else if (onUpdateEmployee) await Promise.resolve(onUpdateEmployee(updated));
+      } else {
+        const newEmp: Employee = {
+          ...processedForm as Employee,
+          id: `emp-${company.id}-${Date.now()}`,
+        };
+        if (onSaveEmployee) await onSaveEmployee(newEmp);
+        else if (onAddEmployee) await Promise.resolve(onAddEmployee(newEmp));
+      }
+      setIsModalOpen(false);
+    } catch (error) {
+      const code = error instanceof Error ? error.message : 'EMPLOYEE_SAVE_FAILED';
+      alert(language === 'ar'
+        ? 'تعذر حفظ الموظف في قاعدة البيانات. لم يتم إغلاق النموذج حتى لا تفقد البيانات. (' + code + ')'
+        : 'Employee could not be saved to the database. The form remains open so the data is not lost. (' + code + ')');
+    }
   };
 
   // Export to CSV
@@ -720,6 +868,17 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                           <FileText className="w-3.5 h-3.5" />
                         </button>
 
+                        {emp.status === 'ONBOARDING' && (
+                          <button
+                            type="button"
+                            onClick={() => handleCompleteOnboarding(emp)}
+                            title={language === 'ar' ? 'إدخال رقم الإقامة والآيبان وتحويل الموظف إلى نشط' : 'Enter Iqama and IBAN, then activate'}
+                            className="shrink-0 rounded-lg border border-emerald-200 bg-emerald-50 p-1 text-emerald-700 hover:bg-emerald-100"
+                          >
+                            <UserCheck className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+
                         {/* Edit */}
                         <button
                           onClick={() => handleOpenEdit(emp)}
@@ -877,6 +1036,47 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
             {/* Modal Form */}
             <form onSubmit={handleFormSubmit} className="p-6 space-y-5 max-h-[80vh] overflow-y-auto">
               
+              {!editingEmployee && (
+                <div data-employee-type-wizard className="rounded-2xl border border-slate-200 bg-slate-50 p-4 space-y-3">
+                  <div>
+                    <div className="text-xs font-black text-slate-900">{language === 'ar' ? '1. حدد نوع الموظف' : '1. Choose employee type'}</div>
+                    <div className="text-[10px] text-slate-500 mt-0.5">{language === 'ar' ? 'سيتم إظهار الحقول المطلوبة فقط حسب الاختيار.' : 'Only the fields required for the selected path will be shown.'}</div>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <button type="button" onClick={() => { setNonSaudiEntryMode(''); setFormData({ ...formData, nationality: 'SAUDI', country: '', gosiEnabled: true, entryDate: '', entryNumber: '', iqamaNumber: '', iqamaExpiryDate: '', iqamaIssueStatus: 'PENDING', nationalIdOrIqama: '' }); }} className={`p-4 rounded-xl border text-start transition-all ${formData.nationality === 'SAUDI' ? 'border-emerald-500 bg-emerald-50 ring-2 ring-emerald-500/10' : 'border-slate-200 bg-white hover:border-emerald-300'}`}>
+                      <div className="font-black text-sm text-slate-900">{language === 'ar' ? 'موظف سعودي' : 'Saudi employee'}</div>
+                      <div className="text-[10px] text-slate-500 mt-1">{language === 'ar' ? 'هوية وطنية + بيانات العقد والتأمينات' : 'National ID + contract and GOSI details'}</div>
+                    </button>
+                    <button type="button" onClick={() => { setFormData({ ...formData, nationality: 'NON_SAUDI', country: '', gosiEnabled: false, contractStartDate: '', contractEndDate: '', nationalIdOrIqama: '' }); setNonSaudiEntryMode(''); }} className={`p-4 rounded-xl border text-start transition-all ${formData.nationality === 'NON_SAUDI' ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-500/10' : 'border-slate-200 bg-white hover:border-blue-300'}`}>
+                      <div className="font-black text-sm text-slate-900">{language === 'ar' ? 'موظف غير سعودي' : 'Non-Saudi employee'}</div>
+                      <div className="text-[10px] text-slate-500 mt-1">{language === 'ar' ? 'قادم جديد أو موظف لديه إقامة' : 'New arrival or existing iqama holder'}</div>
+                    </button>
+                  </div>
+                  {formData.nationality === 'NON_SAUDI' && (
+                    <div className="pt-3 border-t border-slate-200">
+                      <div className="text-xs font-black text-slate-900 mb-2">{language === 'ar' ? '2. حالة الموظف غير السعودي' : '2. Non-Saudi status'}</div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <button type="button" onClick={() => { setNonSaudiEntryMode('NEW_ARRIVAL'); setFormData({ ...formData, nationality: 'NON_SAUDI', iqamaNumber: '', iqamaExpiryDate: '', iqamaIssueStatus: 'PENDING', nationalIdOrIqama: String(formData.entryNumber || '') }); }} className={`p-3 rounded-xl border text-start ${nonSaudiEntryMode === 'NEW_ARRIVAL' ? 'border-amber-500 bg-amber-50' : 'border-slate-200 bg-white'}`}>
+                          <div className="font-bold text-xs">{language === 'ar' ? 'قادم جديد برقم الدخول / الحدود' : 'New arrival with entry / border number'}</div>
+                          <div className="text-[10px] text-slate-500 mt-1">{language === 'ar' ? 'لم تصدر له الإقامة بعد' : 'Iqama has not been issued yet'}</div>
+                        </button>
+                        <button type="button" onClick={() => { setNonSaudiEntryMode('IQAMA_HOLDER'); setFormData({ ...formData, nationality: 'NON_SAUDI', entryDate: '', entryNumber: '', iqamaIssueStatus: 'ISSUED', nationalIdOrIqama: String(formData.iqamaNumber || '') }); }} className={`p-3 rounded-xl border text-start ${nonSaudiEntryMode === 'IQAMA_HOLDER' ? 'border-emerald-500 bg-emerald-50' : 'border-slate-200 bg-white'}`}>
+                          <div className="font-bold text-xs">{language === 'ar' ? 'لديه إقامة' : 'Iqama holder'}</div>
+                          <div className="text-[10px] text-slate-500 mt-1">{language === 'ar' ? 'نسجل رقم الإقامة وتاريخ انتهائها' : 'Record iqama number and expiry date'}</div>
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {isCompletingOnboarding && (
+                <div data-onboarding-activation className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-xs text-emerald-900">
+                  <div className="flex items-center gap-2 font-black"><UserCheck className="h-4 w-4" />{language === 'ar' ? 'استكمال بيانات الإقامة وتفعيل الموظف' : 'Complete Iqama details and activate employee'}</div>
+                  <p className="mt-1 text-[11px]">{language === 'ar' ? 'أدخل رقم الإقامة الجديد والآيبان السعودي الصحيح. عند الحفظ ستتغير الحالة تلقائيًا إلى نشط.' : 'Enter the new Iqama number and a valid Saudi IBAN. Saving will automatically set the employee to Active.'}</p>
+                </div>
+              )}
+              
               {/* Section 1: Basic Identity */}
               <div>
                 <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider mb-3 flex items-center gap-2">
@@ -885,26 +1085,29 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                 </h4>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                   <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">{language === 'ar' ? 'الرقم الوظيفي *' : 'Employee number *'}</label>
-                    <input
-                      type="text"
-                      required
-                      value={formData.employeeNo || ''}
-                      onChange={(e) => setFormData({ ...formData, employeeNo: e.target.value })}
-                      className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-emerald-500/20"
-                    />
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">{language === 'ar' ? 'الرقم الوظيفي' : 'Employee number'}</label>
+                    <input type="text" required value={formData.employeeNo || ''} onChange={e => setFormData({ ...formData, employeeNo: e.target.value.toUpperCase() })} className="w-full px-3 py-2 text-xs bg-white border border-slate-200 rounded-xl font-mono font-bold text-slate-900" />
+                    <div className="text-[9px] text-slate-400 mt-1">{language === 'ar' ? 'يُقترح تلقائيًا ويمكنك استبداله برمز وظيفي خاص قبل الحفظ' : 'Suggested automatically; you may replace it with your own employee code before saving'}</div>
                   </div>
 
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">{language === 'ar' ? 'رقم الهوية الوطنية / الإقامة *' : 'National ID / Iqama *'}</label>
-                    <input
-                      type="text"
-                      required
-                      value={formData.nationalIdOrIqama || ''}
-                      onChange={(e) => setFormData({ ...formData, nationalIdOrIqama: e.target.value })}
-                      className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-emerald-500/20"
-                    />
-                  </div>
+                  {formData.nationality === 'SAUDI' && (
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">{language === 'ar' ? 'رقم الهوية الوطنية *' : 'National ID *'}</label>
+                      <input type="text" required value={formData.nationalIdOrIqama || ''} onChange={e => setFormData({ ...formData, nationalIdOrIqama: e.target.value })} className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-emerald-500/20" />
+                    </div>
+                  )}
+                  {formData.nationality === 'NON_SAUDI' && nonSaudiEntryMode === 'NEW_ARRIVAL' && (
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">{language === 'ar' ? 'رقم الدخول / الحدود *' : 'Entry / border number *'}</label>
+                      <input type="text" required value={formData.entryNumber || ''} onChange={e => setFormData({ ...formData, entryNumber: e.target.value, nationalIdOrIqama: e.target.value })} className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-amber-500/20" />
+                    </div>
+                  )}
+                  {formData.nationality === 'NON_SAUDI' && nonSaudiEntryMode === 'IQAMA_HOLDER' && (
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">{language === 'ar' ? 'رقم الإقامة *' : 'Iqama number *'}</label>
+                      <input type="text" required value={formData.iqamaNumber || ''} onChange={e => setFormData({ ...formData, iqamaNumber: e.target.value, nationalIdOrIqama: e.target.value, iqamaIssueStatus: 'ISSUED' })} className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-emerald-500/20" />
+                    </div>
+                  )}
 
                   <div>
                     <label className="block text-xs font-semibold text-slate-700 mb-1">{language === 'ar' ? 'الاسم الأول (بالعربي) *' : 'First name (Arabic) *'}</label>
@@ -926,26 +1129,6 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                       onChange={(e) => setFormData({ ...formData, lastNameAr: e.target.value })}
                       className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-emerald-500/20"
                     />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">{language === 'ar' ? 'الجنسية *' : 'Nationality *'}</label>
-                    <select
-                      value={formData.nationality || 'SAUDI'}
-                      onChange={(e) => {
-                        const isSa = e.target.value === 'SAUDI';
-                        setFormData({ 
-                          ...formData, 
-                          nationality: e.target.value as NationalityType,
-                          gosiEnabled: true,
-                          country: isSa ? 'المملكة العربية السعودية' : (formData.country === 'المملكة العربية السعودية' ? 'مصر' : formData.country)
-                        });
-                      }}
-                      className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-emerald-500/20"
-                    >
-                      <option value="SAUDI">{language === 'ar' ? 'سعودي (خاضع لاشتراك التأمينات GOSI)' : 'Saudi (subject to GOSI)'}</option>
-                      <option value="NON_SAUDI">{language === 'ar' ? 'غير سعودي (مخاطر مهنية فقط)' : 'Non-Saudi (occupational hazards only)'}</option>
-                    </select>
                   </div>
 
                   {formData.nationality === 'SAUDI' && (
@@ -1116,6 +1299,7 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                       }}
                       className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white"
                     >
+                      <option value="ONBOARDING">{language === 'ar' ? 'تحت الاستكمال — رقم حدود' : 'Onboarding — border number'}</option>
                       <option value="ACTIVE">{language === 'ar' ? 'على رأس العمل' : 'Active'}</option>
                       <option value="SUSPENDED">{language === 'ar' ? 'تعليق الصرف مع استمرار الاستحقاق' : 'Payment held — entitlement continues'}</option>
                       <option value="ON_LEAVE">{language === 'ar' ? 'إجازة' : 'On leave'}</option>
@@ -1217,10 +1401,39 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                     </select>
                   </div>
 
+                  {/* Guided lifecycle fields */}
+                  {formData.nationality && (
+                    <div className="sm:col-span-2 rounded-2xl border border-amber-200 bg-amber-50/50 p-4 space-y-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="text-xs font-black text-slate-900">{language === 'ar' ? 'بيانات المستندات والمتابعة' : 'Documents and onboarding'}</div>
+                        <span className="px-2 py-1 rounded-lg border border-amber-200 bg-white text-[10px] font-bold text-amber-800">
+                          {validateSaudiIBAN(String(formData.bankIban || '').replace(/\s/g, '').toUpperCase()) ? (language === 'ar' ? 'IBAN جاهز للتحويل' : 'IBAN ready for transfer') : (language === 'ar' ? 'IBAN غير مطلوب عند التسجيل' : 'IBAN not required at registration')}
+                        </span>
+                      </div>
+                      {formData.nationality === 'SAUDI' && (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div><label className="block text-xs font-semibold text-slate-700 mb-1">{language === 'ar' ? 'بداية العقد' : 'Contract start'}</label><input type="date" value={formData.contractStartDate || ''} onChange={e => setFormData({ ...formData, contractStartDate: e.target.value })} className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs" /></div>
+                          <div><label className="block text-xs font-semibold text-slate-700 mb-1">{language === 'ar' ? 'نهاية العقد *' : 'Contract end *'}</label><input type="date" required value={formData.contractEndDate || ''} onChange={e => setFormData({ ...formData, contractEndDate: e.target.value })} className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs" /></div>
+                        </div>
+                      )}
+                      {formData.nationality === 'NON_SAUDI' && nonSaudiEntryMode === 'NEW_ARRIVAL' && (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div><label className="block text-xs font-semibold text-slate-700 mb-1">{language === 'ar' ? 'تاريخ الدخول للمملكة *' : 'Entry date *'}</label><input type="date" required value={formData.entryDate || ''} onChange={e => setFormData({ ...formData, entryDate: e.target.value })} className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs" /></div>
+                          <div className="rounded-xl bg-white border border-amber-200 p-3 text-[10px] text-amber-800">{language === 'ar' ? 'سيظل الموظف تحت متابعة إصدار الإقامة. يمكن تسجيل الراتب الآن، أما التحويل البنكي فيتطلب IBAN صحيحًا.' : 'The employee remains under iqama onboarding. Salary may be recorded now; bank transfer requires a valid IBAN.'}</div>
+                        </div>
+                      )}
+                      {formData.nationality === 'NON_SAUDI' && nonSaudiEntryMode === 'IQAMA_HOLDER' && (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div><label className="block text-xs font-semibold text-slate-700 mb-1">{language === 'ar' ? 'تاريخ انتهاء الإقامة *' : 'Iqama expiry date *'}</label><input type="date" required value={formData.iqamaExpiryDate || ''} onChange={e => setFormData({ ...formData, iqamaExpiryDate: e.target.value, iqamaIssueStatus: 'ISSUED' })} className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs" /></div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   {/* IBAN */}
                   <div>
                     <div className="flex items-center justify-between mb-1">
-                      <label className="block text-xs font-semibold text-slate-700">{language === 'ar' ? 'رقم الآيبان (IBAN) *' : 'IBAN *'}</label>
+                      <label className="block text-xs font-semibold text-slate-700">{language === 'ar' ? 'رقم الآيبان (IBAN) — اختياري عند التسجيل' : 'IBAN — optional at registration'}</label>
                       {formData.bankIban && (
                         validateSaudiIBAN(formData.bankIban) ? (
                           <span className="text-[10px] text-emerald-600 font-bold flex items-center gap-0.5">
@@ -1235,7 +1448,6 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                     </div>
                     <input
                       type="text"
-                      required
                       placeholder="SAXXXXXXXXXXXXXXXXXXXXXXXX"
                       value={formData.bankIban || ''}
                       onChange={(e) => {
@@ -1461,9 +1673,11 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                   type="submit"
                   className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-md transition-all cursor-pointer"
                 >
-                  {editingEmployee
-                    ? (language === 'ar' ? 'حفظ التعديلات' : 'Save changes')
-                    : (language === 'ar' ? 'إضافة الموظف الآن' : 'Add employee')}
+                  {isCompletingOnboarding
+                    ? (language === 'ar' ? 'حفظ وتفعيل الموظف' : 'Save and activate employee')
+                    : editingEmployee
+                      ? (language === 'ar' ? 'حفظ التعديلات' : 'Save changes')
+                      : (language === 'ar' ? 'إضافة الموظف الآن' : 'Add employee')}
                 </button>
               </div>
 

@@ -13,7 +13,7 @@ import {
   Clock,
   ShieldCheck
 } from 'lucide-react';
-import { Company, Employee, PayrollRun, LoanSchedule, AttendanceRecord } from '../types';
+import { Company, Employee, PayrollRun, PayrollSettlement, LoanSchedule } from '../types';
 import { formatSAR, formatNumber, roundAmount } from '../utils/payrollEngine';
 import { useLanguage } from '../i18n/LanguageContext';
 
@@ -21,6 +21,7 @@ interface EmployeeStatementModalProps {
   employee: Employee | null;
   company: Company;
   payrollRuns: PayrollRun[];
+  settlements?: PayrollSettlement[];
   loans: LoanSchedule[];
   onClose: () => void;
 }
@@ -29,6 +30,7 @@ export const EmployeeStatementModal: React.FC<EmployeeStatementModalProps> = ({
   employee,
   company,
   payrollRuns,
+  settlements = [],
   loans,
   onClose,
 }) => {
@@ -48,8 +50,16 @@ export const EmployeeStatementModal: React.FC<EmployeeStatementModalProps> = ({
     .filter(h => h.item !== undefined);
 
   const activeLoan = loans.find(l => l.employeeId === employee.id && l.status === 'ACTIVE');
+  const employeePaidSettlements = settlements.filter(item => item.employeeId === employee.id && item.status === 'PAID');
+  const employeePaidSettlementTotal = roundAmount(employeePaidSettlements.reduce((sum, item) => sum + Number(item.amount || 0), 0));
   const latestItem = employeeHistory[0]?.item;
   const latestRun = employeeHistory[0]?.run;
+  const paidPriorSettlements = payrollRuns.flatMap(run => (run.paymentBatches || [])
+    .filter(batch => batch.status === 'PAID')
+    .flatMap(batch => (batch.priorEntitlements || [])
+      .filter(ref => ref.employeeId === employee.id)
+      .map(ref => ({ ...ref, paymentBatchNumber: batch.batchNumber, paymentDate: batch.paymentDate || batch.scheduledDate }))));
+  const paidPriorSettlementTotal = roundAmount(paidPriorSettlements.reduce((sum, ref) => sum + ref.amount, 0));
 
   const handlePrint = () => {
     window.print();
@@ -160,6 +170,28 @@ export const EmployeeStatementModal: React.FC<EmployeeStatementModalProps> = ({
               </div>
             )}
           </div>
+
+          {paidPriorSettlements.length > 0 && (
+            <div className="rounded-2xl border border-amber-200 bg-amber-50/70 p-4">
+              <div className="flex items-center justify-between gap-3 mb-2">
+                <div><div className="text-xs font-black text-amber-900">{tr('مستحقات سابقة تم صرفها لاحقًا', 'Prior held entitlements paid later')}</div><div className="text-[10px] text-amber-700">{tr('هذه المبالغ تخص فتراتها الأصلية وليست مصروفًا جديدًا في شهر الدفع.', 'These amounts belong to their original payroll periods and are not a new expense in the payment month.')}</div></div>
+                <div className="font-black text-amber-900">{formatSAR(paidPriorSettlementTotal)}</div>
+              </div>
+              <div className="space-y-1">{paidPriorSettlements.map(ref => (
+                <div key={`${ref.sourcePayrollRunId}:${ref.sourcePayrollItemId}`} className="flex items-center justify-between text-[11px] border-t border-amber-200/70 pt-1.5">
+                  <span>{tr('راتب', 'Salary')} {ref.sourcePeriodMonth} • {ref.paymentBatchNumber} • {ref.paymentDate}</span>
+                  <strong>{formatSAR(ref.amount)}</strong>
+                </div>
+              ))}</div>
+            </div>
+          )}
+
+          {employeePaidSettlements.length > 0 && (
+            <div className="rounded-2xl border border-emerald-200 bg-emerald-50/70 p-4">
+              <div className="flex items-center justify-between gap-3 mb-2"><div><div className="text-xs font-black text-emerald-900">{tr('تسويات رواتب مسددة', 'Paid payroll settlements')}</div><div className="text-[10px] text-emerald-700">{tr('تاريخ الاستحقاق منفصل عن تاريخ السداد الفعلي.', 'Entitlement period is kept separate from the actual payment date.')}</div></div><strong>{formatSAR(employeePaidSettlementTotal)}</strong></div>
+              <div className="space-y-1">{employeePaidSettlements.map(item => <div key={item.id} className="flex items-center justify-between border-t border-emerald-200/70 pt-1.5 text-[11px]"><span>{item.periodMonth} • {item.paymentDate || '-'} • {item.paymentMethod || '-'}</span><strong>{formatSAR(item.amount)}</strong></div>)}</div>
+            </div>
+          )}
 
           {/* Current Month Itemized Breakdown: Earnings vs Deductions */}
           {latestItem ? (

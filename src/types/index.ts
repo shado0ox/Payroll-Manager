@@ -8,10 +8,14 @@ export type UserPermission =
   | 'MANAGE_LOANS_PENALTIES'
   | 'MANAGE_PAYROLL'
   | 'APPROVE_PAYROLL'
+  | 'REVERSE_PAYROLL_APPROVAL'
   | 'POST_PAYROLL'
+  | 'CONFIRM_PAYROLL_PAYMENT'
+  | 'REVERSE_PAYROLL_PAYMENT'
   | 'MANAGE_JOURNALS'
   | 'VIEW_REPORTS'
   | 'MANAGE_USERS'
+  | 'RECEIVE_HR_EXPIRY_EMAILS'
   | 'VIEW_AUDIT_LOGS';
 
 export interface UserAccount {
@@ -141,7 +145,10 @@ export interface ChartOfAccountsMap {
   bankAccount: string; // ح/ البنك
 }
 
-export type EmploymentStatus = 'ACTIVE' | 'SUSPENDED' | 'ON_LEAVE' | 'TERMINATED' | 'ABSCONDED';
+export type EmploymentStatus = 'ONBOARDING' | 'ACTIVE' | 'SUSPENDED' | 'ON_LEAVE' | 'TERMINATED' | 'ABSCONDED';
+export type IqamaIssueStatus = 'PENDING' | 'ISSUED';
+export type BankAccountStatus = 'PENDING' | 'READY';
+export type EmployeeOnboardingStatus = 'NEW_ARRIVAL' | 'WAITING_IQAMA' | 'WAITING_BANK' | 'COMPLETE';
 export type EmploymentEndReason = 'SPONSOR_TRANSFER' | 'FINAL_EXIT' | 'ABSCONDED' | 'OTHER';
 export type NationalityType = 'SAUDI' | 'NON_SAUDI';
 
@@ -185,6 +192,15 @@ export interface Employee {
   hireDate: string; // YYYY-MM-DD
   salaryStartDate: string; // YYYY-MM-DD
   prorateFirstMonth?: boolean; // Apply daily proration in the salary start month only when explicitly enabled
+  entryDate?: string; // YYYY-MM-DD, non-Saudi arrival date
+  entryNumber?: string; // Border/entry number before iqama issuance
+  iqamaNumber?: string;
+  iqamaIssueStatus?: IqamaIssueStatus;
+  iqamaExpiryDate?: string; // YYYY-MM-DD
+  contractStartDate?: string; // YYYY-MM-DD, Saudi employees
+  contractEndDate?: string; // YYYY-MM-DD, Saudi employees
+  bankAccountStatus?: BankAccountStatus;
+  onboardingStatus?: EmployeeOnboardingStatus;
   terminationDate?: string;
   employmentEndReason?: EmploymentEndReason;
   status: EmploymentStatus;
@@ -232,6 +248,15 @@ export interface LeaveRequest {
   reason?: string;
 }
 
+export interface LoanAdjustment {
+  id: string;
+  amount: number; // positive increases the receivable, negative reduces it
+  date: string;
+  reason: string;
+  createdAt: string;
+  createdBy?: string;
+}
+
 export interface LoanSchedule {
   id: string;
   companyId: string;
@@ -244,6 +269,7 @@ export interface LoanSchedule {
   startDate: string; // YYYY-MM
   status: 'ACTIVE' | 'COMPLETED' | 'PAUSED';
   reason: string;
+  adjustments?: LoanAdjustment[];
 }
 
 export interface PenaltyRecord {
@@ -329,6 +355,10 @@ export interface PayrollRunItem {
   manualAddition?: number;
   manualDeduction?: number;
   adjustmentNotes?: string;
+  priorPeriodGross?: number;
+  priorPeriodDeductions?: number;
+  priorPeriodNet?: number;
+  priorPeriodDetails?: Array<{ periodMonth: string; gross: number; deductions: number; net: number }>;
   entitlementStatus?: PayrollEntitlementStatus;
   entitlementReason?: string;
   entitlementDocumentRef?: string;
@@ -339,8 +369,46 @@ export interface PayrollRunItem {
   warningFlags: string[];
 }
 
+export type PayrollSettlementStatus = 'PENDING' | 'PAID' | 'REVERSED';
+export type PayrollSettlementReason = 'HELD_PAYROLL' | 'RETROACTIVE_EMPLOYEE' | 'PAYROLL_DIFFERENCE';
+
+export interface PayrollSettlement {
+  id: string;
+  companyId: string;
+  employeeId: string;
+  employeeNo: string;
+  employeeName: string;
+  periodMonth: string;
+  periodStart: string;
+  periodEnd: string;
+  amount: number;
+  reason: PayrollSettlementReason;
+  sourcePayrollRunId?: string;
+  sourcePayrollItemId?: string;
+  dedupeKey: string;
+  status: PayrollSettlementStatus;
+  paymentMethod?: PaymentMethod;
+  paymentDate?: string;
+  paymentReference?: string;
+  notes?: string;
+  createdAt: string;
+  paidAt?: string;
+  reversedAt?: string;
+  reversalReason?: string;
+}
+
 export type PaymentBatchStatus = 'SCHEDULED' | 'PAID' | 'FAILED' | 'CANCELLED';
 export type PaymentMethod = 'WPS' | 'BANK_TRANSFER' | 'CASH';
+
+export interface PayrollPriorEntitlement {
+  sourcePayrollRunId: string;
+  sourcePayrollItemId: string;
+  sourcePeriodMonth: string;
+  employeeId: string;
+  employeeNo: string;
+  employeeName: string;
+  amount: number;
+}
 
 export interface PayrollPaymentBatch {
   id: string;
@@ -355,8 +423,14 @@ export interface PayrollPaymentBatch {
   status: PaymentBatchStatus;
   scheduledDate: string;
   paymentDate?: string;
+  paymentReversalReason?: string;
+  paymentReversedAt?: string;
+  paymentReversedBy?: string;
+  paymentReversedByName?: string;
+  reversedPaymentDate?: string;
   reference?: string;
   notes?: string;
+  priorEntitlements?: PayrollPriorEntitlement[];
   createdAt: string;
   createdBy?: string;
 }
@@ -437,6 +511,7 @@ export type NavigationTab =
   | 'company_profile'
   | 'employees' 
   | 'payroll_runs' 
+  | 'settlements'
   | 'attendance' 
   | 'loans_penalties' 
   | 'journals' 

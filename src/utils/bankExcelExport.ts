@@ -40,6 +40,10 @@ const formatDdMmYyyy = (isoDate: string) => {
 
 export function buildBankPayrollXlsx(payrollRun: PayrollRun, company: Company, batch: PayrollPaymentBatch, employees: Employee[] = []): Uint8Array {
   const selectedIds = new Set(batch.employeeIds);
+  const priorEntitlementsByEmployee = new Map<string, number>();
+  (batch.priorEntitlements || []).forEach(ref => {
+    priorEntitlementsByEmployee.set(ref.employeeId, (priorEntitlementsByEmployee.get(ref.employeeId) || 0) + Number(ref.amount || 0));
+  });
   const items = payrollRun.items.filter(item => selectedIds.has(item.employeeId) && !item.isSuspended && item.netSalary > 0);
   const employeeById = new Map(employees.map(employee => [employee.id, employee]));
   if (!items.length) {
@@ -81,16 +85,18 @@ export function buildBankPayrollXlsx(payrollRun: PayrollRun, company: Company, b
       const employee = employeeById.get(item.employeeId);
       const centralBank = detectBankFromIBAN(item.bankIban, company.bankDefinitions);
       const centralSwift = centralBank?.swiftCode || getSwiftCodeFromBankName(item.bankName || employee?.bankName || '', company.bankDefinitions);
+      const priorEntitlementAmount = priorEntitlementsByEmployee.get(item.employeeId) || 0;
+      const transferAmount = item.netSalary + priorEntitlementAmount;
       return makeRow(index + 4, [
       String(index + 1).padStart(4, '0'),
       item.nationalIdOrIqama || employee?.nationalIdOrIqama || '',
       item.employeeNameEn || (employee ? `${employee.firstNameEn || ''} ${employee.lastNameEn || ''}`.trim() : '') || item.employeeName,
       item.bankIban,
       centralSwift || item.bankSwiftCode || employee?.bankSwiftCode || '',
-      item.netSalary,
+      transferAmount,
       item.baseSalary,
       item.housingAllowance,
-      item.transportAllowance + item.otherAllowances + item.overtimeAmount + item.bonuses,
+      item.transportAllowance + item.otherAllowances + item.overtimeAmount + item.bonuses + priorEntitlementAmount,
       item.totalDeductions,
       'DMM',
       'SAR',

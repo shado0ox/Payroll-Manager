@@ -16,6 +16,7 @@ import {
   Company, 
   Employee, 
   PayrollRun, 
+  PayrollSettlement,
   AttendanceRecord, 
   LeaveRequest, 
   LoanSchedule, 
@@ -55,6 +56,7 @@ import { UserManagementView } from './components/UserManagementView';
 import { DashboardView } from './components/DashboardView';
 import { EmployeesView } from './components/EmployeesView';
 import { PayrollRunsView } from './components/PayrollRunsView';
+import { PayrollSettlementsView } from './components/PayrollSettlementsView';
 import { AttendanceLeavesView } from './components/AttendanceLeavesView';
 import { LoansPenaltiesView } from './components/LoansPenaltiesView';
 import { AccountingJournalsView } from './components/AccountingJournalsView';
@@ -74,7 +76,64 @@ import { useLanguage } from './i18n/LanguageContext';
 const TAB_SESSION_KEY = 'masar_tab_session_v1';
 const LAST_ACTIVITY_KEY = 'masar_last_activity_v1';
 const IDLE_TIMEOUT_MS = 60 * 60 * 1000;
+const TAB_PATHS: Record<NavigationTab, string> = {
+  dashboard: '/dashboard',
+  company_profile: '/company',
+  employees: '/employees',
+  payroll_runs: '/payroll',
+  settlements: '/settlements',
+  attendance: '/attendance',
+  loans_penalties: '/loans-penalties',
+  journals: '/journals',
+  reports: '/reports',
+  users: '/users',
+  settings: '/settings',
+  audit_logs: '/audit-logs',
+};
+const PATH_TABS = Object.fromEntries(Object.entries(TAB_PATHS).map(([tab, pathname]) => [pathname, tab])) as Record<string, NavigationTab>;
+const tabFromLocation = (): NavigationTab => PATH_TABS[window.location.pathname.replace(/\/$/, '') || '/'] || 'dashboard';
 type MasarAppState = ReturnType<typeof loadInitialState> & { temporaryEarnings: TemporaryEarningRecord[] };
+const payrollInputLockMessage = (language: 'ar' | 'en') => language === 'ar'
+  ? 'هذه العملية مرتبطة بمسير رواتب معتمد/مرحل. يجب إرجاع المسير أولاً قبل تعديلها أو حذفها.'
+  : 'This entry is linked to an approved/posted payroll run. Reopen the payroll run before editing or deleting it.';
+
+function isClosedPayrollInputLocked(
+  payrollRuns: PayrollRun[],
+  kind: 'attendance' | 'loan' | 'penalty' | 'earning',
+  record: AttendanceRecord | LoanSchedule | PenaltyRecord | TemporaryEarningRecord,
+) {
+  const closedRuns = payrollRuns.filter(run => run.companyId === record.companyId && ['APPROVED', 'POSTED'].includes(run.status));
+  return closedRuns.some(run => {
+    const item = run.items.find(candidate => candidate.employeeId === record.employeeId);
+    if (!item) return false;
+    // Approval does not lock an unpaid employee. Source inputs lock only after that employee
+    // is included in an active transfer batch or the payment has been confirmed.
+    const employeePaymentLocked = (run.paymentBatches || []).some(batch =>
+      ['SCHEDULED', 'PAID'].includes(batch.status) && (batch.employeeIds || []).includes(record.employeeId)
+    );
+    if (!employeePaymentLocked) return false;
+    if (kind === 'attendance') {
+      const attendance = record as AttendanceRecord;
+      if (run.periodMonth !== attendance.periodMonth) return false;
+      return Boolean(
+        attendance.absence || attendance.unpaidLeave || attendance.delayMinutes || attendance.overtimeHours ||
+        item.absenceDays || item.absenceDeduction || item.unpaidLeaveDays || item.unpaidLeaveDeduction ||
+        item.delayMinutes || item.delayDeduction || item.overtimeHours || item.overtimeAmount
+      );
+    }
+    if (kind === 'penalty') {
+      const penalty = record as PenaltyRecord;
+      return run.periodMonth === penalty.periodMonth && Number(item.penaltiesDeduction || 0) !== 0;
+    }
+    if (kind === 'earning') {
+      const earning = record as TemporaryEarningRecord;
+      return run.periodMonth === earning.periodMonth && Number(item.bonuses || 0) !== 0;
+    }
+    const loan = record as LoanSchedule;
+    return run.periodMonth >= loan.startDate && Number(item.loanDeduction || 0) !== 0;
+  });
+}
+
 
 export const App: React.FC = () => {
   const { t, language } = useLanguage();
@@ -82,7 +141,14 @@ export const App: React.FC = () => {
   // Initialize full application state
   const [state, setState] = useState<MasarAppState>(() => ({ ...loadInitialState(), temporaryEarnings: [] }));
 
-  const [activeTab, setActiveTab] = useState<NavigationTab>('dashboard');
+  const [activeTab, setActiveTabState] = useState<NavigationTab>(() => tabFromLocation());
+  const navigateToTab = (tab: NavigationTab, options?: { replace?: boolean }) => {
+    const pathname = TAB_PATHS[tab];
+    if (window.location.pathname !== pathname) {
+      window.history[options?.replace ? 'replaceState' : 'pushState']({ masarTab: tab }, '', pathname);
+    }
+    setActiveTabState(tab);
+  };
   const [statementEmployee, setStatementEmployee] = useState<Employee | null>(null);
   const [isQoyodModalOpen, setIsQoyodModalOpen] = useState(false);
   const [isDbModalOpen, setIsDbModalOpen] = useState(false);
@@ -251,9 +317,18 @@ export const App: React.FC = () => {
   }, [state.companies, state.activeCompanyId]);
 
   useEffect(() => {
+    const onPopState = () => setActiveTabState(tabFromLocation());
+    window.addEventListener('popstate', onPopState);
+    if (window.location.pathname === '/' || !PATH_TABS[window.location.pathname.replace(/\/$/, '')]) {
+      window.history.replaceState({ masarTab: activeTab }, '', TAB_PATHS[activeTab]);
+    }
+    return () => window.removeEventListener('popstate', onPopState);
+  }, []);
+
+  useEffect(() => {
     if (state.currentUser && !hasPermission(state.currentUser, TAB_PERMISSION[activeTab])) {
       const fallback = (Object.keys(TAB_PERMISSION) as NavigationTab[]).find(tab => hasPermission(state.currentUser, TAB_PERMISSION[tab]));
-      if (fallback) setActiveTab(fallback);
+      if (fallback) navigateToTab(fallback, { replace: true });
     }
   }, [activeTab, state.currentUser]);
 
@@ -420,34 +495,36 @@ export const App: React.FC = () => {
     });
   };
 
-  const handleSaveEmployee = (employee: Employee) => {
-    setState(prev => {
-      const exists = prev.employees.some(e => e.id === employee.id);
-      const updated = exists 
-        ? prev.employees.map(e => e.id === employee.id ? employee : e)
-        : [employee, ...prev.employees];
-      
-      saveEmployees(updated);
-
-      const log: AuditLog = {
-        id: `log-${Date.now()}`,
-        timestamp: new Date().toISOString(),
-        userName: prev.currentUser?.name || 'المدير العام',
-        userRole: prev.activeRole,
-        action: exists ? tr('تعديل بيانات موظف', 'Updated employee details') : tr('إضافة موظف جديد', 'Added employee'),
-        entityType: 'EMPLOYEE',
-        entityId: employee.id,
-        details: `${tr('الموظف:', 'Employee:')} ${language === 'ar' ? `${employee.firstNameAr} ${employee.lastNameAr}` : `${employee.firstNameEn || employee.firstNameAr} ${employee.lastNameEn || employee.lastNameAr}`} (${employee.employeeNo})`,
-      };
-      const updatedLogs = [log, ...prev.auditLogs];
-      saveAuditLogs(updatedLogs);
-
-      return {
-        ...prev,
-        employees: updated,
-        auditLogs: updatedLogs,
-      };
+  const handleSaveEmployee = async (employee: Employee) => {
+    const operation = persistenceQueueRef.current.catch(() => undefined).then(async () => {
+      const result = await api.saveEmployee(employee);
+      if (!result?.employee || result.employee.id !== employee.id || !result.version) {
+        throw new Error('EMPLOYEE_DIRECT_SAVE_FAILED');
+      }
+      return result;
     });
+
+    persistenceQueueRef.current = operation.then(() => undefined, () => undefined);
+
+    try {
+      const result = await operation;
+      setState(prev => {
+        const exists = (prev.employees || []).some(candidate => candidate.id === result.employee.id);
+        const employees = exists
+          ? (prev.employees || []).map(candidate => candidate.id === result.employee.id ? result.employee as Employee : candidate)
+          : [result.employee as Employee, ...(prev.employees || [])];
+        const next: MasarAppState = {
+          ...prev,
+          employees: synchronizeEmployeeBankDetails(prev.companies || [], employees),
+        };
+        remoteStateSnapshotRef.current = next;
+        return next;
+      });
+      setDbStatus(prev => ({ ...prev, isCloudConnected: true, isChecking: false, lastError: null, lastSavedAt: result.updated_at || new Date().toISOString() }));
+    } catch (error: any) {
+      setDbStatus(prev => ({ ...prev, isChecking: false, lastError: `${tr('تعذر حفظ الموظف:', 'Could not save employee:')} ${error?.message || 'UNKNOWN_ERROR'}` }));
+      throw error;
+    }
   };
 
   const handleBulkImportEmployees = (importedEmployees: Employee[]) => {
@@ -513,6 +590,76 @@ export const App: React.FC = () => {
 
       return { ...prev, employees, attendance, leaves, loans, penalties, temporaryEarnings, payrollRuns, journals, users, auditLogs };
     });
+  };
+
+  const handleSavePayrollRunConfirmed = async (run: PayrollRun): Promise<boolean> => {
+    const previousRun = state.payrollRuns.find(r => r.id === run.id);
+    const updated = previousRun
+      ? state.payrollRuns.map(r => r.id === run.id ? run : r)
+      : [run, ...state.payrollRuns];
+    const nextState = { ...state, payrollRuns: updated } as MasarAppState;
+
+    try {
+      // Finish any older autosave first so it cannot overwrite this financial action.
+      await persistenceQueueRef.current.catch(() => undefined);
+      setDbStatus(prev => ({ ...prev, isChecking: true }));
+      await api.saveState(nextState);
+
+      // Mark this exact object as already persisted so the generic autosave effect
+      // does not issue a duplicate write after setState.
+      remoteStateSnapshotRef.current = nextState;
+      savePayrollRuns(updated);
+      setState(nextState);
+      setDbStatus(prev => ({
+        ...prev,
+        isCloudConnected: true,
+        isChecking: false,
+        lastSavedAt: new Date().toISOString(),
+        lastError: null,
+      }));
+      return true;
+    } catch (firstError: any) {
+      // The browser can hold an older persistence baseline after a manual database
+      // repair or another user's save. Refresh that baseline and replay only this
+      // payroll run once instead of forcing the user to hard-refresh the page.
+      try {
+        const remote = await api.getState();
+        if (!remote.state) throw firstError;
+        const remoteRuns = Array.isArray(remote.state.payrollRuns) ? remote.state.payrollRuns : [];
+        const retryRuns = remoteRuns.some(candidate => candidate.id === run.id)
+          ? remoteRuns.map(candidate => candidate.id === run.id ? run : candidate)
+          : [run, ...remoteRuns];
+        const retryState = {
+          ...state,
+          ...remote.state,
+          payrollRuns: retryRuns,
+          currentUser: state.currentUser,
+          activeRole: state.currentUser?.role || state.activeRole,
+          activeCompanyId: state.activeCompanyId,
+        } as MasarAppState;
+
+        await api.saveState(retryState);
+        remoteStateSnapshotRef.current = retryState;
+        savePayrollRuns(retryRuns);
+        setState(retryState);
+        setDbStatus(prev => ({
+          ...prev,
+          isCloudConnected: true,
+          isChecking: false,
+          lastSavedAt: new Date().toISOString(),
+          lastError: null,
+        }));
+        return true;
+      } catch (retryError: any) {
+        setDbStatus(prev => ({
+          ...prev,
+          isChecking: false,
+          lastError: retryError?.message || firstError?.message || tr('تعذر حفظ عملية الرواتب', 'Could not save the payroll action'),
+        }));
+        alert(tr('تعذر حفظ تعديل المسير بعد تحديث البيانات من الخادم. حاول مرة أخرى.', 'The payroll change could not be saved after refreshing server data. Please try again.'));
+        return false;
+      }
+    }
   };
 
   const handleSavePayrollRun = (run: PayrollRun) => {
@@ -589,7 +736,24 @@ export const App: React.FC = () => {
     });
   };
 
+  const handleSavePayrollSettlement = async (settlement: PayrollSettlement) => {
+    let duplicate = false;
+    setState(prev => {
+      duplicate = prev.payrollSettlements.some(item => item.companyId === settlement.companyId && item.dedupeKey === settlement.dedupeKey && item.status !== 'REVERSED' && item.id !== settlement.id);
+      if (duplicate) return prev;
+      const payrollSettlements = prev.payrollSettlements.some(item => item.id === settlement.id)
+        ? prev.payrollSettlements.map(item => item.id === settlement.id ? settlement : item)
+        : [settlement, ...prev.payrollSettlements];
+      return { ...prev, payrollSettlements };
+    });
+    if (duplicate) throw new Error('DUPLICATE_PAYROLL_SETTLEMENT');
+  };
+
   const handleAddAttendance = (record: AttendanceRecord) => {
+    if (isClosedPayrollInputLocked(state.payrollRuns, 'attendance', record)) {
+      alert(payrollInputLockMessage(language));
+      return;
+    }
     setState(prev => {
       const updated = prev.attendance.some(item => item.id === record.id)
         ? prev.attendance.map(item => item.id === record.id ? record : item)
@@ -600,6 +764,10 @@ export const App: React.FC = () => {
   };
 
   const handleBulkImportAttendance = (records: AttendanceRecord[]) => {
+    if (records.some(record => isClosedPayrollInputLocked(state.payrollRuns, 'attendance', record))) {
+      alert(payrollInputLockMessage(language));
+      return;
+    }
     setState(prev => {
       const updated = [...records, ...prev.attendance];
       saveAttendance(updated);
@@ -608,6 +776,11 @@ export const App: React.FC = () => {
   };
 
   const handleDeleteAttendance = (recordId: string) => {
+    const existingRecord = state.attendance.find(item => item.id === recordId);
+    if (existingRecord && isClosedPayrollInputLocked(state.payrollRuns, 'attendance', existingRecord)) {
+      alert(payrollInputLockMessage(language));
+      return;
+    }
     setState(prev => {
       const record = prev.attendance.find(item => item.id === recordId);
       const updated = prev.attendance.filter(item => item.id !== recordId);
@@ -649,6 +822,11 @@ export const App: React.FC = () => {
   };
 
   const handleAddLoan = (loan: LoanSchedule) => {
+    const existingLoan = state.loans.find(item => item.id === loan.id);
+    if (existingLoan && isClosedPayrollInputLocked(state.payrollRuns, 'loan', existingLoan)) {
+      alert(payrollInputLockMessage(language));
+      return;
+    }
     setState(prev => {
       const updated = prev.loans.some(item => item.id === loan.id)
         ? prev.loans.map(item => item.id === loan.id ? loan : item)
@@ -659,6 +837,11 @@ export const App: React.FC = () => {
   };
 
   const handleUpdateLoanStatus = (loanId: string, status: LoanSchedule['status']) => {
+    const existingLoan = state.loans.find(item => item.id === loanId);
+    if (existingLoan && isClosedPayrollInputLocked(state.payrollRuns, 'loan', existingLoan)) {
+      alert(payrollInputLockMessage(language));
+      return;
+    }
     setState(prev => {
       const updated = prev.loans.map(l => l.id === loanId ? { ...l, status } : l);
       saveLoans(updated);
@@ -667,6 +850,11 @@ export const App: React.FC = () => {
   };
 
   const handleDeleteLoan = (loanId: string) => {
+    const existingLoan = state.loans.find(item => item.id === loanId);
+    if (existingLoan && isClosedPayrollInputLocked(state.payrollRuns, 'loan', existingLoan)) {
+      alert(payrollInputLockMessage(language));
+      return;
+    }
     setState(prev => {
       const updated = prev.loans.filter(item => item.id !== loanId);
       saveLoans(updated);
@@ -674,7 +862,47 @@ export const App: React.FC = () => {
     });
   };
 
+  const handleAdjustLoan = (loanId: string, amount: number, reason: string, date: string) => {
+    const adjustmentDate = new Date(`${date}T00:00:00Z`);
+    if (!Number.isFinite(amount) || amount === 0 || !reason.trim() || !/^\d{4}-\d{2}-\d{2}$/.test(date)
+      || Number.isNaN(adjustmentDate.getTime()) || adjustmentDate.toISOString().slice(0, 10) !== date) return;
+    setState(prev => {
+      const existing = prev.loans.find(item => item.id === loanId);
+      if (!existing) return prev;
+      const nextBalance = Number((existing.remainingAmount + amount).toFixed(2));
+      if (nextBalance < 0) {
+        alert(tr('لا يمكن أن تجعل التسوية رصيد السلفة أقل من صفر.', 'The adjustment cannot make the loan balance negative.'));
+        return prev;
+      }
+      const adjustment = {
+        id: `loan-adj-${Date.now()}`, amount, date, reason: reason.trim(),
+        createdAt: new Date().toISOString(), createdBy: prev.currentUser?.id,
+      };
+      const installment = Number(existing.monthlyInstallment || 0);
+      const nextRemainingInstallments = nextBalance === 0
+        ? 0
+        : installment > 0 ? Math.ceil(nextBalance / installment) : existing.remainingInstallments;
+      const nextStatus = nextBalance === 0
+        ? 'COMPLETED' as const
+        : existing.status === 'COMPLETED' ? 'ACTIVE' as const : existing.status;
+      const updated = prev.loans.map(item => item.id === loanId ? {
+        ...item,
+        remainingAmount: nextBalance,
+        remainingInstallments: nextRemainingInstallments,
+        status: nextStatus,
+        adjustments: [...(item.adjustments || []), adjustment],
+      } : item);
+      saveLoans(updated);
+      return { ...prev, loans: updated };
+    });
+  };
+
   const handleAddPenalty = (penalty: PenaltyRecord) => {
+    const existingPenalty = state.penalties.find(item => item.id === penalty.id);
+    if (existingPenalty && isClosedPayrollInputLocked(state.payrollRuns, 'penalty', existingPenalty)) {
+      alert(payrollInputLockMessage(language));
+      return;
+    }
     setState(prev => {
       const updated = prev.penalties.some(item => item.id === penalty.id)
         ? prev.penalties.map(item => item.id === penalty.id ? penalty : item)
@@ -685,6 +913,11 @@ export const App: React.FC = () => {
   };
 
   const handleCancelPenalty = (penaltyId: string) => {
+    const existingPenalty = state.penalties.find(item => item.id === penaltyId);
+    if (existingPenalty && isClosedPayrollInputLocked(state.payrollRuns, 'penalty', existingPenalty)) {
+      alert(payrollInputLockMessage(language));
+      return;
+    }
     setState(prev => {
       const updated = prev.penalties.map(item => item.id === penaltyId ? { ...item, appliedInPayroll: false } : item);
       savePenalties(updated);
@@ -693,6 +926,11 @@ export const App: React.FC = () => {
   };
 
   const handleDeletePenalty = (penaltyId: string) => {
+    const existingPenalty = state.penalties.find(item => item.id === penaltyId);
+    if (existingPenalty && isClosedPayrollInputLocked(state.payrollRuns, 'penalty', existingPenalty)) {
+      alert(payrollInputLockMessage(language));
+      return;
+    }
     setState(prev => {
       const updated = prev.penalties.filter(item => item.id !== penaltyId);
       savePenalties(updated);
@@ -701,6 +939,11 @@ export const App: React.FC = () => {
   };
 
   const handleSaveTemporaryEarning = (earning: TemporaryEarningRecord) => {
+    const existingEarning = state.temporaryEarnings.find(item => item.id === earning.id);
+    if (existingEarning && isClosedPayrollInputLocked(state.payrollRuns, 'earning', existingEarning)) {
+      alert(payrollInputLockMessage(language));
+      return;
+    }
     setState(prev => {
       const updated = prev.temporaryEarnings.some(item => item.id === earning.id)
         ? prev.temporaryEarnings.map(item => item.id === earning.id ? earning : item)
@@ -710,6 +953,11 @@ export const App: React.FC = () => {
   };
 
   const handleCancelTemporaryEarning = (earningId: string) => {
+    const existingEarning = state.temporaryEarnings.find(item => item.id === earningId);
+    if (existingEarning && isClosedPayrollInputLocked(state.payrollRuns, 'earning', existingEarning)) {
+      alert(payrollInputLockMessage(language));
+      return;
+    }
     setState(prev => {
       const updated = prev.temporaryEarnings.map(item => item.id === earningId ? { ...item, appliedInPayroll: false } : item);
       return { ...prev, temporaryEarnings: updated };
@@ -717,6 +965,11 @@ export const App: React.FC = () => {
   };
 
   const handleDeleteTemporaryEarning = (earningId: string) => {
+    const existingEarning = state.temporaryEarnings.find(item => item.id === earningId);
+    if (existingEarning && isClosedPayrollInputLocked(state.payrollRuns, 'earning', existingEarning)) {
+      alert(payrollInputLockMessage(language));
+      return;
+    }
     setState(prev => {
       const updated = prev.temporaryEarnings.filter(item => item.id !== earningId);
       return { ...prev, temporaryEarnings: updated };
@@ -731,6 +984,7 @@ export const App: React.FC = () => {
       const result = await api.deleteEmployee(empId);
       const remote = await api.getState();
       if (!remote.state) throw new Error('STATE_RELOAD_FAILED');
+      if ((remote.state.employees || []).some(employee => employee.id === empId)) throw new Error('EMPLOYEE_DELETE_NOT_CONFIRMED');
       return { result, remote };
     });
     persistenceQueueRef.current = deletion.then(() => undefined);
@@ -905,7 +1159,7 @@ export const App: React.FC = () => {
       {/* Dark Sidebar */}
       <Sidebar
         activeTab={activeTab}
-        onTabChange={setActiveTab}
+        onTabChange={navigateToTab}
         employeesCount={state.employees.filter(e => e.companyId === activeCompany?.id).length}
         activeRole={state.activeRole}
         currentUser={state.currentUser}
@@ -926,7 +1180,7 @@ export const App: React.FC = () => {
           onSelectCompany={handleSelectCompany}
           onLogout={handleLogout}
           onOpenQoyodModal={() => setIsQoyodModalOpen(true)}
-          onNavigate={setActiveTab}
+          onNavigate={navigateToTab}
           onResetData={handleResetData}
         />
 
@@ -974,7 +1228,7 @@ export const App: React.FC = () => {
                 payrollRuns={state.payrollRuns}
                 loans={state.loans}
                 activeRole={state.activeRole}
-                onNavigate={setActiveTab}
+                onNavigate={navigateToTab}
                 onViewEmployeeStatement={setStatementEmployee}
               />
             )}
@@ -1022,7 +1276,7 @@ export const App: React.FC = () => {
                 temporaryEarnings={state.temporaryEarnings}
                 activeRole={state.activeRole}
                 permissions={state.currentUser?.permissions}
-                onSavePayrollRun={handleSavePayrollRun}
+                onSavePayrollRun={handleSavePayrollRunConfirmed}
                 onViewEmployeeStatement={setStatementEmployee}
                 onOpenQoyodModal={() => setIsQoyodModalOpen(true)}
               />
@@ -1050,16 +1304,34 @@ export const App: React.FC = () => {
                 loans={state.loans}
                 penalties={state.penalties}
                 temporaryEarnings={state.temporaryEarnings}
+                payrollRuns={state.payrollRuns}
                 activeRole={state.activeRole}
                 onSaveLoan={handleAddLoan}
                 onUpdateLoanStatus={handleUpdateLoanStatus}
                 onDeleteLoan={handleDeleteLoan}
+                onAdjustLoan={handleAdjustLoan}
                 onSavePenalty={handleAddPenalty}
                 onCancelPenalty={handleCancelPenalty}
                 onDeletePenalty={handleDeletePenalty}
                 onSaveTemporaryEarning={handleSaveTemporaryEarning}
                 onCancelTemporaryEarning={handleCancelTemporaryEarning}
                 onDeleteTemporaryEarning={handleDeleteTemporaryEarning}
+              />
+            )}
+
+            {activeTab === 'settlements' && hasPermission(state.currentUser, 'MANAGE_PAYROLL') && (
+              <PayrollSettlementsView
+                company={activeCompany}
+                employees={state.employees}
+                payrollRuns={state.payrollRuns}
+                settlements={state.payrollSettlements}
+                attendance={state.attendance}
+                loans={state.loans}
+                penalties={state.penalties}
+                temporaryEarnings={state.temporaryEarnings}
+                activeRole={state.activeRole}
+                onSaveSettlement={handleSavePayrollSettlement}
+                onSavePayrollRun={handleSavePayrollRun}
               />
             )}
 
@@ -1124,6 +1396,7 @@ export const App: React.FC = () => {
         employee={statementEmployee}
         company={activeCompany}
         payrollRuns={state.payrollRuns}
+        settlements={state.payrollSettlements}
         loans={state.loans}
         onClose={() => setStatementEmployee(null)}
       />

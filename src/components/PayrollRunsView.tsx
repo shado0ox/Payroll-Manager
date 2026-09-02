@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   Banknote, 
   Calendar, 
@@ -39,6 +39,7 @@ import {
   UserRole,
   UserPermission,
   PayrollPaymentBatch,
+  PayrollPriorEntitlement,
   PaymentMethod,
   PaymentBatchStatus,
   PayrollEntitlementStatus,
@@ -59,6 +60,8 @@ import { generatePayrollJournalBatch, generatePaymentJournalBatch } from '../uti
 import { exportBankPayrollXlsx } from '../utils/bankExcelExport';
 import { hasPermission } from '../utils/permissions';
 import { useLanguage } from '../i18n/LanguageContext';
+import { PayrollRunItemsTable } from './payroll/PayrollRunItemsTable';
+import { PayrollPaymentBatchModal } from './payroll/PayrollPaymentBatchModal';
 
 interface PayrollRunsViewProps {
   company: Company;
@@ -70,7 +73,7 @@ interface PayrollRunsViewProps {
   temporaryEarnings: TemporaryEarningRecord[];
   activeRole: UserRole;
   permissions?: UserPermission[];
-  onSavePayrollRun: (run: PayrollRun) => void;
+  onSavePayrollRun: (run: PayrollRun) => Promise<boolean>;
   onViewEmployeeStatement: (emp: Employee) => void;
   onOpenQoyodModal: () => void;
 }
@@ -119,13 +122,35 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
 }) => {
   const { language } = useLanguage();
   const tr = (ar: string, en: string) => language === 'ar' ? ar : en;
-  const currentPeriod = new Date().toISOString().slice(0, 7);
+  const currentDate = new Date();
+  const currentPeriod = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}`;
   const companyRuns = useMemo(() => {
     return payrollRuns.filter(r => r.companyId === company.id);
   }, [payrollRuns, company.id]);
 
-  const [selectedPeriod, setSelectedPeriod] = useState<string>(
-    companyRuns[0]?.periodMonth || currentPeriod
+  const [selectedPeriod, setSelectedPeriod] = useState<string>(currentPeriod);
+
+  // Open payroll on the operating month, not the first historical run.
+  // Reset to the operating month when switching companies; historical periods
+  // remain available in the period selector.
+  useEffect(() => {
+    setSelectedPeriod(currentPeriod);
+  }, [company.id, currentPeriod]);
+
+  const [selectedYear, setSelectedYear] = useState<number>(() =>
+    Number((companyRuns[0]?.periodMonth || currentPeriod).slice(0, 4))
+  );
+
+  const availableYears = useMemo(() => {
+    const currentYear = Number(currentPeriod.slice(0, 4));
+    const years = new Set<number>([currentYear - 1, currentYear, currentYear + 1, selectedYear]);
+    companyRuns.forEach(run => years.add(Number(run.periodMonth.slice(0, 4))));
+    return Array.from(years).filter(Number.isFinite).sort((a, b) => b - a);
+  }, [companyRuns, currentPeriod, selectedYear]);
+
+  const yearPeriods = useMemo(() =>
+    Array.from({ length: 12 }, (_, index) => `${selectedYear}-${String(index + 1).padStart(2, '0')}`),
+    [selectedYear]
   );
 
   const [searchTerm, setSearchTerm] = useState('');
@@ -177,35 +202,77 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
     });
   }, [currentRun, searchTerm, filterWarningOnly, filterDept]);
 
-  const paymentBatches = currentRun?.paymentBatches || [];
-  const committedPaymentBatches = paymentBatches.filter(batch => ['SCHEDULED', 'PAID'].includes(batch.status));
-  const committedEmployeeIds = useMemo(
-    () => new Set(committedPaymentBatches.flatMap(batch => batch.employeeIds)),
-    [currentRun?.paymentBatches]
-  );
-  const paidAmount = paymentBatches.filter(batch => batch.status === 'PAID').reduce((sum, batch) => sum + batch.totalAmount, 0);
-  const scheduledAmount = paymentBatches.filter(batch => batch.status === 'SCHEDULED').reduce((sum, batch) => sum + batch.totalAmount, 0);
-  const entitlementAmount = (statuses: PayrollEntitlementStatus[]) => (currentRun?.items || [])
-    .filter(item => statuses.includes(item.entitlementStatus || 'PAYABLE'))
-    .reduce((sum, item) => sum + item.netSalary, 0);
-  const heldAmount = entitlementAmount(['HELD']);
-  const underSettlementAmount = entitlementAmount(['UNDER_SETTLEMENT']);
-  const settledAmount = entitlementAmount(['SETTLED']);
-  const cancelledByDocumentAmount = entitlementAmount(['CANCELLED_WITH_DOCUMENT']);
-  const exceptionalProcessedAmount = heldAmount + settledAmount + cancelledByDocumentAmount;
-  const remainingToSchedule = Math.max(0, entitlementAmount(['PAYABLE']) - paidAmount - scheduledAmount);
-  const unpaidAmount = Math.max(0, (currentRun?.totalNetSalaries || 0) - paidAmount - exceptionalProcessedAmount);
-  const closeOutstandingAmount = Math.max(0, (currentRun?.totalNetSalaries || 0) - paidAmount - exceptionalProcessedAmount);
+  const paymentBatches = useMemo(() => currentRun?.paymentBatches || [], [currentRun?.paymentBatches]);
+  const paymentSummary = useMemo(() => {
+    const committedPaymentBatches = paymentBatches.filter(batch => ['SCHEDULED', 'PAID'].includes(batch.status));
+    const committedEmployeeIds = new Set(committedPaymentBatches.flatMap(batch => batch.employeeIds));
+    const paidAmount = paymentBatches.filter(batch => batch.status === 'PAID').reduce((sum, batch) => sum + batch.totalAmount, 0);
+    const scheduledAmount = paymentBatches.filter(batch => batch.status === 'SCHEDULED').reduce((sum, batch) => sum + batch.totalAmount, 0);
+    const entitlementTotals = (currentRun?.items || []).reduce<Record<PayrollEntitlementStatus, number>>((totals, item) => {
+      const status = item.entitlementStatus || 'PAYABLE';
+      totals[status] += item.netSalary;
+      return totals;
+    }, { PAYABLE: 0, HELD: 0, UNDER_SETTLEMENT: 0, SETTLED: 0, CANCELLED_WITH_DOCUMENT: 0 });
+    const exceptionalProcessedAmount = entitlementTotals.HELD + entitlementTotals.SETTLED + entitlementTotals.CANCELLED_WITH_DOCUMENT;
+    return {
+      committedEmployeeIds,
+      paidAmount,
+      scheduledAmount,
+      heldAmount: entitlementTotals.HELD,
+      underSettlementAmount: entitlementTotals.UNDER_SETTLEMENT,
+      settledAmount: entitlementTotals.SETTLED,
+      cancelledByDocumentAmount: entitlementTotals.CANCELLED_WITH_DOCUMENT,
+      remainingToSchedule: Math.max(0, entitlementTotals.PAYABLE - paidAmount - scheduledAmount),
+      unpaidAmount: Math.max(0, (currentRun?.totalNetSalaries || 0) - paidAmount - exceptionalProcessedAmount),
+      closeOutstandingAmount: Math.max(0, (currentRun?.totalNetSalaries || 0) - paidAmount - exceptionalProcessedAmount),
+    };
+  }, [paymentBatches, currentRun?.items, currentRun?.totalNetSalaries]);
+  const { committedEmployeeIds, paidAmount, scheduledAmount, heldAmount, underSettlementAmount, settledAmount, cancelledByDocumentAmount, remainingToSchedule, unpaidAmount, closeOutstandingAmount } = paymentSummary;
 
   const getEmployeePaymentBatch = (employeeId: string) => {
     return [...paymentBatches].reverse().find(batch => batch.employeeIds.includes(employeeId) && ['SCHEDULED', 'PAID'].includes(batch.status));
   };
 
-  const eligibleFilteredItems = filteredItems.filter(item =>
+  const eligibleFilteredItems = useMemo(() => filteredItems.filter(item =>
     (item.entitlementStatus || 'PAYABLE') === 'PAYABLE' && item.netSalary > 0 && !committedEmployeeIds.has(item.employeeId)
-  );
-  const selectedPaymentItems = currentRun?.items.filter(item => selectedPaymentEmployeeIds.includes(item.employeeId)) || [];
-  const selectedPaymentTotal = selectedPaymentItems.reduce((sum, item) => sum + item.netSalary, 0);
+  ), [filteredItems, committedEmployeeIds]);
+  const selectedPaymentItems = useMemo(() => currentRun?.items.filter(item => selectedPaymentEmployeeIds.includes(item.employeeId)) || [], [currentRun?.items, selectedPaymentEmployeeIds]);
+  const referencedPriorEntitlementKeys = useMemo(() => {
+    const keys = new Set<string>();
+    companyRuns.forEach(run => (run.paymentBatches || []).filter(batch => ['SCHEDULED', 'PAID'].includes(batch.status)).forEach(batch => {
+      (batch.priorEntitlements || []).forEach(ref => keys.add(`${ref.sourcePayrollRunId}:${ref.sourcePayrollItemId}`));
+    }));
+    return keys;
+  }, [companyRuns]);
+  const availablePriorEntitlementsByEmployee = useMemo(() => {
+    const byEmployee = new Map<string, PayrollPriorEntitlement[]>();
+    companyRuns.filter(run => run.periodMonth < selectedPeriod).forEach(run => run.items
+      .filter(item => item.employeeId
+        && (item.entitlementStatus || 'PAYABLE') === 'HELD'
+        && item.entitlementReason === 'MISSING_BANK_ACCOUNT'
+        && item.netSalary > 0
+        && !referencedPriorEntitlementKeys.has(`${run.id}:${item.id}`))
+      .forEach(item => {
+        const entitlement = {
+        sourcePayrollRunId: run.id,
+        sourcePayrollItemId: item.id,
+        sourcePeriodMonth: run.periodMonth,
+        employeeId: item.employeeId,
+        employeeNo: item.employeeNo,
+        employeeName: item.employeeName,
+        amount: roundAmount(item.netSalary),
+        };
+        byEmployee.set(item.employeeId, [...(byEmployee.get(item.employeeId) || []), entitlement]);
+      }));
+    return byEmployee;
+  }, [companyRuns, selectedPeriod, referencedPriorEntitlementKeys]);
+  const getAvailablePriorEntitlements = (employeeId: string) => availablePriorEntitlementsByEmployee.get(employeeId) || [];
+  const { selectedPriorEntitlements, selectedPaymentTotal } = useMemo(() => {
+    const selectedPriorEntitlements = selectedPaymentItems.flatMap(item => availablePriorEntitlementsByEmployee.get(item.employeeId) || []);
+    const currentTotal = selectedPaymentItems.reduce((sum, item) => sum + item.netSalary, 0);
+    const priorTotal = selectedPriorEntitlements.reduce((sum, ref) => sum + ref.amount, 0);
+    return { selectedPriorEntitlements, selectedPaymentTotal: roundAmount(currentTotal + priorTotal) };
+  }, [selectedPaymentItems, availablePriorEntitlementsByEmployee]);
 
   const togglePaymentEmployee = (employeeId: string) => {
     setSelectedPaymentEmployeeIds(current => current.includes(employeeId)
@@ -221,10 +288,21 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
       : Array.from(new Set([...current, ...eligibleIds])));
   };
 
-  const handleCreatePaymentBatch = () => {
+  const handleCreatePaymentBatch = async () => {
     if (!currentRun || !selectedPaymentItems.length || !['APPROVED', 'POSTED'].includes(currentRun.status)) return;
-    const stillEligible = selectedPaymentItems.filter(item => (item.entitlementStatus || 'PAYABLE') === 'PAYABLE' && item.netSalary > 0 && !committedEmployeeIds.has(item.employeeId));
+    const stillEligible = selectedPaymentItems;
     if (!stillEligible.length) return;
+    const priorEntitlements = stillEligible.flatMap(item => getAvailablePriorEntitlements(item.employeeId));
+    const priorEntitlementsTotal = roundAmount(priorEntitlements.reduce((sum, ref) => sum + ref.amount, 0));
+    const invalidBankItems = stillEligible.filter(item => {
+      const employee = companyEmployees.find(emp => emp.id === item.employeeId);
+      const iban = String(employee?.bankIban || item.bankIban || '').replace(/\s/g, '').toUpperCase();
+      return !/^SA\d{22}$/.test(iban) || employee?.bankAccountStatus === 'PENDING';
+    });
+    if (paymentBatchForm.method !== 'CASH' && invalidBankItems.length) {
+      alert(tr('لا يمكن إنشاء دفعة بنكية: يوجد موظفون بدون IBAN سعودي مكتمل أو حساب بنكي جاهز.', 'Bank batch cannot be created: some employees do not have a valid Saudi IBAN or a ready bank account.'));
+      return;
+    }
     const sequence = (currentRun.paymentBatches?.length || 0) + 1;
     const batchNumber = `PAY-${currentRun.periodMonth.replace('-', '')}-${String(sequence).padStart(3, '0')}`;
     const batch: PayrollPaymentBatch = {
@@ -235,16 +313,18 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
       periodMonth: currentRun.periodMonth,
       employeeIds: stillEligible.map(item => item.employeeId),
       employeesCount: stillEligible.length,
-      totalAmount: roundAmount(stillEligible.reduce((sum, item) => sum + item.netSalary, 0)),
+      totalAmount: roundAmount(stillEligible.reduce((sum, item) => sum + item.netSalary, 0) + priorEntitlementsTotal),
       method: paymentBatchForm.method,
       status: 'SCHEDULED',
       scheduledDate: paymentBatchForm.scheduledDate,
       reference: paymentBatchForm.reference.trim() || batchNumber,
-      notes: `${currentRun.status === 'POSTED' ? 'دفعة متأخرة مرتبطة بالمسير الأصلي. ' : ''}${paymentBatchForm.notes.trim()}`.trim(),
+      notes: `${currentRun.status === 'POSTED' ? 'دفعة متأخرة مرتبطة بالمسير الأصلي. ' : ''}${priorEntitlements.length ? `تتضمن ${priorEntitlements.length} مستحق سابق بإجمالي ${priorEntitlementsTotal.toFixed(2)} SR. ` : ''}${paymentBatchForm.notes.trim()}`.trim(),
+      priorEntitlements,
       createdAt: new Date().toISOString(),
     };
     const updatedRun = { ...currentRun, paymentBatches: [...(currentRun.paymentBatches || []), batch] };
-    onSavePayrollRun(updatedRun);
+    const saved = await onSavePayrollRun(updatedRun);
+    if (!saved) return;
     if (batch.method !== 'CASH') exportBankPayrollXlsx(updatedRun, company, batch, employees);
     setSelectedPaymentEmployeeIds([]);
     setIsPaymentBatchModalOpen(false);
@@ -253,6 +333,15 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
 
   const handleEntitlementStatusChange = (item: PayrollRunItem, status: PayrollEntitlementStatus) => {
     if (!currentRun) return;
+    if (status === 'PAYABLE' && item.entitlementReason === 'MISSING_BANK_ACCOUNT') {
+      const employee = companyEmployees.find(emp => emp.id === item.employeeId);
+      const normalizedIban = String(employee?.bankIban || '').replace(/\s/g, '').toUpperCase();
+      const bankReady = /^SA\d{22}$/.test(normalizedIban) && employee?.bankAccountStatus !== 'PENDING';
+      if (!bankReady) {
+        alert(tr('لا يمكن تحرير الراتب المعلق قبل اكتمال IBAN السعودي وتأكيد جاهزية الحساب البنكي في ملف الموظف.', 'The held salary cannot be released until a valid Saudi IBAN is saved and the bank account is marked ready.'));
+        return;
+      }
+    }
     const batch = getEmployeePaymentBatch(item.employeeId);
     if (batch && ['SCHEDULED', 'PAID'].includes(batch.status)) {
       alert(tr('لا يمكن تغيير حالة الاستحقاق بعد جدولة أو دفع راتب الموظف. ألغِ الدفعة المجدولة أولًا، أما المدفوعة فتحتاج تسوية عكسية مستقلة.', 'Entitlement status cannot change after salary scheduling or payment. Cancel a scheduled batch first; paid salaries require a separate reversal settlement.'));
@@ -281,11 +370,33 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
 
   const handlePaymentBatchStatus = (batchId: string, status: PaymentBatchStatus) => {
     if (!currentRun) return;
+    if (status === 'PAID' && !hasPermission({ role: activeRole, permissions } as any, 'CONFIRM_PAYROLL_PAYMENT')) {
+      alert(tr('ليس لديك صلاحية تأكيد تنفيذ دفعة الرواتب.', 'You do not have permission to confirm payroll payment.'));
+      return;
+    }
     const paymentBatches = (currentRun.paymentBatches || []).map(batch => batch.id === batchId ? {
       ...batch,
       status,
       paymentDate: status === 'PAID' ? new Date().toISOString().slice(0, 10) : batch.paymentDate,
     } : batch);
+    onSavePayrollRun({ ...currentRun, paymentBatches });
+  };
+
+  const handleReversePayment = (batchId: string) => {
+    if (!currentRun || !hasPermission({ role: activeRole, permissions } as any, 'REVERSE_PAYROLL_PAYMENT')) return;
+    const batch = (currentRun.paymentBatches || []).find(item => item.id === batchId);
+    if (!batch || batch.status !== 'PAID') return;
+    const reason = window.prompt(tr('اكتب سبب إلغاء إثبات الدفع (إلزامي):', 'Enter the payment reversal reason (required):'))?.trim() || '';
+    if (!reason) return;
+    if (!window.confirm(tr('سيتم إرجاع الدفعة إلى مجدولة بدون فتح المسير أو تعديل استحقاقاته. متابعة؟', 'The batch will return to Scheduled without reopening payroll or changing payroll calculations. Continue?'))) return;
+    const paymentBatches = (currentRun.paymentBatches || []).map(item => item.id === batchId ? {
+      ...item,
+      status: 'SCHEDULED' as const,
+      reversedPaymentDate: item.paymentDate,
+      paymentDate: undefined,
+      paymentReversalReason: reason,
+      paymentReversedAt: new Date().toISOString(),
+    } : item);
     onSavePayrollRun({ ...currentRun, paymentBatches });
   };
 
@@ -300,8 +411,9 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
 
   const savePayrollAdjustment = () => {
     if (!currentRun || !adjustmentItem || !['UNDER_REVIEW', 'APPROVED'].includes(currentRun.status)) return;
-    if (currentRun.paymentBatches?.some(batch => ['SCHEDULED', 'PAID'].includes(batch.status))) {
-      alert(tr('لا يمكن تعديل مبالغ المسير بعد إنشاء دفعة تحويل نشطة. ألغِ الدفعة أولًا.', 'Payroll amounts cannot be edited while an active transfer batch exists. Cancel the batch first.'));
+    const employeeBatch = getEmployeePaymentBatch(adjustmentItem.employeeId);
+    if (employeeBatch && ['SCHEDULED', 'PAID'].includes(employeeBatch.status)) {
+      alert(tr('لا يمكن تعديل موظف تم إدراجه في أمر تحويل نشط أو تم تحويل راتبه بالفعل.', 'A payroll item cannot be edited after the employee is included in an active or paid transfer batch.'));
       return;
     }
     const previousAddition = adjustmentItem.manualAddition || 0;
@@ -352,10 +464,7 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
 
   // Execute full payroll calculation engine
   const handleRecalculate = () => {
-    if (currentRun?.paymentBatches?.some(batch => batch.status === 'PAID')) {
-      alert(tr('لا يمكن إعادة احتساب المسير بعد تسجيل دفعة محولة. ألغِ حالة التحويل أو أنشئ تسوية مستقلة.', 'Payroll cannot be recalculated after a paid batch. Reverse the payment or create a separate settlement.'));
-      return;
-    }
+    // Recalculate only unpaid/new employees. Employees already reserved or paid are preserved below.
     setIsCalculating(true);
     const startTime = performance.now();
 
@@ -388,11 +497,43 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
         const [year, month] = selectedPeriod.split('-').map(Number);
         const monthEnd = `${selectedPeriod}-${String(new Date(Date.UTC(year, month, 0)).getUTCDate()).padStart(2, '0')}`;
         const empAtt = attendance.filter(a => a.employeeId === emp.id && a.date <= monthEnd && (a.endDate || a.date) >= monthStart);
-        const empLoans = loans.filter(l => l.employeeId === emp.id);
+        const effectiveLoansFor = (periodMonth: string, employeeId: string) => {
+          const employeeLoanRows = loans
+            .filter(l => l.employeeId === employeeId && String(l.startDate || '').slice(0, 7) <= periodMonth)
+            .sort((a, b) => a.startDate.localeCompare(b.startDate) || a.id.localeCompare(b.id));
+        const loanBalances = new Map<string, number>(employeeLoanRows.map(loan => [loan.id, Math.max(0, Number(loan.remainingAmount) || 0)]));
+        payrollRuns
+          .filter(candidate => candidate.companyId === company.id
+            && candidate.periodMonth < periodMonth
+            && ['APPROVED', 'POSTED'].includes(candidate.status))
+          .sort((a, b) => a.periodMonth.localeCompare(b.periodMonth))
+          .forEach(candidate => {
+            let paid = Math.max(0, Number(candidate.items.find(item => item.employeeId === emp.id)?.loanDeduction) || 0);
+            for (const loan of employeeLoanRows) {
+              if (paid <= 0 || loan.startDate > candidate.periodMonth) continue;
+              const balance = loanBalances.get(loan.id) || 0;
+              const applied = Math.min(balance, paid);
+              loanBalances.set(loan.id, Number((balance - applied).toFixed(2)));
+              paid = Number((paid - applied).toFixed(2));
+            }
+          });
+          return employeeLoanRows.map(loan => {
+          const remainingAmount = loanBalances.get(loan.id) || 0;
+          return {
+            ...loan,
+            remainingAmount,
+            remainingInstallments: remainingAmount === 0
+              ? 0
+              : loan.monthlyInstallment > 0 ? Math.ceil(remainingAmount / loan.monthlyInstallment) : loan.remainingInstallments,
+            status: remainingAmount === 0 ? 'COMPLETED' as const : loan.status,
+          };
+          });
+        };
+        const empLoans = effectiveLoansFor(selectedPeriod, emp.id);
         const empPens = penalties.filter(p => p.employeeId === emp.id && p.periodMonth === selectedPeriod && p.appliedInPayroll !== false);
         const empEarnings = temporaryEarnings.filter(e => e.employeeId === emp.id && e.periodMonth === selectedPeriod && e.appliedInPayroll !== false);
 
-        const calculated = calculateEmployeePayrollItem({
+        let calculated = calculateEmployeePayrollItem({
           employee: emp,
           company,
           periodMonth: selectedPeriod,
@@ -401,25 +542,91 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
           penalties: empPens,
           temporaryEarnings: empEarnings,
         });
+
+        // Carry every unpaid prior salary period into the current run exactly once.
+        // Unpaid prior periods are recalculated from their own period inputs, so a July deduction
+        // added later for an unpaid employee immediately changes the July carried balance.
+        const priorPeriodDetails: Array<{ periodMonth: string; gross: number; deductions: number; net: number }> = [];
+        const salaryStartDate = String(emp.salaryStartDate || emp.hireDate || '');
+        const salaryStartMonth = /^\d{4}-\d{2}-\d{2}$/.test(salaryStartDate) ? salaryStartDate.slice(0, 7) : selectedPeriod;
+        let cursor = salaryStartMonth;
+        while (cursor < selectedPeriod && priorPeriodDetails.length < 240) {
+          const historicalRun = companyRuns.find(run => run.periodMonth === cursor);
+          const alreadyTransferred = Boolean(historicalRun?.paymentBatches?.some(batch =>
+            ['SCHEDULED', 'PAID'].includes(batch.status) && (batch.employeeIds || []).includes(emp.id)
+          ));
+          if (!alreadyTransferred) {
+            const [priorYear, priorMonthNo] = cursor.split('-').map(Number);
+            const priorEnd = `${cursor}-${String(new Date(Date.UTC(priorYear, priorMonthNo, 0)).getUTCDate()).padStart(2, '0')}`;
+            const priorStart = `${cursor}-01`;
+            const priorEmployee = cursor === salaryStartMonth ? { ...emp, prorateFirstMonth: true } : emp;
+            const priorItem = calculateEmployeePayrollItem({
+              employee: priorEmployee,
+              company,
+              periodMonth: cursor,
+              attendanceRecords: attendance.filter(a => a.employeeId === emp.id && a.date <= priorEnd && (a.endDate || a.date) >= priorStart),
+              activeLoans: effectiveLoansFor(cursor, emp.id),
+              penalties: penalties.filter(p => p.employeeId === emp.id && p.periodMonth === cursor && p.appliedInPayroll !== false),
+              temporaryEarnings: temporaryEarnings.filter(e => e.employeeId === emp.id && e.periodMonth === cursor && e.appliedInPayroll !== false),
+            });
+            if (Number(priorItem?.netSalary || 0) > 0) {
+              priorPeriodDetails.push({
+                periodMonth: cursor,
+                gross: Number(priorItem?.totalGrossSalary || 0),
+                deductions: Number(priorItem?.totalDeductions || 0),
+                net: Number(priorItem?.netSalary || 0),
+              });
+            }
+          }
+          const [cursorYear, cursorMonth] = cursor.split('-').map(Number);
+          const next = new Date(Date.UTC(cursorYear, cursorMonth, 1));
+          cursor = `${next.getUTCFullYear()}-${String(next.getUTCMonth() + 1).padStart(2, '0')}`;
+        }
+        const priorPeriodGross = roundAmount(priorPeriodDetails.reduce((sum, row) => sum + row.gross, 0));
+        const priorPeriodDeductions = roundAmount(priorPeriodDetails.reduce((sum, row) => sum + row.deductions, 0));
+        const priorPeriodNet = roundAmount(priorPeriodDetails.reduce((sum, row) => sum + row.net, 0));
+        if (priorPeriodNet > 0) {
+          calculated = {
+            ...calculated,
+            priorPeriodGross,
+            priorPeriodDeductions,
+            priorPeriodNet,
+            priorPeriodDetails,
+            netSalary: roundAmount(calculated.netSalary + priorPeriodNet),
+            totalCompanyBurden: roundAmount(calculated.totalCompanyBurden + priorPeriodNet),
+            warningFlags: calculated.warningFlags,
+          };
+        }
         const employeeNo = emp.employeeNo?.trim().toUpperCase();
         const previousItem = previousItemsByEmployeeId.get(emp.id)
           || (employeeNo && !duplicateEmployeeNumbers.has(employeeNo)
             ? previousItemsByEmployeeNo.get(employeeNo)
             : undefined);
+        // Employees already included in an active/paid transfer batch are immutable.
+        if (previousItem && committedEmployeeIds.has(emp.id)) return previousItem;
         const previousEntitlementStatus = previousItem?.entitlementStatus || 'PAYABLE';
-        const shouldApplyAutomaticHold = calculated.isSuspended && previousEntitlementStatus === 'PAYABLE';
+        const normalizedIban = String(emp.bankIban || '').replace(/\s/g, '').toUpperCase();
+        const hasReadyBankAccount = /^SA\d{22}$/.test(normalizedIban) && emp.bankAccountStatus !== 'PENDING';
+        const missingBankHold = !hasReadyBankAccount && previousEntitlementStatus === 'PAYABLE';
+        const suspensionHold = calculated.isSuspended && previousEntitlementStatus === 'PAYABLE';
+        const shouldApplyAutomaticHold = missingBankHold || suspensionHold;
+        const automaticHoldReason = missingBankHold
+          ? 'MISSING_BANK_ACCOUNT'
+          : (emp.suspensionReason?.trim() || tr('تعليق تلقائي من ملف الموظف', 'Automatically held from employee profile'));
         return previousItem ? {
           ...calculated,
           entitlementStatus: shouldApplyAutomaticHold ? 'HELD' : previousItem.entitlementStatus,
           entitlementReason: shouldApplyAutomaticHold
-            ? (emp.suspensionReason?.trim() || tr('تعليق تلقائي من ملف الموظف', 'Automatically held from employee profile'))
+            ? automaticHoldReason
             : previousItem.entitlementReason,
           entitlementDocumentRef: previousItem.entitlementDocumentRef,
           entitlementUpdatedAt: shouldApplyAutomaticHold ? new Date().toISOString() : previousItem.entitlementUpdatedAt,
-        } : calculated.isSuspended ? {
+        } : (!hasReadyBankAccount || calculated.isSuspended) ? {
           ...calculated,
           entitlementStatus: 'HELD',
-          entitlementReason: emp.suspensionReason?.trim() || tr('تعليق تلقائي من ملف الموظف', 'Automatically held from employee profile'),
+          entitlementReason: !hasReadyBankAccount
+            ? 'MISSING_BANK_ACCOUNT'
+            : (emp.suspensionReason?.trim() || tr('تعليق تلقائي من ملف الموظف', 'Automatically held from employee profile')),
           entitlementUpdatedAt: new Date().toISOString(),
         } : calculated;
       });
@@ -428,14 +635,14 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
       const totalBaseSalaries = roundAmount(runItems.reduce((s, i) => s + i.baseSalary, 0), decimals);
       const totalAllowances = roundAmount(runItems.reduce((s, i) => s + i.housingAllowance + i.transportAllowance + i.otherAllowances + i.bonuses, 0), decimals);
       const totalOvertime = roundAmount(runItems.reduce((s, i) => s + i.overtimeAmount, 0), decimals);
-      const totalGrossSalaries = roundAmount(runItems.reduce((s, i) => s + i.totalGrossSalary, 0), decimals);
+      const totalGrossSalaries = roundAmount(runItems.reduce((s, i) => s + i.totalGrossSalary + Number(i.priorPeriodGross || 0), 0), decimals);
       const totalAbsenceDeductions = roundAmount(runItems.reduce((s, i) => s + i.absenceDeduction + i.unpaidLeaveDeduction, 0), decimals);
       const totalDelayDeductions = roundAmount(runItems.reduce((s, i) => s + i.delayDeduction, 0), decimals);
       const totalGosiEmployee = roundAmount(runItems.reduce((s, i) => s + i.gosiEmployeeShare, 0), decimals);
       const totalGosiEmployer = roundAmount(runItems.reduce((s, i) => s + i.gosiEmployerShare, 0), decimals);
       const totalLoanDeductions = roundAmount(runItems.reduce((s, i) => s + i.loanDeduction, 0), decimals);
       const totalPenalties = roundAmount(runItems.reduce((s, i) => s + i.penaltiesDeduction + i.otherDeductions, 0), decimals);
-      const totalDeductions = roundAmount(runItems.reduce((s, i) => s + i.totalDeductions, 0), decimals);
+      const totalDeductions = roundAmount(runItems.reduce((s, i) => s + i.totalDeductions + Number(i.priorPeriodDeductions || 0), 0), decimals);
       const totalNetSalaries = roundAmount(runItems.reduce((s, i) => s + i.netSalary, 0), decimals);
       const totalCompanyCost = roundAmount(runItems.reduce((s, i) => s + i.totalCompanyBurden, 0), decimals);
 
@@ -480,7 +687,14 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
   // Workflow status transitions
   const handleStatusChange = (newStatus: PayrollRunStatus) => {
     if (!currentRun) return;
-    const permission = newStatus === 'APPROVED' ? 'APPROVE_PAYROLL' : newStatus === 'POSTED' ? 'POST_PAYROLL' : 'MANAGE_PAYROLL';
+    const transition = currentRun.status + '->' + newStatus;
+    const permission: UserPermission = transition === 'UNDER_REVIEW->APPROVED'
+      ? 'APPROVE_PAYROLL'
+      : transition === 'APPROVED->UNDER_REVIEW' || transition === 'POSTED->APPROVED'
+        ? 'REVERSE_PAYROLL_APPROVAL'
+        : transition === 'APPROVED->POSTED'
+          ? 'POST_PAYROLL'
+          : 'MANAGE_PAYROLL';
     if (!hasPermission({ role: activeRole, permissions } as any, permission)) {
       alert(tr('ليس لديك الصلاحية المطلوبة لتنفيذ هذه المرحلة.', 'You do not have permission to perform this action.'));
       return;
@@ -496,7 +710,7 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
     onSavePayrollRun(updated);
   };
 
-  const canReversePosting = hasPermission({ role: activeRole, permissions } as any, 'APPROVE_PAYROLL');
+  const canReversePosting = hasPermission({ role: activeRole, permissions } as any, 'REVERSE_PAYROLL_APPROVAL');
   const handleReverseApproval = () => {
     if (!currentRun || currentRun.status !== 'APPROVED' || !canReversePosting) return;
     if (currentRun.paymentBatches?.some(batch => batch.status === 'PAID')) {
@@ -513,11 +727,15 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
       return;
     }
     if (!window.confirm(tr('هل تريد التراجع عن ترحيل المسير وفتحه للتعديل؟', 'Reverse payroll posting and reopen it for editing?'))) return;
-    onSavePayrollRun({ ...currentRun, status: 'UNDER_REVIEW', approvedAt: undefined, approvedBy: undefined, postedAt: undefined, postedBy: undefined });
+    onSavePayrollRun({ ...currentRun, status: 'APPROVED', postedAt: undefined, postedBy: undefined });
   };
 
   // Warning metrics
-  const totalWarnings = currentRun?.items.reduce((s, i) => s + i.warningFlags.length, 0) || 0;
+  const totalWarnings = useMemo(() => currentRun?.items.reduce((s, i) => s + i.warningFlags.length, 0) || 0, [currentRun?.items]);
+  const priorBalancesTotal = useMemo(() => (currentRun?.items || []).reduce((sum, item) => sum + Number(item.priorPeriodNet || 0), 0), [currentRun?.items]);
+  const exportablePaymentEmployeeIds = useMemo(() => (currentRun?.items || [])
+    .filter(item => (item.entitlementStatus || 'PAYABLE') === 'PAYABLE' && !committedEmployeeIds.has(item.employeeId))
+    .map(item => item.employeeId), [currentRun?.items, committedEmployeeIds]);
 
   return (
     <div data-no-translate className="space-y-6">
@@ -548,12 +766,28 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
           <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-xl border border-slate-200 shadow-xs">
             <Calendar className="w-4 h-4 text-slate-500" />
             <select
+              aria-label={tr('السنة', 'Year')}
+              value={selectedYear}
+              onChange={(e) => {
+                const year = Number(e.target.value);
+                setSelectedYear(year);
+                const month = selectedPeriod.slice(5, 7) || currentPeriod.slice(5, 7);
+                setSelectedPeriod(`${year}-${month}`);
+                setSelectedPaymentEmployeeIds([]);
+              }}
+              className="bg-transparent text-xs font-bold text-slate-800 border-none focus:ring-0 cursor-pointer"
+            >
+              {availableYears.map(year => <option key={year} value={year}>{year}</option>)}
+            </select>
+            <span className="text-slate-300">/</span>
+            <select
+              aria-label={tr('شهر المسير', 'Payroll month')}
               value={selectedPeriod}
               onChange={(e) => { setSelectedPeriod(e.target.value); setSelectedPaymentEmployeeIds([]); }}
               className="bg-transparent text-xs font-bold text-slate-800 border-none focus:ring-0 cursor-pointer"
             >
-              {Array.from(new Set([selectedPeriod, ...companyRuns.map(run => run.periodMonth), ...[-2, -1, 0, 1].map(offset => { const date = new Date(); date.setMonth(date.getMonth() + offset); return date.toISOString().slice(0, 7); })])).sort().reverse().map(period => (
-                <option key={period} value={period}>{new Intl.DateTimeFormat(language === 'ar' ? 'ar-SA' : 'en-US', { month: 'long', year: 'numeric' }).format(new Date(`${period}-01T12:00:00`))}</option>
+              {yearPeriods.map(period => (
+                <option key={period} value={period}>{new Intl.DateTimeFormat(language === 'ar' ? 'ar-SA' : 'en-US', { month: 'long' }).format(new Date(`${period}-01T12:00:00`))}</option>
               ))}
             </select>
           </div>
@@ -648,6 +882,7 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
               [tr('أقساط السلف', 'Loan installments'), currentRun.totalLoanDeductions, 'text-rose-700'],
               [tr('جزاءات وخصومات', 'Penalties & deductions'), currentRun.totalPenalties, 'text-rose-700'],
               [tr('خصومات أخرى', 'Other deductions'), Math.max(0, currentRun.totalDeductions - currentRun.totalAbsenceDeductions - currentRun.totalDelayDeductions - currentRun.totalGosiEmployee - currentRun.totalLoanDeductions - currentRun.totalPenalties), 'text-rose-700'],
+              [tr('أرصدة سابقة', 'Prior balances'), priorBalancesTotal, 'text-blue-700'],
               [tr('صافي الرواتب', 'Net salaries'), currentRun.totalNetSalaries, 'text-emerald-800'],
             ].map(([label, amount, color]) => <div key={String(label)} className="rounded-xl bg-slate-50 border border-slate-100 p-2"><div className="text-[10px] text-slate-500">{label}</div><div className={`text-xs font-black mt-1 ${color}`}>{formatSAR(Number(amount))}</div></div>)}
           </div>
@@ -735,7 +970,7 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
             </button>
 
             <button
-              onClick={() => exportWpsBankCsv(currentRun, company, currentRun.items.filter(item => (item.entitlementStatus || 'PAYABLE') === 'PAYABLE' && !committedEmployeeIds.has(item.employeeId)).map(item => item.employeeId))}
+              onClick={() => exportWpsBankCsv(currentRun, company, exportablePaymentEmployeeIds)}
               className="px-3 py-1.5 bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all"
               title={tr('تصدير المستحقين غير المعلقين وغير المدرجين في دفعة فقط', 'Export only payable employees not already included in a batch')}
             >
@@ -778,10 +1013,10 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
               <button
                 type="button"
                 onClick={() => setIsPaymentBatchModalOpen(true)}
-                disabled={!selectedPaymentEmployeeIds.length || !['APPROVED', 'POSTED'].includes(currentRun.status)}
+                disabled={!selectedPaymentItems.length || !['APPROVED', 'POSTED'].includes(currentRun.status)}
                 className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-2 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
               >
-                <Send className="w-4 h-4" /> {currentRun.status === 'POSTED' ? tr('إنشاء دفعة متأخرة', 'Create late payment batch') : tr('إنشاء دفعة للمحددين', 'Create selected batch')} ({selectedPaymentEmployeeIds.length})
+                <Send className="w-4 h-4" /> {currentRun.status === 'POSTED' ? tr('إنشاء دفعة متأخرة', 'Create late payment batch') : tr('إنشاء دفعة للمحددين', 'Create selected batch')} ({selectedPaymentItems.length})
               </button>
             </div>
           </div>
@@ -817,13 +1052,14 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
                           <button type="button" onClick={() => exportBankPayrollXlsx(currentRun, company, batch, employees)} className="px-2 py-1 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold">{tr('ملف البنك Excel', 'Bank Excel')}</button>
                         )}
                         {batch.status === 'SCHEDULED' && <>
-                          <button type="button" onClick={() => handlePaymentBatchStatus(batch.id, 'PAID')} className="px-2 py-1 rounded-lg bg-emerald-600 text-white font-bold">{tr('تم التحويل', 'Mark paid')}</button>
+                          <button type="button" disabled={!hasPermission({ role: activeRole, permissions } as any, 'CONFIRM_PAYROLL_PAYMENT')} onClick={() => handlePaymentBatchStatus(batch.id, 'PAID')} className="px-2 py-1 rounded-lg bg-emerald-600 disabled:bg-slate-300 disabled:cursor-not-allowed text-white font-bold">{tr('تم التحويل', 'Mark paid')}</button>
                           <button type="button" onClick={() => handlePaymentBatchStatus(batch.id, 'FAILED')} className="px-2 py-1 rounded-lg bg-rose-50 text-rose-700 border border-rose-200 font-bold">{tr('فشل', 'Failed')}</button>
                           <button type="button" onClick={() => handlePaymentBatchStatus(batch.id, 'CANCELLED')} className="px-2 py-1 rounded-lg bg-slate-100 text-slate-600 font-bold">{tr('إلغاء', 'Cancel')}</button>
                         </>}
-                        {batch.status === 'PAID' && (
+                        {batch.status === 'PAID' && (<>
                           <button type="button" onClick={() => exportQoyodJournalCsv(generatePaymentJournalBatch(company, currentRun, batch), company)} className="px-2 py-1 rounded-lg bg-sky-50 text-sky-700 border border-sky-200 font-bold">{tr('قيد السداد', 'Payment journal')}</button>
-                        )}
+                          {hasPermission({ role: activeRole, permissions } as any, 'REVERSE_PAYROLL_PAYMENT') && <button type="button" onClick={() => handleReversePayment(batch.id)} className="px-2 py-1 rounded-lg bg-amber-50 text-amber-800 border border-amber-200 font-bold">{tr('إلغاء إثبات الدفع', 'Reverse payment')}</button>}
+                        </>)}
                         {['FAILED', 'CANCELLED'].includes(batch.status) && <span className="text-[10px] text-slate-400 self-center">{tr('الموظفون متاحون لدفعة جديدة', 'Employees are available for a new batch')}</span>}
                       </div></td>
                     </tr>
@@ -883,229 +1119,33 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
         </div>
       </div>
 
-      {/* Itemized Payroll Run Table */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden w-full">
-        <table className="w-full text-right text-xs table-fixed divide-y divide-slate-100">
-          <thead>
-            <tr className="bg-slate-800 text-white font-bold border-b border-slate-700 text-[11px]">
-              <th className="py-2.5 px-2 w-[15%] text-right font-bold">
-                <div className="flex items-center gap-2">
-                  <input type="checkbox" checked={eligibleFilteredItems.length > 0 && eligibleFilteredItems.every(item => selectedPaymentEmployeeIds.includes(item.employeeId))} onChange={toggleAllEligibleEmployees} className="accent-emerald-500" />
-                  <span>{tr('الموظف والرقم', 'Employee & number')}</span>
-                </div>
-              </th>
-              <th className="py-2.5 px-1.5 w-[8%] text-start font-bold">{tr('القسم', 'Department')}</th>
-              <th className="py-2.5 px-1.5 w-[7%] text-start font-bold">{tr('الأساسي', 'Basic')}</th>
-              <th className="py-2.5 px-1.5 w-[8%] text-start font-bold">{tr('البدلات', 'Allowances')}</th>
-              <th className="py-2.5 px-1.5 w-[6%] text-start font-bold">{tr('إضافات', 'Additions')}</th>
-              <th className="py-2.5 px-1.5 w-[9%] text-start font-bold">{tr('المستحق (Gross)', 'Gross pay')}</th>
-              <th className="py-2.5 px-1.5 w-[7%] text-start font-bold text-rose-300">{tr('الغياب/التأخير', 'Absence / late')}</th>
-              <th className="py-2.5 px-1.5 w-[7%] text-start font-bold text-rose-300">{tr('تأمينات', 'GOSI')}</th>
-              <th className="py-2.5 px-1.5 w-[6%] text-start font-bold text-rose-300">{tr('السلف', 'Loans')}</th>
-              <th className="py-2.5 px-1.5 w-[8%] text-start font-bold text-rose-300">{tr('الخصم', 'Deductions')}</th>
-              <th className="py-2.5 px-1.5 w-[10%] text-start font-bold text-emerald-300">{tr('صافي الراتب', 'Net salary')}</th>
-              <th className="py-2.5 px-1.5 w-[6%] text-start font-bold text-purple-300">{tr('المنشأة', 'Employer')}</th>
-              <th className="py-2.5 px-1 w-[3%] text-center font-bold">{tr('قسيمة', 'Payslip')}</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100 bg-white">
-            {!currentRun || filteredItems.length === 0 ? (
-              <tr>
-                <td colSpan={13} className="py-12 text-center text-slate-400">
-                  {tr('لا توجد بنود رواتب مطابقة للبحث أو الفترة', 'No payroll items match this search or period')}
-                </td>
-              </tr>
-            ) : (
-              filteredItems.map((item, idx) => {
-                const emp = employees.find(e => e.id === item.employeeId);
-                const hasWarning = item.warningFlags.length > 0;
-                const paymentBatch = getEmployeePaymentBatch(item.employeeId);
-                const entitlementStatus = item.entitlementStatus || 'PAYABLE';
-                const canSelectForPayment = entitlementStatus === 'PAYABLE' && item.netSalary > 0 && !committedEmployeeIds.has(item.employeeId);
-
-                return (
-                  <tr 
-                    key={`${item.id || 'item'}-${idx}`} 
-                    className={`hover:bg-slate-50 transition-colors text-[11px] ${
-                      item.isSuspended ? 'bg-amber-50/40' : (hasWarning ? 'bg-amber-50/20' : '')
-                    }`}
-                  >
-                    {/* Name & Flags */}
-                    <td className="py-2.5 px-2 truncate">
-                      <div className="flex items-start gap-2">
-                        <input
-                          type="checkbox"
-                          disabled={!canSelectForPayment}
-                          checked={selectedPaymentEmployeeIds.includes(item.employeeId)}
-                          onChange={() => togglePaymentEmployee(item.employeeId)}
-                          className="mt-0.5 accent-emerald-600 disabled:opacity-30"
-                          title={canSelectForPayment ? tr('تحديد لدفعة تحويل', 'Select for payment batch') : tr('الموظف مرتبط بدفعة أو غير قابل للتحويل', 'Employee is already in a batch or not eligible')}
-                        />
-                        <div className="min-w-0 grow">
-                          <div className="font-bold text-slate-900 flex items-center gap-1 truncate">
-                            <span className="truncate">{item.employeeName}</span>
-                            <span
-                              className={`w-1.5 h-1.5 rounded-full shrink-0 ${item.gosiEnabled === false ? 'bg-slate-300' : 'bg-emerald-500'}`}
-                              title={item.gosiEnabled === false
-                                ? tr('غير خاضع للتأمينات', 'Not subject to GOSI')
-                                : item.nationality === 'SAUDI'
-                                  ? `${tr('موظف', 'Employee')} ${((item.gosiEmployeeRate || 0) * 100).toFixed(2)}% / ${tr('شركة', 'Employer')} ${((item.gosiEmployerRate || 0) * 100).toFixed(2)}%`
-                                  : tr('غير سعودي: المخاطر المهنية على الشركة فقط', 'Non-Saudi: occupational hazards paid by employer only')}
-                            />
-                          </div>
-                          <div className="text-[10px] text-slate-400 font-mono">{item.employeeNo}</div>
-                          {paymentBatch ? (
-                            <div className={`inline-flex mt-0.5 px-1.5 py-0.5 rounded border text-[9px] font-bold ${PAYMENT_STATUS_CONFIG[paymentBatch.status].classes}`} title={paymentBatch.batchNumber}>
-                              {language === 'ar' ? PAYMENT_STATUS_CONFIG[paymentBatch.status].labelAr : PAYMENT_STATUS_CONFIG[paymentBatch.status].labelEn} • {paymentBatch.batchNumber}
-                            </div>
-                          ) : <div className={`inline-flex mt-0.5 px-1.5 py-0.5 rounded border text-[9px] font-bold ${ENTITLEMENT_CONFIG[entitlementStatus].classes}`} title={item.entitlementReason || ''}>{language === 'ar' ? ENTITLEMENT_CONFIG[entitlementStatus].labelAr : ENTITLEMENT_CONFIG[entitlementStatus].labelEn}</div>}
-                          {!paymentBatch && ['APPROVED', 'POSTED'].includes(currentRun.status) && (
-                            <select value={entitlementStatus} onChange={event => handleEntitlementStatusChange(item, event.target.value as PayrollEntitlementStatus)} className="block mt-1 max-w-full px-1.5 py-1 rounded-lg border border-slate-200 bg-white text-[9px] font-bold">
-                              {Object.entries(ENTITLEMENT_CONFIG).map(([status, config]) => <option key={status} value={status}>{language === 'ar' ? config.labelAr : config.labelEn}</option>)}
-                            </select>
-                          )}
-                          {item.entitlementReason && <div className="text-[9px] text-slate-500 mt-0.5 truncate" title={`${item.entitlementReason}${item.entitlementDocumentRef ? ` • ${item.entitlementDocumentRef}` : ''}`}>{item.entitlementReason}{item.entitlementDocumentRef ? ` • ${item.entitlementDocumentRef}` : ''}</div>}
-                          {['UNDER_REVIEW', 'APPROVED'].includes(currentRun.status) && (
-                            <button type="button" onClick={() => openAdjustmentModal(item)} className="mt-1 text-[9px] font-bold text-blue-700 hover:text-blue-900 inline-flex items-center gap-1">
-                              <PencilLine className="w-3 h-3" /> {tr('تعديل إضافة أو خصم', 'Edit addition or deduction')}
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                      {hasWarning && (
-                        <div className="text-[9px] text-amber-700 font-semibold truncate mt-0.5" title={item.warningFlags.join(' • ')}>
-                          ⚠️ {item.warningFlags[0]}
-                        </div>
-                      )}
-                    </td>
-
-                    {/* Department */}
-                    <td className="py-2.5 px-1.5 text-slate-600 truncate font-medium">
-                      {item.department}
-                    </td>
-
-                    {/* Base Salary */}
-                    <td className="py-2.5 px-1.5 font-semibold text-slate-800 whitespace-nowrap">
-                      {formatSAR(item.baseSalary)}
-                    </td>
-
-                    {/* Housing & Transport */}
-                    <td className="py-2.5 px-1.5 text-slate-600 whitespace-nowrap">
-                      {formatSAR(item.housingAllowance + item.transportAllowance + item.otherAllowances)}
-                    </td>
-
-                    {/* Overtime */}
-                    <td className="py-2.5 px-1.5 whitespace-nowrap">
-                      {(item.overtimeAmount + item.bonuses) > 0 ? (
-                        <div>
-                          <span className="font-bold text-emerald-700">{formatSAR(item.overtimeAmount + item.bonuses)}</span>
-                          {item.overtimeAmount > 0 && <div className="text-[9px] text-slate-400">{tr('إضافي', 'OT')}: {item.overtimeHours}{tr('س', 'h')}</div>}
-                          {item.bonuses > 0 && <div className="text-[9px] text-emerald-600">{tr('مؤقت', 'One-time')}: {formatSAR(item.bonuses)}</div>}
-                        </div>
-                      ) : (
-                        <span className="text-slate-300">-</span>
-                      )}
-                    </td>
-
-                    {/* Gross */}
-                    <td className="py-2.5 px-1.5 font-bold text-slate-900 whitespace-nowrap">
-                      {formatSAR(item.totalGrossSalary)}
-                    </td>
-
-                    {/* Absence & Delay */}
-                    <td className="py-2.5 px-1.5 text-rose-600 whitespace-nowrap">
-                      {(item.delayDeduction + item.absenceDeduction + item.unpaidLeaveDeduction) > 0 ? (
-                        formatSAR(item.delayDeduction + item.absenceDeduction + item.unpaidLeaveDeduction)
-                      ) : (
-                        <span className="text-slate-300">-</span>
-                      )}
-                    </td>
-
-                    {/* GOSI Employee */}
-                    <td className="py-2.5 px-1.5 text-slate-700 font-medium whitespace-nowrap">
-                      {item.gosiEmployeeShare > 0 ? (
-                        formatSAR(item.gosiEmployeeShare)
-                      ) : item.nationality === 'NON_SAUDI' && item.gosiEnabled !== false && item.gosiEmployerShare > 0 ? (
-                        <span className="text-[9px] font-bold text-purple-700" title={tr('لا يخصم من الموظف؛ حصة المخاطر المهنية تتحملها الشركة', 'No employee deduction; occupational hazards are employer-paid')}>
-                          {tr('على الشركة فقط', 'Employer only')}
-                        </span>
-                      ) : (
-                        <span className="text-slate-300">-</span>
-                      )}
-                    </td>
-
-                    {/* Loan Deduction */}
-                    <td className="py-2.5 px-1.5 text-slate-700 whitespace-nowrap">
-                      {item.loanDeduction > 0 ? (
-                        formatSAR(item.loanDeduction)
-                      ) : (
-                        <span className="text-slate-300">-</span>
-                      )}
-                    </td>
-
-                    {/* Total Deductions */}
-                    <td className="py-2.5 px-1.5 font-bold text-rose-700 whitespace-nowrap">
-                      {formatSAR(item.totalDeductions)}
-                    </td>
-
-                    {/* Net Salary */}
-                    <td className="py-2.5 px-1.5 font-extrabold text-emerald-800 font-mono bg-emerald-50/40 whitespace-nowrap">
-                      {formatSAR(item.netSalary)}
-                    </td>
-
-                    {/* GOSI Employer Share */}
-                    <td className="py-2.5 px-1.5 text-purple-700 font-medium whitespace-nowrap">
-                      {formatSAR(item.gosiEmployerShare)}
-                    </td>
-
-                    {/* Payslip Modal Trigger */}
-                    <td className="py-2.5 px-1 text-center">
-                      <button
-                        onClick={() => {
-                          if (emp) onViewEmployeeStatement(emp);
-                        }}
-                        title={tr('عرض وطباعة قسيمة الراتب', 'View and print payslip')}
-                        className="p-1 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors cursor-pointer"
-                      >
-                        <FileText className="w-3.5 h-3.5" />
-                      </button>
-                    </td>
-
-                  </tr>
-                );
-              })
-            )}
-          </tbody>
-        </table>
-      </div>
+      <PayrollRunItemsTable
+        currentRun={currentRun}
+        filteredItems={filteredItems}
+        eligibleFilteredItems={eligibleFilteredItems}
+        selectedPaymentEmployeeIds={selectedPaymentEmployeeIds}
+        employees={employees}
+        committedEmployeeIds={committedEmployeeIds}
+        language={language}
+        onToggleAllEligible={toggleAllEligibleEmployees}
+        onTogglePaymentEmployee={togglePaymentEmployee}
+        getEmployeePaymentBatch={getEmployeePaymentBatch}
+        onEntitlementStatusChange={handleEntitlementStatusChange}
+        onOpenAdjustment={openAdjustmentModal}
+        onViewEmployeeStatement={onViewEmployeeStatement}
+        tr={tr}
+      />
 
       {isPaymentBatchModalOpen && currentRun && (
-        <div className="fixed inset-0 z-[100] bg-slate-950/65 backdrop-blur-sm flex items-center justify-center p-4">
-          <div data-no-translate className="bg-white rounded-3xl max-w-lg w-full shadow-2xl border border-slate-200 overflow-hidden">
-            <div className="bg-slate-900 text-white p-5 flex items-center justify-between">
-              <div className="flex items-center gap-3"><CircleDollarSign className="w-6 h-6 text-emerald-400" /><div><h3 className="font-black">{tr('إنشاء دفعة تحويل رواتب', 'Create Payroll Payment Batch')}</h3><p className="text-xs text-slate-400">{selectedPaymentItems.length} {tr('موظف', 'employees')} • {formatSAR(selectedPaymentTotal)}</p></div></div>
-              <button type="button" onClick={() => setIsPaymentBatchModalOpen(false)} className="p-1.5 hover:bg-white/10 rounded-lg"><X className="w-5 h-5" /></button>
-            </div>
-            <div className="p-6 space-y-4 text-xs">
-              <div>
-                <label className="block font-bold text-slate-700 mb-1">{tr('طريقة التحويل *', 'Payment method *')}</label>
-                <select value={paymentBatchForm.method} onChange={event => setPaymentBatchForm({ ...paymentBatchForm, method: event.target.value as PaymentMethod })} className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold">
-                  <option value="WPS">{tr('حماية الأجور WPS', 'WPS')}</option><option value="BANK_TRANSFER">{tr('تحويل بنكي', 'Bank transfer')}</option><option value="CASH">{tr('دفع نقدي', 'Cash')}</option>
-                </select>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div><label className="block font-bold text-slate-700 mb-1">{tr('تاريخ التحويل المجدول *', 'Scheduled payment date *')}</label><input type="date" required value={paymentBatchForm.scheduledDate} onChange={event => setPaymentBatchForm({ ...paymentBatchForm, scheduledDate: event.target.value })} className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl" /></div>
-                <div><label className="block font-bold text-slate-700 mb-1">{tr('مرجع التحويل', 'Payment reference')}</label><input value={paymentBatchForm.reference} onChange={event => setPaymentBatchForm({ ...paymentBatchForm, reference: event.target.value })} className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl" placeholder={tr('رقم ملف البنك أو الحوالة', 'Bank file or transfer reference')} /></div>
-              </div>
-              <div><label className="block font-bold text-slate-700 mb-1">{tr('ملاحظات', 'Notes')}</label><textarea rows={2} value={paymentBatchForm.notes} onChange={event => setPaymentBatchForm({ ...paymentBatchForm, notes: event.target.value })} className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl resize-none" placeholder={tr('مثال: الدفعة الأولى من رواتب الشهر', 'Example: first payroll batch of the month')} /></div>
-              <div className="rounded-xl bg-emerald-50 border border-emerald-200 p-3 flex items-center justify-between"><span className="font-bold text-emerald-900">{tr('إجمالي الدفعة', 'Batch total')}</span><span className="font-black text-emerald-800 text-base">{formatSAR(selectedPaymentTotal)}</span></div>
-            </div>
-            <div className="p-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-2">
-              <button type="button" onClick={() => setIsPaymentBatchModalOpen(false)} className="px-4 py-2 bg-white border border-slate-200 rounded-xl font-bold">{tr('إلغاء', 'Cancel')}</button>
-              <button type="button" onClick={handleCreatePaymentBatch} disabled={!paymentBatchForm.scheduledDate || !selectedPaymentItems.length} className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-black disabled:opacity-40">{tr('إنشاء وجدولة الدفعة', 'Create and schedule batch')}</button>
-            </div>
-          </div>
-        </div>
+        <PayrollPaymentBatchModal
+          form={paymentBatchForm}
+          selectedCount={selectedPaymentItems.length}
+          total={selectedPaymentTotal}
+          onChange={setPaymentBatchForm}
+          onClose={() => setIsPaymentBatchModalOpen(false)}
+          onSubmit={handleCreatePaymentBatch}
+          tr={tr}
+        />
       )}
 
       {adjustmentItem && currentRun && (

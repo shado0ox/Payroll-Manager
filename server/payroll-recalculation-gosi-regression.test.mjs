@@ -2,7 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
-const payrollView = fs.readFileSync(new URL('../src/components/PayrollRunsView.tsx', import.meta.url), 'utf8');
+const payrollView = [
+  fs.readFileSync(new URL('../src/components/PayrollRunsView.tsx', import.meta.url), 'utf8'),
+  fs.readFileSync(new URL('../src/components/payroll/PayrollRunItemsTable.tsx', import.meta.url), 'utf8'),
+].join('\n');
 const employeesView = fs.readFileSync(new URL('../src/components/EmployeesView.tsx', import.meta.url), 'utf8');
 const payrollEngine = fs.readFileSync(new URL('../src/utils/payrollEngine.ts', import.meta.url), 'utf8');
 const heldEntitlementsTransform = fs.readFileSync(new URL('../scripts/apply-held-payroll-entitlements.mjs', import.meta.url), 'utf8');

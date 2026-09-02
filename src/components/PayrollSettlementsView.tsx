@@ -113,8 +113,11 @@ export const PayrollSettlementsView: React.FC<PayrollSettlementsViewProps> = ({
       for (const item of run.items) {
         const employee = companyEmployees.find(candidate => candidate.id === item.employeeId);
         if (!employee || Number(item.netSalary || 0) <= 0) continue;
-        const isHeld = (item.entitlementStatus || 'PAYABLE') === 'HELD';
-        if (!isHeld || paidPayrollKeys.has(`${run.id}:${item.employeeId}`)) continue;
+        const entitlementStatus = item.entitlementStatus || 'PAYABLE';
+        const isHeld = entitlementStatus === 'HELD';
+        const runHasClosedPaymentBatch = (run.paymentBatches || []).some(batch => ['SCHEDULED', 'PAID'].includes(batch.status));
+        const isReleasedAfterBatch = entitlementStatus === 'PAYABLE' && runHasClosedPaymentBatch;
+        if ((!isHeld && !isReleasedAfterBatch) || paidPayrollKeys.has(`${run.id}:${item.employeeId}`)) continue;
         const key = `HELD:${run.id}:${item.id}`;
         if (settlementKeys.has(key)) continue;
         result.push({

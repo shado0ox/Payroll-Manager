@@ -13,7 +13,7 @@ async function request<T>(url: string, options: RequestInit = {}): Promise<T> {
 
 let stateVersion = 0;
 let syncedState: Record<string, any> | null = null;
-const MUTABLE_COLLECTIONS = ['companies', 'employees', 'attendance', 'loans', 'penalties', 'temporaryEarnings', 'leaves', 'payrollRuns', 'journals'] as const;
+const MUTABLE_COLLECTIONS = ['companies', 'employees', 'attendance', 'loans', 'penalties', 'temporaryEarnings', 'leaves', 'payrollRuns', 'payrollSettlements', 'journals'] as const;
 
 function cloneState<T>(value: T): T {
   return value == null ? value : structuredClone(value);
@@ -42,7 +42,21 @@ export const api = {
   startRegistration: (data: Record<string, unknown>) => request<{requestId:string; maskedEmail:string; expiresInSeconds:number}>('/api/auth/register/start', { method:'POST', body:JSON.stringify(data) }),
   verifyRegistration: (requestId: string, code: string) => request<{companyCode:string; username:string; trialEndsAt:string; trialDays:number}>('/api/auth/register/verify', { method:'POST', body:JSON.stringify({requestId,code}) }),
   updateSubscription: (companyId:string,status:'TRIAL'|'ACTIVE'|'EXPIRED'|'SUSPENDED',endsAt:string|null) => request(`/api/admin/companies/${encodeURIComponent(companyId)}/subscription`, { method:'PUT',body:JSON.stringify({status,endsAt}) }),
+  saveEmployee: async (employee:any) => {
+    const result = await request<{employee:any;created:boolean;version:number;updated_at:string}>(`/api/employees/${encodeURIComponent(employee.id)}`, { method:'PUT', body:JSON.stringify(employee) });
+    stateVersion = result.version;
+    if (syncedState) {
+      const employees = Array.isArray(syncedState.employees) ? [...syncedState.employees] : [];
+      const index = employees.findIndex((item:any) => item?.id === result.employee.id);
+      if (index >= 0) employees[index] = cloneState(result.employee);
+      else employees.push(cloneState(result.employee));
+      syncedState = { ...syncedState, employees };
+    }
+    return result;
+  },
   deleteEmployee: (employeeId:string) => request<{deleted:boolean;archived:boolean}>(`/api/employees/${encodeURIComponent(employeeId)}`, { method:'DELETE' }),
+  passwordResetRequest: (email: string) => request<{ok:boolean;message:string}>('/api/auth/password-reset/request', { method:'POST', body:JSON.stringify({ email }) }),
+  passwordResetConfirm: (token: string, password: string) => request<{ok:boolean}>('/api/auth/password-reset/confirm', { method:'POST', body:JSON.stringify({ token, password }) }),
   login: (companyCode: string, username: string, password: string) => request<{user: UserAccount; companyId: string}>('/api/auth/login', { method:'POST', body:JSON.stringify({ companyCode, username, password }) }),
   session: () => request<{user: UserAccount}>('/api/auth/session'),
   logout: () => request<void>('/api/auth/logout', { method:'POST' }),

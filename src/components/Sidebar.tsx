@@ -46,66 +46,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const isAdmin = activeRole === 'ADMIN';
 
   const navItems: { id: NavigationTab; label: string; icon: React.ComponentType<{ className?: string }>; adminOnly?: boolean; managementOnly?: boolean }[] = [
-    {
-      id: 'dashboard',
-      label: t('dashboard'),
-      icon: LayoutDashboard,
-    },
-    {
-      id: 'company_profile',
-      label: t('companyProfile'),
-      icon: Building2,
-      managementOnly: true,
-    },
-    {
-      id: 'payroll_runs',
-      label: t('payrollRuns'),
-      icon: Banknote,
-    },
-    {
-      id: 'employees',
-      label: `${t('employees')} (${employeesCount})`,
-      icon: Users,
-    },
-    {
-      id: 'attendance',
-      label: t('attendance'),
-      icon: Clock,
-    },
-    {
-      id: 'loans_penalties',
-      label: t('loans'),
-      icon: Receipt,
-    },
-    {
-      id: 'journals',
-      label: t('journals'),
-      icon: Layers,
-      managementOnly: true,
-    },
-    {
-      id: 'reports',
-      label: t('reports'),
-      icon: BarChart3,
-    },
-    {
-      id: 'users',
-      label: t('users'),
-      icon: UserCheck,
-      adminOnly: true,
-    },
-    {
-      id: 'settings',
-      label: t('settings'),
-      icon: Settings,
-      adminOnly: true,
-    },
-    {
-      id: 'audit_logs',
-      label: t('audit'),
-      icon: ShieldAlert,
-      adminOnly: true,
-    },
+    { id: 'dashboard', label: t('dashboard'), icon: LayoutDashboard },
+    { id: 'employees', label: `${t('employees')} (${employeesCount})`, icon: Users },
+    { id: 'payroll_runs', label: t('payrollRuns'), icon: Banknote },
+    { id: 'attendance', label: t('attendance'), icon: Clock },
+    { id: 'loans_penalties', label: t('loans'), icon: Receipt },
+    { id: 'company_profile', label: t('companyProfile'), icon: Building2, managementOnly: true },
+    { id: 'journals', label: t('journals'), icon: Layers, managementOnly: true },
+    { id: 'reports', label: t('reports'), icon: BarChart3 },
+    { id: 'users', label: t('users'), icon: UserCheck, adminOnly: true },
+    { id: 'settings', label: t('settings'), icon: Settings, adminOnly: true },
+    { id: 'audit_logs', label: t('audit'), icon: ShieldAlert, adminOnly: true },
   ];
 
   const visibleNavItems = navItems.filter(item => hasPermission(currentUser, TAB_PERMISSION[item.id]));
