@@ -47,4 +47,5 @@ import './apply-loan-payoff-month-filters.mjs';
 import './apply-onboarding-employee-activation.mjs';
 
 import './apply-payroll-current-month-default.mjs';
+import './apply-payroll-render-memoization.mjs';
 import './apply-component-splitting.mjs';
