@@ -17,9 +17,9 @@ test('large views delegate stable sections to memoized child components', () => 
   assert.match(companyTabs, /React\.memo/);
 });
 
-test('prior balance details remain owned by the payroll item table', () => {
-  assert.match(payrollTable, /priorPeriodDetails/);
-  assert.match(payrollTable, /رصيد سابق/);
+test('prior balance remains owned by the payroll item table after compact mobile rendering', () => {
+  assert.match(payrollTable, /priorPeriodNet/);
+  assert.match(payrollTable, /item\.overtimeAmount \+ item\.bonuses \+ Number\(item\.priorPeriodNet \|\| 0\)/);
 });
 
 test('large-view render filters and reductions are memoized', () => {
