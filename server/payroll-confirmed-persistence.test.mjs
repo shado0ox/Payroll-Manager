@@ -7,10 +7,10 @@ const payroll = fs.readFileSync(new URL('../src/components/PayrollRunsView.tsx',
 
 test('payroll screen uses server-confirmed persistence handler', () => {
   assert.match(app, /handleSavePayrollRunConfirmed/);
-  assert.match(app, /await persistenceQueueRef\.current/);
-  assert.match(app, /await api\.saveState\(nextState\)/);
-  assert.match(app, /remoteStateSnapshotRef\.current = nextState/);
+  assert.match(app, /persistenceQueueRef\.current\.catch\(\(\) => undefined\)\.then\(\(\) => api\.savePayrollRun\(run\)\)/);
+  assert.match(app, /remoteStateSnapshotRef\.current = next/);
   assert.match(app, /onSavePayrollRun=\{handleSavePayrollRunConfirmed\}/);
+  assert.doesNotMatch(app, /await api\.saveState\(nextState\)/);
 });
 
 test('payroll callback contract is asynchronous and reports persistence success', () => {

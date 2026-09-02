@@ -117,6 +117,12 @@ export const api = {
     removeFromSyncedCollection('temporaryEarnings', id);
     return result;
   },
+  savePayrollRun: async (record: any) => {
+    const result = await request<{record:any;created:boolean;version:number;updated_at:string}>(`/api/payroll-runs/${encodeURIComponent(record.id)}`, { method:'PUT', body:JSON.stringify(record) });
+    stateVersion = result.version;
+    updateSyncedCollection('payrollRuns', result.record);
+    return result;
+  },
   deleteEmployee: (employeeId:string) => request<{deleted:boolean;archived:boolean}>(`/api/employees/${encodeURIComponent(employeeId)}`, { method:'DELETE' }),
   passwordResetRequest: (email: string) => request<{ok:boolean;message:string}>('/api/auth/password-reset/request', { method:'POST', body:JSON.stringify({ email }) }),
   passwordResetConfirm: (token: string, password: string) => request<{ok:boolean}>('/api/auth/password-reset/confirm', { method:'POST', body:JSON.stringify({ token, password }) }),
