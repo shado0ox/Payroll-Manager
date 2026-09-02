@@ -1,0 +1,72 @@
+  const paymentBatches = useMemo(() => currentRun?.paymentBatches || [], [currentRun?.paymentBatches]);
+  const paymentSummary = useMemo(() => {
+    const committedPaymentBatches = paymentBatches.filter(batch => ['SCHEDULED', 'PAID'].includes(batch.status));
+    const committedEmployeeIds = new Set(committedPaymentBatches.flatMap(batch => batch.employeeIds));
+    const paidAmount = paymentBatches.filter(batch => batch.status === 'PAID').reduce((sum, batch) => sum + batch.totalAmount, 0);
+    const scheduledAmount = paymentBatches.filter(batch => batch.status === 'SCHEDULED').reduce((sum, batch) => sum + batch.totalAmount, 0);
+    const entitlementTotals = (currentRun?.items || []).reduce<Record<PayrollEntitlementStatus, number>>((totals, item) => {
+      const status = item.entitlementStatus || 'PAYABLE';
+      totals[status] += item.netSalary;
+      return totals;
+    }, { PAYABLE: 0, HELD: 0, UNDER_SETTLEMENT: 0, SETTLED: 0, CANCELLED_WITH_DOCUMENT: 0 });
+    const exceptionalProcessedAmount = entitlementTotals.HELD + entitlementTotals.SETTLED + entitlementTotals.CANCELLED_WITH_DOCUMENT;
+    return {
+      committedEmployeeIds,
+      paidAmount,
+      scheduledAmount,
+      heldAmount: entitlementTotals.HELD,
+      underSettlementAmount: entitlementTotals.UNDER_SETTLEMENT,
+      settledAmount: entitlementTotals.SETTLED,
+      cancelledByDocumentAmount: entitlementTotals.CANCELLED_WITH_DOCUMENT,
+      remainingToSchedule: Math.max(0, entitlementTotals.PAYABLE - paidAmount - scheduledAmount),
+      unpaidAmount: Math.max(0, (currentRun?.totalNetSalaries || 0) - paidAmount - exceptionalProcessedAmount),
+      closeOutstandingAmount: Math.max(0, (currentRun?.totalNetSalaries || 0) - paidAmount - exceptionalProcessedAmount),
+    };
+  }, [paymentBatches, currentRun?.items, currentRun?.totalNetSalaries]);
+  const { committedEmployeeIds, paidAmount, scheduledAmount, heldAmount, underSettlementAmount, settledAmount, cancelledByDocumentAmount, remainingToSchedule, unpaidAmount, closeOutstandingAmount } = paymentSummary;
+
+  const getEmployeePaymentBatch = (employeeId: string) => {
+    return [...paymentBatches].reverse().find(batch => batch.employeeIds.includes(employeeId) && ['SCHEDULED', 'PAID'].includes(batch.status));
+  };
+
+  const eligibleFilteredItems = useMemo(() => filteredItems.filter(item =>
+    (item.entitlementStatus || 'PAYABLE') === 'PAYABLE' && item.netSalary > 0 && !committedEmployeeIds.has(item.employeeId)
+  ), [filteredItems, committedEmployeeIds]);
+  const selectedPaymentItems = useMemo(() => currentRun?.items.filter(item => selectedPaymentEmployeeIds.includes(item.employeeId)) || [], [currentRun?.items, selectedPaymentEmployeeIds]);
+  const referencedPriorEntitlementKeys = useMemo(() => {
+    const keys = new Set<string>();
+    companyRuns.forEach(run => (run.paymentBatches || []).filter(batch => ['SCHEDULED', 'PAID'].includes(batch.status)).forEach(batch => {
+      (batch.priorEntitlements || []).forEach(ref => keys.add(`${ref.sourcePayrollRunId}:${ref.sourcePayrollItemId}`));
+    }));
+    return keys;
+  }, [companyRuns]);
+  const availablePriorEntitlementsByEmployee = useMemo(() => {
+    const byEmployee = new Map<string, PayrollPriorEntitlement[]>();
+    companyRuns.filter(run => run.periodMonth < selectedPeriod).forEach(run => run.items
+      .filter(item => item.employeeId
+        && (item.entitlementStatus || 'PAYABLE') === 'HELD'
+        && item.entitlementReason === 'MISSING_BANK_ACCOUNT'
+        && item.netSalary > 0
+        && !referencedPriorEntitlementKeys.has(`${run.id}:${item.id}`))
+      .forEach(item => {
+        const entitlement = {
+        sourcePayrollRunId: run.id,
+        sourcePayrollItemId: item.id,
+        sourcePeriodMonth: run.periodMonth,
+        employeeId: item.employeeId,
+        employeeNo: item.employeeNo,
+        employeeName: item.employeeName,
+        amount: roundAmount(item.netSalary),
+        };
+        byEmployee.set(item.employeeId, [...(byEmployee.get(item.employeeId) || []), entitlement]);
+      }));
+    return byEmployee;
+  }, [companyRuns, selectedPeriod, referencedPriorEntitlementKeys]);
+  const getAvailablePriorEntitlements = (employeeId: string) => availablePriorEntitlementsByEmployee.get(employeeId) || [];
+  const { selectedPriorEntitlements, selectedPaymentTotal } = useMemo(() => {
+    const selectedPriorEntitlements = selectedPaymentItems.flatMap(item => availablePriorEntitlementsByEmployee.get(item.employeeId) || []);
+    const currentTotal = selectedPaymentItems.reduce((sum, item) => sum + item.netSalary, 0);
+    const priorTotal = selectedPriorEntitlements.reduce((sum, ref) => sum + ref.amount, 0);
+    return { selectedPriorEntitlements, selectedPaymentTotal: roundAmount(currentTotal + priorTotal) };
+  }, [selectedPaymentItems, availablePriorEntitlementsByEmployee]);
+
