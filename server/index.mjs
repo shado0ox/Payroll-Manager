@@ -481,6 +481,7 @@ async function replaceNormalizedPayrollData(client, state) {
   const companies = asArray(state?.companies);
   const employees = asArray(state?.employees);
   const payrollRuns = asArray(state?.payrollRuns);
+  const payrollSettlements = asArray(state?.payrollSettlements);
 
   await client.query(`INSERT INTO ${q('companies')} (id,company_code,name_ar,name_en,is_archived)
     SELECT company->>'id',company->>'companyCode',COALESCE(company->>'nameAr',''),COALESCE(company->>'nameEn',''),false
@@ -494,6 +495,7 @@ async function replaceNormalizedPayrollData(client, state) {
   await client.query(`DELETE FROM ${q('loans')}`);
   await client.query(`DELETE FROM ${q('penalties')}`);
   await client.query(`DELETE FROM ${q('temporary_earnings')}`);
+  await client.query(`DELETE FROM ${q('payroll_settlements')}`);
   await client.query(`DELETE FROM ${q('payroll_payment_batch_items')}`);
   await client.query(`DELETE FROM ${q('payroll_payment_batches')}`);
   await client.query(`DELETE FROM ${q('payroll_run_items')}`);
@@ -556,6 +558,19 @@ async function replaceNormalizedPayrollData(client, state) {
     FROM jsonb_array_elements($1::jsonb) AS runs(run)
     CROSS JOIN LATERAL jsonb_array_elements(COALESCE(run->'paymentBatches','[]'::jsonb)) AS batches(batch)
     CROSS JOIN LATERAL jsonb_array_elements_text(COALESCE(batch->'employeeIds','[]'::jsonb)) WITH ORDINALITY AS employee_ids(employee_id,employee_ordinality)`, [JSON.stringify(payrollRuns)]);
+
+  await client.query(`INSERT INTO ${q('payroll_settlements')} (
+      id,company_id,employee_id,period_month,period_start,period_end,amount,reason,source_payroll_run_id,
+      source_payroll_item_id,dedupe_key,status,payment_method,payment_date,payment_reference,created_at,paid_at,
+      reversed_at,reversal_reason,payload,sort_order
+    ) SELECT settlement->>'id',settlement->>'companyId',settlement->>'employeeId',settlement->>'periodMonth',
+      NULLIF(settlement->>'periodStart','')::date,NULLIF(settlement->>'periodEnd','')::date,
+      COALESCE(NULLIF(settlement->>'amount','')::numeric,0),settlement->>'reason',NULLIF(settlement->>'sourcePayrollRunId',''),
+      NULLIF(settlement->>'sourcePayrollItemId',''),settlement->>'dedupeKey',COALESCE(settlement->>'status','PENDING'),
+      NULLIF(settlement->>'paymentMethod',''),NULLIF(settlement->>'paymentDate','')::date,NULLIF(settlement->>'paymentReference',''),
+      NULLIF(settlement->>'createdAt','')::timestamptz,NULLIF(settlement->>'paidAt','')::timestamptz,
+      NULLIF(settlement->>'reversedAt','')::timestamptz,NULLIF(settlement->>'reversalReason',''),settlement,(ordinality-1)::integer
+    FROM jsonb_array_elements($1::jsonb) WITH ORDINALITY AS source(settlement,ordinality)`, [JSON.stringify(payrollSettlements)]);
 }
 
 async function replaceNormalizedOperationsData(client, state) {
@@ -713,12 +728,13 @@ async function replaceNormalizedCoreData(client, state) {
 
 async function hydrateNormalizedPayrollData(client, rawState) {
   const state = clone(rawState || {});
-  const [employeeResult, runResult, itemResult, batchResult, batchItemResult] = await Promise.all([
+  const [employeeResult, runResult, itemResult, batchResult, batchItemResult, settlementResult] = await Promise.all([
     client.query(`SELECT payload FROM ${q('employees')} WHERE is_archived=false ORDER BY sort_order,id`),
     client.query(`SELECT id,payload FROM ${q('payroll_runs')} ORDER BY sort_order,id`),
     client.query(`SELECT payroll_run_id,payload FROM ${q('payroll_run_items')} ORDER BY payroll_run_id,sort_order,id`),
     client.query(`SELECT id,payroll_run_id,payload FROM ${q('payroll_payment_batches')} ORDER BY payroll_run_id,sort_order,id`),
     client.query(`SELECT payment_batch_id,employee_id FROM ${q('payroll_payment_batch_items')} ORDER BY payment_batch_id,sort_order`),
+    client.query(`SELECT payload FROM ${q('payroll_settlements')} ORDER BY sort_order,id`),
   ]);
   const itemsByRun = new Map();
   for (const row of itemResult.rows) {
@@ -741,6 +757,7 @@ async function hydrateNormalizedPayrollData(client, rawState) {
     items: itemsByRun.get(row.id) || [],
     paymentBatches: batchesByRun.get(row.id) || [],
   }));
+  state.payrollSettlements = settlementResult.rows.map(row => row.payload);
   return state;
 }
 
@@ -949,6 +966,19 @@ async function migrate() {
     payment_batch_id text NOT NULL REFERENCES ${q('payroll_payment_batches')}(id) ON DELETE CASCADE,
     employee_id text NOT NULL, sort_order integer NOT NULL DEFAULT 0, PRIMARY KEY (payment_batch_id,employee_id)
   )`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS ${q('payroll_settlements')} (
+    id text PRIMARY KEY, company_id text NOT NULL REFERENCES ${q('companies')}(id) ON DELETE RESTRICT,
+    employee_id text NOT NULL REFERENCES ${q('employees')}(id) ON DELETE RESTRICT,
+    period_month text NOT NULL, period_start date NOT NULL, period_end date NOT NULL, amount numeric(14,2) NOT NULL CHECK (amount > 0),
+    reason text NOT NULL, source_payroll_run_id text, source_payroll_item_id text, dedupe_key text NOT NULL,
+    status text NOT NULL, payment_method text, payment_date date, payment_reference text, created_at timestamptz NOT NULL,
+    paid_at timestamptz, reversed_at timestamptz, reversal_reason text, payload jsonb NOT NULL,
+    sort_order integer NOT NULL DEFAULT 0, updated_at timestamptz NOT NULL DEFAULT now(),
+    CHECK (period_month ~ '^[0-9]{4}-(0[1-9]|1[0-2])$'), CHECK (period_end >= period_start),
+    CHECK (reason IN ('HELD_PAYROLL','RETROACTIVE_EMPLOYEE','PAYROLL_DIFFERENCE')),
+    CHECK (status IN ('PENDING','PAID','REVERSED')),
+    CHECK (payment_method IS NULL OR payment_method IN ('WPS','BANK_TRANSFER','CASH'))
+  )`);
   await pool.query(`CREATE TABLE IF NOT EXISTS ${q('attendance_records')} (
     id text PRIMARY KEY, company_id text NOT NULL REFERENCES ${q('companies')}(id) ON DELETE RESTRICT,
     employee_id text NOT NULL REFERENCES ${q('employees')}(id) ON DELETE CASCADE,
@@ -1055,6 +1085,10 @@ async function migrate() {
     ON ${q('employees')}(company_id,employee_no) WHERE is_archived=false AND employee_no <> ''`);
   await pool.query(`CREATE INDEX IF NOT EXISTS payroll_runs_company_period_idx ON ${q('payroll_runs')}(company_id,period_month DESC)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS payroll_items_employee_idx ON ${q('payroll_run_items')}(employee_id,payroll_run_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS payroll_settlements_company_period_idx ON ${q('payroll_settlements')}(company_id,period_month DESC)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS payroll_settlements_employee_idx ON ${q('payroll_settlements')}(employee_id,created_at DESC)`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS payroll_settlements_active_dedupe_idx
+    ON ${q('payroll_settlements')}(company_id,dedupe_key) WHERE status <> 'REVERSED'`);
   await pool.query(`CREATE INDEX IF NOT EXISTS attendance_employee_period_idx ON ${q('attendance_records')}(employee_id,period_month)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS attendance_company_period_idx ON ${q('attendance_records')}(company_id,period_month)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS leaves_employee_dates_idx ON ${q('leave_requests')}(employee_id,start_date,end_date)`);
@@ -1125,6 +1159,32 @@ async function migrate() {
     }
     await migrationClient.query(`INSERT INTO ${q('schema_migrations')} (version) VALUES ('004_company_trials')
       ON CONFLICT (version) DO NOTHING`);
+    const settlementsMigration = await migrationClient.query(`SELECT 1 FROM ${q('schema_migrations')} WHERE version='005_normalized_settlements'`);
+    if (!settlementsMigration.rowCount) {
+      const source = await migrationClient.query(`SELECT state,version FROM ${q('app_state')} WHERE id=1 FOR UPDATE`);
+      if (source.rowCount) {
+        await migrationClient.query(`INSERT INTO ${q('app_state_migration_backups')} (source_version,state,reason)
+          VALUES ($1,$2::jsonb,'Migration of payroll settlements to normalized storage')
+          ON CONFLICT (source_version) DO NOTHING`, [source.rows[0].version,JSON.stringify(source.rows[0].state)]);
+        await migrationClient.query(`INSERT INTO ${q('payroll_settlements')} (
+            id,company_id,employee_id,period_month,period_start,period_end,amount,reason,source_payroll_run_id,
+            source_payroll_item_id,dedupe_key,status,payment_method,payment_date,payment_reference,created_at,paid_at,
+            reversed_at,reversal_reason,payload,sort_order
+          ) SELECT settlement->>'id',settlement->>'companyId',settlement->>'employeeId',settlement->>'periodMonth',
+            COALESCE(NULLIF(settlement->>'periodStart',''),settlement->>'periodMonth' || '-01')::date,
+            COALESCE(NULLIF(settlement->>'periodEnd',''),(date_trunc('month',(settlement->>'periodMonth' || '-01')::date) + interval '1 month - 1 day')::date::text)::date,
+            COALESCE(NULLIF(settlement->>'amount','')::numeric,0),settlement->>'reason',NULLIF(settlement->>'sourcePayrollRunId',''),
+            NULLIF(settlement->>'sourcePayrollItemId',''),COALESCE(NULLIF(settlement->>'dedupeKey',''),'LEGACY:' || settlement->>'id'),COALESCE(settlement->>'status','PENDING'),
+            NULLIF(settlement->>'paymentMethod',''),NULLIF(settlement->>'paymentDate','')::date,NULLIF(settlement->>'paymentReference',''),
+            COALESCE(NULLIF(settlement->>'createdAt','')::timestamptz,now()),NULLIF(settlement->>'paidAt','')::timestamptz,
+            NULLIF(settlement->>'reversedAt','')::timestamptz,NULLIF(settlement->>'reversalReason',''),settlement,(ordinality-1)::integer
+          FROM jsonb_array_elements(COALESCE($1::jsonb->'payrollSettlements','[]'::jsonb)) WITH ORDINALITY AS source(settlement,ordinality)
+          WHERE NULLIF(settlement->>'id','') IS NOT NULL AND NULLIF(settlement->>'companyId','') IS NOT NULL
+            AND NULLIF(settlement->>'employeeId','') IS NOT NULL AND NULLIF(settlement->>'amount','')::numeric > 0
+          ON CONFLICT (id) DO NOTHING`, [JSON.stringify(source.rows[0].state)]);
+      }
+      await migrationClient.query(`INSERT INTO ${q('schema_migrations')} (version) VALUES ('005_normalized_settlements')`);
+    }
     await migrationClient.query('COMMIT');
   } catch (error) {
     await migrationClient.query('ROLLBACK');
@@ -1146,6 +1206,7 @@ async function migrate() {
         jsonb_array_length(COALESCE(state->'loans','[]'::jsonb)) AS legacy_loans,
         jsonb_array_length(COALESCE(state->'penalties','[]'::jsonb)) AS legacy_penalties,
         jsonb_array_length(COALESCE(state->'temporaryEarnings','[]'::jsonb)) AS legacy_temporary_earnings,
+        jsonb_array_length(COALESCE(state->'payrollSettlements','[]'::jsonb)) AS legacy_payroll_settlements,
         jsonb_array_length(COALESCE(state->'companies','[]'::jsonb)) AS legacy_companies,
         COALESCE((SELECT sum(jsonb_array_length(COALESCE(company->'departments','[]'::jsonb)))
           FROM jsonb_array_elements(COALESCE(state->'companies','[]'::jsonb)) AS companies(company)),0) AS legacy_departments,
@@ -1167,6 +1228,7 @@ async function migrate() {
       legacy_loans,(SELECT count(*) FROM ${q('loans')}) AS table_loans,
       legacy_penalties,(SELECT count(*) FROM ${q('penalties')}) AS table_penalties,
       legacy_temporary_earnings,(SELECT count(*) FROM ${q('temporary_earnings')}) AS table_temporary_earnings,
+      legacy_payroll_settlements,(SELECT count(*) FROM ${q('payroll_settlements')}) AS table_payroll_settlements,
       legacy_companies,(SELECT count(*) FROM ${q('companies')} WHERE is_archived=false) AS table_companies,
       legacy_departments,(SELECT count(*) FROM ${q('company_departments')}) AS table_departments,
       legacy_cost_centers,(SELECT count(*) FROM ${q('cost_centers')}) AS table_cost_centers,
@@ -1182,6 +1244,7 @@ async function migrate() {
         AND legacy_loans=(SELECT count(*) FROM ${q('loans')})
         AND legacy_penalties=(SELECT count(*) FROM ${q('penalties')})
         AND legacy_temporary_earnings=(SELECT count(*) FROM ${q('temporary_earnings')})
+        AND legacy_payroll_settlements=(SELECT count(*) FROM ${q('payroll_settlements')})
         AND legacy_companies=(SELECT count(*) FROM ${q('companies')} WHERE is_archived=false)
         AND legacy_departments=(SELECT count(*) FROM ${q('company_departments')})
         AND legacy_cost_centers=(SELECT count(*) FROM ${q('cost_centers')})
@@ -2416,6 +2479,147 @@ app.put('/api/payroll-runs/:id', auth, writeLimiter, async (req, res, next) => {
   } finally { client.release(); }
 });
 
+function validateSettlementRecord(record, user) {
+  if (!record || typeof record !== 'object' || typeof record.id !== 'string' || !record.id
+    || typeof record.companyId !== 'string' || !user.company_ids.includes(record.companyId)
+    || typeof record.employeeId !== 'string' || !record.employeeId
+    || typeof record.employeeNo !== 'string' || typeof record.employeeName !== 'string'
+    || !validPeriodMonth(record.periodMonth) || !validIsoDate(record.periodStart) || !validIsoDate(record.periodEnd)
+    || record.periodEnd < record.periodStart || !(Number(record.amount) > 0)
+    || !['HELD_PAYROLL','RETROACTIVE_EMPLOYEE','PAYROLL_DIFFERENCE'].includes(record.reason)
+    || typeof record.dedupeKey !== 'string' || !record.dedupeKey
+    || record.status !== 'PAID' || !['WPS','BANK_TRANSFER','CASH'].includes(record.paymentMethod)
+    || !validIsoDate(record.paymentDate) || Number.isNaN(Date.parse(record.createdAt)) || Number.isNaN(Date.parse(record.paidAt))) {
+    throw workflowError(400,'INVALID_PAYROLL_SETTLEMENT');
+  }
+  const sourceRunId = String(record.sourcePayrollRunId || '');
+  const sourceItemId = String(record.sourcePayrollItemId || '');
+  if (sourceItemId && !sourceRunId) throw workflowError(400,'INVALID_SETTLEMENT_SOURCE');
+}
+
+function upsertCompatibilityItem(state, key, record) {
+  const rows = asArray(state[key]);
+  const index = rows.findIndex(item => item?.id === record.id);
+  state[key] = index >= 0
+    ? rows.map(item => item?.id === record.id ? clone(record) : item)
+    : [clone(record),...rows];
+}
+
+function settlementSourceRun(stored, record, entitlementStatus, entitlementReason) {
+  if (!record.sourcePayrollRunId || !record.sourcePayrollItemId) return null;
+  const run = asArray(stored.payrollRuns).find(item => item.id === record.sourcePayrollRunId);
+  const item = asArray(run?.items).find(candidate => candidate.id === record.sourcePayrollItemId);
+  if (!run || run.companyId !== record.companyId || !item || item.employeeId !== record.employeeId) {
+    throw workflowError(400,'INVALID_SETTLEMENT_SOURCE');
+  }
+  if (entitlementStatus === 'SETTLED') {
+    const releasedAfterClosedBatch = item.entitlementStatus === 'PAYABLE' && asArray(run.paymentBatches).some(batch =>
+      ['SCHEDULED','PAID'].includes(batch.status) && !asArray(batch.employeeIds).includes(item.employeeId)
+    );
+    if (!['HELD','UNDER_SETTLEMENT'].includes(item.entitlementStatus) && !releasedAfterClosedBatch) {
+      throw workflowError(409,'SETTLEMENT_SOURCE_NOT_HELD');
+    }
+  }
+  if (entitlementStatus === 'HELD' && item.entitlementStatus !== 'SETTLED') {
+    throw workflowError(409,'SETTLEMENT_SOURCE_NOT_SETTLED');
+  }
+  return {
+    ...run,
+    items:run.items.map(candidate => candidate.id === item.id ? {
+      ...candidate,entitlementStatus,
+      entitlementReason:entitlementStatus === 'SETTLED' ? (candidate.entitlementReason || entitlementReason) : entitlementReason,
+      entitlementUpdatedAt:new Date().toISOString(),
+    } : candidate),
+  };
+}
+
+async function commitSettlementCompatibility(client, rawState, settlement, payrollRun, userId) {
+  const state = clone(rawState || {});
+  upsertCompatibilityItem(state,'payrollSettlements',settlement);
+  if (payrollRun) upsertCompatibilityItem(state,'payrollRuns',payrollRun);
+  return client.query(`UPDATE ${q('app_state')} SET state=$1::jsonb,version=version+1,updated_by=$2,updated_at=now()
+    WHERE id=1 RETURNING version,updated_at`, [JSON.stringify(state),userId]);
+}
+
+app.post('/api/payroll-settlements', auth, writeLimiter, async (req, res, next) => {
+  const client = await pool.connect();
+  try {
+    if (!can(req.user,'MANAGE_PAYROLL')) return res.status(403).json({ error:'FORBIDDEN' });
+    const record = req.body || {};
+    validateSettlementRecord(record,req.user);
+    await client.query('BEGIN');
+    const stateRow = await client.query(`SELECT state FROM ${q('app_state')} WHERE id=1 FOR UPDATE`);
+    if (!stateRow.rowCount) throw workflowError(409,'STATE_NOT_INITIALIZED');
+    const stored = await hydrateNormalizedStateData(client,stateRow.rows[0].state);
+    const employee = await client.query(`SELECT company_id,payload FROM ${q('employees')} WHERE id=$1 AND is_archived=false`, [record.employeeId]);
+    if (!employee.rowCount || employee.rows[0].company_id !== record.companyId) throw workflowError(400,'INVALID_SETTLEMENT_EMPLOYEE');
+    if (record.paymentMethod !== 'CASH' && !String(employee.rows[0].payload?.bankIban || '').startsWith('SA')) {
+      throw workflowError(400,'SETTLEMENT_BANK_IBAN_REQUIRED');
+    }
+    const payrollRun = settlementSourceRun(stored,record,'SETTLED','SETTLED_VIA_PAYROLL_SETTLEMENT');
+    const sortOrder = Number((await client.query(`SELECT COALESCE(min(sort_order),0)-1 AS sort_order FROM ${q('payroll_settlements')} WHERE company_id=$1`, [record.companyId])).rows[0]?.sort_order || 0);
+    await client.query(`INSERT INTO ${q('payroll_settlements')} (
+        id,company_id,employee_id,period_month,period_start,period_end,amount,reason,source_payroll_run_id,
+        source_payroll_item_id,dedupe_key,status,payment_method,payment_date,payment_reference,created_at,paid_at,payload,sort_order
+      ) VALUES ($1,$2,$3,$4,$5::date,$6::date,$7,$8,NULLIF($9,''),NULLIF($10,''),$11,'PAID',$12,$13::date,NULLIF($14,''),$15::timestamptz,$16::timestamptz,$17::jsonb,$18)`, [
+      record.id,record.companyId,record.employeeId,record.periodMonth,record.periodStart,record.periodEnd,Number(record.amount),record.reason,
+      record.sourcePayrollRunId || '',record.sourcePayrollItemId || '',record.dedupeKey,record.paymentMethod,record.paymentDate,
+      record.paymentReference || '',record.createdAt,record.paidAt,JSON.stringify(record),sortOrder
+    ]);
+    if (payrollRun) {
+      const item = payrollRun.items.find(candidate => candidate.id === record.sourcePayrollItemId);
+      await client.query(`UPDATE ${q('payroll_run_items')} SET entitlement_status=$3,entitlement_reason=$4,payload=$5::jsonb,updated_at=now()
+        WHERE payroll_run_id=$1 AND id=$2`, [payrollRun.id,item.id,item.entitlementStatus,item.entitlementReason,JSON.stringify(item)]);
+    }
+    const updated = await commitSettlementCompatibility(client,stateRow.rows[0].state,record,payrollRun,req.user.id);
+    await appendStateAudit(client,q,{ companyIds:req.user.company_ids,user:req.user,action:'CREATE_PAYROLL_SETTLEMENT',version:updated.rows[0].version });
+    await client.query('COMMIT');
+    broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at });
+    res.status(201).json({ record,payrollRun,version:Number(updated.rows[0].version),updated_at:updated.rows[0].updated_at });
+  } catch (e) {
+    try { await client.query('ROLLBACK'); } catch {}
+    if (Number.isInteger(e?.status) && e.status >= 400 && e.status < 500) return res.status(e.status).json({ error:e.message });
+    if (e?.code === '23505') return res.status(409).json({ error:'DUPLICATE_PAYROLL_SETTLEMENT' });
+    next(e);
+  } finally { client.release(); }
+});
+
+app.post('/api/payroll-settlements/:id/reverse', auth, writeLimiter, async (req, res, next) => {
+  const client = await pool.connect();
+  try {
+    if (!can(req.user,'MANAGE_PAYROLL')) return res.status(403).json({ error:'FORBIDDEN' });
+    const reversalReason = String(req.body?.reversalReason || '').trim();
+    if (reversalReason.length < 5) return res.status(400).json({ error:'SETTLEMENT_REVERSAL_REASON_REQUIRED' });
+    await client.query('BEGIN');
+    const stateRow = await client.query(`SELECT state FROM ${q('app_state')} WHERE id=1 FOR UPDATE`);
+    if (!stateRow.rowCount) throw workflowError(409,'STATE_NOT_INITIALIZED');
+    const existing = await client.query(`SELECT company_id,status,payload FROM ${q('payroll_settlements')} WHERE id=$1 FOR UPDATE`, [req.params.id]);
+    if (!existing.rowCount) throw workflowError(404,'PAYROLL_SETTLEMENT_NOT_FOUND');
+    if (!req.user.company_ids.includes(existing.rows[0].company_id)) throw workflowError(403,'FORBIDDEN');
+    if (existing.rows[0].status === 'REVERSED') throw workflowError(409,'REVERSED_SETTLEMENT_LOCKED');
+    if (existing.rows[0].status !== 'PAID') throw workflowError(409,'SETTLEMENT_NOT_PAID');
+    const record = { ...existing.rows[0].payload,status:'REVERSED',reversedAt:new Date().toISOString(),reversalReason };
+    const stored = await hydrateNormalizedStateData(client,stateRow.rows[0].state);
+    const payrollRun = settlementSourceRun(stored,record,'HELD','SETTLEMENT_REVERSED');
+    await client.query(`UPDATE ${q('payroll_settlements')} SET status='REVERSED',reversed_at=$2::timestamptz,
+      reversal_reason=$3,payload=$4::jsonb,updated_at=now() WHERE id=$1`, [record.id,record.reversedAt,reversalReason,JSON.stringify(record)]);
+    if (payrollRun) {
+      const item = payrollRun.items.find(candidate => candidate.id === record.sourcePayrollItemId);
+      await client.query(`UPDATE ${q('payroll_run_items')} SET entitlement_status=$3,entitlement_reason=$4,payload=$5::jsonb,updated_at=now()
+        WHERE payroll_run_id=$1 AND id=$2`, [payrollRun.id,item.id,item.entitlementStatus,item.entitlementReason,JSON.stringify(item)]);
+    }
+    const updated = await commitSettlementCompatibility(client,stateRow.rows[0].state,record,payrollRun,req.user.id);
+    await appendStateAudit(client,q,{ companyIds:req.user.company_ids,user:req.user,action:'REVERSE_PAYROLL_SETTLEMENT',version:updated.rows[0].version });
+    await client.query('COMMIT');
+    broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at });
+    res.json({ record,payrollRun,version:Number(updated.rows[0].version),updated_at:updated.rows[0].updated_at });
+  } catch (e) {
+    try { await client.query('ROLLBACK'); } catch {}
+    if (Number.isInteger(e?.status) && e.status >= 400 && e.status < 500) return res.status(e.status).json({ error:e.message });
+    next(e);
+  } finally { client.release(); }
+});
+
 app.put('/api/journals/:id', auth, writeLimiter, async (req, res, next) => {
   const client = await pool.connect();
   try {
@@ -2603,6 +2807,7 @@ app.delete('/api/employees/:id', auth, writeLimiter, async (req, res, next) => {
       +(SELECT count(*) FROM ${q('loans')} WHERE employee_id=$1)
       +(SELECT count(*) FROM ${q('penalties')} WHERE employee_id=$1)
       +(SELECT count(*) FROM ${q('temporary_earnings')} WHERE employee_id=$1)
+      +(SELECT count(*) FROM ${q('payroll_settlements')} WHERE employee_id=$1)
       +(SELECT count(*) FROM ${q('payroll_run_items')} WHERE employee_id=$1) AS count`, [req.params.id]);
     const archived = Number(references.rows[0]?.count || 0) > 0;
     if (archived) {

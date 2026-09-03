@@ -26,7 +26,6 @@ interface PayrollSettlementsViewProps {
   temporaryEarnings: TemporaryEarningRecord[];
   activeRole: UserRole;
   onSaveSettlement: (settlement: PayrollSettlement) => Promise<void> | void;
-  onSavePayrollRun: (run: PayrollRun) => void;
 }
 
 type Candidate = {
@@ -78,7 +77,6 @@ export const PayrollSettlementsView: React.FC<PayrollSettlementsViewProps> = ({
   penalties,
   temporaryEarnings,
   onSaveSettlement,
-  onSavePayrollRun,
 }) => {
   const { language } = useLanguage();
   const tr = (ar: string, en: string) => language === 'ar' ? ar : en;
@@ -223,21 +221,6 @@ export const PayrollSettlementsView: React.FC<PayrollSettlementsViewProps> = ({
       paidAt: now,
     };
     await onSaveSettlement(settlement);
-
-    if (selected.sourcePayrollRunId && selected.sourcePayrollItemId) {
-      const run = companyRuns.find(item => item.id === selected.sourcePayrollRunId);
-      if (run) {
-        onSavePayrollRun({
-          ...run,
-          items: run.items.map(item => item.id === selected.sourcePayrollItemId ? {
-            ...item,
-            entitlementStatus: 'SETTLED',
-            entitlementReason: item.entitlementReason || 'SETTLED_VIA_PAYROLL_SETTLEMENT',
-            entitlementUpdatedAt: now,
-          } : item),
-        });
-      }
-    }
     setSelectedKey('');
     setReference('');
   };
@@ -255,22 +238,6 @@ export const PayrollSettlementsView: React.FC<PayrollSettlementsViewProps> = ({
       reversedAt: now,
       reversalReason: reason,
     });
-
-    // Re-open a held source entitlement so it becomes payable again after reversal.
-    if (item.sourcePayrollRunId && item.sourcePayrollItemId) {
-      const run = companyRuns.find(candidate => candidate.id === item.sourcePayrollRunId);
-      if (run) {
-        onSavePayrollRun({
-          ...run,
-          items: run.items.map(runItem => runItem.id === item.sourcePayrollItemId ? {
-            ...runItem,
-            entitlementStatus: 'HELD',
-            entitlementReason: 'SETTLEMENT_REVERSED',
-            entitlementUpdatedAt: now,
-          } : runItem),
-        });
-      }
-    }
 
     setReversingId('');
     setReversalReason('');

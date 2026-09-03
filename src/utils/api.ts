@@ -1,5 +1,5 @@
 import { AppState } from './storage';
-import { AttendanceRecord, JournalBatch, LeaveRequest, LoanSchedule, PenaltyRecord, TemporaryEarningRecord, UserAccount } from '../types';
+import { AttendanceRecord, JournalBatch, LeaveRequest, LoanSchedule, PayrollRun, PayrollSettlement, PenaltyRecord, TemporaryEarningRecord, UserAccount } from '../types';
 
 class ApiError extends Error {
   constructor(message: string, public status: number) { super(message); this.name = 'ApiError'; }
@@ -163,6 +163,20 @@ export const api = {
     const result = await request<{record:JournalBatch;created:boolean;version:number;updated_at:string}>(`/api/journals/${encodeURIComponent(record.id)}`, { method:'PUT',body:JSON.stringify(record) });
     stateVersion = result.version;
     updateSyncedCollection('journals',result.record);
+    return result;
+  },
+  createPayrollSettlement: async (record: PayrollSettlement) => {
+    const result = await request<{record:PayrollSettlement;payrollRun:PayrollRun|null;version:number;updated_at:string}>('/api/payroll-settlements', { method:'POST',body:JSON.stringify(record) });
+    stateVersion = result.version;
+    updateSyncedCollection('payrollSettlements',result.record);
+    if (result.payrollRun) updateSyncedCollection('payrollRuns',result.payrollRun);
+    return result;
+  },
+  reversePayrollSettlement: async (id: string,reversalReason: string) => {
+    const result = await request<{record:PayrollSettlement;payrollRun:PayrollRun|null;version:number;updated_at:string}>(`/api/payroll-settlements/${encodeURIComponent(id)}/reverse`, { method:'POST',body:JSON.stringify({ reversalReason }) });
+    stateVersion = result.version;
+    updateSyncedCollection('payrollSettlements',result.record);
+    if (result.payrollRun) updateSyncedCollection('payrollRuns',result.payrollRun);
     return result;
   },
   deleteJournalRecord: async (id: string) => {

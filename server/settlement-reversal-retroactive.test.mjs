@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 const view = fs.readFileSync('src/components/PayrollSettlementsView.tsx', 'utf8');
+const server = fs.readFileSync('server/index.mjs','utf8');
 const hardening = fs.readFileSync('scripts/apply-feature-hardening.mjs', 'utf8');
 const reversalTransform = fs.readFileSync('scripts/apply-settlement-reversal-audit.mjs', 'utf8');
 
@@ -22,7 +23,7 @@ test('settlement reversal is soft-delete with mandatory audit reason', () => {
   assert.match(view, /status: 'REVERSED'/);
   assert.match(view, /reversalReason: reason/);
   assert.match(view, /reason\.length < 5/);
-  assert.match(view, /entitlementStatus: 'HELD'/);
+  assert.match(server, /settlementSourceRun\(stored,record,'HELD','SETTLEMENT_REVERSED'\)/);
   assert.match(reversalTransform, /SETTLEMENT_REVERSAL_REASON_REQUIRED/);
   assert.match(reversalTransform, /REVERSED_SETTLEMENT_LOCKED/);
 });

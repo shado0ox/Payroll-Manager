@@ -5,6 +5,7 @@ import fs from 'node:fs';
 const transform = fs.readFileSync('scripts/apply-payroll-settlements-ledger.mjs', 'utf8');
 const component = fs.readFileSync('src/components/PayrollSettlementsView.tsx', 'utf8');
 const featureHardening = fs.readFileSync('scripts/apply-feature-hardening.mjs', 'utf8');
+const server = fs.readFileSync('server/index.mjs','utf8');
 
 test('PR21 transform runs after its compatibility shims and restores server-owned audit protection afterwards', () => {
   const compat = featureHardening.indexOf("apply-pr21-patchable-anchor-compat.mjs");
@@ -60,5 +61,5 @@ test('settlement payment stores period separately from payment date and method',
   assert.match(component, /paymentMethod: method/);
   assert.match(component, /paymentDate/);
   assert.match(component, /paymentReference/);
-  assert.match(component, /entitlementStatus: 'SETTLED'/);
+  assert.match(server, /settlementSourceRun\(stored,record,'SETTLED','SETTLED_VIA_PAYROLL_SETTLEMENT'\)/);
 });

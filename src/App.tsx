@@ -640,16 +640,31 @@ export const App: React.FC = () => {
   };
 
   const handleSavePayrollSettlement = async (settlement: PayrollSettlement) => {
-    let duplicate = false;
-    setState(prev => {
-      duplicate = prev.payrollSettlements.some(item => item.companyId === settlement.companyId && item.dedupeKey === settlement.dedupeKey && item.status !== 'REVERSED' && item.id !== settlement.id);
-      if (duplicate) return prev;
-      const payrollSettlements = prev.payrollSettlements.some(item => item.id === settlement.id)
-        ? prev.payrollSettlements.map(item => item.id === settlement.id ? settlement : item)
-        : [settlement, ...prev.payrollSettlements];
-      return { ...prev, payrollSettlements };
-    });
-    if (duplicate) throw new Error('DUPLICATE_PAYROLL_SETTLEMENT');
+    const existing = state.payrollSettlements.find(item => item.id === settlement.id);
+    const operation = persistenceQueueRef.current.catch(() => undefined).then(() =>
+      existing?.status === 'PAID' && settlement.status === 'REVERSED'
+        ? api.reversePayrollSettlement(settlement.id,settlement.reversalReason || '')
+        : api.createPayrollSettlement(settlement)
+    );
+    persistenceQueueRef.current = operation.then(() => undefined, () => undefined);
+    try {
+      const result = await operation;
+      setState(prev => {
+        const payrollSettlements = prev.payrollSettlements.some(item => item.id === result.record.id)
+          ? prev.payrollSettlements.map(item => item.id === result.record.id ? result.record : item)
+          : [result.record,...prev.payrollSettlements];
+        const payrollRuns = result.payrollRun
+          ? prev.payrollRuns.map(item => item.id === result.payrollRun!.id ? result.payrollRun! : item)
+          : prev.payrollRuns;
+        const next = { ...prev,payrollSettlements,payrollRuns };
+        remoteStateSnapshotRef.current = next;
+        return next;
+      });
+      setDbStatus(prev => ({ ...prev,isCloudConnected:true,isChecking:false,lastError:null,lastSavedAt:result.updated_at }));
+    } catch (error:any) {
+      setDbStatus(prev => ({ ...prev,isChecking:false,lastError:`${tr('تعذر حفظ تسوية الرواتب:', 'Could not save payroll settlement:')} ${error?.message || 'UNKNOWN_ERROR'}` }));
+      throw error;
+    }
   };
 
   const handleAddAttendance = async (record: AttendanceRecord) => {
@@ -1301,7 +1316,6 @@ export const App: React.FC = () => {
                 temporaryEarnings={state.temporaryEarnings}
                 activeRole={state.activeRole}
                 onSaveSettlement={handleSavePayrollSettlement}
-                onSavePayrollRun={handleSavePayrollRun}
               />
             )}
 
