@@ -526,26 +526,28 @@ export const App: React.FC = () => {
     }
   };
 
-  const handleBulkImportEmployees = (importedEmployees: Employee[]) => {
-    if (!importedEmployees.length) return;
-    setState(prev => {
-      const importedIds = new Set(importedEmployees.map(employee => employee.id));
-      const updated = [...importedEmployees, ...prev.employees.filter(employee => !importedIds.has(employee.id))];
-      saveEmployees(updated);
-      const log: AuditLog = {
-        id: `log-${Date.now()}`,
-        timestamp: new Date().toISOString(),
-        userName: prev.currentUser?.name || 'المدير العام',
-        userRole: prev.activeRole,
-        action: tr('استيراد موظفين من ملف', 'Imported employees from file'),
-        entityType: 'EMPLOYEE',
-        entityId: importedEmployees[0].companyId,
-        details: `${tr('تم استيراد', 'Imported')} ${importedEmployees.length} ${tr('موظف من', 'employees from')} Excel/CSV`,
-      };
-      const updatedLogs = [log, ...prev.auditLogs];
-      saveAuditLogs(updatedLogs);
-      return { ...prev, employees: updated, auditLogs: updatedLogs };
-    });
+  const handleBulkImportEmployees = async (importedEmployees: Employee[]) => {
+    if (!importedEmployees.length) return false;
+    const operation = persistenceQueueRef.current.catch(() => undefined).then(() => api.importEmployees(importedEmployees));
+    persistenceQueueRef.current = operation.then(() => undefined, () => undefined);
+    try {
+      setDbStatus(prev => ({ ...prev,isChecking:true }));
+      const result = await operation;
+      setState(prev => {
+        const committedIds = new Set(result.employees.map(employee => employee.id));
+        const employees = synchronizeEmployeeBankDetails(prev.companies,[...result.employees,...prev.employees.filter(employee => !committedIds.has(employee.id))]);
+        const next = { ...prev,employees };
+        remoteStateSnapshotRef.current = next;
+        return next;
+      });
+      setDbStatus(prev => ({ ...prev,isCloudConnected:true,isChecking:false,lastError:null,lastSavedAt:result.updated_at }));
+      return true;
+    } catch (error:any) {
+      const code = error?.message || 'UNKNOWN_ERROR';
+      setDbStatus(prev => ({ ...prev,isChecking:false,lastError:`${tr('تعذر استيراد الموظفين:', 'Could not import employees:')} ${code}` }));
+      alert(`${tr('تعذر استيراد الموظفين. لم يتم حفظ أي صف:', 'Employee import failed. No rows were saved:')} ${code}`);
+      return false;
+    }
   };
 
   const handleDeleteAllCompanyEmployees = (companyId: string) => {
@@ -689,16 +691,32 @@ export const App: React.FC = () => {
     }
   };
 
-  const handleBulkImportAttendance = (records: AttendanceRecord[]) => {
+  const handleBulkImportAttendance = async (records: AttendanceRecord[]) => {
+    if (!records.length) return false;
     if (records.some(record => isClosedPayrollInputLocked(state.payrollRuns, 'attendance', record))) {
       alert(payrollInputLockMessage(language));
-      return;
+      return false;
     }
-    setState(prev => {
-      const updated = [...records, ...prev.attendance];
-      saveAttendance(updated);
-      return { ...prev, attendance: updated };
-    });
+    const operation = persistenceQueueRef.current.catch(() => undefined).then(() => api.importAttendanceRecords(records));
+    persistenceQueueRef.current = operation.then(() => undefined, () => undefined);
+    try {
+      setDbStatus(prev => ({ ...prev,isChecking:true }));
+      const result = await operation;
+      setState(prev => {
+        const committedIds = new Set(result.records.map(record => record.id));
+        const attendance = [...result.records,...prev.attendance.filter(record => !committedIds.has(record.id))];
+        const next = { ...prev,attendance };
+        remoteStateSnapshotRef.current = next;
+        return next;
+      });
+      setDbStatus(prev => ({ ...prev,isCloudConnected:true,isChecking:false,lastError:null,lastSavedAt:result.updated_at }));
+      return true;
+    } catch (error:any) {
+      const code = error?.message || 'UNKNOWN_ERROR';
+      setDbStatus(prev => ({ ...prev,isChecking:false,lastError:`${tr('تعذر استيراد الحضور:', 'Could not import attendance:')} ${code}` }));
+      alert(`${tr('تعذر استيراد الحضور. لم يتم حفظ أي سجل:', 'Attendance import failed. No records were saved:')} ${code}`);
+      return false;
+    }
   };
 
   const handleDeleteAttendance = async (recordId: string) => {

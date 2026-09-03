@@ -24,7 +24,7 @@ interface AttendanceLeavesViewProps {
   leaves: LeaveRequest[];
   activeRole: UserRole;
   onAddAttendance: (record: AttendanceRecord) => void;
-  onBulkImportAttendance: (records: AttendanceRecord[]) => void;
+  onBulkImportAttendance: (records: AttendanceRecord[]) => Promise<boolean | void> | boolean | void;
   onDeleteAttendance: (recordId: string) => void;
   onUpdateLeaveStatus: (leaveId: string, status: 'PENDING' | 'APPROVED' | 'REJECTED') => void;
   onAddLeave: (leave: LeaveRequest) => void;

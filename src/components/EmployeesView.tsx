@@ -45,7 +45,7 @@ interface EmployeesViewProps {
   loans?: any[];
   activeRole: UserRole;
   onSaveEmployee?: (emp: Employee) => Promise<void> | void;
-  onBulkImportEmployees?: (employees: Employee[]) => void;
+  onBulkImportEmployees?: (employees: Employee[]) => Promise<boolean | void> | boolean | void;
   onViewStatement?: (emp: Employee) => void;
   onAddEmployee?: (emp: Employee) => void;
   onUpdateEmployee?: (emp: Employee) => void;
@@ -92,6 +92,7 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
   const [importMapping, setImportMapping] = useState<Record<number, EmployeeImportField | ''>>({});
   const [importError, setImportError] = useState('');
   const [isParsingImport, setIsParsingImport] = useState(false);
+  const [isImportingEmployees, setIsImportingEmployees] = useState(false);
 
   // Form Fields
   const [formData, setFormData] = useState<Partial<Employee>>({
@@ -583,12 +584,21 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
     }
   };
 
-  const confirmEmployeeImport = () => {
+  const confirmEmployeeImport = async () => {
     if (!importPreview.valid.length) return;
-    if (onBulkImportEmployees) onBulkImportEmployees(importPreview.valid);
-    else importPreview.valid.forEach(handleSave);
-    setImportSheet(null);
-    setImportMapping({});
+    setIsImportingEmployees(true);
+    try {
+      if (onBulkImportEmployees) {
+        const saved = await onBulkImportEmployees(importPreview.valid);
+        if (saved === false) return;
+      } else {
+        await Promise.all(importPreview.valid.map(employee => Promise.resolve(handleSave(employee))));
+      }
+      setImportSheet(null);
+      setImportMapping({});
+    } finally {
+      setIsImportingEmployees(false);
+    }
   };
 
   return (
@@ -993,10 +1003,12 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
               <button onClick={() => setImportSheet(null)} className="px-4 py-2 rounded-xl border border-slate-200 bg-white text-xs font-bold cursor-pointer">{language === 'ar' ? 'إلغاء' : 'Cancel'}</button>
               <button
                 onClick={confirmEmployeeImport}
-                disabled={!importPreview.valid.length}
+                disabled={!importPreview.valid.length || isImportingEmployees}
                 className="px-4 py-2 rounded-xl bg-emerald-600 text-white text-xs font-bold cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {language === 'ar' ? `استيراد ${importPreview.valid.length} موظف` : `Import ${importPreview.valid.length} employees`}
+                {isImportingEmployees
+                  ? (language === 'ar' ? 'جاري الحفظ...' : 'Saving...')
+                  : (language === 'ar' ? `استيراد ${importPreview.valid.length} موظف` : `Import ${importPreview.valid.length} employees`)}
               </button>
             </div>
           </div>
