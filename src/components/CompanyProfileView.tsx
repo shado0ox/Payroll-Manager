@@ -84,7 +84,7 @@ interface CompanyProfileViewProps {
   onSelectCompany?: (companyId: string) => void;
   onSaveUser?: (user: UserAccount) => void;
   onDeleteUser?: (userId: string) => void;
-  onDeleteAllCompanyEmployees?: (companyId: string) => void;
+  onDeleteAllCompanyEmployees?: (companyId: string) => Promise<boolean | void> | boolean | void;
 }
 
 const ROLE_INFO: Record<UserRole, { labelAr: string; labelEn: string; descAr: string; descEn: string; color: string; badgeBg: string }> = {
@@ -136,6 +136,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
   const [saveSuccessMessage, setSaveSuccessMessage] = useState<string | null>(null);
   const [isDeleteEmployeesModalOpen, setIsDeleteEmployeesModalOpen] = useState(false);
   const [deleteEmployeesConfirmation, setDeleteEmployeesConfirmation] = useState('');
+  const [isArchivingEmployees, setIsArchivingEmployees] = useState(false);
 
   // Local editable company state
   const [formData, setFormData] = useState<Company>(() => ({
@@ -178,7 +179,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
   const companyEmployees = useMemo(() => {
     return employees.filter(e => e.companyId === formData.id);
   }, [employees, formData.id]);
-  const deleteEmployeesConfirmationValid = ['حذف جميع الموظفين', 'DELETE ALL EMPLOYEES']
+  const deleteEmployeesConfirmationValid = ['أرشفة جميع الموظفين', 'ARCHIVE ALL EMPLOYEES']
     .includes(deleteEmployeesConfirmation.trim().toUpperCase());
 
   const companyUsers = useMemo(() => {
@@ -2130,15 +2131,15 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
             </div>
             <div>
               <h3 className="text-sm font-bold text-rose-900">{tr('منطقة الخطر وإدارة البيانات الحساسة', 'Danger Zone and Sensitive Data')}</h3>
-              <p className="text-xs text-rose-700 mt-1">{tr('العمليات في هذا القسم نهائية وتؤثر على بيانات المنشأة الحالية فقط.', 'Actions in this section are permanent and affect the current company only.')}</p>
+              <p className="text-xs text-rose-700 mt-1">{tr('العمليات في هذا القسم حساسة وتؤثر على بيانات المنشأة الحالية فقط.', 'Actions in this section are sensitive and affect the current company only.')}</p>
             </div>
           </div>
 
           <div className="rounded-2xl border border-rose-200 bg-rose-50/60 p-5 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
             <div>
-              <h4 className="text-sm font-black text-slate-900">{tr('مسح جميع موظفي المنشأة', 'Delete All Company Employees')}</h4>
+              <h4 className="text-sm font-black text-slate-900">{tr('أرشفة جميع موظفي المنشأة', 'Archive All Company Employees')}</h4>
               <p className="text-xs text-slate-600 mt-1 max-w-3xl leading-6">
-                {tr(`سيتم حذف ${companyEmployees.length} موظفًا من منشأة ${formData.nameAr}، مع سجلات الحضور والإجازات والسلف والجزاءات ومسيرات الرواتب والقيود المرتبطة بهم. لن تُحذف المنشأة أو إعداداتها أو حساب المدير.`, `${companyEmployees.length} employees and their attendance, leave, loans, penalties, payroll and journal records will be deleted from ${formData.nameEn || formData.nameAr}. The company, settings and administrator account will remain.`)}
+                {tr(`سيتم إخفاء ${companyEmployees.length} موظفًا من القوائم والمسيرات الجديدة، مع الاحتفاظ بسجلات الحضور والإجازات والسلف والجزاءات ومسيرات الرواتب والقيود السابقة للمراجعة.`, `${companyEmployees.length} employees will be hidden from active lists and new payroll runs while attendance, leave, loan, penalty, payroll and journal history remains preserved.`)}
               </p>
             </div>
             <button
@@ -2148,7 +2149,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
               className="px-5 py-2.5 bg-rose-700 hover:bg-rose-800 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
             >
               <Trash2 className="w-4 h-4" />
-              {tr('مسح جميع الموظفين', 'Delete all employees')} ({companyEmployees.length})
+              {tr('أرشفة جميع الموظفين', 'Archive all employees')} ({companyEmployees.length})
             </button>
           </div>
         </div>
@@ -2161,8 +2162,8 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
               <div className="flex items-center gap-3">
                 <AlertCircle className="w-6 h-6" />
                 <div>
-                  <h3 className="font-black">{tr('تأكيد مسح جميع الموظفين', 'Confirm Employee Deletion')}</h3>
-                  <p className="text-xs text-rose-100">{tr('هذه العملية لا يمكن التراجع عنها من داخل النظام', 'This action cannot be undone from within the system')}</p>
+                  <h3 className="font-black">{tr('تأكيد أرشفة جميع الموظفين', 'Confirm Employee Archival')}</h3>
+                  <p className="text-xs text-rose-100">{tr('سيتم إخفاء الموظفين دون حذف التاريخ المالي', 'Employees will be hidden without deleting financial history')}</p>
                 </div>
               </div>
               <button type="button" onClick={() => setIsDeleteEmployeesModalOpen(false)} className="p-1.5 hover:bg-white/10 rounded-lg cursor-pointer"><X className="w-5 h-5" /></button>
@@ -2170,16 +2171,16 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
 
             <div className="p-6 space-y-4">
               <div className="rounded-xl bg-rose-50 border border-rose-200 p-4 text-xs text-rose-900 leading-6">
-                {tr('سيتم حذف', 'This will delete')} <b>{companyEmployees.length} {tr('موظفًا', 'employees')}</b> {tr('وكل معاملاتهم المرتبطة من منشأة', 'and all linked transactions from')} <b>{language === 'ar' ? formData.nameAr : (formData.nameEn || formData.nameAr)}</b>. {tr('تأكد من وجود نسخة احتياطية إذا كانت هناك بيانات مهمة.', 'Ensure a backup exists if the data is important.')}
+                {tr('سيتم أرشفة', 'This will archive')} <b>{companyEmployees.length} {tr('موظفًا', 'employees')}</b> {tr('في منشأة', 'in')} <b>{language === 'ar' ? formData.nameAr : (formData.nameEn || formData.nameAr)}</b>. {tr('ستظل كل المعاملات والمسيرات السابقة محفوظة للمراجعة ولن يدخل الموظفون المؤرشفون في أي مسير جديد.', 'All prior transactions and payroll runs remain available for audit, and archived employees will not enter new payroll runs.')}
               </div>
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1.5">{tr('اكتب «حذف جميع الموظفين» للتأكيد:', 'Type “DELETE ALL EMPLOYEES” to confirm:')}</label>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">{tr('اكتب «أرشفة جميع الموظفين» للتأكيد:', 'Type “ARCHIVE ALL EMPLOYEES” to confirm:')}</label>
                 <input
                   autoFocus
                   value={deleteEmployeesConfirmation}
                   onChange={event => setDeleteEmployeesConfirmation(event.target.value)}
                   className="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl text-sm font-bold focus:outline-none focus:border-rose-500 focus:ring-2 focus:ring-rose-500/15"
-                  placeholder={tr('حذف جميع الموظفين', 'DELETE ALL EMPLOYEES')}
+                  placeholder={tr('أرشفة جميع الموظفين', 'ARCHIVE ALL EMPLOYEES')}
                 />
               </div>
             </div>
@@ -2188,17 +2189,23 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
               <button type="button" onClick={() => setIsDeleteEmployeesModalOpen(false)} className="px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold cursor-pointer">{tr('إلغاء', 'Cancel')}</button>
               <button
                 type="button"
-                disabled={!deleteEmployeesConfirmationValid}
-                onClick={() => {
+                disabled={!deleteEmployeesConfirmationValid || isArchivingEmployees}
+                onClick={async () => {
                   if (!deleteEmployeesConfirmationValid) return;
-                  onDeleteAllCompanyEmployees?.(formData.id);
-                  setIsDeleteEmployeesModalOpen(false);
-                  setDeleteEmployeesConfirmation('');
-                  setSaveSuccessMessage(tr(`تم مسح جميع موظفي المنشأة (${companyEmployees.length}) والبيانات المرتبطة بهم`, `All company employees (${companyEmployees.length}) and linked records were deleted.`));
+                  setIsArchivingEmployees(true);
+                  try {
+                    const archived = await onDeleteAllCompanyEmployees?.(formData.id);
+                    if (archived === false) return;
+                    setIsDeleteEmployeesModalOpen(false);
+                    setDeleteEmployeesConfirmation('');
+                    setSaveSuccessMessage(tr(`تمت أرشفة جميع موظفي المنشأة (${companyEmployees.length}) مع الاحتفاظ بالتاريخ`, `All company employees (${companyEmployees.length}) were archived with history preserved.`));
+                  } finally {
+                    setIsArchivingEmployees(false);
+                  }
                 }}
                 className="px-5 py-2 bg-rose-700 hover:bg-rose-800 text-white rounded-xl text-xs font-black cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
               >
-                {tr('حذف نهائي', 'Delete permanently')}
+                {isArchivingEmployees ? tr('جاري الأرشفة...', 'Archiving...') : tr('تأكيد الأرشفة', 'Confirm archive')}
               </button>
             </div>
           </div>

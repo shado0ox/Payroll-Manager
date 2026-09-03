@@ -31,13 +31,6 @@ import {
 } from './types';
 import { 
   loadInitialState, 
-  saveEmployees, 
-  savePayrollRuns, 
-  saveAttendance, 
-  saveLeaves, 
-  saveLoans, 
-  savePenalties, 
-  saveJournals, 
   saveAuditLogs, 
   clearSensitiveLocalState,
   saveActiveCompanyId, 
@@ -550,47 +543,29 @@ export const App: React.FC = () => {
     }
   };
 
-  const handleDeleteAllCompanyEmployees = (companyId: string) => {
-    setStatementEmployee(null);
-    setState(prev => {
-      const deletedEmployees = prev.employees.filter(employee => employee.companyId === companyId);
-      const employeeIds = new Set(deletedEmployees.map(employee => employee.id));
-      if (!employeeIds.size) return prev;
-
-      const employees = prev.employees.filter(employee => !employeeIds.has(employee.id));
-      const attendance = prev.attendance.filter(record => !employeeIds.has(record.employeeId));
-      const leaves = prev.leaves.filter(record => !employeeIds.has(record.employeeId));
-      const loans = prev.loans.filter(record => !employeeIds.has(record.employeeId));
-      const penalties = prev.penalties.filter(record => !employeeIds.has(record.employeeId));
-      const temporaryEarnings = prev.temporaryEarnings.filter(record => !employeeIds.has(record.employeeId));
-      const payrollRuns = prev.payrollRuns.filter(run => run.companyId !== companyId);
-      const journals = prev.journals.filter(journal => journal.companyId !== companyId);
-      const users = prev.users.map(user => employeeIds.has(user.employeeId || '') ? { ...user, employeeId: undefined } : user);
-
-      saveEmployees(employees);
-      saveAttendance(attendance);
-      saveLeaves(leaves);
-      saveLoans(loans);
-      savePenalties(penalties);
-      savePayrollRuns(payrollRuns);
-      saveJournals(journals);
-      saveUsers(users);
-
-      const log: AuditLog = {
-        id: `log-${Date.now()}`,
-        timestamp: new Date().toISOString(),
-        userName: prev.currentUser?.name || 'مسؤول النظام',
-        userRole: prev.activeRole,
-        action: tr('مسح جميع موظفي المنشأة', 'Deleted all company employees'),
-        entityType: 'COMPANY',
-        entityId: companyId,
-        details: `${tr('تم حذف', 'Deleted')} ${deletedEmployees.length} ${tr('موظفًا وجميع بياناتهم المرتبطة', 'employees and all related records')}`,
-      };
-      const auditLogs = [log, ...prev.auditLogs];
-      saveAuditLogs(auditLogs);
-
-      return { ...prev, employees, attendance, leaves, loans, penalties, temporaryEarnings, payrollRuns, journals, users, auditLogs };
-    });
+  const handleDeleteAllCompanyEmployees = async (companyId: string) => {
+    const operation = persistenceQueueRef.current.catch(() => undefined).then(() => api.archiveCompanyEmployees(companyId));
+    persistenceQueueRef.current = operation.then(() => undefined, () => undefined);
+    try {
+      setDbStatus(prev => ({ ...prev,isChecking:true }));
+      const result = await operation;
+      setStatementEmployee(null);
+      setState(prev => {
+        const archivedIds = new Set(result.employeeIds);
+        const employees = prev.employees.filter(employee => !archivedIds.has(employee.id));
+        const users = prev.users.map(user => archivedIds.has(user.employeeId || '') ? { ...user,employeeId:undefined } : user);
+        const next = { ...prev,employees,users };
+        remoteStateSnapshotRef.current = next;
+        return next;
+      });
+      setDbStatus(prev => ({ ...prev,isCloudConnected:true,isChecking:false,lastError:null,lastSavedAt:result.updated_at }));
+      return true;
+    } catch (error:any) {
+      const code = error?.message || 'UNKNOWN_ERROR';
+      setDbStatus(prev => ({ ...prev,isChecking:false,lastError:`${tr('تعذر أرشفة موظفي المنشأة:', 'Could not archive company employees:')} ${code}` }));
+      alert(`${tr('تعذر أرشفة الموظفين. لم يتم تغيير أي بيانات:', 'Employee archival failed. No data was changed:')} ${code}`);
+      return false;
+    }
   };
 
   const handleSavePayrollRunConfirmed = async (run: PayrollRun): Promise<boolean> => {
