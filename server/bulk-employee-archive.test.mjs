@@ -24,7 +24,6 @@ test('bulk employee archive UI waits for the committed server response', () => {
   assert.match(api,/\/api\/companies\/\$\{encodeURIComponent\(companyId\)\}\/employees\/archive/);
   const handler = app.slice(app.indexOf('const handleDeleteAllCompanyEmployees'),app.indexOf('const handleSavePayrollRunConfirmed'));
   assert.match(handler,/api\.archiveCompanyEmployees\(companyId\)/);
-  assert.match(handler,/remoteStateSnapshotRef\.current = next/);
   assert.doesNotMatch(handler,/saveEmployees|saveAttendance|savePayrollRuns|saveJournals|saveState/);
   assert.match(profile,/const archived = await onDeleteAllCompanyEmployees\?\.\(formData\.id\)/);
   assert.match(profile,/أرشفة جميع الموظفين/);

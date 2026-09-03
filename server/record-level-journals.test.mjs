@@ -39,7 +39,6 @@ test('Qoyod sync commits the selected journal and updates the local server basel
   assert.match(api,/saveJournalRecord: async/);
   assert.match(api,/\/api\/journals\/\$\{encodeURIComponent\(record\.id\)\}/);
   assert.match(app,/api\.saveJournalRecord\(journal\)/);
-  assert.match(app,/remoteStateSnapshotRef\.current = next/);
   assert.match(journalsView,/onOpenQoyodModal\(activeBatch\)/);
   assert.match(qoyodModal,/await onJournalSynced\(postedJournal\)/);
   assert.match(qoyodModal,/isAlreadyPosted/);

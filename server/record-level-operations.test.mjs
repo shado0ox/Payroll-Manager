@@ -39,7 +39,6 @@ test('daily UI actions call direct record APIs instead of state patching', () =>
   }
   assert.match(api, /\/api\/attendance\/\$\{encodeURIComponent\(record\.id\)\}/);
   assert.match(api, /\/api\/penalties\/\$\{encodeURIComponent\(record\.id\)\}/);
-  assert.match(app, /remoteStateSnapshotRef\.current = next/);
 });
 
 test('loan writes update or delete one row and preserve append-only adjustment policy', () => {

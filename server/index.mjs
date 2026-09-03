@@ -1785,9 +1785,13 @@ app.get('/api/state', auth, async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+// Full-state replacement is reserved for an explicit developer backup restore.
+// Normal UI mutations must use the record-level endpoints below.
 app.put('/api/state', auth, writeLimiter, async (req, res, next) => {
   const client = await pool.connect();
   try {
+    if (req.user.id !== 'user-admin') return res.status(403).json({ error:'DEVELOPER_ONLY' });
+    if (req.body?.operation !== 'RESTORE_BACKUP') return res.status(400).json({ error:'EXPLICIT_RESTORE_CONFIRMATION_REQUIRED' });
     let state = clone(req.body?.state);
     const expectedVersion = Number(req.body?.version || 0);
     if (!state || typeof state !== 'object' || Array.isArray(state)) return res.status(400).json({ error:'INVALID_STATE' });
