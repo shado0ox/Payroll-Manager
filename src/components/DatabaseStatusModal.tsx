@@ -22,7 +22,7 @@ interface DatabaseStatusModalProps {
   onClose: () => void;
   state: AppState;
   dbStatus: DatabaseStatus;
-  onRestoreState: (restoredState: AppState) => void;
+  onRestoreState: (restoredState: AppState) => Promise<boolean>;
 }
 
 export const DatabaseStatusModal: React.FC<DatabaseStatusModalProps> = ({
@@ -35,6 +35,7 @@ export const DatabaseStatusModal: React.FC<DatabaseStatusModalProps> = ({
   const { language } = useLanguage();
   const tr = (ar: string, en: string) => language === 'ar' ? ar : en;
   const [isPinging, setIsPinging] = useState(false);
+  const [isRestoring, setIsRestoring] = useState(false);
   const [pingResult, setPingResult] = useState<{ status: 'HEALTHY' | 'ERROR'; latencyMs: number; message: string } | null>(null);
   
   if (!isOpen) return null;
@@ -57,21 +58,28 @@ export const DatabaseStatusModal: React.FC<DatabaseStatusModalProps> = ({
   const handleImportBackup = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    const input = e.currentTarget;
 
     const reader = new FileReader();
-    reader.onload = (event) => {
+    reader.onload = async (event) => {
       try {
         const content = event.target?.result as string;
         const parsed = JSON.parse(content);
         if (parsed.state && parsed.state.companies && parsed.state.employees) {
-          onRestoreState(parsed.state);
-          alert(tr('تم استعادة نسخة قاعدة البيانات بنجاح!', 'Database backup restored successfully.'));
-          onClose();
+          if (!confirm(tr('سيتم استبدال بيانات المنشآت المصرح بها بمحتوى النسخة. هل تريد المتابعة؟', 'Authorized company data will be replaced with this backup. Continue?'))) return;
+          setIsRestoring(true);
+          if (await onRestoreState(parsed.state)) {
+            alert(tr('تم استعادة نسخة قاعدة البيانات بنجاح!', 'Database backup restored successfully.'));
+            onClose();
+          }
         } else {
           alert(tr('ملف النسخة الاحتياطية غير متوافق أو تالف.', 'The backup file is incompatible or corrupted.'));
         }
       } catch (err: any) {
         alert(`${tr('فشل استيراد النسخة الاحتياطية:', 'Backup import failed:')} ${err?.message || tr('خطأ في قراءة الملف', 'Could not read the file')}`);
+      } finally {
+        setIsRestoring(false);
+        input.value = '';
       }
     };
     reader.readAsText(file);
@@ -214,10 +222,10 @@ export const DatabaseStatusModal: React.FC<DatabaseStatusModalProps> = ({
             <span>{tr('تصدير نسخة احتياطية (JSON)', 'Export Backup (JSON)')}</span>
           </button>
 
-          <label className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl text-xs font-bold transition-all cursor-pointer border border-slate-200">
+          <label className={`inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all border border-slate-200 ${isRestoring ? 'cursor-not-allowed bg-slate-100 text-slate-400' : 'cursor-pointer bg-slate-100 text-slate-800 hover:bg-slate-200'}`}>
             <Upload className="w-4 h-4" />
-            <span>{tr('استعادة نسخة', 'Restore Backup')}</span>
-            <input type="file" accept=".json" onChange={handleImportBackup} className="hidden" />
+            <span>{isRestoring ? tr('جاري الاستعادة...', 'Restoring...') : tr('استعادة نسخة', 'Restore Backup')}</span>
+            <input type="file" accept=".json" onChange={handleImportBackup} disabled={isRestoring} className="hidden" />
           </label>
         </div>
 

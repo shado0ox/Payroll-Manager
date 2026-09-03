@@ -32,7 +32,6 @@ test('company UI waits for the committed record without a full-state save', () =
   assert.match(api,/saveCompany: async/);
   assert.match(api,/\/api\/companies\/\$\{encodeURIComponent\(company\.id\)\}/);
   assert.match(app,/api\.saveCompany\(company\)/);
-  assert.match(app,/remoteStateSnapshotRef\.current = next/);
   assert.match(companyProfile,/const saved = await onUpdateCompany\(normalizedCompany\)/);
   assert.doesNotMatch(app.slice(app.indexOf('const handleUpdateCompany'),app.indexOf('const handleDeleteCompany')),/api\.saveState|saveCompanies/);
 });

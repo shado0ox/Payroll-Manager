@@ -36,8 +36,7 @@ import {
   clearSensitiveLocalState,
   saveActiveCompanyId, 
   saveActiveRole,
-  saveCurrentUser,
-  resetToCleanState
+  saveCurrentUser
 } from './utils/storage';
 import { Navbar } from './components/Navbar';
 import { hasPermission, isDeveloperAccount, TAB_PERMISSION } from './utils/permissions';
@@ -58,7 +57,7 @@ import { AuditLogsView } from './components/AuditLogsView';
 import { EmployeeStatementModal } from './components/EmployeeStatementModal';
 import { QoyodIntegrationModal } from './components/QoyodIntegrationModal';
 import { DatabaseStatusModal } from './components/DatabaseStatusModal';
-import { DatabaseStatus, persistFullStateToDatabase } from './utils/databaseService';
+import { DatabaseStatus } from './utils/databaseService';
 import { api } from './utils/api';
 import { WifiOff, Database, CheckCircle2, X } from 'lucide-react';
 import { synchronizeEmployeeBankDetails } from './utils/security';
@@ -162,8 +161,6 @@ export const App: React.FC = () => {
   const [updateAvailable, setUpdateAvailable] = useState(false);
   const [publicConfig, setPublicConfig] = useState({ registrationEnabled:false,trialDays:14,developerContactPhone:'' });
   const persistenceQueueRef = useRef<Promise<void>>(Promise.resolve());
-  const persistenceEpochRef = useRef(0);
-  const remoteStateSnapshotRef = useRef<MasarAppState | null>(null);
 
   useEffect(() => {
     api.publicConfig().then(setPublicConfig).catch(() => undefined);
@@ -278,36 +275,6 @@ export const App: React.FC = () => {
     };
   }, [state.currentUser?.id]);
 
-  // Persist immediately and serialize writes so rapid actions cannot cancel each other.
-  useEffect(() => {
-    if (!state.currentUser) return;
-    if (remoteStateSnapshotRef.current === state) {
-      remoteStateSnapshotRef.current = null;
-      return;
-    }
-    remoteStateSnapshotRef.current = null;
-    const snapshot = state;
-    const epoch = persistenceEpochRef.current;
-    setDbStatus(prev => ({ ...prev, isChecking: true }));
-    persistenceQueueRef.current = persistenceQueueRef.current.catch(() => undefined).then(async () => {
-      // A destructive server operation may invalidate snapshots that were queued
-      // before it. Never let an old snapshot recreate a deleted record.
-      if (epoch !== persistenceEpochRef.current) return;
-      try {
-        await api.saveState(snapshot);
-        const status = await persistFullStateToDatabase(snapshot);
-        setDbStatus({ ...status, lastError: null });
-      } catch (error: any) {
-        try {
-          await api.health();
-          setDbStatus(prev => ({ ...prev, isCloudConnected: true, isChecking: false, lastError: `${tr('تعذر حفظ آخر تعديل:', 'Could not save the latest change:')} ${error?.message || tr('خطأ غير معروف', 'Unknown error')}` }));
-        } catch {
-          setDbStatus(prev => ({ ...prev, isCloudConnected: false, isChecking: false, lastError: error?.message || tr('تعذر الاتصال بقاعدة البيانات', 'Could not connect to the database') }));
-        }
-      }
-    });
-  }, [state]);
-
   // Apply changes saved by other users instantly, while keeping the active session
   // and relying on the server's company/permission filtering.
   useEffect(() => {
@@ -336,7 +303,6 @@ export const App: React.FC = () => {
               activeCompanyId,
               employees: synchronizeEmployeeBankDetails(companies, base.employees || []),
             };
-            remoteStateSnapshotRef.current = next;
             return next;
           });
         } catch {
@@ -460,7 +426,6 @@ export const App: React.FC = () => {
         const currentUser = prev.currentUser?.id === result.record.id ? result.record : prev.currentUser;
         if (currentUser?.id === result.record.id) saveCurrentUser(result.record);
         const next = { ...prev,users,currentUser } as MasarAppState;
-        remoteStateSnapshotRef.current = next;
         return next;
       });
       setDbStatus(prev => ({ ...prev,isCloudConnected:true,isChecking:false,lastError:null,lastSavedAt:result.updated_at }));
@@ -485,7 +450,6 @@ export const App: React.FC = () => {
       const result = await operation;
       setState(prev => {
         const next = { ...prev,users:prev.users.filter(candidate => candidate.id !== result.id) } as MasarAppState;
-        remoteStateSnapshotRef.current = next;
         return next;
       });
       setDbStatus(prev => ({ ...prev,isCloudConnected:true,isChecking:false,lastError:null,lastSavedAt:result.updated_at }));
@@ -530,7 +494,6 @@ export const App: React.FC = () => {
           ...prev,
           employees: synchronizeEmployeeBankDetails(prev.companies || [], employees),
         };
-        remoteStateSnapshotRef.current = next;
         return next;
       });
       setDbStatus(prev => ({ ...prev, isCloudConnected: true, isChecking: false, lastError: null, lastSavedAt: result.updated_at || new Date().toISOString() }));
@@ -551,7 +514,6 @@ export const App: React.FC = () => {
         const committedIds = new Set(result.employees.map(employee => employee.id));
         const employees = synchronizeEmployeeBankDetails(prev.companies,[...result.employees,...prev.employees.filter(employee => !committedIds.has(employee.id))]);
         const next = { ...prev,employees };
-        remoteStateSnapshotRef.current = next;
         return next;
       });
       setDbStatus(prev => ({ ...prev,isCloudConnected:true,isChecking:false,lastError:null,lastSavedAt:result.updated_at }));
@@ -576,7 +538,6 @@ export const App: React.FC = () => {
         const employees = prev.employees.filter(employee => !archivedIds.has(employee.id));
         const users = prev.users.map(user => archivedIds.has(user.employeeId || '') ? { ...user,employeeId:undefined } : user);
         const next = { ...prev,employees,users };
-        remoteStateSnapshotRef.current = next;
         return next;
       });
       setDbStatus(prev => ({ ...prev,isCloudConnected:true,isChecking:false,lastError:null,lastSavedAt:result.updated_at }));
@@ -600,7 +561,6 @@ export const App: React.FC = () => {
           ? prev.payrollRuns.map(candidate => candidate.id === result.record.id ? result.record as PayrollRun : candidate)
           : [result.record as PayrollRun, ...prev.payrollRuns];
         const next = { ...prev, payrollRuns };
-        remoteStateSnapshotRef.current = next;
         return next;
       });
       setDbStatus(prev => ({
@@ -629,7 +589,6 @@ export const App: React.FC = () => {
         ? prev.journals.map(item => item.id === result.record.id ? result.record : item)
         : [result.record,...prev.journals];
       const next = { ...prev,journals };
-      remoteStateSnapshotRef.current = next;
       return next;
     });
     setDbStatus(prev => ({ ...prev,isCloudConnected:true,isChecking:false,lastError:null,lastSavedAt:result.updated_at }));
@@ -653,7 +612,6 @@ export const App: React.FC = () => {
           ? prev.payrollRuns.map(item => item.id === result.payrollRun!.id ? result.payrollRun! : item)
           : prev.payrollRuns;
         const next = { ...prev,payrollSettlements,payrollRuns };
-        remoteStateSnapshotRef.current = next;
         return next;
       });
       setDbStatus(prev => ({ ...prev,isCloudConnected:true,isChecking:false,lastError:null,lastSavedAt:result.updated_at }));
@@ -677,7 +635,6 @@ export const App: React.FC = () => {
           ? prev.attendance.map(item => item.id === result.record.id ? result.record : item)
           : [result.record, ...prev.attendance];
         const next = { ...prev, attendance };
-        remoteStateSnapshotRef.current = next;
         return next;
       });
       setDbStatus(prev => ({ ...prev, isCloudConnected:true, isChecking:false, lastError:null, lastSavedAt:result.updated_at }));
@@ -702,7 +659,6 @@ export const App: React.FC = () => {
         const committedIds = new Set(result.records.map(record => record.id));
         const attendance = [...result.records,...prev.attendance.filter(record => !committedIds.has(record.id))];
         const next = { ...prev,attendance };
-        remoteStateSnapshotRef.current = next;
         return next;
       });
       setDbStatus(prev => ({ ...prev,isCloudConnected:true,isChecking:false,lastError:null,lastSavedAt:result.updated_at }));
@@ -727,7 +683,6 @@ export const App: React.FC = () => {
       const result = await operation;
       setState(prev => {
         const next = { ...prev, attendance:prev.attendance.filter(item => item.id !== recordId) };
-        remoteStateSnapshotRef.current = next;
         return next;
       });
       setDbStatus(prev => ({ ...prev, isCloudConnected:true, isChecking:false, lastError:null, lastSavedAt:result.updated_at }));
@@ -744,7 +699,6 @@ export const App: React.FC = () => {
       const result = await operation;
       setState(prev => {
         const next = { ...prev,leaves:prev.leaves.map(item => item.id === result.record.id ? result.record : item) };
-        remoteStateSnapshotRef.current = next;
         return next;
       });
       setDbStatus(prev => ({ ...prev,isCloudConnected:true,isChecking:false,lastError:null,lastSavedAt:result.updated_at }));
@@ -764,7 +718,6 @@ export const App: React.FC = () => {
           ? prev.leaves.map(item => item.id === result.record.id ? result.record : item)
           : [result.record,...prev.leaves];
         const next = { ...prev,leaves };
-        remoteStateSnapshotRef.current = next;
         return next;
       });
       setDbStatus(prev => ({ ...prev,isCloudConnected:true,isChecking:false,lastError:null,lastSavedAt:result.updated_at }));
@@ -784,7 +737,6 @@ export const App: React.FC = () => {
           ? prev.loans.map(item => item.id === result.record.id ? result.record : item)
           : [result.record, ...prev.loans];
         const next = { ...prev, loans };
-        remoteStateSnapshotRef.current = next;
         return next;
       });
       setDbStatus(prev => ({ ...prev, isCloudConnected:true, isChecking:false, lastError:null, lastSavedAt:result.updated_at }));
@@ -826,7 +778,6 @@ export const App: React.FC = () => {
       const result = await operation;
       setState(prev => {
         const next = { ...prev, loans:prev.loans.filter(item => item.id !== loanId) };
-        remoteStateSnapshotRef.current = next;
         return next;
       });
       setDbStatus(prev => ({ ...prev, isCloudConnected:true, isChecking:false, lastError:null, lastSavedAt:result.updated_at }));
@@ -869,7 +820,6 @@ export const App: React.FC = () => {
           ? prev.penalties.map(item => item.id === result.record.id ? result.record : item)
           : [result.record, ...prev.penalties];
         const next = { ...prev, penalties };
-        remoteStateSnapshotRef.current = next;
         return next;
       });
       setDbStatus(prev => ({ ...prev, isCloudConnected:true, isChecking:false, lastError:null, lastSavedAt:result.updated_at }));
@@ -901,7 +851,6 @@ export const App: React.FC = () => {
       const result = await operation;
       setState(prev => {
         const next = { ...prev, penalties:prev.penalties.filter(item => item.id !== penaltyId) };
-        remoteStateSnapshotRef.current = next;
         return next;
       });
       setDbStatus(prev => ({ ...prev, isCloudConnected:true, isChecking:false, lastError:null, lastSavedAt:result.updated_at }));
@@ -921,7 +870,6 @@ export const App: React.FC = () => {
           ? prev.temporaryEarnings.map(item => item.id === result.record.id ? result.record : item)
           : [result.record, ...prev.temporaryEarnings];
         const next = { ...prev, temporaryEarnings };
-        remoteStateSnapshotRef.current = next;
         return next;
       });
       setDbStatus(prev => ({ ...prev, isCloudConnected:true, isChecking:false, lastError:null, lastSavedAt:result.updated_at }));
@@ -963,7 +911,6 @@ export const App: React.FC = () => {
       const result = await operation;
       setState(prev => {
         const next = { ...prev, temporaryEarnings:prev.temporaryEarnings.filter(item => item.id !== earningId) };
-        remoteStateSnapshotRef.current = next;
         return next;
       });
       setDbStatus(prev => ({ ...prev, isCloudConnected:true, isChecking:false, lastError:null, lastSavedAt:result.updated_at }));
@@ -974,9 +921,7 @@ export const App: React.FC = () => {
   };
 
   const handleDeleteEmployee = async (empId: string) => {
-    // Invalidate every state snapshot that was queued before this deletion, then
-    // serialize the DELETE after any write that is already in flight.
-    persistenceEpochRef.current += 1;
+    // Serialize the DELETE after any record write that is already in flight.
     const deletion = persistenceQueueRef.current.catch(() => undefined).then(async () => {
       const result = await api.deleteEmployee(empId);
       const remote = await api.getState();
@@ -996,7 +941,6 @@ export const App: React.FC = () => {
           activeCompanyId:prev.activeCompanyId,
           employees:synchronizeEmployeeBankDetails(base.companies || [],base.employees || []),
         };
-        remoteStateSnapshotRef.current = next;
         return next;
       });
       alert(result.archived
@@ -1030,7 +974,6 @@ export const App: React.FC = () => {
           : prev.currentUser;
         const users = prev.users.map(user => user.id === currentUser?.id ? currentUser : user);
         const next = { ...prev,companies,currentUser,users };
-        remoteStateSnapshotRef.current = next;
         return next;
       });
       setDbStatus(prev => ({ ...prev,isCloudConnected:true,isChecking:false,lastError:null,lastSavedAt:result.updated_at }));
@@ -1055,7 +998,6 @@ export const App: React.FC = () => {
       setState(prev => {
         const companies = prev.companies.map(item => item.id === result.record.id ? result.record : item);
         const next = { ...prev,companies,employees:synchronizeEmployeeBankDetails(companies,prev.employees) };
-        remoteStateSnapshotRef.current = next;
         return next;
       });
       setDbStatus(prev => ({ ...prev,isCloudConnected:true,isChecking:false,lastError:null,lastSavedAt:result.updated_at }));
@@ -1072,7 +1014,6 @@ export const App: React.FC = () => {
     setState(prev => {
       const companies = prev.companies.map(company => company.id === record.id ? { ...company,...record } : company);
       const next = { ...prev,companies };
-      remoteStateSnapshotRef.current = next;
       return next;
     });
     setDbStatus(prev => ({ ...prev,isCloudConnected:true,isChecking:false,lastError:null,lastSavedAt:updatedAt }));
@@ -1105,7 +1046,6 @@ export const App: React.FC = () => {
           .filter(user => user.role === 'ADMIN' || user.companyIds.length > 0);
         const activeCompanyId = prev.activeCompanyId === companyId ? result.nextCompanyId : prev.activeCompanyId;
         const next = { ...prev,companies,currentUser,users,activeCompanyId };
-        remoteStateSnapshotRef.current = next;
         return next;
       });
       if (state.activeCompanyId === companyId) saveActiveCompanyId(result.nextCompanyId);
@@ -1130,7 +1070,6 @@ export const App: React.FC = () => {
       const result = await operation;
       setState(prev => {
         const next = { ...prev,qoyodConfig:result.record };
-        remoteStateSnapshotRef.current = next;
         return next;
       });
       setDbStatus(prev => ({ ...prev,isCloudConnected:true,isChecking:false,lastError:null,lastSavedAt:result.updated_at }));
@@ -1143,17 +1082,41 @@ export const App: React.FC = () => {
     }
   };
 
-  const handleResetData = () => {
-    const fresh: MasarAppState = { ...resetToCleanState(), temporaryEarnings: [] };
-    setState(fresh);
-  };
-
   const latestCompanyRun = useMemo(() => {
     return state.payrollRuns.find(r => r.companyId === activeCompany?.id);
   }, [state.payrollRuns, activeCompany]);
 
-  const handleRestoreState = (restoredState: typeof state) => {
-    setState(restoredState);
+  const handleRestoreState = async (restoredState: typeof state) => {
+    if (!isDeveloperAccount(state.currentUser)) return false;
+    const operation = persistenceQueueRef.current.catch(() => undefined).then(async () => {
+      await api.restoreState(restoredState);
+      const remote = await api.getState();
+      if (!remote.state) throw new Error('STATE_RELOAD_FAILED');
+      return remote;
+    });
+    persistenceQueueRef.current = operation.then(() => undefined, () => undefined);
+    try {
+      setDbStatus(prev => ({ ...prev,isChecking:true }));
+      const remote = await operation;
+      setState(prev => {
+        const base = { ...prev,...remote.state } as MasarAppState;
+        const companies = base.companies || [];
+        return {
+          ...base,
+          currentUser:prev.currentUser,
+          activeRole:prev.currentUser?.role || prev.activeRole,
+          activeCompanyId:companies.some(company => company.id === prev.activeCompanyId) ? prev.activeCompanyId : companies[0]?.id || '',
+          employees:synchronizeEmployeeBankDetails(companies,base.employees || []),
+        };
+      });
+      setDbStatus(prev => ({ ...prev,isCloudConnected:true,isChecking:false,lastError:null,lastSavedAt:new Date().toISOString() }));
+      return true;
+    } catch (error:any) {
+      const code = error?.message || 'UNKNOWN_ERROR';
+      setDbStatus(prev => ({ ...prev,isChecking:false,lastError:`${tr('فشل استعادة النسخة الاحتياطية:', 'Backup restore failed:')} ${code}` }));
+      alert(`${tr('فشل استعادة النسخة الاحتياطية:', 'Backup restore failed:')} ${code}`);
+      return false;
+    }
   };
 
   const handleBuildReload = () => {
@@ -1223,7 +1186,6 @@ export const App: React.FC = () => {
           onLogout={handleLogout}
           onOpenQoyodModal={() => setIsQoyodModalOpen(true)}
           onNavigate={navigateToTab}
-          onResetData={handleResetData}
         />
 
         {trialDaysRemaining !== null && <div className="flex shrink-0 items-center justify-center gap-2 border-b border-emerald-200 bg-emerald-50 px-4 py-2 text-xs font-bold text-emerald-900">

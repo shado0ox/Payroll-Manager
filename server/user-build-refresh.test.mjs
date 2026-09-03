@@ -38,7 +38,6 @@ test('user UI consumes committed records without legacy full-state helper writes
   assert.match(handlers,/api\.saveUser\(user\)/);
   assert.match(handlers,/result\.record/);
   assert.match(handlers,/api\.deleteUser\(userId\)/);
-  assert.match(handlers,/remoteStateSnapshotRef\.current = next/);
   assert.doesNotMatch(handlers,/saveUsers|saveAuditLogs/);
   assert.match(api,/updateSyncedCollection\('users',result\.record\)/);
   assert.match(api,/removeFromSyncedCollection\('users',id\)/);

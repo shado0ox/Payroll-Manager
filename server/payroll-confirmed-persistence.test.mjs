@@ -8,7 +8,6 @@ const payroll = fs.readFileSync(new URL('../src/components/PayrollRunsView.tsx',
 test('payroll screen uses server-confirmed persistence handler', () => {
   assert.match(app, /handleSavePayrollRunConfirmed/);
   assert.match(app, /persistenceQueueRef\.current\.catch\(\(\) => undefined\)\.then\(\(\) => api\.savePayrollRun\(run\)\)/);
-  assert.match(app, /remoteStateSnapshotRef\.current = next/);
   assert.match(app, /onSavePayrollRun=\{handleSavePayrollRunConfirmed\}/);
   assert.doesNotMatch(app, /await api\.saveState\(nextState\)/);
 });

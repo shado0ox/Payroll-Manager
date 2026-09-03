@@ -23,7 +23,6 @@ interface NavbarProps {
   onLogout: () => void;
   onOpenQoyodModal: () => void;
   onNavigate?: (tab: NavigationTab) => void;
-  onResetData?: () => void;
 }
 
 const ROLE_LABELS: Record<UserRole, { key: 'systemAdmin' | 'generalManager' | 'operationsManager'; color: string }> = {
@@ -42,7 +41,6 @@ export const Navbar: React.FC<NavbarProps> = ({
   onLogout,
   onOpenQoyodModal,
   onNavigate,
-  onResetData,
 }) => {
   const { language, toggleLanguage, t } = useLanguage();
   const roleInfo = currentUser ? ROLE_LABELS[currentUser.role] : ROLE_LABELS.ADMIN;
@@ -158,16 +156,6 @@ export const Navbar: React.FC<NavbarProps> = ({
           <span className="hidden lg:inline">{t('logout')}</span>
         </button>
 
-        {/* Reset Data Button */}
-        {onResetData && (
-          <button
-            onClick={onResetData}
-            title={t('resetData')}
-            className="hidden min-h-10 min-w-10 p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg border border-slate-200 transition-colors cursor-pointer sm:block"
-          >
-            <RefreshCw className="w-4 h-4 mx-auto" />
-          </button>
-        )}
       </div>
     </header>
   );

@@ -37,7 +37,6 @@ test('leave UI waits for committed records and updates its synchronized baseline
   assert.match(api,/\/api\/leaves\/\$\{encodeURIComponent\(id\)\}\/status/);
   assert.match(app,/api\.saveLeaveRequest\(leave\)/);
   assert.match(app,/api\.updateLeaveStatus\(leaveId,status\)/);
-  assert.match(app,/remoteStateSnapshotRef\.current = next/);
   assert.match(view,/leave\.status === 'REJECTED'/);
   assert.match(view,/مرفوضة/);
 });

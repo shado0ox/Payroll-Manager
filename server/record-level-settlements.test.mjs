@@ -54,5 +54,4 @@ test('settlement UI uses committed command responses without a second payroll sa
   assert.match(app,/api\.createPayrollSettlement\(settlement\)/);
   assert.match(app,/api\.reversePayrollSettlement\(settlement\.id/);
   assert.doesNotMatch(view,/onSavePayrollRun/);
-  assert.match(app,/remoteStateSnapshotRef\.current = next/);
 });
