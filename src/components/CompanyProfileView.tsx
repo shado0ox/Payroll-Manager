@@ -78,7 +78,7 @@ interface CompanyProfileViewProps {
   activeRole: UserRole;
   currentUser?: UserAccount | null;
   qoyodConfig?: QoyodApiConfig;
-  onSaveQoyodConfig?: (config: QoyodApiConfig) => void;
+  onSaveQoyodConfig?: (config: QoyodApiConfig) => Promise<boolean | void> | boolean | void;
   onOpenQoyodModal?: () => void;
   onUpdateCompany: (company: Company) => Promise<boolean | void> | boolean | void;
   onSelectCompany?: (companyId: string) => void;
@@ -1149,10 +1149,11 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
         const qoyodPayload = buildQoyodJournalPayload(sampleBatch, formData);
         const qoyodCurl = generateQoyodCurlCommand(qoyodPayload, qConfig.apiKey, qConfig.baseUrl);
 
-        const handleSaveQoyodSettings = (e?: React.FormEvent) => {
+        const handleSaveQoyodSettings = async (e?: React.FormEvent) => {
           if (e) e.preventDefault();
           if (onSaveQoyodConfig) {
-            onSaveQoyodConfig(qConfig);
+            const saved = await onSaveQoyodConfig(qConfig);
+            if (saved === false) return;
           }
           setSaveSuccessMessage(tr('تم حفظ إعدادات وتكوين الربط مع قيود (Qoyod API 2.0) بنجاح', 'Qoyod API 2.0 integration settings were saved successfully.'));
           setTimeout(() => setSaveSuccessMessage(null), 4000);
@@ -1170,7 +1171,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
               });
               const updatedConfig = { ...qConfig, lastTestStatus: 'SUCCESS' as const, lastTestMessage: tr('الإعدادات مكتملة', 'Settings complete') };
               setQConfig(updatedConfig);
-              if (onSaveQoyodConfig) onSaveQoyodConfig(updatedConfig);
+              if (onSaveQoyodConfig) void onSaveQoyodConfig(updatedConfig);
             } else {
               setQoyodTestResult({
                 status: 'FAILED',

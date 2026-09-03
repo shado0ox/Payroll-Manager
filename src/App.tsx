@@ -40,7 +40,6 @@ import {
   savePenalties, 
   saveJournals, 
   saveAuditLogs, 
-  saveQoyodConfig, 
   clearSensitiveLocalState,
   saveActiveCompanyId, 
   saveActiveRole,
@@ -1094,11 +1093,26 @@ export const App: React.FC = () => {
     });
   };
 
-  const handleSaveQoyodConfig = (config: QoyodApiConfig) => {
-    setState(prev => {
-      saveQoyodConfig(config);
-      return { ...prev, qoyodConfig: config };
-    });
+  const handleSaveQoyodConfig = async (config: QoyodApiConfig) => {
+    if (!activeCompany?.id || !hasPermission(state.currentUser,'MANAGE_JOURNALS')) return false;
+    const operation = persistenceQueueRef.current.catch(() => undefined).then(() => api.saveQoyodConfig(activeCompany.id,config));
+    persistenceQueueRef.current = operation.then(() => undefined, () => undefined);
+    try {
+      setDbStatus(prev => ({ ...prev,isChecking:true }));
+      const result = await operation;
+      setState(prev => {
+        const next = { ...prev,qoyodConfig:result.record };
+        remoteStateSnapshotRef.current = next;
+        return next;
+      });
+      setDbStatus(prev => ({ ...prev,isCloudConnected:true,isChecking:false,lastError:null,lastSavedAt:result.updated_at }));
+      return true;
+    } catch (error:any) {
+      const code = error?.message || 'UNKNOWN_ERROR';
+      setDbStatus(prev => ({ ...prev,isChecking:false,lastError:`${tr('تعذر حفظ إعدادات قيود:', 'Could not save Qoyod settings:')} ${code}` }));
+      alert(`${tr('تعذر حفظ إعدادات قيود:', 'Could not save Qoyod settings:')} ${code}`);
+      return false;
+    }
   };
 
   const handleResetData = () => {

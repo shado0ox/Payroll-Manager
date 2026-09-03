@@ -1849,6 +1849,15 @@ async function deleteCompatibilityCollectionRecord(client, key, id, userId) {
     WHERE id=1 RETURNING version,updated_at`, [JSON.stringify(state),userId]);
 }
 
+async function updateCompatibilityObject(client, key, record, userId) {
+  const stateRow = await client.query(`SELECT state FROM ${q('app_state')} WHERE id=1 FOR UPDATE`);
+  if (!stateRow.rowCount) throw workflowError(409, 'STATE_NOT_INITIALIZED');
+  const state = clone(stateRow.rows[0].state || {});
+  state[key] = clone(record);
+  return client.query(`UPDATE ${q('app_state')} SET state=$1::jsonb,version=version+1,updated_by=$2,updated_at=now()
+    WHERE id=1 RETURNING version,updated_at`, [JSON.stringify(state),userId]);
+}
+
 const validPeriodMonth = value => typeof value === 'string' && /^[0-9]{4}-(0[1-9]|1[0-2])$/.test(value);
 const validIsoDate = value => {
   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
@@ -1887,6 +1896,32 @@ function validateCompanyRecord(record, user) {
     }
     bankCodes.add(code);
   }
+}
+
+function validateQoyodConfig(companyId, config, user) {
+  if (!companyId || !user.company_ids.includes(companyId)) throw workflowError(403, 'FORBIDDEN');
+  if (!config || typeof config !== 'object' || Array.isArray(config)) throw workflowError(400, 'INVALID_QOYOD_CONFIG');
+  if ((config.apiKey != null && typeof config.apiKey !== 'string') || String(config.apiKey || '').length > 1_000
+    || (config.organizationId != null && typeof config.organizationId !== 'string') || String(config.organizationId || '').length > 200
+    || (config.autoSyncOnApprove != null && typeof config.autoSyncOnApprove !== 'boolean')
+    || (config.lastTestStatus != null && !['SUCCESS','FAILED'].includes(config.lastTestStatus))
+    || (config.lastTestMessage != null && (typeof config.lastTestMessage !== 'string' || config.lastTestMessage.length > 1_000))) {
+    throw workflowError(400, 'INVALID_QOYOD_CONFIG');
+  }
+  let baseUrl;
+  try { baseUrl = new URL(String(config.baseUrl || '')); }
+  catch { throw workflowError(400, 'INVALID_QOYOD_URL'); }
+  if (baseUrl.protocol !== 'https:' || baseUrl.hostname !== 'api.qoyod.com') {
+    throw workflowError(400, 'INVALID_QOYOD_URL');
+  }
+  return {
+    apiKey:String(config.apiKey || '').trim(),
+    baseUrl:baseUrl.toString().replace(/\/$/,''),
+    organizationId:String(config.organizationId || '').trim(),
+    autoSyncOnApprove:config.autoSyncOnApprove === true,
+    ...(config.lastTestStatus ? { lastTestStatus:config.lastTestStatus } : {}),
+    ...(config.lastTestMessage != null ? { lastTestMessage:config.lastTestMessage } : {}),
+  };
 }
 
 async function updateCompanyAggregate(client, record) {
@@ -3003,6 +3038,33 @@ app.delete('/api/users/:id', auth, writeLimiter, async (req, res, next) => {
     await pool.query(`DELETE FROM ${q('users')} WHERE id=$1${scope}`, params);
     res.status(204).end();
   } catch (e) { next(e); }
+});
+
+app.put('/api/integrations/qoyod/config', auth, writeLimiter, async (req, res, next) => {
+  const client = await pool.connect();
+  try {
+    if (!can(req.user,'MANAGE_JOURNALS')) return res.status(403).json({ error:'FORBIDDEN' });
+    const companyId = String(req.body?.companyId || '');
+    const config = validateQoyodConfig(companyId,req.body?.config,req.user);
+    const { apiKey,apiKeyConfigured:_ignored,...publicConfig } = config;
+    await client.query('BEGIN');
+    const saved = await client.query(`INSERT INTO ${q('integration_configs')} (company_id,provider,public_config,secret_value,updated_at)
+      VALUES ($1,'QOYOD',$2::jsonb,$3,now())
+      ON CONFLICT (company_id,provider) DO UPDATE SET public_config=EXCLUDED.public_config,
+        secret_value=CASE WHEN EXCLUDED.secret_value <> '' THEN EXCLUDED.secret_value ELSE ${q('integration_configs')}.secret_value END,
+        updated_at=now()
+      RETURNING public_config,(secret_value <> '') AS api_key_configured`, [companyId,JSON.stringify(publicConfig),apiKey.trim()]);
+    const record = { ...saved.rows[0].public_config,apiKey:'',apiKeyConfigured:saved.rows[0].api_key_configured };
+    const updated = await updateCompatibilityObject(client,'qoyodConfig',record,req.user.id);
+    await appendStateAudit(client,q,{ companyIds:[companyId],user:req.user,action:'UPDATE_QOYOD_CONFIG',version:updated.rows[0].version });
+    await client.query('COMMIT');
+    broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at });
+    res.json({ record,version:Number(updated.rows[0].version),updated_at:updated.rows[0].updated_at });
+  } catch (e) {
+    try { await client.query('ROLLBACK'); } catch {}
+    if (Number.isInteger(e?.status) && e.status >= 400 && e.status < 500) return res.status(e.status).json({ error:e.message });
+    next(e);
+  } finally { client.release(); }
 });
 
 app.post('/api/integrations/qoyod/journal', auth, writeLimiter, async (req, res, next) => {

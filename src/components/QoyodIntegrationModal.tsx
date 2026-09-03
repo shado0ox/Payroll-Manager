@@ -32,7 +32,7 @@ interface QoyodIntegrationModalProps {
   journalBatch?: JournalBatch | null;
   existingJournal?: JournalBatch;
   qoyodConfig: QoyodApiConfig;
-  onSaveConfig: (config: QoyodApiConfig) => void;
+  onSaveConfig: (config: QoyodApiConfig) => Promise<boolean | void> | boolean | void;
   onJournalSynced: (journal: JournalBatch) => Promise<void>;
   onClose: () => void;
 }
@@ -154,9 +154,10 @@ export const QoyodIntegrationModal: React.FC<QoyodIntegrationModalProps> = ({
     }
   };
 
-  const handleSave = (e: React.FormEvent) => {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    onSaveConfig(config);
+    const saved = await onSaveConfig(config);
+    if (saved === false) return;
     onClose();
   };
 
