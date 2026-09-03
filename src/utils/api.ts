@@ -101,6 +101,19 @@ export const api = {
     updateSyncedCollection('companies',result.record);
     return result;
   },
+  createCompany: async (company: Company) => {
+    const result = await request<{record:Company;version:number;updated_at:string}>('/api/companies', { method:'POST',body:JSON.stringify(company) });
+    stateVersion = result.version;
+    updateSyncedCollection('companies',result.record);
+    return result;
+  },
+  archiveCompany: async (companyId: string) => {
+    const result = await request<{archived:boolean;nextCompanyId:string;version:number;updated_at:string}>(`/api/companies/${encodeURIComponent(companyId)}`, { method:'DELETE' });
+    stateVersion = result.version;
+    removeFromSyncedCollection('companies',companyId);
+    if (syncedState?.activeCompanyId === companyId) syncedState = { ...syncedState,activeCompanyId:result.nextCompanyId };
+    return result;
+  },
   saveQoyodConfig: async (companyId: string,config: QoyodApiConfig) => {
     const result = await request<{record:QoyodApiConfig;version:number;updated_at:string}>('/api/integrations/qoyod/config', { method:'PUT',body:JSON.stringify({ companyId,config }) });
     stateVersion = result.version;

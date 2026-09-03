@@ -51,8 +51,8 @@ interface SettingsViewProps {
   currentUser?: UserAccount | null;
   onUpdateCompany: (company: Company) => Promise<boolean | void> | boolean | void;
   onSubscriptionUpdated?: (record: Pick<Company,'id'|'subscriptionStatus'|'trialEndsAt'|'subscriptionEndsAt'>, updatedAt: string) => void;
-  onAddCompany: (company: Company) => void;
-  onDeleteCompany?: (companyId: string) => void;
+  onAddCompany: (company: Company) => Promise<boolean | void> | boolean | void;
+  onDeleteCompany?: (companyId: string) => Promise<boolean | void> | boolean | void;
   onSaveUser?: (user: UserAccount) => void;
   onDeleteUser?: (userId: string) => void;
   onSelectCompany?: (companyId: string) => void;
@@ -354,7 +354,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         calculationRules: companyForm.calculationRules!,
         chartOfAccounts: companyForm.chartOfAccounts!,
       };
-      onAddCompany(newComp);
+      const saved = await onAddCompany(newComp);
+      if (saved === false) return;
     }
 
     setIsCompanyModalOpen(false);

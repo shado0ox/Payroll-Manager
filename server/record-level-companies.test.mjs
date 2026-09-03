@@ -47,3 +47,40 @@ test('subscription changes do not resubmit the company profile', () => {
   assert.match(flow,/onSubscriptionUpdated\?\.\(result\.record,result\.updated_at\)/);
   assert.doesNotMatch(flow,/onUpdateCompany\(/);
 });
+
+test('company creation inserts one aggregate and assigns it to the creator', () => {
+  const start = server.indexOf("app.post('/api/companies'");
+  const end = server.indexOf("app.delete('/api/companies/:id'",start);
+  assert.ok(start >= 0 && end > start,'company creation route must exist');
+  const route = server.slice(start,end);
+  assert.match(route,/req\.user\.role !== 'ADMIN'/);
+  assert.match(route,/INSERT INTO.*companies/);
+  assert.match(route,/updateCompanyAggregate\(client,record\)/);
+  assert.match(route,/company_ids=company_ids \|\| jsonb_build_array/);
+  assert.match(route,/updateCompatibilityCollectionRecord\(client,'companies',committed/);
+  assert.doesNotMatch(route,/replaceNormalized(?:Operations|Core|Payroll)Data/);
+});
+
+test('company deletion is a reversible-data archive, not cascading deletion', () => {
+  const start = server.indexOf("app.delete('/api/companies/:id'");
+  const end = server.indexOf('function validateJournalRecord',start);
+  assert.ok(start >= 0 && end > start,'company archive route must exist');
+  const route = server.slice(start,end);
+  assert.match(route,/ONLY_MANAGED_COMPANY/);
+  assert.match(route,/UPDATE.*companies.*SET is_archived=true/);
+  assert.match(route,/company_ids=company_ids - \$1/);
+  assert.match(route,/state\.companies = .*filter/);
+  assert.doesNotMatch(route,/DELETE FROM.*companies/);
+  assert.doesNotMatch(route,/DELETE FROM.*employees|DELETE FROM.*payroll_runs/);
+});
+
+test('company lifecycle UI uses committed record APIs', () => {
+  assert.match(api,/createCompany: async/);
+  assert.match(api,/archiveCompany: async/);
+  assert.match(app,/api\.createCompany\(company\)/);
+  assert.match(app,/api\.archiveCompany\(companyId\)/);
+  assert.match(settings,/const saved = await onAddCompany\(newComp\)/);
+  const lifecycle = app.slice(app.indexOf('const handleAddCompany'),app.indexOf('const handleSaveQoyodConfig'));
+  assert.doesNotMatch(lifecycle,/api\.saveState|saveCompanies/);
+  assert.match(lifecycle,/الاحتفاظ بكل الموظفين والمسيرات والسجلات التاريخية/);
+});
