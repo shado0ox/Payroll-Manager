@@ -1,7 +1,8 @@
 node_modules
 dist
 .git
-.github
+# Security tests validate the PostgreSQL migration workflow during image builds.
+# Keep .github in the builder context; the final runtime image copies only dist/server.
 .vscode
 .env
 .env.local
