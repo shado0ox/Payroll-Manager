@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import express from 'express';
@@ -13,6 +14,14 @@ import { appendPayrollFinancialAudit } from './payroll-financial-audit.mjs';
 
 const { Pool } = pg;
 const port = Number(process.env.PORT || 3000);
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'dist');
+const buildId = (() => {
+  try {
+    const metadata = JSON.parse(fs.readFileSync(path.join(root, 'build-meta.json'), 'utf8'));
+    if (metadata?.buildId) return String(metadata.buildId);
+  } catch {}
+  return String(process.env.APP_BUILD_ID || 'development');
+})();
 const schema = process.env.DB_SCHEMA || 'masar_payroll';
 if (!/^[a-z_][a-z0-9_]*$/.test(schema)) throw new Error('DB_SCHEMA is invalid');
 if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL is required');
@@ -299,7 +308,7 @@ function validatePayrollWorkflowChanges(storedRuns, incomingRuns, user) {
 
 const stateEventClients = new Set();
 const broadcastStateUpdate = (payload) => {
-  const message = `data: ${JSON.stringify(payload)}\n\n`;
+  const message = `data: ${JSON.stringify({ ...payload,buildId })}\n\n`;
   for (const client of stateEventClients) {
     try { client.write(message); } catch { stateEventClients.delete(client); }
   }
@@ -1491,7 +1500,12 @@ async function auth(req, res, next) {
 }
 
 app.get('/api/health', async (_req, res, next) => {
-  try { await pool.query('SELECT 1'); res.json({ status: 'ok' }); } catch (e) { next(e); }
+  try { await pool.query('SELECT 1'); res.json({ status:'ok',buildId }); } catch (e) { next(e); }
+});
+
+app.get('/api/version', (_req, res) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+  res.json({ buildId });
 });
 
 app.get('/api/public/config', (_req, res) => {
@@ -1737,7 +1751,7 @@ app.get('/api/state/events', auth, (req, res) => {
   res.setHeader('Connection', 'keep-alive');
   res.setHeader('X-Accel-Buffering', 'no');
   res.flushHeaders?.();
-  res.write(`event: ready\ndata: ${JSON.stringify({ connected:true })}\n\n`);
+  res.write(`event: ready\ndata: ${JSON.stringify({ connected:true,buildId })}\n\n`);
   stateEventClients.add(res);
   const heartbeat = setInterval(() => { try { res.write(': heartbeat\n\n'); } catch {} }, 25_000);
   req.on('close', () => { clearInterval(heartbeat); stateEventClients.delete(res); });
@@ -3234,6 +3248,7 @@ app.post('/api/companies/:id/employees/archive', auth, writeLimiter, async (req,
 });
 
 app.put('/api/users/:id', auth, writeLimiter, async (req, res, next) => {
+  let client;
   try {
     if (!can(req.user, 'MANAGE_USERS')) return res.status(403).json({ error:'FORBIDDEN' });
     if (req.params.id === 'user-admin') return res.status(403).json({ error:'SYSTEM_ADMIN_IMMUTABLE' });
@@ -3249,21 +3264,23 @@ app.put('/api/users/:id', auth, writeLimiter, async (req, res, next) => {
     }
     if (req.user.role !== 'ADMIN' && permissions.some(permission => !permissionsFor(req.user).includes(permission))) return res.status(403).json({ error:'CANNOT_GRANT_UNOWNED_PERMISSION' });
     const normalizedEmail = String(u.email || '').trim().toLowerCase();
+    client = await pool.connect();
+    await client.query('BEGIN');
     if (normalizedEmail) {
-      const duplicateEmail = await pool.query(`SELECT id FROM ${q('users')} WHERE lower(email)=lower($1) AND id<>$2 LIMIT 1`, [normalizedEmail, req.params.id]);
-      if (duplicateEmail.rowCount) return res.status(409).json({ error:'USER_EMAIL_EXISTS' });
+      const duplicateEmail = await client.query(`SELECT id FROM ${q('users')} WHERE lower(email)=lower($1) AND id<>$2 LIMIT 1`, [normalizedEmail, req.params.id]);
+      if (duplicateEmail.rowCount) throw workflowError(409,'USER_EMAIL_EXISTS');
     }
-    const existing = await pool.query(`SELECT id,password_hash,company_ids,role FROM ${q('users')} WHERE id=$1`, [req.params.id]);
+    const existing = await client.query(`SELECT id,password_hash,company_ids,role FROM ${q('users')} WHERE id=$1 FOR UPDATE`, [req.params.id]);
     if (existing.rowCount) {
       const existingCompanyIds = Array.isArray(existing.rows[0].company_ids) ? existing.rows[0].company_ids : [];
       const targetOutsideScope = existingCompanyIds.some(id => !req.user.company_ids.includes(id));
       if (targetOutsideScope || (req.user.role !== 'ADMIN' && existing.rows[0].role !== 'OPERATIONS_MANAGER')) {
-        return res.status(403).json({ error:'FORBIDDEN' });
+        throw workflowError(403,'FORBIDDEN');
       }
     }
-    if ((!existing.rowCount || u.password) && !isStrongPassword(u.password)) return res.status(400).json({ error:'PASSWORD_POLICY_FAILED' });
+    if ((!existing.rowCount || u.password) && !isStrongPassword(u.password)) throw workflowError(400,'PASSWORD_POLICY_FAILED');
     const passwordHash = u.password ? await bcrypt.hash(u.password, 12) : existing.rows[0]?.password_hash;
-    const r = await pool.query(`INSERT INTO ${q('users')} (id,username,password_hash,name,email,phone,role,company_ids,permissions,is_active)
+    const r = await client.query(`INSERT INTO ${q('users')} (id,username,password_hash,name,email,phone,role,company_ids,permissions,is_active)
       VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9::jsonb,$10)
       ON CONFLICT (id) DO UPDATE SET username=EXCLUDED.username,password_hash=EXCLUDED.password_hash,name=EXCLUDED.name,
       email=EXCLUDED.email,phone=EXCLUDED.phone,role=EXCLUDED.role,company_ids=EXCLUDED.company_ids,permissions=EXCLUDED.permissions,is_active=EXCLUDED.is_active,updated_at=now()
@@ -3271,26 +3288,52 @@ app.put('/api/users/:id', auth, writeLimiter, async (req, res, next) => {
       req.params.id, String(u.username).toLowerCase(), passwordHash, u.name, normalizedEmail, u.phone || '', u.role, JSON.stringify(u.companyIds), JSON.stringify(permissions), u.isActive !== false
     ]);
     const row = r.rows[0];
-    res.json({ id:row.id,username:row.username,name:row.name,email:row.email,phone:row.phone,role:row.role,companyIds:row.company_ids,permissions:row.permissions,isActive:row.is_active,createdAt:row.created_at,lastLogin:row.last_login });
+    const record = { id:row.id,username:row.username,name:row.name,email:row.email,phone:row.phone,role:row.role,companyIds:row.company_ids,permissions:row.permissions,isActive:row.is_active,createdAt:row.created_at,lastLogin:row.last_login };
+    const updated = await client.query(`UPDATE ${q('app_state')} SET version=version+1,updated_by=$1,updated_at=now()
+      WHERE id=1 RETURNING version,updated_at`, [req.user.id]);
+    if (!updated.rowCount) throw workflowError(409,'STATE_NOT_INITIALIZED');
+    await appendStateAudit(client,q,{ companyIds:record.companyIds,user:req.user,action:'STATE_PATCH',version:updated.rows[0].version });
+    await client.query(`INSERT INTO ${q('audit_log')} (user_id,action,ip) VALUES ($1,$2,$3)`, [req.user.id,`${existing.rowCount ? 'UPDATE_USER' : 'CREATE_USER'}:${record.id}`,req.ip]);
+    await client.query('COMMIT');
+    broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at });
+    res.json({ record,version:Number(updated.rows[0].version),updated_at:updated.rows[0].updated_at });
   } catch (e) {
+    if (client) { try { await client.query('ROLLBACK'); } catch {} }
+    if (Number.isInteger(e?.status) && e.status >= 400 && e.status < 500) return res.status(e.status).json({ error:e.message });
     if (e?.code === '23505') {
       const constraint = String(e.constraint || '');
       return res.status(409).json({ error:constraint.includes('email') ? 'USER_EMAIL_EXISTS' : 'USERNAME_EXISTS' });
     }
     next(e);
-  }
+  } finally { client?.release(); }
 });
 
 app.delete('/api/users/:id', auth, writeLimiter, async (req, res, next) => {
+  let client;
   try {
     if (!can(req.user, 'MANAGE_USERS')) return res.status(403).json({ error:'FORBIDDEN' });
     if (req.params.id === 'user-admin') return res.status(403).json({ error:'SYSTEM_ADMIN_IMMUTABLE' });
     if (req.user.id === req.params.id) return res.status(400).json({ error:'CANNOT_DELETE_SELF' });
     const params = [req.params.id,JSON.stringify(req.user.company_ids)];
     const scope = ` AND company_ids <@ $2::jsonb${req.user.role !== 'ADMIN' ? " AND role='OPERATIONS_MANAGER'" : ''}`;
-    await pool.query(`DELETE FROM ${q('users')} WHERE id=$1${scope}`, params);
-    res.status(204).end();
-  } catch (e) { next(e); }
+    client = await pool.connect();
+    await client.query('BEGIN');
+    const deleted = await client.query(`DELETE FROM ${q('users')} WHERE id=$1${scope} RETURNING id,name,company_ids`, params);
+    if (!deleted.rowCount) throw workflowError(404,'USER_NOT_FOUND');
+    const row = deleted.rows[0];
+    const updated = await client.query(`UPDATE ${q('app_state')} SET version=version+1,updated_by=$1,updated_at=now()
+      WHERE id=1 RETURNING version,updated_at`, [req.user.id]);
+    if (!updated.rowCount) throw workflowError(409,'STATE_NOT_INITIALIZED');
+    await appendStateAudit(client,q,{ companyIds:row.company_ids,user:req.user,action:'STATE_PATCH',version:updated.rows[0].version });
+    await client.query(`INSERT INTO ${q('audit_log')} (user_id,action,ip) VALUES ($1,$2,$3)`, [req.user.id,`DELETE_USER:${row.id}`,req.ip]);
+    await client.query('COMMIT');
+    broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at });
+    res.json({ deleted:true,id:row.id,version:Number(updated.rows[0].version),updated_at:updated.rows[0].updated_at });
+  } catch (e) {
+    if (client) { try { await client.query('ROLLBACK'); } catch {} }
+    if (Number.isInteger(e?.status) && e.status >= 400 && e.status < 500) return res.status(e.status).json({ error:e.message });
+    next(e);
+  } finally { client?.release(); }
 });
 
 app.put('/api/integrations/qoyod/config', auth, writeLimiter, async (req, res, next) => {
@@ -3356,9 +3399,11 @@ app.post('/api/integrations/qoyod/journal', auth, writeLimiter, async (req, res,
   } catch (e) { next(e); }
 });
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'dist');
 app.use(express.static(root, { index: false, maxAge: '1h', immutable: false }));
-app.get('*', (_req, res) => res.sendFile(path.join(root, 'index.html')));
+app.get('*', (_req, res) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+  res.sendFile(path.join(root, 'index.html'));
+});
 app.use((error, _req, res, _next) => {
   console.error(error);
   res.status(Number(error?.status) || 500).json({ error:Number(error?.status) < 500 ? error.message : 'INTERNAL_ERROR' });

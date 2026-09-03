@@ -3,9 +3,26 @@ import react from '@vitejs/plugin-react';
 import path from 'path';
 import {defineConfig} from 'vite';
 
-export default defineConfig(() => {
+export default defineConfig(({ command }) => {
+  const buildId = command === 'build' ? String(process.env.APP_BUILD_ID || Date.now()) : 'development';
   return {
-    plugins: [react(), tailwindcss()],
+    plugins: [
+      react(),
+      tailwindcss(),
+      {
+        name: 'masar-build-metadata',
+        generateBundle() {
+          this.emitFile({
+            type: 'asset',
+            fileName: 'build-meta.json',
+            source: JSON.stringify({ buildId }),
+          });
+        },
+      },
+    ],
+    define: {
+      __MASAR_BUILD_ID__: JSON.stringify(buildId),
+    },
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),

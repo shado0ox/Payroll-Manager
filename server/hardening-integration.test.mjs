@@ -64,7 +64,7 @@ test('Qoyod credentials are stored and loaded per company', () => {
 });
 
 test('Qoyod journal sync selects only the requested company credential', () => {
-  const block = routeBlock('post', '/api/integrations/qoyod/journal', "const root = path.resolve");
+  const block = routeBlock('post', '/api/integrations/qoyod/journal', 'app.use(express.static');
   assert.match(block, /req\.user\.company_ids\.includes\(companyId\)/);
   assert.match(block, /WHERE company_id=\$1 AND provider='QOYOD'/);
   assert.match(block, /\[companyId\]/);

@@ -53,8 +53,8 @@ interface SettingsViewProps {
   onSubscriptionUpdated?: (record: Pick<Company,'id'|'subscriptionStatus'|'trialEndsAt'|'subscriptionEndsAt'>, updatedAt: string) => void;
   onAddCompany: (company: Company) => Promise<boolean | void> | boolean | void;
   onDeleteCompany?: (companyId: string) => Promise<boolean | void> | boolean | void;
-  onSaveUser?: (user: UserAccount) => void;
-  onDeleteUser?: (userId: string) => void;
+  onSaveUser?: (user: UserAccount) => boolean | Promise<boolean>;
+  onDeleteUser?: (userId: string) => boolean | Promise<boolean>;
   onSelectCompany?: (companyId: string) => void;
 }
 
@@ -401,7 +401,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   };
 
   // Save User Submit
-  const handleSaveUserSubmit = (e: React.FormEvent) => {
+  const handleSaveUserSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setUserFormError(null);
 
@@ -449,7 +449,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     };
 
     if (onSaveUser) {
-      onSaveUser(savedUser);
+      if (!await onSaveUser(savedUser)) return;
     }
 
     setIsUserModalOpen(false);

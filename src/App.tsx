@@ -10,7 +10,8 @@ import {
   Settings, 
   History,
   ShieldAlert,
-  UserCheck
+  UserCheck,
+  RefreshCw
 } from 'lucide-react';
 import { 
   Company, 
@@ -35,7 +36,6 @@ import {
   clearSensitiveLocalState,
   saveActiveCompanyId, 
   saveActiveRole,
-  saveUsers,
   saveCurrentUser,
   resetToCleanState
 } from './utils/storage';
@@ -87,6 +87,19 @@ type MasarAppState = ReturnType<typeof loadInitialState> & { temporaryEarnings: 
 const payrollInputLockMessage = (language: 'ar' | 'en') => language === 'ar'
   ? 'هذه العملية مرتبطة بمسير رواتب معتمد/مرحل. يجب إرجاع المسير أولاً قبل تعديلها أو حذفها.'
   : 'This entry is linked to an approved/posted payroll run. Reopen the payroll run before editing or deleting it.';
+
+const BuildUpdateBanner = ({ language,onReload }: { language:'ar' | 'en';onReload:() => void }) => (
+  <aside className="fixed left-1/2 top-4 z-[10000] flex w-[calc(100%-2rem)] max-w-xl -translate-x-1/2 items-center justify-between gap-4 rounded-2xl border border-amber-300 bg-amber-50 px-5 py-3 text-amber-950 shadow-2xl" dir={language === 'ar' ? 'rtl' : 'ltr'} role="alert">
+    <div>
+      <p className="text-sm font-black">{language === 'ar' ? 'يتوفر تحديث جديد للبرنامج' : 'A new application update is available'}</p>
+      <p className="mt-0.5 text-xs font-medium text-amber-800">{language === 'ar' ? 'سيتم انتظار اكتمال أي عملية حفظ جارية قبل التحديث.' : 'Any pending save will finish before the page updates.'}</p>
+    </div>
+    <button type="button" onClick={onReload} className="flex shrink-0 items-center gap-2 rounded-xl bg-amber-900 px-4 py-2 text-xs font-black text-white hover:bg-amber-800">
+      <RefreshCw className="h-4 w-4" />
+      {language === 'ar' ? 'تحديث الآن' : 'Update now'}
+    </button>
+  </aside>
+);
 
 function isClosedPayrollInputLocked(
   payrollRuns: PayrollRun[],
@@ -146,6 +159,7 @@ export const App: React.FC = () => {
   const [isDbModalOpen, setIsDbModalOpen] = useState(false);
   const [showDbWarningBanner, setShowDbWarningBanner] = useState(true);
   const [authReady, setAuthReady] = useState(false);
+  const [updateAvailable, setUpdateAvailable] = useState(false);
   const [publicConfig, setPublicConfig] = useState({ registrationEnabled:false,trialDays:14,developerContactPhone:'' });
   const persistenceQueueRef = useRef<Promise<void>>(Promise.resolve());
   const persistenceEpochRef = useRef(0);
@@ -153,6 +167,31 @@ export const App: React.FC = () => {
 
   useEffect(() => {
     api.publicConfig().then(setPublicConfig).catch(() => undefined);
+  }, []);
+
+  // Every open tab, including the login screen, detects a newly deployed build.
+  // Authenticated tabs also receive the build id immediately through the SSE stream.
+  useEffect(() => {
+    let cancelled = false;
+    const checkVersion = async () => {
+      try {
+        const current = await api.version();
+        if (!cancelled && current.buildId && current.buildId !== __MASAR_BUILD_ID__) setUpdateAvailable(true);
+      } catch {
+        // A deployment may briefly restart the container; the next poll/focus retries.
+      }
+    };
+    const onVisible = () => { if (document.visibilityState === 'visible') void checkVersion(); };
+    void checkVersion();
+    const interval = window.setInterval(() => { void checkVersion(); }, 30_000);
+    window.addEventListener('focus', checkVersion);
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+      window.removeEventListener('focus', checkVersion);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
   }, []);
 
   // Restore authentication only inside the same open tab. sessionStorage survives refresh
@@ -275,6 +314,10 @@ export const App: React.FC = () => {
     const currentUser = state.currentUser;
     if (!currentUser) return;
     return api.subscribeStateEvents((event) => {
+      if (event.buildId && event.buildId !== __MASAR_BUILD_ID__) {
+        setUpdateAvailable(true);
+        return;
+      }
       if (!event?.version || event.updatedBy === currentUser.id) return;
       persistenceQueueRef.current = persistenceQueueRef.current.catch(() => undefined).then(async () => {
         try {
@@ -404,77 +447,55 @@ export const App: React.FC = () => {
   const handleSaveUser = async (user: UserAccount) => {
     if (user.id === 'user-admin' || !hasPermission(state.currentUser, 'MANAGE_USERS')) {
       alert(tr('لا يمكن تعديل مدير النظام الأساسي، وإدارة المستخدمين متاحة للإدارة فقط.', 'The primary system administrator cannot be edited. User management is restricted to administrators.'));
-      return;
+      return false;
     }
-    const savedUser = await api.saveUser(user);
-    user = savedUser;
-    setState(prev => {
-      const exists = prev.users.some(u => u.id === user.id);
-      const updated = exists
-        ? prev.users.map(u => u.id === user.id ? user : u)
-        : [user, ...prev.users];
-
-      saveUsers(updated);
-
-      // If updating current logged in user
-      let nextCurrentUser = prev.currentUser;
-      if (prev.currentUser?.id === user.id) {
-        nextCurrentUser = user;
-        saveCurrentUser(user);
-      }
-
-      const log: AuditLog = {
-        id: `log-${Date.now()}`,
-        timestamp: new Date().toISOString(),
-        userName: prev.currentUser?.name || 'مسؤول النظام',
-        userRole: prev.activeRole,
-        action: exists ? tr('تعديل بيانات وصلاحيات مستخدم', 'Updated user details and permissions') : tr('إنشاء حساب مستخدم جديد', 'Created user account'),
-        entityType: 'USER',
-        entityId: user.id,
-        details: `${tr('المستخدم:', 'User:')} ${user.name} (${user.username}) - ${tr('الدور:', 'Role:')} ${user.role}`,
-      };
-      const updatedLogs = [log, ...prev.auditLogs];
-      saveAuditLogs(updatedLogs);
-
-      return {
-        ...prev,
-        users: updated,
-        currentUser: nextCurrentUser,
-        auditLogs: updatedLogs,
-      };
-    });
+    const operation = persistenceQueueRef.current.catch(() => undefined).then(() => api.saveUser(user));
+    persistenceQueueRef.current = operation.then(() => undefined, () => undefined);
+    try {
+      setDbStatus(prev => ({ ...prev,isChecking:true }));
+      const result = await operation;
+      setState(prev => {
+        const exists = prev.users.some(candidate => candidate.id === result.record.id);
+        const users = exists ? prev.users.map(candidate => candidate.id === result.record.id ? result.record : candidate) : [result.record,...prev.users];
+        const currentUser = prev.currentUser?.id === result.record.id ? result.record : prev.currentUser;
+        if (currentUser?.id === result.record.id) saveCurrentUser(result.record);
+        const next = { ...prev,users,currentUser } as MasarAppState;
+        remoteStateSnapshotRef.current = next;
+        return next;
+      });
+      setDbStatus(prev => ({ ...prev,isCloudConnected:true,isChecking:false,lastError:null,lastSavedAt:result.updated_at }));
+      return true;
+    } catch (error:any) {
+      const code = error?.message || 'UNKNOWN_ERROR';
+      setDbStatus(prev => ({ ...prev,isChecking:false,lastError:`${tr('تعذر حفظ المستخدم:', 'Could not save user:')} ${code}` }));
+      alert(`${tr('تعذر حفظ المستخدم:', 'Could not save user:')} ${code}`);
+      return false;
+    }
   };
 
   const handleDeleteUser = async (userId: string) => {
     if (userId === 'user-admin' || !hasPermission(state.currentUser, 'MANAGE_USERS')) {
       alert(tr('لا يمكن حذف مدير النظام الأساسي، وإدارة المستخدمين متاحة للإدارة فقط.', 'The primary system administrator cannot be deleted. User management is restricted to administrators.'));
-      return;
+      return false;
     }
-    await api.deleteUser(userId);
-    setState(prev => {
-      const targetUser = prev.users.find(u => u.id === userId);
-      const updated = prev.users.filter(u => u.id !== userId);
-      saveUsers(updated);
-
-      const log: AuditLog = {
-        id: `log-${Date.now()}`,
-        timestamp: new Date().toISOString(),
-        userName: prev.currentUser?.name || 'مسؤول النظام',
-        userRole: prev.activeRole,
-        action: tr('حذف حساب مستخدم', 'Deleted user account'),
-        entityType: 'USER',
-        entityId: userId,
-        details: `${tr('تم حذف حساب المستخدم:', 'Deleted user account:')} ${targetUser?.name || userId}`,
-      };
-      const updatedLogs = [log, ...prev.auditLogs];
-      saveAuditLogs(updatedLogs);
-
-      return {
-        ...prev,
-        users: updated,
-        auditLogs: updatedLogs,
-      };
-    });
+    const operation = persistenceQueueRef.current.catch(() => undefined).then(() => api.deleteUser(userId));
+    persistenceQueueRef.current = operation.then(() => undefined, () => undefined);
+    try {
+      setDbStatus(prev => ({ ...prev,isChecking:true }));
+      const result = await operation;
+      setState(prev => {
+        const next = { ...prev,users:prev.users.filter(candidate => candidate.id !== result.id) } as MasarAppState;
+        remoteStateSnapshotRef.current = next;
+        return next;
+      });
+      setDbStatus(prev => ({ ...prev,isCloudConnected:true,isChecking:false,lastError:null,lastSavedAt:result.updated_at }));
+      return true;
+    } catch (error:any) {
+      const code = error?.message || 'UNKNOWN_ERROR';
+      setDbStatus(prev => ({ ...prev,isChecking:false,lastError:`${tr('تعذر حذف المستخدم:', 'Could not delete user:')} ${code}` }));
+      alert(`${tr('تعذر حذف المستخدم:', 'Could not delete user:')} ${code}`);
+      return false;
+    }
   };
 
   // Persist handlers
@@ -1135,13 +1156,18 @@ export const App: React.FC = () => {
     setState(restoredState);
   };
 
+  const handleBuildReload = () => {
+    void persistenceQueueRef.current.catch(() => undefined).finally(() => window.location.reload());
+  };
+  const buildUpdateBanner = updateAvailable ? <BuildUpdateBanner language={language} onReload={handleBuildReload} /> : null;
+
   // If not logged in, show real Login View
   if (!authReady) {
-    return <div className="min-h-screen bg-slate-950 flex items-center justify-center text-white text-sm font-bold">{t('checkingSession')}</div>;
+    return <>{buildUpdateBanner}<div className="min-h-screen bg-slate-950 flex items-center justify-center text-white text-sm font-bold">{t('checkingSession')}</div></>;
   }
 
   if (!state.currentUser) {
-    return <LoginView defaultCompanyCode={state.companies[0]?.companyCode || '101'} onLogin={handleLogin} />;
+    return <>{buildUpdateBanner}<LoginView defaultCompanyCode={state.companies[0]?.companyCode || '101'} onLogin={handleLogin} /></>;
   }
 
   const canViewDatabaseTools = isDeveloperAccount(state.currentUser);
@@ -1157,7 +1183,7 @@ export const App: React.FC = () => {
 
   if (subscriptionExpired) {
     const phone = publicConfig.developerContactPhone;
-    return <main className="flex min-h-screen items-center justify-center bg-slate-950 p-6 text-white" dir={language === 'ar' ? 'rtl' : 'ltr'}>
+    return <>{buildUpdateBanner}<main className="flex min-h-screen items-center justify-center bg-slate-950 p-6 text-white" dir={language === 'ar' ? 'rtl' : 'ltr'}>
       <section className="w-full max-w-lg rounded-[2rem] border border-amber-400/20 bg-slate-900 p-8 text-center shadow-2xl">
         <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-amber-400/10 text-amber-300"><ShieldAlert className="h-8 w-8" /></div>
         <h1 className="mt-6 text-2xl font-black">{tr('انتهت الفترة التجريبية', 'Trial period ended')}</h1>
@@ -1165,11 +1191,12 @@ export const App: React.FC = () => {
         {phone && <a href={`tel:${phone}`} dir="ltr" className="mt-6 block rounded-2xl border border-emerald-400/25 bg-emerald-400/10 px-5 py-4 font-mono text-lg font-black text-emerald-300">{phone}</a>}
         <button type="button" onClick={handleLogout} className="mt-6 h-11 w-full rounded-xl bg-white/10 text-sm font-bold text-slate-200 hover:bg-white/15">{tr('تسجيل الخروج', 'Sign out')}</button>
       </section>
-    </main>;
+    </main></>;
   }
 
   return (
     <div className="flex h-screen w-full overflow-hidden bg-[#f8fafc] font-sans antialiased text-slate-900 selection:bg-emerald-500 selection:text-white">
+      {buildUpdateBanner}
       
       {/* Dark Sidebar */}
       <Sidebar

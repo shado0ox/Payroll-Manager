@@ -82,8 +82,8 @@ interface CompanyProfileViewProps {
   onOpenQoyodModal?: () => void;
   onUpdateCompany: (company: Company) => Promise<boolean | void> | boolean | void;
   onSelectCompany?: (companyId: string) => void;
-  onSaveUser?: (user: UserAccount) => void;
-  onDeleteUser?: (userId: string) => void;
+  onSaveUser?: (user: UserAccount) => boolean | Promise<boolean>;
+  onDeleteUser?: (userId: string) => boolean | Promise<boolean>;
   onDeleteAllCompanyEmployees?: (companyId: string) => Promise<boolean | void> | boolean | void;
 }
 
@@ -343,7 +343,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
     setIsUserModalOpen(true);
   };
 
-  const handleSaveUserSubmit = (e: React.FormEvent) => {
+  const handleSaveUserSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setUserFormError(null);
 
@@ -376,7 +376,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
         companyIds: updatedCompanyIds,
       } as UserAccount;
 
-      if (onSaveUser) onSaveUser(updatedUser);
+      if (onSaveUser && !await onSaveUser(updatedUser)) return;
     } else {
       const newUser: UserAccount = {
         id: `user-${Date.now()}`,
@@ -392,7 +392,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
         createdAt: new Date().toISOString().split('T')[0],
       };
 
-      if (onSaveUser) onSaveUser(newUser);
+      if (onSaveUser && !await onSaveUser(newUser)) return;
     }
 
     setIsUserModalOpen(false);
