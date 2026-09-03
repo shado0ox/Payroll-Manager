@@ -18,7 +18,7 @@ function routeBlock(method,path,nextMarker) {
 
 test('journal writes replace only one journal aggregate', () => {
   const put = routeBlock('put','/api/journals/:id',"app.delete('/api/journals/:id'");
-  const remove = routeBlock('delete','/api/journals/:id','// Record-level mutations');
+  const remove = routeBlock('delete','/api/journals/:id',"app.post('/api/employees/import'");
   assert.match(put,/upsertJournalAggregate/);
   assert.match(put,/validateJournalRecord/);
   assert.match(remove,/DELETE FROM.*journal_batches.*WHERE id=\$1/);

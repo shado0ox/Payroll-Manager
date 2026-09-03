@@ -16,31 +16,25 @@ function routeBlock(method, route, nextRouteMarker) {
 test('runtime state writers are tenant scoped', () => {
   assert.match(source, /createTenantScopedClient, scopeStateForCompanies/);
 
-  const putBlock = routeBlock('put', '/api/state', "app.patch('/api/state/patch'");
-  const patchBlock = routeBlock('patch', '/api/state/patch', "app.delete('/api/employees/:id'");
+  const putBlock = routeBlock('put', '/api/state', 'async function updateCompatibilityCollectionRecord');
 
-  for (const block of [putBlock, patchBlock]) {
-    assert.match(block, /createTenantScopedClient\(client, q, tenantCompanyIds\)/);
-    assert.match(block, /scopeStateForCompanies\(state, tenantCompanyIds\)/);
-    assert.doesNotMatch(block, /replaceNormalizedPayrollData\(client, state\)/);
-    assert.doesNotMatch(block, /replaceNormalizedOperationsData\(client, state\)/);
-    assert.doesNotMatch(block, /replaceNormalizedCoreData\(client, state\)/);
-  }
+  assert.match(putBlock, /createTenantScopedClient\(client, q, tenantCompanyIds\)/);
+  assert.match(putBlock, /scopeStateForCompanies\(state, tenantCompanyIds\)/);
+  assert.doesNotMatch(putBlock, /replaceNormalizedPayrollData\(client, state\)/);
+  assert.doesNotMatch(putBlock, /replaceNormalizedOperationsData\(client, state\)/);
+  assert.doesNotMatch(putBlock, /replaceNormalizedCoreData\(client, state\)/);
 });
 
-test('application audit history cannot be patched by clients', () => {
-  const patchableLine = source.match(/const PATCHABLE_COLLECTIONS[^\n]+/)?.[0] || '';
-  assert.ok(patchableLine);
-  assert.doesNotMatch(patchableLine, /auditLogs/);
+test('the generic state patch surface is removed and audit history stays server owned', () => {
+  assert.doesNotMatch(source,/app\.patch\('\/api\/state\/patch'/);
+  assert.doesNotMatch(source,/PATCHABLE_COLLECTIONS|applyRecordPatch|INVALID_STATE_PATCH/);
   assert.match(source, /next\.auditLogs = stored\?\.auditLogs \|\| \[\];/);
 });
 
 test('state writes append server-owned audit events inside the transaction', () => {
   assert.match(source, /appendStateAudit/);
-  const putBlock = routeBlock('put', '/api/state', "app.patch('/api/state/patch'");
-  const patchBlock = routeBlock('patch', '/api/state/patch', "app.delete('/api/employees/:id'");
+  const putBlock = routeBlock('put', '/api/state', 'async function updateCompatibilityCollectionRecord');
   assert.match(putBlock, /appendStateAudit\(client, q, \{ companyIds:req\.user\.company_ids, user:req\.user, action:'STATE_REPLACE', version:r\.rows\[0\]\.version \}\);\s*await client\.query\('COMMIT'\)/);
-  assert.match(patchBlock, /appendStateAudit\(client, q, \{ companyIds:req\.user\.company_ids, user:req\.user, action:'STATE_PATCH', version:result\.rows\[0\]\.version \}\);\s*await client\.query\('COMMIT'\)/);
 });
 
 test('state user listing is limited to users in assigned companies', () => {

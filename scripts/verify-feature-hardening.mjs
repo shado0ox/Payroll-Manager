@@ -3,7 +3,7 @@ import fs from 'node:fs';
 const requirements = {
   'server/index.mjs': [
     "app.put('/api/employees/:id'",
-    "app.patch('/api/state/patch'",
+    "app.put('/api/payroll-runs/:id'",
     'LEGACY_EMPLOYEE_IDENTITY_COMPAT',
     'attendance_company_period_idx',
     'penalties_company_period_idx',
