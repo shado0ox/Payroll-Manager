@@ -60,3 +60,9 @@ the company-filtered result through `GET /api/state`.
 `PUT /api/state` remains available only to the developer account for an explicit,
 confirmed backup restore. `app_state` remains a temporary compatibility snapshot
 until the final normalized-read migration and rollback checks are complete.
+
+Normal `GET /api/state` responses and HR lifecycle processing are now assembled
+directly from the normalized tables. They read only version metadata from
+`app_state`; the JSON payload is no longer a source for normal application reads.
+Record write paths still update the compatibility snapshot temporarily so the
+explicit restore and rollback path remains available during the final migration.

@@ -803,6 +803,12 @@ async function hydrateNormalizedStateData(client, rawState) {
   return hydrateNormalizedCoreData(client, operationsState);
 }
 
+// Normal application reads are assembled from normalized PostgreSQL tables.
+// app_state is retained only as temporary write/restore compatibility state.
+async function readNormalizedApplicationState(client) {
+  return hydrateNormalizedStateData(client, {});
+}
+
 async function migrate() {
   await pool.query(`CREATE SCHEMA IF NOT EXISTS "${schema}"`);
   await pool.query(`CREATE TABLE IF NOT EXISTS ${q('companies')} (
@@ -1346,12 +1352,8 @@ async function runHrLifecycleAlerts() {
   if (hrAlertRunInProgress || !resendApiKey || !verificationEmailFrom) return;
   hrAlertRunInProgress = true;
   try {
-    const [stateResult, usersResult] = await Promise.all([
-      pool.query(`SELECT state FROM ${q('app_state')} WHERE id=1`),
-      pool.query(`SELECT id,name,email,role,company_ids,permissions,is_active FROM ${q('users')} WHERE is_active=true AND email<>''`),
-    ]);
-    if (!stateResult.rowCount) return;
-    const hydrated = await hydrateNormalizedStateData(pool, stateResult.rows[0].state);
+    const usersResult = await pool.query(`SELECT id,name,email,role,company_ids,permissions,is_active FROM ${q('users')} WHERE is_active=true AND email<>''`);
+    const hydrated = await readNormalizedApplicationState(pool);
     const alerts = buildHrLifecycleAlerts(hydrated?.employees || []);
     if (!alerts.length) return;
     const existing = await pool.query(`SELECT event_key FROM ${q('hr_lifecycle_alert_deliveries')} WHERE event_key = ANY($1::text[])`, [alerts.map(hrAlertEventKey)]);
@@ -1729,11 +1731,10 @@ app.post('/api/auth/logout', auth, async (req, res, next) => {
 app.get('/api/state', auth, async (req, res, next) => {
   try {
     const [r, userResult] = await Promise.all([
-      pool.query(`SELECT state,version,updated_at FROM ${q('app_state')} WHERE id=1`),
+      pool.query(`SELECT version,updated_at FROM ${q('app_state')} WHERE id=1`),
       pool.query(`SELECT id,username,name,email,phone,role,company_ids,permissions,is_active,created_at,last_login FROM ${q('users')} ORDER BY created_at`),
     ]);
-    if (!r.rowCount) return res.json({ state:null, version:0 });
-    const normalizedState = await hydrateNormalizedStateData(pool, r.rows[0].state);
+    const normalizedState = await readNormalizedApplicationState(pool);
     const state = publicStateForUser(normalizedState, req.user);
     const allowed = allowedCompanyIds(req.user);
     const visibleCompanyIds = new Set(Array.isArray(req.user.company_ids) ? req.user.company_ids : []);
@@ -1741,7 +1742,7 @@ app.get('/api/state', auth, async (req, res, next) => {
       .filter(user => Array.isArray(user.company_ids) && user.company_ids.some(id => visibleCompanyIds.has(id)))
       .map(user => ({ id:user.id, username:user.username, name:user.name, email:user.email, phone:user.phone, role:user.role,
         companyIds:user.company_ids, permissions:permissionsFor(user), isActive:user.is_active, createdAt:user.created_at, lastLogin:user.last_login }));
-    res.json({ ...r.rows[0], state });
+    res.json({ version:Number(r.rows[0]?.version || 0),updated_at:r.rows[0]?.updated_at || null,state });
   } catch (e) { next(e); }
 });
 
