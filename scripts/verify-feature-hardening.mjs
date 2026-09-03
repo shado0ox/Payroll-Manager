@@ -14,7 +14,7 @@ const requirements = {
     "from './payroll/PayrollRunItemsTable'",
     "from './payroll/PayrollPaymentBatchModal'",
     'const paymentSummary = useMemo',
-    'currentDate.getFullYear()',
+    "getCurrentPeriod(company.timezone || 'Asia/Riyadh')",
     'priorPeriodNet',
   ],
   'src/components/EmployeesView.tsx': ['IQAMA_HOLDER', 'onboardingStatus'],
