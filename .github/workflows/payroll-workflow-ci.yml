@@ -83,3 +83,87 @@ jobs:
       - name: Stop isolated Masar server
         if: always()
         run: kill "$(cat runtime-server.pid)" 2>/dev/null || true
+
+  legacy-migration-postgres:
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: masar_legacy_migration_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d masar_legacy_migration_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      PORT: 3035
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/masar_legacy_migration_test
+      DB_SCHEMA: masar_payroll
+      DB_SSL: 'false'
+      ADMIN_USERNAME: admin
+      ADMIN_PASSWORD: 'TestAdmin1!'
+      ADMIN_NAME: CI Migration Admin
+      ADMIN_EMAIL: ci-migration-admin@example.test
+      COMPANY_ID: comp-1
+      COMPANY_CODE: '101'
+      COMPANY_NAME_AR: شركة اختبار الترحيل
+      COMPANY_NAME_EN: Legacy Migration Test Company
+      COOKIE_SECURE: 'false'
+      TRUST_PROXY: '0'
+      APP_ORIGIN: http://127.0.0.1:3035
+      ALLOW_PUBLIC_REGISTRATION: 'false'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20.19
+          cache: npm
+      - run: npm ci
+      - name: Create the current schema once
+        run: |
+          node server/index.mjs > migration-initial.log 2>&1 &
+          echo $! > migration-server.pid
+          for attempt in $(seq 1 60); do
+            curl --fail --silent http://127.0.0.1:3035/api/health && break
+            sleep 1
+          done
+          curl --fail --silent http://127.0.0.1:3035/api/health
+          kill "$(cat migration-server.pid)"
+          wait "$(cat migration-server.pid)" || true
+      - name: Seed isolated legacy application state
+        run: node scripts/runtime-legacy-migration-smoke.mjs seed
+      - name: Run legacy migrations against PostgreSQL
+        run: |
+          node server/index.mjs > migration-upgrade.log 2>&1 &
+          echo $! > migration-server.pid
+          for attempt in $(seq 1 60); do
+            curl --fail --silent http://127.0.0.1:3035/api/health && break
+            sleep 1
+          done
+          curl --fail --silent http://127.0.0.1:3035/api/health
+          node scripts/runtime-legacy-migration-smoke.mjs verify
+          kill "$(cat migration-server.pid)"
+          wait "$(cat migration-server.pid)" || true
+      - name: Verify migrations are restart-safe
+        run: |
+          node server/index.mjs > migration-restart.log 2>&1 &
+          echo $! > migration-server.pid
+          for attempt in $(seq 1 60); do
+            curl --fail --silent http://127.0.0.1:3035/api/health && break
+            sleep 1
+          done
+          curl --fail --silent http://127.0.0.1:3035/api/health
+          node scripts/runtime-legacy-migration-smoke.mjs verify
+      - name: Show migration server logs on failure
+        if: failure()
+        run: cat migration-initial.log migration-upgrade.log migration-restart.log 2>/dev/null || true
+      - name: Stop isolated migration server
+        if: always()
+        run: kill "$(cat migration-server.pid)" 2>/dev/null || true
