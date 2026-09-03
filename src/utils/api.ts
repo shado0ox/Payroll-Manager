@@ -1,5 +1,5 @@
 import { AppState } from './storage';
-import { AttendanceRecord, JournalBatch, LeaveRequest, LoanSchedule, PayrollRun, PayrollSettlement, PenaltyRecord, TemporaryEarningRecord, UserAccount } from '../types';
+import { AttendanceRecord, Company, JournalBatch, LeaveRequest, LoanSchedule, PayrollRun, PayrollSettlement, PenaltyRecord, TemporaryEarningRecord, UserAccount } from '../types';
 
 class ApiError extends Error {
   constructor(message: string, public status: number) { super(message); this.name = 'ApiError'; }
@@ -86,7 +86,21 @@ export const api = {
   publicConfig: () => request<{registrationEnabled:boolean; trialDays:number; developerContactPhone:string}>('/api/public/config'),
   startRegistration: (data: Record<string, unknown>) => request<{requestId:string; maskedEmail:string; expiresInSeconds:number}>('/api/auth/register/start', { method:'POST', body:JSON.stringify(data) }),
   verifyRegistration: (requestId: string, code: string) => request<{companyCode:string; username:string; trialEndsAt:string; trialDays:number}>('/api/auth/register/verify', { method:'POST', body:JSON.stringify({requestId,code}) }),
-  updateSubscription: (companyId:string,status:'TRIAL'|'ACTIVE'|'EXPIRED'|'SUSPENDED',endsAt:string|null) => request(`/api/admin/companies/${encodeURIComponent(companyId)}/subscription`, { method:'PUT',body:JSON.stringify({status,endsAt}) }),
+  updateSubscription: async (companyId:string,status:'TRIAL'|'ACTIVE'|'EXPIRED'|'SUSPENDED',endsAt:string|null) => {
+    const result = await request<{record:Pick<Company,'id'|'subscriptionStatus'|'trialEndsAt'|'subscriptionEndsAt'>;version:number;updated_at:string}>(`/api/admin/companies/${encodeURIComponent(companyId)}/subscription`, { method:'PUT',body:JSON.stringify({status,endsAt}) });
+    stateVersion = result.version;
+    if (syncedState) {
+      const company = (Array.isArray(syncedState.companies) ? syncedState.companies : []).find((item:any) => item?.id === companyId);
+      if (company) updateSyncedCollection('companies',{ ...company,...result.record });
+    }
+    return result;
+  },
+  saveCompany: async (company: Company) => {
+    const result = await request<{record:Company;version:number;updated_at:string}>(`/api/companies/${encodeURIComponent(company.id)}`, { method:'PUT',body:JSON.stringify(company) });
+    stateVersion = result.version;
+    updateSyncedCollection('companies',result.record);
+    return result;
+  },
   saveEmployee: async (employee:any) => {
     const result = await request<{employee:any;created:boolean;version:number;updated_at:string}>(`/api/employees/${encodeURIComponent(employee.id)}`, { method:'PUT', body:JSON.stringify(employee) });
     stateVersion = result.version;

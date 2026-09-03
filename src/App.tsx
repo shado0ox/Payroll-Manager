@@ -1025,28 +1025,37 @@ export const App: React.FC = () => {
     });
   };
 
-  const handleUpdateCompany = (company: Company) => {
+  const handleUpdateCompany = async (company: Company) => {
     if (!hasPermission(state.currentUser, 'MANAGE_COMPANY_PROFILE')) return;
+    const operation = persistenceQueueRef.current.catch(() => undefined).then(() => api.saveCompany(company));
+    persistenceQueueRef.current = operation.then(() => undefined, () => undefined);
+    try {
+      setDbStatus(prev => ({ ...prev,isChecking:true }));
+      const result = await operation;
+      setState(prev => {
+        const companies = prev.companies.map(item => item.id === result.record.id ? result.record : item);
+        const next = { ...prev,companies,employees:synchronizeEmployeeBankDetails(companies,prev.employees) };
+        remoteStateSnapshotRef.current = next;
+        return next;
+      });
+      setDbStatus(prev => ({ ...prev,isCloudConnected:true,isChecking:false,lastError:null,lastSavedAt:result.updated_at }));
+      return true;
+    } catch (error:any) {
+      const code = error?.message || 'UNKNOWN_ERROR';
+      setDbStatus(prev => ({ ...prev,isChecking:false,lastError:`${tr('تعذر حفظ بيانات المنشأة:', 'Could not save company settings:')} ${code}` }));
+      alert(`${tr('تعذر حفظ بيانات المنشأة:', 'Could not save company settings:')} ${code}`);
+      return false;
+    }
+  };
+
+  const handleSubscriptionUpdated = (record: Pick<Company,'id'|'subscriptionStatus'|'trialEndsAt'|'subscriptionEndsAt'>, updatedAt: string) => {
     setState(prev => {
-      const updated = prev.companies.map(c => c.id === company.id ? company : c);
-      const synchronizedEmployees = synchronizeEmployeeBankDetails(updated, prev.employees);
-      saveCompanies(updated);
-
-      const log: AuditLog = {
-        id: `log-${Date.now()}`,
-        timestamp: new Date().toISOString(),
-        userName: prev.currentUser?.name || 'مسؤول النظام',
-        userRole: prev.activeRole,
-        action: tr('تعديل بيانات المنشأة', 'Updated company details'),
-        entityType: 'COMPANY',
-        entityId: company.id,
-        details: `${tr('تم تعديل بيانات الشركة:', 'Updated company:')} ${language === 'ar' ? company.nameAr : company.nameEn || company.nameAr} (${tr('كود:', 'Code:')} ${company.companyCode})`,
-      };
-      const updatedLogs = [log, ...prev.auditLogs];
-      saveAuditLogs(updatedLogs);
-
-      return { ...prev, companies: updated, employees: synchronizedEmployees, auditLogs: updatedLogs };
+      const companies = prev.companies.map(company => company.id === record.id ? { ...company,...record } : company);
+      const next = { ...prev,companies };
+      remoteStateSnapshotRef.current = next;
+      return next;
     });
+    setDbStatus(prev => ({ ...prev,isCloudConnected:true,isChecking:false,lastError:null,lastSavedAt:updatedAt }));
   };
 
   const handleDeleteCompany = (companyId: string) => {
@@ -1362,6 +1371,7 @@ export const App: React.FC = () => {
                 currentUser={state.currentUser}
                 activeRole={state.activeRole}
                 onUpdateCompany={handleUpdateCompany}
+                onSubscriptionUpdated={handleSubscriptionUpdated}
                 onAddCompany={handleAddCompany}
                 onDeleteCompany={handleDeleteCompany}
                 onSaveUser={handleSaveUser}
