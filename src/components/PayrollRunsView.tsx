@@ -62,6 +62,7 @@ import { hasPermission } from '../utils/permissions';
 import { useLanguage } from '../i18n/LanguageContext';
 import { PayrollRunItemsTable } from './payroll/PayrollRunItemsTable';
 import { PayrollPaymentBatchModal } from './payroll/PayrollPaymentBatchModal';
+import { getCurrentPeriod } from '../utils/period';
 
 interface PayrollRunsViewProps {
   company: Company;
@@ -74,7 +75,7 @@ interface PayrollRunsViewProps {
   activeRole: UserRole;
   permissions?: UserPermission[];
   onSavePayrollRun: (run: PayrollRun) => Promise<boolean>;
-  onViewEmployeeStatement: (emp: Employee) => void;
+  onViewEmployeeStatement: (emp: Employee, periodMonth: string) => void;
   onOpenQoyodModal: () => void;
 }
 
@@ -122,8 +123,7 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
 }) => {
   const { language } = useLanguage();
   const tr = (ar: string, en: string) => language === 'ar' ? ar : en;
-  const currentDate = new Date();
-  const currentPeriod = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}`;
+  const currentPeriod = getCurrentPeriod(company.timezone || 'Asia/Riyadh');
   const companyRuns = useMemo(() => {
     return payrollRuns.filter(r => r.companyId === company.id);
   }, [payrollRuns, company.id]);
@@ -1132,7 +1132,7 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
         getEmployeePaymentBatch={getEmployeePaymentBatch}
         onEntitlementStatusChange={handleEntitlementStatusChange}
         onOpenAdjustment={openAdjustmentModal}
-        onViewEmployeeStatement={onViewEmployeeStatement}
+        onViewEmployeeStatement={employee => onViewEmployeeStatement(employee, selectedPeriod)}
         tr={tr}
       />
 

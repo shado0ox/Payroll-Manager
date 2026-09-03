@@ -21,6 +21,7 @@ interface EmployeeStatementModalProps {
   employee: Employee | null;
   company: Company;
   payrollRuns: PayrollRun[];
+  periodMonth: string;
   settlements?: PayrollSettlement[];
   loans: LoanSchedule[];
   onClose: () => void;
@@ -30,6 +31,7 @@ export const EmployeeStatementModal: React.FC<EmployeeStatementModalProps> = ({
   employee,
   company,
   payrollRuns,
+  periodMonth,
   settlements = [],
   loans,
   onClose,
@@ -40,6 +42,7 @@ export const EmployeeStatementModal: React.FC<EmployeeStatementModalProps> = ({
 
   // Find employee's items in historical runs
   const employeeHistory = payrollRuns
+    .filter(run => run.companyId === company.id)
     .map(run => {
       const item = run.items.find(i => i.employeeId === employee.id);
       return {
@@ -47,14 +50,16 @@ export const EmployeeStatementModal: React.FC<EmployeeStatementModalProps> = ({
         item,
       };
     })
-    .filter(h => h.item !== undefined);
+    .filter(h => h.item !== undefined)
+    .sort((a, b) => b.run.periodMonth.localeCompare(a.run.periodMonth));
 
-  const activeLoan = loans.find(l => l.employeeId === employee.id && l.status === 'ACTIVE');
-  const employeePaidSettlements = settlements.filter(item => item.employeeId === employee.id && item.status === 'PAID');
+  const activeLoan = loans.find(l => l.companyId === company.id && l.employeeId === employee.id && l.status === 'ACTIVE');
+  const employeePaidSettlements = settlements.filter(item => item.companyId === company.id && item.employeeId === employee.id && item.status === 'PAID');
   const employeePaidSettlementTotal = roundAmount(employeePaidSettlements.reduce((sum, item) => sum + Number(item.amount || 0), 0));
-  const latestItem = employeeHistory[0]?.item;
-  const latestRun = employeeHistory[0]?.run;
-  const paidPriorSettlements = payrollRuns.flatMap(run => (run.paymentBatches || [])
+  const selectedHistory = employeeHistory.find(history => history.run.periodMonth === periodMonth);
+  const latestItem = selectedHistory?.item;
+  const latestRun = selectedHistory?.run;
+  const paidPriorSettlements = payrollRuns.filter(run => run.companyId === company.id).flatMap(run => (run.paymentBatches || [])
     .filter(batch => batch.status === 'PAID')
     .flatMap(batch => (batch.priorEntitlements || [])
       .filter(ref => ref.employeeId === employee.id)
@@ -112,7 +117,7 @@ export const EmployeeStatementModal: React.FC<EmployeeStatementModalProps> = ({
             <div className="text-left sm:text-right bg-slate-50 p-3 rounded-2xl border border-slate-200">
               <div className="text-xs text-slate-500">{tr('كشف حساب وقسيمة راتب شهر:', 'Statement and payslip for:')}</div>
               <div className="text-lg font-black text-emerald-800">
-                {latestRun?.periodMonth || tr('لا يوجد مسير', 'No payroll run')}
+                {periodMonth}
               </div>
               <div className="text-[10px] text-slate-400">{tr('تاريخ الإصدار:', 'Issue Date:')} {new Date().toISOString().split('T')[0]}</div>
             </div>
@@ -313,7 +318,12 @@ export const EmployeeStatementModal: React.FC<EmployeeStatementModalProps> = ({
                 </div>
               </div>
             </div>
-          ) : null}
+          ) : (
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5 text-center">
+              <div className="font-black text-amber-900">{tr('لا توجد قسيمة راتب لهذا الموظف في الشهر المحدد', 'No payslip exists for this employee in the selected month')}</div>
+              <div className="mt-1 text-xs text-amber-700">{periodMonth}</div>
+            </div>
+          )}
 
           {/* Active Loan Ledger Section */}
           {activeLoan && (

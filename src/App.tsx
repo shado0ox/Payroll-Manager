@@ -62,6 +62,7 @@ import { api } from './utils/api';
 import { WifiOff, Database, CheckCircle2, X } from 'lucide-react';
 import { synchronizeEmployeeBankDetails } from './utils/security';
 import { useLanguage } from './i18n/LanguageContext';
+import { getCurrentPeriod } from './utils/period';
 
 const TAB_SESSION_KEY = 'masar_tab_session_v1';
 const LAST_ACTIVITY_KEY = 'masar_last_activity_v1';
@@ -152,7 +153,7 @@ export const App: React.FC = () => {
     }
     setActiveTabState(tab);
   };
-  const [statementEmployee, setStatementEmployee] = useState<Employee | null>(null);
+  const [statementSelection, setStatementSelection] = useState<{ employee: Employee; periodMonth: string } | null>(null);
   const [isQoyodModalOpen, setIsQoyodModalOpen] = useState(false);
   const [qoyodJournalBatch, setQoyodJournalBatch] = useState<JournalBatch | null>(null);
   const [isDbModalOpen, setIsDbModalOpen] = useState(false);
@@ -316,6 +317,13 @@ export const App: React.FC = () => {
   const activeCompany = useMemo(() => {
     return state.companies.find(c => c.id === state.activeCompanyId) || state.companies[0];
   }, [state.companies, state.activeCompanyId]);
+
+  const openEmployeeStatement = (employee: Employee, periodMonth?: string) => {
+    setStatementSelection({
+      employee,
+      periodMonth:periodMonth || getCurrentPeriod(activeCompany.timezone || 'Asia/Riyadh'),
+    });
+  };
 
   useEffect(() => {
     const onPopState = () => setActiveTabState(tabFromLocation());
@@ -532,7 +540,7 @@ export const App: React.FC = () => {
     try {
       setDbStatus(prev => ({ ...prev,isChecking:true }));
       const result = await operation;
-      setStatementEmployee(null);
+      setStatementSelection(null);
       setState(prev => {
         const archivedIds = new Set(result.employeeIds);
         const employees = prev.employees.filter(employee => !archivedIds.has(employee.id));
@@ -1233,7 +1241,7 @@ export const App: React.FC = () => {
                 loans={state.loans}
                 activeRole={state.activeRole}
                 onNavigate={navigateToTab}
-                onViewEmployeeStatement={setStatementEmployee}
+                onViewEmployeeStatement={openEmployeeStatement}
               />
             )}
 
@@ -1265,7 +1273,7 @@ export const App: React.FC = () => {
                 onSaveEmployee={handleSaveEmployee}
                 onDeleteEmployee={handleDeleteEmployee}
                 onBulkImportEmployees={handleBulkImportEmployees}
-                onViewStatement={setStatementEmployee}
+                onViewStatement={openEmployeeStatement}
               />
             )}
 
@@ -1281,7 +1289,7 @@ export const App: React.FC = () => {
                 activeRole={state.activeRole}
                 permissions={state.currentUser?.permissions}
                 onSavePayrollRun={handleSavePayrollRunConfirmed}
-                onViewEmployeeStatement={setStatementEmployee}
+                onViewEmployeeStatement={openEmployeeStatement}
                 onOpenQoyodModal={() => setIsQoyodModalOpen(true)}
               />
             )}
@@ -1400,12 +1408,13 @@ export const App: React.FC = () => {
 
       {/* Printable Employee Statement & Payslip Modal */}
       <EmployeeStatementModal
-        employee={statementEmployee}
+        employee={statementSelection?.employee || null}
         company={activeCompany}
         payrollRuns={state.payrollRuns}
+        periodMonth={statementSelection?.periodMonth || getCurrentPeriod(activeCompany.timezone || 'Asia/Riyadh')}
         settlements={state.payrollSettlements}
         loans={state.loans}
-        onClose={() => setStatementEmployee(null)}
+        onClose={() => setStatementSelection(null)}
       />
 
       {/* Qoyod Accounting Integration Modal */}
