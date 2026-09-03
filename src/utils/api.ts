@@ -1,5 +1,5 @@
 import { AppState } from './storage';
-import { AttendanceRecord, Company, JournalBatch, LeaveRequest, LoanSchedule, PayrollRun, PayrollSettlement, PenaltyRecord, TemporaryEarningRecord, UserAccount } from '../types';
+import { AttendanceRecord, Company, JournalBatch, LeaveRequest, LoanSchedule, PayrollRun, PayrollSettlement, PenaltyRecord, QoyodApiConfig, TemporaryEarningRecord, UserAccount } from '../types';
 
 class ApiError extends Error {
   constructor(message: string, public status: number) { super(message); this.name = 'ApiError'; }
@@ -99,6 +99,12 @@ export const api = {
     const result = await request<{record:Company;version:number;updated_at:string}>(`/api/companies/${encodeURIComponent(company.id)}`, { method:'PUT',body:JSON.stringify(company) });
     stateVersion = result.version;
     updateSyncedCollection('companies',result.record);
+    return result;
+  },
+  saveQoyodConfig: async (companyId: string,config: QoyodApiConfig) => {
+    const result = await request<{record:QoyodApiConfig;version:number;updated_at:string}>('/api/integrations/qoyod/config', { method:'PUT',body:JSON.stringify({ companyId,config }) });
+    stateVersion = result.version;
+    if (syncedState) syncedState = { ...syncedState,qoyodConfig:cloneState(result.record) };
     return result;
   },
   saveEmployee: async (employee:any) => {
