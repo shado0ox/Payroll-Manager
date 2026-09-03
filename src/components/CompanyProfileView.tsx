@@ -80,7 +80,7 @@ interface CompanyProfileViewProps {
   qoyodConfig?: QoyodApiConfig;
   onSaveQoyodConfig?: (config: QoyodApiConfig) => void;
   onOpenQoyodModal?: () => void;
-  onUpdateCompany: (company: Company) => void;
+  onUpdateCompany: (company: Company) => Promise<boolean | void> | boolean | void;
   onSelectCompany?: (companyId: string) => void;
   onSaveUser?: (user: UserAccount) => void;
   onDeleteUser?: (userId: string) => void;
@@ -262,7 +262,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
   });
 
   // Handle Save All Company Info
-  const handleSaveCompany = (customData?: Company, e?: React.FormEvent) => {
+  const handleSaveCompany = async (customData?: Company, e?: React.FormEvent) => {
     if (e) e.preventDefault();
     const dataToSave = customData || formData;
     if (!dataToSave.nameAr?.trim()) {
@@ -293,7 +293,8 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
 
     const normalizedCompany = { ...dataToSave, bankDefinitions };
     setFormData(normalizedCompany);
-    onUpdateCompany(normalizedCompany);
+    const saved = await onUpdateCompany(normalizedCompany);
+    if (saved === false) return;
     setSaveSuccessMessage(tr('تم تطبيق وحفظ كافة الإعدادات والسياسات للمنشأة بنجاح', 'Company settings and policies were saved successfully.'));
     setTimeout(() => {
       setSaveSuccessMessage(null);

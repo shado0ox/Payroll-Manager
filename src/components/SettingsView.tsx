@@ -49,7 +49,8 @@ interface SettingsViewProps {
   users: UserAccount[];
   activeRole: UserRole;
   currentUser?: UserAccount | null;
-  onUpdateCompany: (company: Company) => void;
+  onUpdateCompany: (company: Company) => Promise<boolean | void> | boolean | void;
+  onSubscriptionUpdated?: (record: Pick<Company,'id'|'subscriptionStatus'|'trialEndsAt'|'subscriptionEndsAt'>, updatedAt: string) => void;
   onAddCompany: (company: Company) => void;
   onDeleteCompany?: (companyId: string) => void;
   onSaveUser?: (user: UserAccount) => void;
@@ -92,6 +93,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   activeRole,
   currentUser,
   onUpdateCompany,
+  onSubscriptionUpdated,
   onAddCompany,
   onDeleteCompany,
   onSaveUser,
@@ -133,13 +135,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     setSavingSubscription(true);
     try {
       const endsAt = subscriptionEndsAt ? new Date(`${subscriptionEndsAt}T23:59:59+03:00`).toISOString() : null;
-      await api.updateSubscription(subscriptionCompany.id,subscriptionStatus,endsAt);
-      onUpdateCompany({
-        ...subscriptionCompany,
-        subscriptionStatus,
-        trialEndsAt:subscriptionStatus === 'TRIAL' ? endsAt : subscriptionCompany.trialEndsAt,
-        subscriptionEndsAt:subscriptionStatus === 'ACTIVE' ? endsAt : subscriptionCompany.subscriptionEndsAt,
-      });
+      const result = await api.updateSubscription(subscriptionCompany.id,subscriptionStatus,endsAt);
+      onSubscriptionUpdated?.(result.record,result.updated_at);
       setSubscriptionCompany(null);
     } catch {
       alert(tr('تعذر تحديث اشتراك الشركة', 'Could not update the company subscription'));
@@ -320,7 +317,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   };
 
   // Save Company Form
-  const handleSaveCompanySubmit = (e: React.FormEvent) => {
+  const handleSaveCompanySubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!companyForm.nameAr || !companyForm.crNumber || !companyForm.companyCode) {
       return;
@@ -331,7 +328,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         ...editingCompany,
         ...companyForm,
       } as Company;
-      onUpdateCompany(updated);
+      const saved = await onUpdateCompany(updated);
+      if (saved === false) return;
     } else {
       const newComp: Company = {
         id: `comp-${Date.now()}`,
