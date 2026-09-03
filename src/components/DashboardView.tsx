@@ -36,6 +36,7 @@ import { Company, Employee, PayrollRun, LoanSchedule, UserRole, NavigationTab } 
 import { formatSAR, formatNumber } from '../utils/payrollEngine';
 import { useLanguage } from '../i18n/LanguageContext';
 import { getEmployeeLifecycleAlerts } from '../utils/employeeLifecycle';
+import { getCurrentPeriod } from '../utils/period';
 
 interface DashboardViewProps {
   company: Company;
@@ -44,21 +45,10 @@ interface DashboardViewProps {
   loans?: LoanSchedule[];
   activeRole: UserRole;
   onNavigate: (tab: NavigationTab) => void;
-  onViewEmployeeStatement?: (emp: Employee) => void;
+  onViewEmployeeStatement?: (emp: Employee, periodMonth: string) => void;
 }
 
 const PIE_COLORS = ['#10b981', '#0ea5e9', '#f59e0b', '#8b5cf6', '#ec4899'];
-
-function getCurrentPeriod(timeZone: string = 'Asia/Riyadh'): string {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone,
-    year: 'numeric',
-    month: '2-digit',
-  }).formatToParts(new Date());
-  const year = parts.find(part => part.type === 'year')?.value;
-  const month = parts.find(part => part.type === 'month')?.value;
-  return `${year}-${month}`;
-}
 
 // Custom CustomTooltip for Recharts in Arabic RTL
 const CustomBarTooltip = ({ active, payload, label }: any) => {
@@ -315,7 +305,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     const emp = companyEmployees.find(employee => employee.id === alert.employeeId);
                     const label = alert.type === 'IQAMA_EXPIRY' ? tr('إقامة', 'Iqama') : alert.type === 'SAUDI_CONTRACT_EXPIRY' ? tr('عقد', 'Contract') : alert.type === 'NEW_HIRE_ENTRY_DEADLINE' ? tr('مهلة دخول', 'Entry deadline') : tr('IBAN', 'IBAN');
                     return (
-                      <button key={alert.type + '-' + alert.employeeId + '-' + (alert.dueDate || 'none')} type="button" onClick={() => emp && onViewEmployeeStatement ? onViewEmployeeStatement(emp) : onNavigate('employees')} className="flex w-full items-center justify-between gap-3 rounded-lg px-2 py-1.5 text-start hover:bg-slate-50">
+                      <button key={alert.type + '-' + alert.employeeId + '-' + (alert.dueDate || 'none')} type="button" onClick={() => emp && onViewEmployeeStatement ? onViewEmployeeStatement(emp, currentPeriod) : onNavigate('employees')} className="flex w-full items-center justify-between gap-3 rounded-lg px-2 py-1.5 text-start hover:bg-slate-50">
                         <span className="min-w-0 truncate text-[11px] font-semibold text-slate-700">{emp ? (emp.firstNameAr + ' ' + emp.lastNameAr) : alert.employeeName}</span>
                         <span className="shrink-0 text-[10px] font-bold text-amber-700">{label}{typeof alert.daysRemaining === 'number' ? ' · ' + alert.daysRemaining : ''}</span>
                       </button>
@@ -334,7 +324,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   {onboardingEmployees.map(emp => {
                     const state = emp.onboardingStatus === 'WAITING_IQAMA' || emp.onboardingStatus === 'NEW_ARRIVAL' ? tr('بانتظار الإقامة', 'Waiting for iqama') : emp.onboardingStatus === 'WAITING_BANK' ? tr('بانتظار IBAN', 'Waiting for IBAN') : tr('تحت الاستكمال', 'In progress');
                     return (
-                      <button key={emp.id} type="button" onClick={() => onViewEmployeeStatement ? onViewEmployeeStatement(emp) : onNavigate('employees')} className="flex w-full items-center justify-between gap-3 rounded-lg px-2 py-1.5 text-start hover:bg-slate-50">
+                      <button key={emp.id} type="button" onClick={() => onViewEmployeeStatement ? onViewEmployeeStatement(emp, currentPeriod) : onNavigate('employees')} className="flex w-full items-center justify-between gap-3 rounded-lg px-2 py-1.5 text-start hover:bg-slate-50">
                         <span className="min-w-0 truncate text-[11px] font-semibold text-slate-700">{emp.firstNameAr + ' ' + emp.lastNameAr}</span>
                         <span className="shrink-0 text-[10px] font-bold text-sky-700">{state}</span>
                       </button>
@@ -685,7 +675,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                       <td className="p-4 text-center">
                         {emp && onViewEmployeeStatement ? (
                           <button
-                            onClick={() => onViewEmployeeStatement(emp)}
+                            onClick={() => onViewEmployeeStatement(emp, currentPeriod)}
                             title={tr('معاينة قسيمة الراتب', 'View Payslip')}
                             className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors cursor-pointer"
                           >
