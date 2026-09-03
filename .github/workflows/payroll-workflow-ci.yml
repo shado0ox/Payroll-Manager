@@ -77,6 +77,12 @@ jobs:
         run: node scripts/runtime-payroll-smoke.mjs
       - name: Exercise password reset and session revocation
         run: node scripts/runtime-password-reset-smoke.mjs
+      - name: Reject concurrent PoolClient queries
+        run: |
+          if grep -F "client.query() when the client is already executing a query" runtime-server.log; then
+            echo "Concurrent queries were scheduled on one PostgreSQL client."
+            exit 1
+          fi
       - name: Show server log on failure
         if: failure()
         run: cat runtime-server.log || true
