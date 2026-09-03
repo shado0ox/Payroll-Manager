@@ -17,7 +17,7 @@ test('normal React state updates never trigger a full-state persistence effect',
 
 test('full-state replacement requires an explicit developer restore', () => {
   const start = server.indexOf("app.put('/api/state'");
-  const end = server.indexOf("app.patch('/api/state/patch'",start);
+  const end = server.indexOf('async function updateCompatibilityCollectionRecord',start);
   assert.ok(start >= 0 && end > start);
   const route = server.slice(start,end);
   assert.match(route,/req\.user\.id !== 'user-admin'/);
@@ -29,8 +29,8 @@ test('full-state replacement requires an explicit developer restore', () => {
   assert.match(api,/operation:'RESTORE_BACKUP'/);
 });
 
-test('state patch remains compatibility-only and is never called by the UI client', () => {
-  assert.match(server,/app\.patch\('\/api\/state\/patch'/);
+test('generic state patch is removed from both server and UI client', () => {
+  assert.doesNotMatch(server,/app\.patch\('\/api\/state\/patch'/);
   assert.doesNotMatch(api,/request<[^>]*>\('\/api\/state\/patch'/);
 });
 

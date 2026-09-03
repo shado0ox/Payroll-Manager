@@ -58,7 +58,6 @@ const sha256 = (value) => crypto.createHash('sha256').update(value).digest('hex'
 const cookieValue = (req, key) => (req.headers.cookie || '').split(';').map(v => v.trim()).find(v => v.startsWith(`${key}=`))?.slice(key.length + 1);
 const COMPANY_SCOPED_KEYS = ['employees', 'attendance', 'loans', 'penalties', 'temporaryEarnings', 'leaves', 'payrollRuns', 'payrollSettlements', 'journals'];
 const OPERATIONS_MUTABLE_KEYS = new Set(['employees', 'attendance', 'loans', 'penalties', 'temporaryEarnings', 'leaves', 'payrollRuns', 'payrollSettlements']);
-const PATCHABLE_COLLECTIONS = new Set(['companies', 'employees', 'attendance', 'loans', 'penalties', 'temporaryEarnings', 'leaves', 'payrollRuns', 'payrollSettlements', 'journals']);
 const clone = (value) => value == null ? value : structuredClone(value);
 const allowedCompanyIds = (user) => new Set(user.role === 'ADMIN' ? [] : (Array.isArray(user.company_ids) ? user.company_ids : []));
 const itemCompanyId = (item) => item && typeof item.companyId === 'string' ? item.companyId : '';
@@ -445,41 +444,6 @@ function mergeStateForUser(stored, incoming, user) {
         ? { ...run, status: old.status, approvedAt: old.approvedAt, approvedBy: old.approvedBy, postedAt: old.postedAt, postedBy: old.postedBy }
         : run;
     });
-  }
-  return next;
-}
-
-function applyRecordPatch(visibleState, patch) {
-  const next = clone(visibleState || {});
-  const collections = patch?.collections;
-  if (!collections || typeof collections !== 'object' || Array.isArray(collections)) {
-    throw Object.assign(new Error('INVALID_STATE_PATCH'), { status:400 });
-  }
-  for (const [key, change] of Object.entries(collections)) {
-    if (!PATCHABLE_COLLECTIONS.has(key) || !change || typeof change !== 'object' || Array.isArray(change)) {
-      throw Object.assign(new Error('INVALID_STATE_PATCH'), { status:400 });
-    }
-    const upsert = Array.isArray(change.upsert) ? change.upsert : [];
-    const deleteIds = Array.isArray(change.deleteIds) ? change.deleteIds : [];
-    if (upsert.length > 2_000 || deleteIds.length > 2_000
-      || upsert.some(item => !item || typeof item !== 'object' || Array.isArray(item) || typeof item.id !== 'string' || !item.id)
-      || deleteIds.some(id => typeof id !== 'string' || !id)) {
-      throw Object.assign(new Error('INVALID_STATE_PATCH'), { status:400 });
-    }
-    const deleted = new Set(deleteIds);
-    const byId = new Map(asArray(next[key]).filter(item => item?.id && !deleted.has(item.id)).map(item => [item.id, item]));
-    for (const item of upsert) byId.set(item.id, clone(item));
-    next[key] = [...byId.values()];
-  }
-  const objects = patch?.objects;
-  if (objects != null && (typeof objects !== 'object' || Array.isArray(objects))) {
-    throw Object.assign(new Error('INVALID_STATE_PATCH'), { status:400 });
-  }
-  if (Object.prototype.hasOwnProperty.call(objects || {}, 'qoyodConfig')) {
-    if (!objects.qoyodConfig || typeof objects.qoyodConfig !== 'object' || Array.isArray(objects.qoyodConfig)) {
-      throw Object.assign(new Error('INVALID_STATE_PATCH'), { status:400 });
-    }
-    next.qoyodConfig = clone(objects.qoyodConfig);
   }
   return next;
 }
@@ -2957,50 +2921,6 @@ app.delete('/api/journals/:id', auth, writeLimiter, async (req, res, next) => {
   } catch (e) {
     try { await client.query('ROLLBACK'); } catch {}
     if (Number.isInteger(e?.status) && e.status >= 400 && e.status < 500) return res.status(e.status).json({ error:e.message });
-    next(e);
-  } finally { client.release(); }
-});
-
-// Record-level mutations avoid overwriting unrelated work when several users save
-// employees, attendance or payroll operations at the same time.
-app.patch('/api/state/patch', auth, writeLimiter, async (req, res, next) => {
-  const client = await pool.connect();
-  try {
-    await client.query('BEGIN');
-    const current = await client.query(`SELECT state,version FROM ${q('app_state')} WHERE id=1 FOR UPDATE`);
-    if (!current.rowCount) {
-      await client.query('ROLLBACK');
-      return res.status(409).json({ error:'STATE_NOT_INITIALIZED' });
-    }
-    const stored = await hydrateNormalizedStateData(client, current.rows[0].state);
-    const visible = publicStateForUser(stored, req.user);
-    const patchedVisible = applyRecordPatch(visible, req.body?.patch);
-    let state = mergeStateForUser(stored, patchedVisible, req.user);
-    await appendPayrollFinancialAudit(client, q, { stored, next:state, user:req.user });
-    if (stored.qoyodConfig?.apiKey && !state.qoyodConfig?.apiKey) {
-      state.qoyodConfig = { ...(state.qoyodConfig || {}), apiKey:stored.qoyodConfig.apiKey };
-    }
-    const tenantCompanyIds = Array.isArray(req.user.company_ids) ? req.user.company_ids : [];
-    const scopedState = scopeStateForCompanies(state, tenantCompanyIds);
-    const tenantClient = createTenantScopedClient(client, q, tenantCompanyIds);
-    await replaceNormalizedPayrollData(tenantClient, scopedState);
-    await replaceNormalizedOperationsData(tenantClient, scopedState);
-    await replaceNormalizedCoreData(tenantClient, scopedState);
-    const compatibilityState = clone(state);
-    if (compatibilityState.qoyodConfig && typeof compatibilityState.qoyodConfig === 'object') {
-      compatibilityState.qoyodConfig = { ...compatibilityState.qoyodConfig, apiKey:'', apiKeyConfigured:Boolean(state.qoyodConfig?.apiKey) };
-    }
-    const result = await client.query(`UPDATE ${q('app_state')}
-      SET state=$1::jsonb,version=version+1,updated_by=$2,updated_at=now()
-      WHERE id=1 RETURNING version,updated_at`, [JSON.stringify(compatibilityState), req.user.id]);
-    await appendStateAudit(client, q, { companyIds:req.user.company_ids, user:req.user, action:'STATE_PATCH', version:result.rows[0].version });
-    await client.query('COMMIT');
-    broadcastStateUpdate({ version:result.rows[0].version, updatedBy:req.user.id, updatedAt:result.rows[0].updated_at });
-    res.json(result.rows[0]);
-  } catch (e) {
-    try { await client.query('ROLLBACK'); } catch {}
-    if (e?.status === 400) return res.status(400).json({ error:e.message });
-    if (e?.code === '23505') return res.status(409).json({ error:'NORMALIZED_DATA_DUPLICATE', detail:e.constraint });
     next(e);
   } finally { client.release(); }
 });

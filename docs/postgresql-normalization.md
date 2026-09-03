@@ -46,17 +46,17 @@ Do not delete `app_state` or `app_state_migration_backups` during this transitio
 
 ## Concurrent record updates
 
-The fourth phase changes browser persistence from whole-state replacement to
-`PATCH /api/state/patch`. The browser sends only changed records as `upsert`
-or `deleteIds` operations. The server locks the compatibility version row,
-hydrates the latest normalized state, applies the authorized record mutations,
-and commits the normalized tables and compatibility snapshot in one transaction.
+Normal browser writes use dedicated record and workflow endpoints for employees,
+attendance, leaves, loans, penalties, temporary earnings, payroll runs, payment
+batches, companies, journals, users, settlements, and Qoyod configuration. The
+generic `PATCH /api/state/patch` endpoint has been removed, so a client cannot
+submit an arbitrary collection patch or replace unrelated records.
 
 This prevents a loan, attendance entry, employee, or payroll record saved by one
 user from being removed by another user's stale whole-application snapshot.
 Server-sent events continue to notify other authenticated sessions, which reload
 the company-filtered result through `GET /api/state`.
 
-`PUT /api/state` remains available only as a rollback path during production
-verification. It and `app_state` must not be removed until multi-user testing
-and the normalization status checks pass.
+`PUT /api/state` remains available only to the developer account for an explicit,
+confirmed backup restore. `app_state` remains a temporary compatibility snapshot
+until the final normalized-read migration and rollback checks are complete.

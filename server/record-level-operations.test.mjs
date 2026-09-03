@@ -25,7 +25,7 @@ test('attendance record writes use one-row upsert and delete statements', () => 
 
 test('penalty record writes use one-row upsert and delete statements', () => {
   const put = routeBlock('put', '/api/penalties/:id', "app.delete('/api/penalties/:id'");
-  const remove = routeBlock('delete', '/api/penalties/:id', '// Record-level mutations');
+  const remove = routeBlock('delete', '/api/penalties/:id', "app.put('/api/loans/:id'");
   assert.match(put, /INSERT INTO.*penalties[\s\S]*ON CONFLICT \(id\) DO UPDATE/);
   assert.match(remove, /DELETE FROM.*penalties.*WHERE id=\$1/);
   assert.doesNotMatch(put + remove, /replaceNormalized(?:Operations|Core|Payroll)Data/);
@@ -53,7 +53,7 @@ test('loan writes update or delete one row and preserve append-only adjustment p
 
 test('temporary earning writes update or delete one row', () => {
   const put = routeBlock('put', '/api/temporary-earnings/:id', "app.delete('/api/temporary-earnings/:id'");
-  const remove = routeBlock('delete', '/api/temporary-earnings/:id', '// Record-level mutations');
+  const remove = routeBlock('delete', '/api/temporary-earnings/:id', 'async function commitPayrollCommandState');
   assert.match(put, /INSERT INTO.*temporary_earnings[\s\S]*ON CONFLICT \(id\) DO UPDATE/);
   assert.match(remove, /DELETE FROM.*temporary_earnings.*WHERE id=\$1/);
   assert.match(put + remove, /PAYROLL_SOURCE_ENTRY_LOCKED/);
@@ -70,7 +70,7 @@ test('loan and temporary earning UI actions use direct committed APIs', () => {
 });
 
 test('payroll saves replace only one run aggregate instead of every payroll table', () => {
-  const put = routeBlock('put', '/api/payroll-runs/:id', '// Record-level mutations');
+  const put = routeBlock('put', '/api/payroll-runs/:id', 'async function commitSettlementCompatibility');
   assert.match(put, /INSERT INTO.*payroll_runs[\s\S]*ON CONFLICT \(id\) DO UPDATE/);
   assert.match(put, /DELETE FROM.*payroll_run_items.*WHERE payroll_run_id=\$1/);
   assert.match(put, /DELETE FROM.*payroll_payment_batches.*WHERE payroll_run_id=\$1/);
@@ -105,6 +105,6 @@ test('frontend routes status and payment-only changes to command endpoints', () 
   assert.match(api, /\/payroll-runs\/\$\{encodeURIComponent\(record\.id\)\}\/status/);
   assert.match(api, /\/payment-batches`/);
   assert.match(api, /\/payment-batches\/\$\{encodeURIComponent\(command\.batch\.id\)\}\/status/);
-  const aggregate = routeBlock('put', '/api/payroll-runs/:id', '// Record-level mutations');
+  const aggregate = routeBlock('put', '/api/payroll-runs/:id', 'async function commitSettlementCompatibility');
   assert.match(aggregate, /PAYROLL_COMMAND_ENDPOINT_REQUIRED/);
 });

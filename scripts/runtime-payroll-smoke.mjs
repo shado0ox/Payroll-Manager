@@ -12,7 +12,6 @@ const schema = process.env.DB_SCHEMA || 'masar_payroll';
 if (!/^[a-z_][a-z0-9_]*$/.test(schema)) throw new Error('DB_SCHEMA is invalid');
 
 let cookie = '';
-let version = 0;
 
 async function request(path, options = {}) {
   const headers = { 'Content-Type': 'application/json', ...(options.headers || {}) };
@@ -41,7 +40,6 @@ async function waitForHealth() {
 
 async function loadState() {
   const { body } = await request('/api/state');
-  version = Number(body.version || 0);
   return body.state;
 }
 
@@ -58,14 +56,6 @@ async function initializeCompatibilityStateIfMissing() {
   } finally {
     await pool.end();
   }
-}
-
-async function patchCollections(collections) {
-  const { body } = await request('/api/state/patch', {
-    method: 'PATCH',
-    body: JSON.stringify({ patch: { collections, objects: {} }, version }),
-  });
-  version = Number(body.version || version);
 }
 
 function findRun(state, id) {
@@ -187,16 +177,21 @@ const baseRun = {
   paymentBatches: [],
 };
 
-await patchCollections({
-  employees: { upsert: [employee], deleteIds: [] },
-  payrollRuns: { upsert: [baseRun], deleteIds: [] },
+await request(`/api/employees/${employeeId}`, {
+  method: 'PUT',
+  body: JSON.stringify(employee),
+});
+await request(`/api/payroll-runs/${runId}`, {
+  method: 'PUT',
+  body: JSON.stringify(baseRun),
 });
 let state = await loadState();
 assert.equal(findRun(state, runId)?.status, 'UNDER_REVIEW');
 
-const approvedAt = new Date().toISOString();
-const approvedRun = { ...baseRun, status: 'APPROVED', approvedAt, approvedBy: 'CI Admin' };
-await patchCollections({ payrollRuns: { upsert: [approvedRun], deleteIds: [] } });
+await request(`/api/payroll-runs/${runId}/status`, {
+  method: 'POST',
+  body: JSON.stringify({ status: 'APPROVED' }),
+});
 state = await loadState();
 let persisted = findRun(state, runId);
 assert.equal(persisted?.status, 'APPROVED', 'Approval must persist after a fresh GET /api/state');
@@ -218,17 +213,18 @@ const scheduledBatch = {
   notes: 'Automated runtime smoke test',
   createdAt: new Date().toISOString(),
 };
-const scheduledRun = { ...approvedRun, paymentBatches: [scheduledBatch] };
-await patchCollections({ payrollRuns: { upsert: [scheduledRun], deleteIds: [] } });
+await request(`/api/payroll-runs/${runId}/payment-batches`, {
+  method: 'POST',
+  body: JSON.stringify(scheduledBatch),
+});
 state = await loadState();
 persisted = findRun(state, runId);
 assert.equal(persisted?.paymentBatches?.[0]?.status, 'SCHEDULED', 'Scheduled bank batch must persist');
 
-const paidRun = {
-  ...scheduledRun,
-  paymentBatches: [{ ...scheduledBatch, status: 'PAID', paymentDate: '2026-08-30' }],
-};
-await patchCollections({ payrollRuns: { upsert: [paidRun], deleteIds: [] } });
+await request(`/api/payroll-runs/${runId}/payment-batches/${batchId}/status`, {
+  method: 'PATCH',
+  body: JSON.stringify({ status: 'PAID', paymentDate: '2026-08-30' }),
+});
 state = await loadState();
 persisted = findRun(state, runId);
 assert.equal(persisted?.status, 'APPROVED');
@@ -257,4 +253,4 @@ try {
   await db.end();
 }
 
-console.log('Runtime payroll smoke test passed: approval -> reload -> scheduled batch -> paid -> reload + normalized PostgreSQL verification.');
+console.log('Runtime payroll smoke test passed through dedicated employee and payroll endpoints: approval -> reload -> scheduled batch -> paid -> reload + normalized PostgreSQL verification.');
