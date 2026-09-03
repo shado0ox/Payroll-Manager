@@ -1840,6 +1840,26 @@ async function updateCompatibilityCollectionRecord(client, key, record, userId) 
     WHERE id=1 RETURNING version,updated_at`, [JSON.stringify(state),userId]);
 }
 
+async function updateCompatibilityCollectionRecords(client, key, committedRecords, userId) {
+  const stateRow = await client.query(`SELECT state FROM ${q('app_state')} WHERE id=1 FOR UPDATE`);
+  if (!stateRow.rowCount) throw workflowError(409, 'STATE_NOT_INITIALIZED');
+  const state = clone(stateRow.rows[0].state || {});
+  const records = asArray(state[key]);
+  const indexes = new Map(records.map((record,index) => [record?.id,index]).filter(([id]) => id));
+  for (const committed of committedRecords) {
+    const index = indexes.get(committed.id);
+    if (index == null) {
+      indexes.set(committed.id,records.length);
+      records.push(clone(committed));
+    } else {
+      records[index] = clone(committed);
+    }
+  }
+  state[key] = records;
+  return client.query(`UPDATE ${q('app_state')} SET state=$1::jsonb,version=version+1,updated_by=$2,updated_at=now()
+    WHERE id=1 RETURNING version,updated_at`, [JSON.stringify(state),userId]);
+}
+
 async function deleteCompatibilityCollectionRecord(client, key, id, userId) {
   const stateRow = await client.query(`SELECT state FROM ${q('app_state')} WHERE id=1 FOR UPDATE`);
   if (!stateRow.rowCount) throw workflowError(409, 'STATE_NOT_INITIALIZED');
@@ -2123,18 +2143,24 @@ async function upsertJournalAggregate(client, record) {
   return existing.rowCount > 0;
 }
 
+function validateAttendanceRecord(record, user) {
+  return record && typeof record === 'object' && typeof record.id === 'string' && Boolean(record.id)
+    && typeof record.companyId === 'string' && user.company_ids.includes(record.companyId)
+    && typeof record.employeeId === 'string' && Boolean(record.employeeId)
+    && validPeriodMonth(record.periodMonth) && validIsoDate(record.date)
+    && (!record.endDate || validIsoDate(record.endDate)) && (!record.endDate || record.endDate >= record.date)
+    && Number.isInteger(Number(record.daysCount ?? 1)) && Number(record.daysCount ?? 1) >= 0
+    && Number.isInteger(Number(record.delayMinutes ?? 0)) && Number(record.delayMinutes ?? 0) >= 0
+    && Number.isFinite(Number(record.overtimeHours ?? 0)) && Number(record.overtimeHours ?? 0) >= 0
+    && ['STANDARD','WEEKEND'].includes(record.overtimeType || 'STANDARD');
+}
+
 app.put('/api/attendance/:id', auth, writeLimiter, async (req, res, next) => {
   const client = await pool.connect();
   try {
     if (!can(req.user,'MANAGE_ATTENDANCE')) return res.status(403).json({ error:'FORBIDDEN' });
     const record = req.body || {};
-    if (record.id !== req.params.id || typeof record.companyId !== 'string' || !req.user.company_ids.includes(record.companyId)
-      || typeof record.employeeId !== 'string' || !validPeriodMonth(record.periodMonth) || !validIsoDate(record.date)
-      || (record.endDate && !validIsoDate(record.endDate)) || (record.endDate && record.endDate < record.date)
-      || !Number.isInteger(Number(record.daysCount ?? 1)) || Number(record.daysCount ?? 1) < 0
-      || !Number.isInteger(Number(record.delayMinutes ?? 0)) || Number(record.delayMinutes ?? 0) < 0
-      || !Number.isFinite(Number(record.overtimeHours ?? 0)) || Number(record.overtimeHours ?? 0) < 0
-      || !['STANDARD','WEEKEND'].includes(record.overtimeType || 'STANDARD')) {
+    if (record.id !== req.params.id || !validateAttendanceRecord(record,req.user)) {
       return res.status(400).json({ error:'INVALID_ATTENDANCE_RECORD' });
     }
     await client.query('BEGIN');
@@ -2166,6 +2192,58 @@ app.put('/api/attendance/:id', auth, writeLimiter, async (req, res, next) => {
     await client.query('COMMIT');
     broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at });
     res.json({ record,created:!existing.rowCount,version:Number(updated.rows[0].version),updated_at:updated.rows[0].updated_at });
+  } catch (e) {
+    try { await client.query('ROLLBACK'); } catch {}
+    if (Number.isInteger(e?.status) && e.status >= 400 && e.status < 500) return res.status(e.status).json({ error:e.message });
+    next(e);
+  } finally { client.release(); }
+});
+
+app.post('/api/attendance/import', auth, writeLimiter, async (req, res, next) => {
+  const client = await pool.connect();
+  try {
+    if (!can(req.user,'MANAGE_ATTENDANCE')) return res.status(403).json({ error:'FORBIDDEN' });
+    const records = req.body?.records;
+    if (!Array.isArray(records) || !records.length || records.length > 2500
+      || records.some(record => !validateAttendanceRecord(record,req.user))) {
+      return res.status(400).json({ error:'INVALID_ATTENDANCE_IMPORT' });
+    }
+    const ids = records.map(record => record.id);
+    const companyIds = new Set(records.map(record => record.companyId));
+    if (new Set(ids).size !== ids.length || companyIds.size !== 1) return res.status(400).json({ error:'INVALID_ATTENDANCE_IMPORT' });
+    const companyId = records[0].companyId;
+    await client.query('BEGIN');
+    const stateRow = await client.query(`SELECT state FROM ${q('app_state')} WHERE id=1 FOR UPDATE`);
+    if (!stateRow.rowCount) throw workflowError(409,'STATE_NOT_INITIALIZED');
+    const stored = await hydrateNormalizedStateData(client,stateRow.rows[0].state);
+    const storedById = new Map(asArray(stored.attendance).map(record => [record.id,record]));
+    if (records.some(record => (storedById.has(record.id) && payrollSourceLocked(stored,'attendance',storedById.get(record.id)))
+      || payrollSourceLocked(stored,'attendance',record))) {
+      throw workflowError(409,'PAYROLL_SOURCE_ENTRY_LOCKED');
+    }
+    const employees = await client.query(`SELECT id,company_id FROM ${q('employees')} WHERE id=ANY($1::text[]) AND is_archived=false`, [[...new Set(records.map(record => record.employeeId))]]);
+    const employeeCompanies = new Map(employees.rows.map(row => [row.id,row.company_id]));
+    if (records.some(record => employeeCompanies.get(record.employeeId) !== companyId)) throw workflowError(400,'INVALID_ATTENDANCE_EMPLOYEE');
+    const existing = await client.query(`SELECT id,company_id FROM ${q('attendance_records')} WHERE id=ANY($1::text[]) FOR UPDATE`, [ids]);
+    if (existing.rows.some(row => row.company_id !== companyId)) throw workflowError(409,'ATTENDANCE_COMPANY_IMMUTABLE');
+    const startOrder = Number((await client.query(`SELECT COALESCE(max(sort_order),-1)+1 AS sort_order FROM ${q('attendance_records')} WHERE company_id=$1`, [companyId])).rows[0]?.sort_order || 0);
+    await client.query(`INSERT INTO ${q('attendance_records')} (
+        id,company_id,employee_id,period_month,record_date,end_date,days_count,delay_minutes,absence,unpaid_leave,overtime_hours,overtime_type,notes,payload,sort_order,updated_at
+      ) SELECT record->>'id',record->>'companyId',record->>'employeeId',record->>'periodMonth',(record->>'date')::date,
+        NULLIF(record->>'endDate','')::date,COALESCE(NULLIF(record->>'daysCount','')::integer,1),
+        COALESCE(NULLIF(record->>'delayMinutes','')::integer,0),COALESCE((record->>'absence')::boolean,false),
+        COALESCE((record->>'unpaidLeave')::boolean,false),COALESCE(NULLIF(record->>'overtimeHours','')::numeric,0),
+        COALESCE(NULLIF(record->>'overtimeType',''),'STANDARD'),NULLIF(record->>'notes',''),record,$2+(ordinality-1)::integer,now()
+      FROM jsonb_array_elements($1::jsonb) WITH ORDINALITY AS source(record,ordinality)
+      ON CONFLICT (id) DO UPDATE SET employee_id=EXCLUDED.employee_id,period_month=EXCLUDED.period_month,
+        record_date=EXCLUDED.record_date,end_date=EXCLUDED.end_date,days_count=EXCLUDED.days_count,delay_minutes=EXCLUDED.delay_minutes,
+        absence=EXCLUDED.absence,unpaid_leave=EXCLUDED.unpaid_leave,overtime_hours=EXCLUDED.overtime_hours,
+        overtime_type=EXCLUDED.overtime_type,notes=EXCLUDED.notes,payload=EXCLUDED.payload,updated_at=now()`, [JSON.stringify(records),startOrder]);
+    const updated = await updateCompatibilityCollectionRecords(client,'attendance',records,req.user.id);
+    await appendStateAudit(client,q,{ companyIds:[companyId],user:req.user,action:`IMPORT_ATTENDANCE:${records.length}`,version:updated.rows[0].version });
+    await client.query('COMMIT');
+    broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at });
+    res.status(201).json({ records,version:Number(updated.rows[0].version),updated_at:updated.rows[0].updated_at });
   } catch (e) {
     try { await client.query('ROLLBACK'); } catch {}
     if (Number.isInteger(e?.status) && e.status >= 400 && e.status < 500) return res.status(e.status).json({ error:e.message });
@@ -2909,6 +2987,77 @@ app.patch('/api/state/patch', auth, writeLimiter, async (req, res, next) => {
     try { await client.query('ROLLBACK'); } catch {}
     if (e?.status === 400) return res.status(400).json({ error:e.message });
     if (e?.code === '23505') return res.status(409).json({ error:'NORMALIZED_DATA_DUPLICATE', detail:e.constraint });
+    next(e);
+  } finally { client.release(); }
+});
+
+function validImportedEmployee(employee, user) {
+  const salary = employee?.salaryPackage || {};
+  const dates = ['hireDate','salaryStartDate','terminationDate','suspensionStartDate','suspensionEndDate'];
+  return employee && typeof employee === 'object' && typeof employee.id === 'string' && Boolean(employee.id)
+    && typeof employee.companyId === 'string' && user.company_ids.includes(employee.companyId)
+    && typeof employee.employeeNo === 'string' && Boolean(employee.employeeNo.trim())
+    && typeof employee.firstNameAr === 'string' && Boolean(employee.firstNameAr.trim())
+    && typeof employee.lastNameAr === 'string' && Boolean(employee.lastNameAr.trim())
+    && ['ACTIVE','SUSPENDED','ON_LEAVE','TERMINATED','ABSCONDED','ONBOARDING'].includes(employee.status || 'ACTIVE')
+    && dates.every(key => !employee[key] || validIsoDate(employee[key]))
+    && ['baseSalary','housingAllowance','transportAllowance','otherFixedAllowances']
+      .every(key => Number.isFinite(Number(salary[key] || 0)) && Number(salary[key] || 0) >= 0);
+}
+
+app.post('/api/employees/import', auth, writeLimiter, async (req, res, next) => {
+  const client = await pool.connect();
+  try {
+    if (!can(req.user,'MANAGE_EMPLOYEES')) return res.status(403).json({ error:'FORBIDDEN' });
+    const employees = req.body?.employees;
+    if (!Array.isArray(employees) || !employees.length || employees.length > 2500
+      || employees.some(employee => !validImportedEmployee(employee,req.user))) {
+      return res.status(400).json({ error:'INVALID_EMPLOYEE_IMPORT' });
+    }
+    const ids = employees.map(employee => employee.id);
+    const employeeNumbers = employees.map(employee => employee.employeeNo.trim());
+    const companyIds = new Set(employees.map(employee => employee.companyId));
+    if (new Set(ids).size !== ids.length || new Set(employeeNumbers).size !== employeeNumbers.length || companyIds.size !== 1) {
+      return res.status(400).json({ error:'INVALID_EMPLOYEE_IMPORT' });
+    }
+    const companyId = employees[0].companyId;
+    await client.query('BEGIN');
+    const existing = await client.query(`SELECT id,company_id FROM ${q('employees')} WHERE id=ANY($1::text[]) FOR UPDATE`, [ids]);
+    if (existing.rows.some(row => row.company_id !== companyId)) throw workflowError(409,'EMPLOYEE_COMPANY_IMMUTABLE');
+    const startOrder = Number((await client.query(`SELECT COALESCE(max(sort_order),-1)+1 AS sort_order FROM ${q('employees')} WHERE company_id=$1`, [companyId])).rows[0]?.sort_order || 0);
+    await client.query(`INSERT INTO ${q('employees')} (
+        id,company_id,employee_no,national_id_or_iqama,status,first_name_ar,last_name_ar,first_name_en,last_name_en,
+        department,job_title,hire_date,salary_start_date,termination_date,suspension_start_date,suspension_end_date,
+        base_salary,housing_allowance,transport_allowance,other_fixed_allowances,bank_iban,payload,sort_order,is_archived,updated_at
+      ) SELECT employee->>'id',employee->>'companyId',employee->>'employeeNo',COALESCE(employee->>'nationalIdOrIqama',''),
+        COALESCE(NULLIF(employee->>'status',''),'ACTIVE'),employee->>'firstNameAr',employee->>'lastNameAr',
+        COALESCE(employee->>'firstNameEn',''),COALESCE(employee->>'lastNameEn',''),COALESCE(employee->>'department',''),
+        COALESCE(employee->>'jobTitle',''),NULLIF(employee->>'hireDate','')::date,NULLIF(employee->>'salaryStartDate','')::date,
+        NULLIF(employee->>'terminationDate','')::date,NULLIF(employee->>'suspensionStartDate','')::date,NULLIF(employee->>'suspensionEndDate','')::date,
+        COALESCE(NULLIF(employee->'salaryPackage'->>'baseSalary','')::numeric,0),
+        COALESCE(NULLIF(employee->'salaryPackage'->>'housingAllowance','')::numeric,0),
+        COALESCE(NULLIF(employee->'salaryPackage'->>'transportAllowance','')::numeric,0),
+        COALESCE(NULLIF(employee->'salaryPackage'->>'otherFixedAllowances','')::numeric,0),COALESCE(employee->>'bankIban',''),
+        employee,$2+(ordinality-1)::integer,false,now()
+      FROM jsonb_array_elements($1::jsonb) WITH ORDINALITY AS source(employee,ordinality)
+      ON CONFLICT (id) DO UPDATE SET employee_no=EXCLUDED.employee_no,national_id_or_iqama=EXCLUDED.national_id_or_iqama,
+        status=EXCLUDED.status,first_name_ar=EXCLUDED.first_name_ar,last_name_ar=EXCLUDED.last_name_ar,
+        first_name_en=EXCLUDED.first_name_en,last_name_en=EXCLUDED.last_name_en,department=EXCLUDED.department,
+        job_title=EXCLUDED.job_title,hire_date=EXCLUDED.hire_date,salary_start_date=EXCLUDED.salary_start_date,
+        termination_date=EXCLUDED.termination_date,suspension_start_date=EXCLUDED.suspension_start_date,
+        suspension_end_date=EXCLUDED.suspension_end_date,base_salary=EXCLUDED.base_salary,housing_allowance=EXCLUDED.housing_allowance,
+        transport_allowance=EXCLUDED.transport_allowance,other_fixed_allowances=EXCLUDED.other_fixed_allowances,
+        bank_iban=EXCLUDED.bank_iban,payload=EXCLUDED.payload,is_archived=false,updated_at=now()`, [JSON.stringify(employees),startOrder]);
+    const updated = await updateCompatibilityCollectionRecords(client,'employees',employees,req.user.id);
+    await appendStateAudit(client,q,{ companyIds:[companyId],user:req.user,action:`IMPORT_EMPLOYEES:${employees.length}`,version:updated.rows[0].version });
+    await client.query(`INSERT INTO ${q('audit_log')} (user_id,action,ip) VALUES ($1,$2,$3)`, [req.user.id,`IMPORT_EMPLOYEES:${employees.length}`,req.ip]);
+    await client.query('COMMIT');
+    broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at });
+    res.status(201).json({ employees,version:Number(updated.rows[0].version),updated_at:updated.rows[0].updated_at });
+  } catch (e) {
+    try { await client.query('ROLLBACK'); } catch {}
+    if (Number.isInteger(e?.status) && e.status >= 400 && e.status < 500) return res.status(e.status).json({ error:e.message });
+    if (e?.code === '23505') return res.status(409).json({ error:'EMPLOYEE_NUMBER_EXISTS' });
     next(e);
   } finally { client.release(); }
 });

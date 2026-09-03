@@ -1,5 +1,5 @@
 import { AppState } from './storage';
-import { AttendanceRecord, Company, JournalBatch, LeaveRequest, LoanSchedule, PayrollRun, PayrollSettlement, PenaltyRecord, QoyodApiConfig, TemporaryEarningRecord, UserAccount } from '../types';
+import { AttendanceRecord, Company, Employee, JournalBatch, LeaveRequest, LoanSchedule, PayrollRun, PayrollSettlement, PenaltyRecord, QoyodApiConfig, TemporaryEarningRecord, UserAccount } from '../types';
 
 class ApiError extends Error {
   constructor(message: string, public status: number) { super(message); this.name = 'ApiError'; }
@@ -132,10 +132,22 @@ export const api = {
     }
     return result;
   },
+  importEmployees: async (employees: Employee[]) => {
+    const result = await request<{employees:Employee[];version:number;updated_at:string}>('/api/employees/import', { method:'POST',body:JSON.stringify({ employees }) });
+    stateVersion = result.version;
+    result.employees.forEach(employee => updateSyncedCollection('employees',employee));
+    return result;
+  },
   saveAttendanceRecord: async (record: AttendanceRecord) => {
     const result = await request<{record:AttendanceRecord;created:boolean;version:number;updated_at:string}>(`/api/attendance/${encodeURIComponent(record.id)}`, { method:'PUT', body:JSON.stringify(record) });
     stateVersion = result.version;
     updateSyncedCollection('attendance', result.record);
+    return result;
+  },
+  importAttendanceRecords: async (records: AttendanceRecord[]) => {
+    const result = await request<{records:AttendanceRecord[];version:number;updated_at:string}>('/api/attendance/import', { method:'POST',body:JSON.stringify({ records }) });
+    stateVersion = result.version;
+    result.records.forEach(record => updateSyncedCollection('attendance',record));
     return result;
   },
   deleteAttendanceRecord: async (id: string) => {
