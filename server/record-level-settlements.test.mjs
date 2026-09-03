@@ -25,6 +25,11 @@ test('settlements have normalized tenant-scoped storage and indexes', () => {
   assert.match(tenantStorage,/DELETE FROM.*payroll_settlements/);
 });
 
+test('legacy settlement migration concatenates extracted text instead of coercing LEGACY to jsonb', () => {
+  assert.match(server,/'LEGACY:' \|\| \(settlement->>'id'\)/);
+  assert.doesNotMatch(server,/'LEGACY:' \|\| settlement->>'id'/);
+});
+
 test('settlement creation is one atomic command with its source entitlement', () => {
   const create = routeBlock('post','/api/payroll-settlements',"app.post('/api/payroll-settlements/:id/reverse'");
   assert.match(create,/INSERT INTO.*payroll_settlements/);

@@ -1183,7 +1183,7 @@ async function migrate() {
             COALESCE(NULLIF(settlement->>'periodStart',''),settlement->>'periodMonth' || '-01')::date,
             COALESCE(NULLIF(settlement->>'periodEnd',''),(date_trunc('month',(settlement->>'periodMonth' || '-01')::date) + interval '1 month - 1 day')::date::text)::date,
             COALESCE(NULLIF(settlement->>'amount','')::numeric,0),settlement->>'reason',NULLIF(settlement->>'sourcePayrollRunId',''),
-            NULLIF(settlement->>'sourcePayrollItemId',''),COALESCE(NULLIF(settlement->>'dedupeKey',''),'LEGACY:' || settlement->>'id'),COALESCE(settlement->>'status','PENDING'),
+            NULLIF(settlement->>'sourcePayrollItemId',''),COALESCE(NULLIF(settlement->>'dedupeKey',''),'LEGACY:' || (settlement->>'id')),COALESCE(settlement->>'status','PENDING'),
             NULLIF(settlement->>'paymentMethod',''),NULLIF(settlement->>'paymentDate','')::date,NULLIF(settlement->>'paymentReference',''),
             COALESCE(NULLIF(settlement->>'createdAt','')::timestamptz,now()),NULLIF(settlement->>'paidAt','')::timestamptz,
             NULLIF(settlement->>'reversedAt','')::timestamptz,NULLIF(settlement->>'reversalReason',''),settlement,(ordinality-1)::integer
