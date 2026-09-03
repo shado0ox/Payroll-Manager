@@ -138,6 +138,16 @@ export const api = {
     result.employees.forEach(employee => updateSyncedCollection('employees',employee));
     return result;
   },
+  archiveCompanyEmployees: async (companyId: string) => {
+    const result = await request<{employeeIds:string[];archivedCount:number;version:number;updated_at:string}>(`/api/companies/${encodeURIComponent(companyId)}/employees/archive`, { method:'POST' });
+    stateVersion = result.version;
+    result.employeeIds.forEach(id => removeFromSyncedCollection('employees',id));
+    if (syncedState && Array.isArray(syncedState.users)) {
+      const archivedIds = new Set(result.employeeIds);
+      syncedState = { ...syncedState,users:syncedState.users.map((user:any) => archivedIds.has(user?.employeeId) ? { ...user,employeeId:undefined } : user) };
+    }
+    return result;
+  },
   saveAttendanceRecord: async (record: AttendanceRecord) => {
     const result = await request<{record:AttendanceRecord;created:boolean;version:number;updated_at:string}>(`/api/attendance/${encodeURIComponent(record.id)}`, { method:'PUT', body:JSON.stringify(record) });
     stateVersion = result.version;

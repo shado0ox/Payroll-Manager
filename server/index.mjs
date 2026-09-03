@@ -3195,6 +3195,44 @@ app.delete('/api/employees/:id', auth, writeLimiter, async (req, res, next) => {
   } finally { client.release(); }
 });
 
+app.post('/api/companies/:id/employees/archive', auth, writeLimiter, async (req, res, next) => {
+  const client = await pool.connect();
+  try {
+    if (!can(req.user,'MANAGE_EMPLOYEES') || !req.user.company_ids.includes(req.params.id)) {
+      return res.status(403).json({ error:'FORBIDDEN' });
+    }
+    await client.query('BEGIN');
+    const company = await client.query(`SELECT id FROM ${q('companies')} WHERE id=$1 AND is_archived=false FOR UPDATE`, [req.params.id]);
+    if (!company.rowCount) throw workflowError(404,'COMPANY_NOT_FOUND');
+    const employees = await client.query(`SELECT id FROM ${q('employees')} WHERE company_id=$1 AND is_archived=false FOR UPDATE`, [req.params.id]);
+    const employeeIds = employees.rows.map(row => row.id);
+    if (!employeeIds.length) {
+      const current = await client.query(`SELECT version,updated_at FROM ${q('app_state')} WHERE id=1`);
+      await client.query('COMMIT');
+      return res.json({ employeeIds:[],archivedCount:0,version:Number(current.rows[0]?.version || 0),updated_at:current.rows[0]?.updated_at || new Date().toISOString() });
+    }
+    await client.query(`UPDATE ${q('employees')} SET is_archived=true,updated_at=now()
+      WHERE company_id=$1 AND id=ANY($2::text[])`, [req.params.id,employeeIds]);
+    const stateRow = await client.query(`SELECT state FROM ${q('app_state')} WHERE id=1 FOR UPDATE`);
+    if (!stateRow.rowCount) throw workflowError(409,'STATE_NOT_INITIALIZED');
+    const state = clone(stateRow.rows[0].state || {});
+    const archivedIds = new Set(employeeIds);
+    state.employees = asArray(state.employees).filter(employee => !archivedIds.has(employee?.id));
+    state.users = asArray(state.users).map(user => archivedIds.has(user?.employeeId) ? { ...user,employeeId:undefined } : user);
+    const updated = await client.query(`UPDATE ${q('app_state')} SET state=$1::jsonb,version=version+1,updated_by=$2,updated_at=now()
+      WHERE id=1 RETURNING version,updated_at`, [JSON.stringify(state),req.user.id]);
+    await appendStateAudit(client,q,{ companyIds:[req.params.id],user:req.user,action:`ARCHIVE_COMPANY_EMPLOYEES:${employeeIds.length}`,version:updated.rows[0].version });
+    await client.query(`INSERT INTO ${q('audit_log')} (user_id,action,ip) VALUES ($1,$2,$3)`, [req.user.id,`ARCHIVE_COMPANY_EMPLOYEES:${employeeIds.length}`,req.ip]);
+    await client.query('COMMIT');
+    broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at });
+    res.json({ employeeIds,archivedCount:employeeIds.length,version:Number(updated.rows[0].version),updated_at:updated.rows[0].updated_at });
+  } catch (e) {
+    try { await client.query('ROLLBACK'); } catch {}
+    if (Number.isInteger(e?.status) && e.status >= 400 && e.status < 500) return res.status(e.status).json({ error:e.message });
+    next(e);
+  } finally { client.release(); }
+});
+
 app.put('/api/users/:id', auth, writeLimiter, async (req, res, next) => {
   try {
     if (!can(req.user, 'MANAGE_USERS')) return res.status(403).json({ error:'FORBIDDEN' });
