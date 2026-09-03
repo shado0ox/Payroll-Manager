@@ -1122,7 +1122,7 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                   )}
 
                   <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">{language === 'ar' ? 'الاسم الأول (بالعربي) *' : 'First name (Arabic) *'}</label>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">{language === 'ar' ? 'الاسم الأول  *' : 'First name  *'}</label>
                     <input
                       type="text"
                       required
@@ -1133,7 +1133,7 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">{language === 'ar' ? 'اسم العائلة (بالعربي) *' : 'Last name (Arabic) *'}</label>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">{language === 'ar' ? 'اسم العائلة  *' : 'Last name  *'}</label>
                     <input
                       type="text"
                       required
