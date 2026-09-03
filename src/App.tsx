@@ -31,7 +31,6 @@ import {
 } from './types';
 import { 
   loadInitialState, 
-  saveCompanies, 
   saveEmployees, 
   savePayrollRuns, 
   saveAttendance, 
@@ -1001,27 +1000,35 @@ export const App: React.FC = () => {
     }
   };
 
-  const handleAddCompany = (company: Company) => {
-    if (!hasPermission(state.currentUser, 'MANAGE_COMPANIES')) return;
-    setState(prev => {
-      const updated = [...prev.companies, company];
-      saveCompanies(updated);
-
-      const log: AuditLog = {
-        id: `log-${Date.now()}`,
-        timestamp: new Date().toISOString(),
-        userName: prev.currentUser?.name || 'مسؤول النظام',
-        userRole: prev.activeRole,
-        action: tr('إضافة منشأة / شركة جديدة', 'Added company'),
-        entityType: 'COMPANY',
-        entityId: company.id,
-        details: `${tr('تمت إضافة الشركة:', 'Added company:')} ${language === 'ar' ? company.nameAr : company.nameEn || company.nameAr} (${tr('كود:', 'Code:')} ${company.companyCode})`,
-      };
-      const updatedLogs = [log, ...prev.auditLogs];
-      saveAuditLogs(updatedLogs);
-
-      return { ...prev, companies: updated, auditLogs: updatedLogs };
-    });
+  const handleAddCompany = async (company: Company) => {
+    if (!hasPermission(state.currentUser, 'MANAGE_COMPANIES')) return false;
+    const operation = persistenceQueueRef.current.catch(() => undefined).then(() => api.createCompany(company));
+    persistenceQueueRef.current = operation.then(() => undefined, () => undefined);
+    try {
+      setDbStatus(prev => ({ ...prev,isChecking:true }));
+      const result = await operation;
+      setState(prev => {
+        const companies = prev.companies.some(item => item.id === result.record.id)
+          ? prev.companies.map(item => item.id === result.record.id ? result.record : item)
+          : [...prev.companies,result.record];
+        const currentUser = prev.currentUser
+          ? { ...prev.currentUser,companyIds:[...new Set([...prev.currentUser.companyIds,result.record.id])] }
+          : prev.currentUser;
+        const users = prev.users.map(user => user.id === currentUser?.id ? currentUser : user);
+        const next = { ...prev,companies,currentUser,users };
+        remoteStateSnapshotRef.current = next;
+        return next;
+      });
+      setDbStatus(prev => ({ ...prev,isCloudConnected:true,isChecking:false,lastError:null,lastSavedAt:result.updated_at }));
+      return true;
+    } catch (error:any) {
+      const code = error?.message || 'UNKNOWN_ERROR';
+      setDbStatus(prev => ({ ...prev,isChecking:false,lastError:`${tr('تعذر إضافة المنشأة:', 'Could not add company:')} ${code}` }));
+      alert(code === 'COMPANY_DUPLICATE'
+        ? tr('رقم الشركة أو كودها مستخدم بالفعل.', 'The company ID or code is already in use.')
+        : `${tr('تعذر إضافة المنشأة:', 'Could not add company:')} ${code}`);
+      return false;
+    }
   };
 
   const handleUpdateCompany = async (company: Company) => {
@@ -1057,40 +1064,47 @@ export const App: React.FC = () => {
     setDbStatus(prev => ({ ...prev,isCloudConnected:true,isChecking:false,lastError:null,lastSavedAt:updatedAt }));
   };
 
-  const handleDeleteCompany = (companyId: string) => {
-    if (!hasPermission(state.currentUser, 'MANAGE_COMPANIES')) return;
-    setState(prev => {
-      if (prev.companies.length <= 1) {
-        alert(tr('لا يمكن حذف الشركة الوحيدة المتبقية في النظام.', 'The only remaining company cannot be deleted.'));
-        return prev;
-      }
-      const targetComp = prev.companies.find(c => c.id === companyId);
-      const updatedCompanies = prev.companies.filter(c => c.id !== companyId);
-      const nextActiveId = prev.activeCompanyId === companyId ? updatedCompanies[0].id : prev.activeCompanyId;
-      
-      saveCompanies(updatedCompanies);
-      saveActiveCompanyId(nextActiveId);
-
-      const log: AuditLog = {
-        id: `log-${Date.now()}`,
-        timestamp: new Date().toISOString(),
-        userName: prev.currentUser?.name || 'مسؤول النظام',
-        userRole: prev.activeRole,
-        action: tr('حذف منشأة / شركة', 'Deleted company'),
-        entityType: 'COMPANY',
-        entityId: companyId,
-        details: `${tr('تم حذف الشركة:', 'Deleted company:')} ${targetComp ? (language === 'ar' ? targetComp.nameAr : targetComp.nameEn || targetComp.nameAr) : companyId}`,
-      };
-      const updatedLogs = [log, ...prev.auditLogs];
-      saveAuditLogs(updatedLogs);
-
-      return {
-        ...prev,
-        companies: updatedCompanies,
-        activeCompanyId: nextActiveId,
-        auditLogs: updatedLogs,
-      };
-    });
+  const handleDeleteCompany = async (companyId: string) => {
+    if (!hasPermission(state.currentUser, 'MANAGE_COMPANIES')) return false;
+    const target = state.companies.find(company => company.id === companyId);
+    const managedCompanies = state.companies.filter(company => state.currentUser?.companyIds.includes(company.id));
+    if (managedCompanies.length <= 1) {
+      alert(tr('لا يمكن أرشفة الشركة الوحيدة التي تديرها.', 'The only company you manage cannot be archived.'));
+      return false;
+    }
+    if (!confirm(tr(
+      `سيتم أرشفة شركة ${target?.nameAr || companyId} وإيقاف الدخول إليها، مع الاحتفاظ بكل الموظفين والمسيرات والسجلات التاريخية. هل تريد المتابعة؟`,
+      `Archive ${target?.nameEn || target?.nameAr || companyId} and disable access while preserving all historical payroll data?`,
+    ))) return false;
+    const operation = persistenceQueueRef.current.catch(() => undefined).then(() => api.archiveCompany(companyId));
+    persistenceQueueRef.current = operation.then(() => undefined, () => undefined);
+    try {
+      setDbStatus(prev => ({ ...prev,isChecking:true }));
+      const result = await operation;
+      setState(prev => {
+        const companies = prev.companies.filter(company => company.id !== companyId);
+        const currentUser = prev.currentUser
+          ? { ...prev.currentUser,companyIds:prev.currentUser.companyIds.filter(id => id !== companyId) }
+          : prev.currentUser;
+        const users = prev.users
+          .map(user => ({ ...user,companyIds:user.companyIds.filter(id => id !== companyId) }))
+          .filter(user => user.role === 'ADMIN' || user.companyIds.length > 0);
+        const activeCompanyId = prev.activeCompanyId === companyId ? result.nextCompanyId : prev.activeCompanyId;
+        const next = { ...prev,companies,currentUser,users,activeCompanyId };
+        remoteStateSnapshotRef.current = next;
+        return next;
+      });
+      if (state.activeCompanyId === companyId) saveActiveCompanyId(result.nextCompanyId);
+      setDbStatus(prev => ({ ...prev,isCloudConnected:true,isChecking:false,lastError:null,lastSavedAt:result.updated_at }));
+      return true;
+    } catch (error:any) {
+      const code = error?.message || 'UNKNOWN_ERROR';
+      setDbStatus(prev => ({ ...prev,isChecking:false,lastError:`${tr('تعذر أرشفة المنشأة:', 'Could not archive company:')} ${code}` }));
+      alert(code === 'ONLY_MANAGED_COMPANY'
+        ? tr('لا يمكن أرشفة الشركة الوحيدة التي تديرها.', 'The only company you manage cannot be archived.')
+        : `${tr('تعذر أرشفة المنشأة:', 'Could not archive company:')} ${code}`);
+      return false;
+    }
   };
 
   const handleSaveQoyodConfig = async (config: QoyodApiConfig) => {
