@@ -34,8 +34,8 @@ interface UserManagementViewProps {
   employees: Employee[];
   companies: Company[];
   currentUser: UserAccount | null;
-  onSaveUser: (user: UserAccount) => void;
-  onDeleteUser: (userId: string) => void;
+  onSaveUser: (user: UserAccount) => boolean | Promise<boolean>;
+  onDeleteUser: (userId: string) => boolean | Promise<boolean>;
 }
 
 const ROLE_INFO: Record<UserRole, { labelAr: string; labelEn: string; descAr: string; descEn: string; color: string; badgeBg: string }> = {
@@ -159,7 +159,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
   };
 
   // Save Form
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError(null);
 
@@ -200,8 +200,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
       lastLogin: editingUser?.lastLogin,
     };
 
-    onSaveUser(newUser);
-    setIsModalOpen(false);
+    if (await onSaveUser(newUser)) setIsModalOpen(false);
   };
 
   // Filtered list

@@ -283,12 +283,25 @@ export const api = {
     syncedState = snapshot;
     return result;
   },
-  health: () => request<{status:string}>('/api/health'),
-  subscribeStateEvents: (onUpdate: (event: { version: number; updatedBy: string; updatedAt?: string }) => void) => {
+  health: () => request<{status:string;buildId:string}>('/api/health'),
+  version: () => request<{buildId:string}>('/api/version', { headers:{ 'Cache-Control':'no-cache' } }),
+  subscribeStateEvents: (onUpdate: (event: { version?: number; updatedBy?: string; updatedAt?: string; buildId?: string; connected?: boolean }) => void) => {
     const source = new EventSource('/api/state/events', { withCredentials: true });
-    source.onmessage = (message) => { try { onUpdate(JSON.parse(message.data)); } catch {} };
+    const receive = (message: MessageEvent) => { try { onUpdate(JSON.parse(message.data)); } catch {} };
+    source.onmessage = receive;
+    source.addEventListener('ready', receive as EventListener);
     return () => source.close();
   },
-  saveUser: (user: UserAccount) => request<UserAccount>(`/api/users/${encodeURIComponent(user.id)}`, { method:'PUT', body:JSON.stringify(user) }),
-  deleteUser: (id: string) => request<void>(`/api/users/${encodeURIComponent(id)}`, { method:'DELETE' }),
+  saveUser: async (user: UserAccount) => {
+    const result = await request<{record:UserAccount;version:number;updated_at:string}>(`/api/users/${encodeURIComponent(user.id)}`, { method:'PUT',body:JSON.stringify(user) });
+    stateVersion = result.version;
+    updateSyncedCollection('users',result.record);
+    return result;
+  },
+  deleteUser: async (id: string) => {
+    const result = await request<{deleted:boolean;id:string;version:number;updated_at:string}>(`/api/users/${encodeURIComponent(id)}`, { method:'DELETE' });
+    stateVersion = result.version;
+    removeFromSyncedCollection('users',id);
+    return result;
+  },
 };
