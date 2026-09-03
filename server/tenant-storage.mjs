@@ -1,4 +1,4 @@
-const COMPANY_SCOPED_KEYS = ['employees', 'attendance', 'loans', 'penalties', 'temporaryEarnings', 'leaves', 'payrollRuns', 'journals'];
+const COMPANY_SCOPED_KEYS = ['employees', 'attendance', 'loans', 'penalties', 'temporaryEarnings', 'leaves', 'payrollRuns', 'payrollSettlements', 'journals'];
 
 const normalizeCompanyIds = (companyIds) => [...new Set(
   (Array.isArray(companyIds) ? companyIds : []).filter(id => typeof id === 'string' && id.trim())
@@ -39,6 +39,7 @@ export function createTenantScopedClient(client, q, companyIds) {
     [`DELETE FROM ${q('loans')}`, () => client.query(scoped('loans'), [scope])],
     [`DELETE FROM ${q('penalties')}`, () => client.query(scoped('penalties'), [scope])],
     [`DELETE FROM ${q('temporary_earnings')}`, () => client.query(scoped('temporary_earnings'), [scope])],
+    [`DELETE FROM ${q('payroll_settlements')}`, () => client.query(scoped('payroll_settlements'), [scope])],
     [`DELETE FROM ${q('payroll_payment_batches')}`, () => client.query(scoped('payroll_payment_batches'), [scope])],
     [`DELETE FROM ${q('payroll_runs')}`, () => client.query(scoped('payroll_runs'), [scope])],
     [`DELETE FROM ${q('employees')}`, () => client.query(scoped('employees'), [scope])],

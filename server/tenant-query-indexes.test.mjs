@@ -9,6 +9,7 @@ test('tenant-period tables have company-leading indexes', () => {
   assert.match(server, /penalties_company_period_idx.*penalties.*\(company_id,period_month\)/);
   assert.match(server, /earnings_company_period_idx.*temporary_earnings.*\(company_id,period_month\)/);
   assert.match(server, /payroll_runs_company_period_idx.*payroll_runs.*\(company_id,period_month DESC\)/);
+  assert.match(server, /payroll_settlements_company_period_idx.*payroll_settlements.*\(company_id,period_month DESC\)/);
   assert.match(server, /journal_batches_company_period_idx.*journal_batches.*\(company_id,period_month\)/);
 });
 

@@ -45,6 +45,16 @@ SELECT
   (SELECT count(*) FROM masar_payroll.temporary_earnings) AS temporary_earnings;
 
 SELECT
+  company_id,
+  period_month,
+  status,
+  count(*) AS settlement_count,
+  sum(amount) AS settlement_total
+FROM masar_payroll.payroll_settlements
+GROUP BY company_id, period_month, status
+ORDER BY period_month DESC, company_id, status;
+
+SELECT
   (SELECT COALESCE(sum(remaining_amount),0) FROM masar_payroll.loans) AS loans_remaining_total,
   (SELECT COALESCE(sum(amount),0) FROM masar_payroll.penalties) AS penalties_total,
   (SELECT COALESCE(sum(amount),0) FROM masar_payroll.temporary_earnings) AS temporary_earnings_total;
