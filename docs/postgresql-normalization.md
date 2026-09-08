@@ -66,5 +66,7 @@ directly from the normalized tables. They read only version metadata from
 `app_state`; the JSON payload is no longer a source for normal application reads.
 Dedicated record and workflow writes now update only `app_state` version metadata
 after committing their normalized rows; they no longer mirror each saved record
-back into the legacy JSON payload. A small number of complex migration/restore
-paths still maintain that payload temporarily and will be removed separately.
+back into the legacy JSON payload. Employee create/delete, bulk employee archive,
+company archive, and settlement create/reversal now follow the same rule. Only
+the explicit developer restore and startup migration/rollback paths should write
+the legacy JSON payload.

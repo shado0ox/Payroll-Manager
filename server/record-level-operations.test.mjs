@@ -70,7 +70,7 @@ test('loan and temporary earning UI actions use direct committed APIs', () => {
 });
 
 test('payroll saves replace only one run aggregate instead of every payroll table', () => {
-  const put = routeBlock('put', '/api/payroll-runs/:id', 'async function commitSettlementCompatibility');
+  const put = routeBlock('put', '/api/payroll-runs/:id', "app.post('/api/payroll-settlements'");
   assert.match(put, /INSERT INTO.*payroll_runs[\s\S]*ON CONFLICT \(id\) DO UPDATE/);
   assert.match(put, /DELETE FROM.*payroll_run_items.*WHERE payroll_run_id=\$1/);
   assert.match(put, /DELETE FROM.*payroll_payment_batches.*WHERE payroll_run_id=\$1/);
@@ -105,6 +105,6 @@ test('frontend routes status and payment-only changes to command endpoints', () 
   assert.match(api, /\/payroll-runs\/\$\{encodeURIComponent\(record\.id\)\}\/status/);
   assert.match(api, /\/payment-batches`/);
   assert.match(api, /\/payment-batches\/\$\{encodeURIComponent\(command\.batch\.id\)\}\/status/);
-  const aggregate = routeBlock('put', '/api/payroll-runs/:id', 'async function commitSettlementCompatibility');
+  const aggregate = routeBlock('put', '/api/payroll-runs/:id', "app.post('/api/payroll-settlements'");
   assert.match(aggregate, /PAYROLL_COMMAND_ENDPOINT_REQUIRED/);
 });
