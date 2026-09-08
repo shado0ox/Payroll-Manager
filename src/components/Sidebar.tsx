@@ -102,6 +102,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           return (
             <button
               key={item.id}
+              data-testid={`nav-${item.id}`}
               onClick={() => onTabChange(item.id)}
               title={item.label}
               aria-current={isActive ? 'page' : undefined}
