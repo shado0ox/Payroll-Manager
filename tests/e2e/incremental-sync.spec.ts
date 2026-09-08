@@ -33,21 +33,22 @@ test('a record saved in one tab reaches another without reloading full state', a
     const stateResponse = await fetch('/api/state');
     const current = await stateResponse.json();
     const companyId = current.state.activeCompanyId || current.state.companies[0].id;
+    const employeeName = `المزامنة-${id}`;
     const employee = {
       id,companyId,employeeNo:`E2E-${Date.now()}`,status:'ACTIVE',
-      firstNameAr:'اختبار',lastNameAr:'المزامنة',firstNameEn:'Sync',lastNameEn:'Test',
+      firstNameAr:'اختبار',lastNameAr:employeeName,firstNameEn:'Sync',lastNameEn:'Test',
       nationalIdOrIqama:'',department:'QA',jobTitle:'Tester',hireDate:'2026-09-01',salaryStartDate:'2026-09-01',
       salaryPackage:{ baseSalary:1000,housingAllowance:0,transportAllowance:0,otherFixedAllowances:0 },
     };
     const response = await fetch(`/api/employees/${encodeURIComponent(id)}`,{
       method:'PUT',headers:{ 'Content-Type':'application/json' },body:JSON.stringify(employee),
     });
-    return { ok:response.ok,status:response.status,body:await response.json() };
+    return { ok:response.ok,status:response.status,employeeName:`اختبار ${employeeName}`,body:await response.json() };
   },employeeId);
 
   expect(result.ok,JSON.stringify(result.body)).toBe(true);
   await observer.getByTestId('nav-employees').click();
-  await expect(observer.getByText('اختبار المزامنة')).toBeVisible();
+  await expect(observer.getByText(result.employeeName,{ exact:true })).toBeVisible();
   expect(fullStateReads).toBe(0);
 
   await observer.getByTestId('nav-loans_penalties').click();
