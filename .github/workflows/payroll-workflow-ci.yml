@@ -90,6 +90,69 @@ jobs:
         if: always()
         run: kill "$(cat runtime-server.pid)" 2>/dev/null || true
 
+  browser-e2e:
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: masar_browser_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d masar_browser_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      PORT: 3036
+      E2E_BASE_URL: http://127.0.0.1:3036
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/masar_browser_test
+      DB_SCHEMA: masar_payroll
+      DB_SSL: 'false'
+      ADMIN_USERNAME: admin
+      ADMIN_PASSWORD: 'TestAdmin1!'
+      ADMIN_NAME: Browser Test Admin
+      ADMIN_EMAIL: browser-admin@example.test
+      COMPANY_ID: comp-1
+      COMPANY_CODE: '101'
+      COMPANY_NAME_AR: شركة اختبار المتصفح
+      COMPANY_NAME_EN: Browser Test Company
+      COOKIE_SECURE: 'false'
+      TRUST_PROXY: '0'
+      APP_ORIGIN: http://127.0.0.1:3036
+      ALLOW_PUBLIC_REGISTRATION: 'false'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20.19
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npx playwright install --with-deps chromium
+      - name: Start isolated Masar server
+        run: |
+          node server/index.mjs > browser-server.log 2>&1 &
+          echo $! > browser-server.pid
+          for attempt in $(seq 1 60); do
+            curl --fail --silent http://127.0.0.1:3036/api/health && break
+            sleep 1
+          done
+          curl --fail --silent http://127.0.0.1:3036/api/health
+      - name: Exercise browser login and cross-tab record sync
+        run: npm run test:e2e
+      - name: Show server log on failure
+        if: failure()
+        run: cat browser-server.log || true
+      - name: Stop isolated Masar server
+        if: always()
+        run: kill "$(cat browser-server.pid)" 2>/dev/null || true
+
   legacy-migration-postgres:
     needs: verify
     runs-on: ubuntu-latest
