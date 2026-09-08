@@ -64,5 +64,7 @@ until the final normalized-read migration and rollback checks are complete.
 Normal `GET /api/state` responses and HR lifecycle processing are now assembled
 directly from the normalized tables. They read only version metadata from
 `app_state`; the JSON payload is no longer a source for normal application reads.
-Record write paths still update the compatibility snapshot temporarily so the
-explicit restore and rollback path remains available during the final migration.
+Dedicated record and workflow writes now update only `app_state` version metadata
+after committing their normalized rows; they no longer mirror each saved record
+back into the legacy JSON payload. A small number of complex migration/restore
+paths still maintain that payload temporarily and will be removed separately.

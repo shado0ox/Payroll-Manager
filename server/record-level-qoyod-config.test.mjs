@@ -28,7 +28,7 @@ test('Qoyod secret is preserved when the redacted client saves again', () => {
   const route = configRoute();
   assert.match(route,/CASE WHEN EXCLUDED\.secret_value <> '' THEN EXCLUDED\.secret_value ELSE .*integration_configs.*\.secret_value END/);
   assert.match(route,/const record = \{ .*apiKey:'',apiKeyConfigured:/);
-  assert.match(route,/updateCompatibilityObject\(client,'qoyodConfig',record/);
+  assert.match(route,/bumpStateVersion\(client,req\.user\.id\)/);
   assert.doesNotMatch(route,/res\.json\([^\n]*secret_value/);
 });
 
