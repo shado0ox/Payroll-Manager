@@ -23,8 +23,16 @@ test('paid loan is excluded next month and posted payslip keeps the selected per
     const current = await (await fetch('/api/state')).json();
     const companyId = current.state.activeCompanyId || current.state.companies[0].id;
     const now = new Date();
-    const currentPeriod = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2,'0')}`;
-    const nextDate = new Date(Date.UTC(now.getUTCFullYear(),now.getUTCMonth() + 1,1));
+    const usedPeriods = new Set(current.state.payrollRuns
+      .filter((run:any) => run.companyId === companyId)
+      .map((run:any) => run.periodMonth));
+    let payrollDate = new Date(Date.UTC(now.getUTCFullYear(),now.getUTCMonth() + 1,1));
+    const periodAt = (date:Date) => `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2,'0')}`;
+    while (usedPeriods.has(periodAt(payrollDate)) || usedPeriods.has(periodAt(new Date(Date.UTC(payrollDate.getUTCFullYear(),payrollDate.getUTCMonth() + 1,1))))) {
+      payrollDate = new Date(Date.UTC(payrollDate.getUTCFullYear(),payrollDate.getUTCMonth() + 1,1));
+    }
+    const payrollPeriod = periodAt(payrollDate);
+    const nextDate = new Date(Date.UTC(payrollDate.getUTCFullYear(),payrollDate.getUTCMonth() + 1,1));
     const nextPeriod = `${nextDate.getUTCFullYear()}-${String(nextDate.getUTCMonth() + 1).padStart(2,'0')}`;
     const suffix = `${Date.now()}`;
     const employeeId = `employee-close-e2e-${suffix}`;
@@ -33,26 +41,27 @@ test('paid loan is excluded next month and posted payslip keeps the selected per
       [`/api/employees/${employeeId}`,{
         id:employeeId,companyId,employeeNo,status:'ACTIVE',nationality:'NON_SAUDI',gosiEnabled:true,
         firstNameAr:'اختبار',lastNameAr:`إقفال-${suffix}`,firstNameEn:'Close',lastNameEn:'Cycle',
-        nationalIdOrIqama:`2${suffix.slice(-9)}`,department:'QA',jobTitle:'Tester',hireDate:`${currentPeriod}-01`,salaryStartDate:`${currentPeriod}-01`,
+        nationalIdOrIqama:`2${suffix.slice(-9)}`,department:'QA',jobTitle:'Tester',hireDate:`${payrollPeriod}-01`,salaryStartDate:`${payrollPeriod}-01`,
         bankName:'Test Bank',bankIban:'SA0000000000000000000000',bankAccountStatus:'ACTIVE',
         salaryPackage:{ baseSalary:1000,housingAllowance:0,transportAllowance:0,otherFixedAllowances:0,customAllowances:[],customDeductions:[] },
       }],
       [`/api/loans/loan-close-e2e-${suffix}`,{
         id:`loan-close-e2e-${suffix}`,companyId,employeeId,totalAmount:300,monthlyInstallment:300,
-        totalInstallments:1,remainingInstallments:1,remainingAmount:300,startDate:currentPeriod,status:'ACTIVE',reason:`سلفة إقفال ${suffix}`,
+        totalInstallments:1,remainingInstallments:1,remainingAmount:300,startDate:payrollPeriod,status:'ACTIVE',reason:`سلفة إقفال ${suffix}`,
       }],
     ] as const;
     for (const [path,record] of records) {
       const response = await fetch(path,{ method:'PUT',headers:{ 'Content-Type':'application/json' },body:JSON.stringify(record) });
       if (!response.ok) return { ok:false,path,status:response.status,body:await response.json() };
     }
-    return { ok:true,employeeId,employeeNo,currentPeriod,nextPeriod };
+    return { ok:true,employeeId,employeeNo,payrollPeriod,nextPeriod };
   });
 
   expect(seed.ok,JSON.stringify(seed)).toBe(true);
   await page.waitForTimeout(300);
   await page.getByTestId('nav-payroll_runs').click();
-  await expect(page.getByLabel(/شهر المسير|Payroll month/i)).toHaveValue(seed.currentPeriod!);
+  await page.getByLabel(/السنة|Year/i).selectOption(seed.payrollPeriod!.slice(0,4));
+  await page.getByLabel(/شهر المسير|Payroll month/i).selectOption(seed.payrollPeriod!);
 
   const initialCalculation = waitForPayrollWrite(page,'PUT',/\/api\/payroll-runs\/[^/]+$/);
   await page.getByRole('button',{ name:/إعادة احتساب المسير آلياً|Recalculate payroll/i }).click();
@@ -71,7 +80,7 @@ test('paid loan is excluded next month and posted payslip keeps the selected per
   await search.fill(seed.employeeNo!);
   await page.getByRole('button',{ name:/تحديد المتاح|Select eligible/i }).click();
   await page.getByRole('button',{ name:/إنشاء دفعة للمحددين|Create selected batch/i }).click();
-  await page.getByLabel(/طريقة التحويل|Payment method/i).selectOption('CASH');
+  await page.locator('select:has(option[value="CASH"])').selectOption('CASH');
   const createBatch = waitForPayrollWrite(page,'POST',/\/api\/payroll-runs\/[^/]+\/payment-batches$/);
   await page.getByRole('button',{ name:/إنشاء وجدولة الدفعة|Create and schedule batch/i }).click();
   expect((await (await createBatch).json()).record.paymentBatches.at(-1)?.status).toBe('SCHEDULED');
