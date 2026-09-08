@@ -306,10 +306,21 @@ function validatePayrollWorkflowChanges(storedRuns, incomingRuns, user) {
 }
 
 const stateEventClients = new Set();
-const broadcastStateUpdate = (payload) => {
-  const message = `data: ${JSON.stringify({ ...payload,buildId })}\n\n`;
+const disconnectStateEventClients = (userId) => {
   for (const client of stateEventClients) {
-    try { client.write(message); } catch { stateEventClients.delete(client); }
+    if (userId && client.userId !== userId) continue;
+    stateEventClients.delete(client);
+    try { client.response.end(); } catch {}
+  }
+};
+const broadcastStateUpdate = (payload) => {
+  for (const client of stateEventClients) {
+    const scopedCompanyIds = Array.isArray(payload.companyIds) ? payload.companyIds : [];
+    const canSeeChange = !scopedCompanyIds.length || scopedCompanyIds.some(id => client.companyIds.has(id));
+    const { companyIds:_companyIds,changes:_changes,...metadata } = payload;
+    const eventPayload = canSeeChange ? { ...metadata,changes:_changes } : { ...metadata,changes:[] };
+    const message = `data: ${JSON.stringify({ ...eventPayload,buildId })}\n\n`;
+    try { client.response.write(message); } catch { stateEventClients.delete(client); }
   }
 };
 
@@ -1680,8 +1691,8 @@ app.put('/api/admin/companies/:id/subscription', auth, writeLimiter, async (req,
   } catch (e) { next(e); }
 });
 
-// Broadcast version metadata only. Clients reload through the normal authenticated,
-// company-filtered state endpoint so no cross-company data is exposed.
+// Each connection retains only its authorized company ids. Record changes are sent
+// only to matching tenants; other tenants receive an empty version advance.
 app.get('/api/state/events', auth, (req, res) => {
   res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
   res.setHeader('Cache-Control', 'no-cache, no-transform');
@@ -1689,9 +1700,12 @@ app.get('/api/state/events', auth, (req, res) => {
   res.setHeader('X-Accel-Buffering', 'no');
   res.flushHeaders?.();
   res.write(`event: ready\ndata: ${JSON.stringify({ connected:true,buildId })}\n\n`);
-  stateEventClients.add(res);
+  const eventClient = { response:res,userId:req.user.id,companyIds:new Set(Array.isArray(req.user.company_ids) ? req.user.company_ids : []) };
+  stateEventClients.add(eventClient);
   const heartbeat = setInterval(() => { try { res.write(': heartbeat\n\n'); } catch {} }, 25_000);
-  req.on('close', () => { clearInterval(heartbeat); stateEventClients.delete(res); });
+  // Reconnect periodically so long-lived streams cannot retain stale tenant access.
+  const recycle = setTimeout(() => { stateEventClients.delete(eventClient); res.end(); }, 5 * 60_000);
+  req.on('close', () => { clearInterval(heartbeat); clearTimeout(recycle); stateEventClients.delete(eventClient); });
 });
 
 app.post('/api/auth/logout', auth, async (req, res, next) => {
@@ -2128,7 +2142,8 @@ app.put('/api/attendance/:id', auth, writeLimiter, async (req, res, next) => {
     const updated = await bumpStateVersion(client,req.user.id);
     await appendStateAudit(client,q,{ companyIds:req.user.company_ids,user:req.user,action:existing.rowCount ? 'UPDATE_ATTENDANCE' : 'CREATE_ATTENDANCE',version:updated.rows[0].version });
     await client.query('COMMIT');
-    broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at });
+    broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at,
+      companyIds:[record.companyId],changes:[{ collection:'attendance',operation:'upsert',records:[record] }] });
     res.json({ record,created:!existing.rowCount,version:Number(updated.rows[0].version),updated_at:updated.rows[0].updated_at });
   } catch (e) {
     try { await client.query('ROLLBACK'); } catch {}
@@ -2178,7 +2193,8 @@ app.post('/api/attendance/import', auth, writeLimiter, async (req, res, next) =>
     const updated = await bumpStateVersion(client,req.user.id);
     await appendStateAudit(client,q,{ companyIds:[companyId],user:req.user,action:`IMPORT_ATTENDANCE:${records.length}`,version:updated.rows[0].version });
     await client.query('COMMIT');
-    broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at });
+    broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at,
+      companyIds:[companyId],changes:[{ collection:'attendance',operation:'upsert',records }] });
     res.status(201).json({ records,version:Number(updated.rows[0].version),updated_at:updated.rows[0].updated_at });
   } catch (e) {
     try { await client.query('ROLLBACK'); } catch {}
@@ -2201,7 +2217,8 @@ app.delete('/api/attendance/:id', auth, writeLimiter, async (req, res, next) => 
     const updated = await bumpStateVersion(client,req.user.id);
     await appendStateAudit(client,q,{ companyIds:req.user.company_ids,user:req.user,action:'DELETE_ATTENDANCE',version:updated.rows[0].version });
     await client.query('COMMIT');
-    broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at });
+    broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at,
+      companyIds:[row.rows[0].company_id],changes:[{ collection:'attendance',operation:'delete',ids:[req.params.id] }] });
     res.json({ deleted:true,version:Number(updated.rows[0].version),updated_at:updated.rows[0].updated_at });
   } catch (e) {
     try { await client.query('ROLLBACK'); } catch {}
@@ -2254,7 +2271,8 @@ app.put('/api/leaves/:id', auth, writeLimiter, async (req, res, next) => {
     const updated = await bumpStateVersion(client,req.user.id);
     await appendStateAudit(client,q,{ companyIds:req.user.company_ids,user:req.user,action:existing.rowCount ? 'UPDATE_LEAVE' : 'CREATE_LEAVE',version:updated.rows[0].version });
     await client.query('COMMIT');
-    broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at });
+    broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at,
+      companyIds:[record.companyId],changes:[{ collection:'leaves',operation:'upsert',records:[record] }] });
     res.json({ record,created:!existing.rowCount,version:Number(updated.rows[0].version),updated_at:updated.rows[0].updated_at });
   } catch (e) {
     try { await client.query('ROLLBACK'); } catch {}
@@ -2280,7 +2298,8 @@ app.patch('/api/leaves/:id/status', auth, writeLimiter, async (req, res, next) =
     const updated = await bumpStateVersion(client,req.user.id);
     await appendStateAudit(client,q,{ companyIds:req.user.company_ids,user:req.user,action:'LEAVE_STATUS_TRANSITION',version:updated.rows[0].version });
     await client.query('COMMIT');
-    broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at });
+    broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at,
+      companyIds:[record.companyId],changes:[{ collection:'leaves',operation:'upsert',records:[record] }] });
     res.json({ record,created:false,version:Number(updated.rows[0].version),updated_at:updated.rows[0].updated_at });
   } catch (e) {
     try { await client.query('ROLLBACK'); } catch {}
@@ -2319,7 +2338,8 @@ app.put('/api/penalties/:id', auth, writeLimiter, async (req, res, next) => {
     const updated = await bumpStateVersion(client,req.user.id);
     await appendStateAudit(client,q,{ companyIds:req.user.company_ids,user:req.user,action:existing.rowCount ? 'UPDATE_PENALTY' : 'CREATE_PENALTY',version:updated.rows[0].version });
     await client.query('COMMIT');
-    broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at });
+    broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at,
+      companyIds:[record.companyId],changes:[{ collection:'penalties',operation:'upsert',records:[record] }] });
     res.json({ record,created:!existing.rowCount,version:Number(updated.rows[0].version),updated_at:updated.rows[0].updated_at });
   } catch (e) {
     try { await client.query('ROLLBACK'); } catch {}
@@ -2342,7 +2362,8 @@ app.delete('/api/penalties/:id', auth, writeLimiter, async (req, res, next) => {
     const updated = await bumpStateVersion(client,req.user.id);
     await appendStateAudit(client,q,{ companyIds:req.user.company_ids,user:req.user,action:'DELETE_PENALTY',version:updated.rows[0].version });
     await client.query('COMMIT');
-    broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at });
+    broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at,
+      companyIds:[row.rows[0].company_id],changes:[{ collection:'penalties',operation:'delete',ids:[req.params.id] }] });
     res.json({ deleted:true,version:Number(updated.rows[0].version),updated_at:updated.rows[0].updated_at });
   } catch (e) {
     try { await client.query('ROLLBACK'); } catch {}
@@ -2389,7 +2410,8 @@ app.put('/api/loans/:id', auth, writeLimiter, async (req, res, next) => {
     const updated = await bumpStateVersion(client,req.user.id);
     await appendStateAudit(client,q,{ companyIds:req.user.company_ids,user:req.user,action:appendOnlyAdjustment ? 'ADJUST_LOAN' : existing.rowCount ? 'UPDATE_LOAN' : 'CREATE_LOAN',version:updated.rows[0].version });
     await client.query('COMMIT');
-    broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at });
+    broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at,
+      companyIds:[record.companyId],changes:[{ collection:'loans',operation:'upsert',records:[record] }] });
     res.json({ record,created:!existing.rowCount,version:Number(updated.rows[0].version),updated_at:updated.rows[0].updated_at });
   } catch (e) {
     try { await client.query('ROLLBACK'); } catch {}
@@ -2412,7 +2434,8 @@ app.delete('/api/loans/:id', auth, writeLimiter, async (req, res, next) => {
     const updated = await bumpStateVersion(client,req.user.id);
     await appendStateAudit(client,q,{ companyIds:req.user.company_ids,user:req.user,action:'DELETE_LOAN',version:updated.rows[0].version });
     await client.query('COMMIT');
-    broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at });
+    broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at,
+      companyIds:[row.rows[0].company_id],changes:[{ collection:'loans',operation:'delete',ids:[req.params.id] }] });
     res.json({ deleted:true,version:Number(updated.rows[0].version),updated_at:updated.rows[0].updated_at });
   } catch (e) {
     try { await client.query('ROLLBACK'); } catch {}
@@ -2454,7 +2477,8 @@ app.put('/api/temporary-earnings/:id', auth, writeLimiter, async (req, res, next
     const updated = await bumpStateVersion(client,req.user.id);
     await appendStateAudit(client,q,{ companyIds:req.user.company_ids,user:req.user,action:existing.rowCount ? 'UPDATE_TEMPORARY_EARNING' : 'CREATE_TEMPORARY_EARNING',version:updated.rows[0].version });
     await client.query('COMMIT');
-    broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at });
+    broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at,
+      companyIds:[record.companyId],changes:[{ collection:'temporaryEarnings',operation:'upsert',records:[record] }] });
     res.json({ record,created:!existing.rowCount,version:Number(updated.rows[0].version),updated_at:updated.rows[0].updated_at });
   } catch (e) {
     try { await client.query('ROLLBACK'); } catch {}
@@ -2477,7 +2501,8 @@ app.delete('/api/temporary-earnings/:id', auth, writeLimiter, async (req, res, n
     const updated = await bumpStateVersion(client,req.user.id);
     await appendStateAudit(client,q,{ companyIds:req.user.company_ids,user:req.user,action:'DELETE_TEMPORARY_EARNING',version:updated.rows[0].version });
     await client.query('COMMIT');
-    broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at });
+    broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at,
+      companyIds:[row.rows[0].company_id],changes:[{ collection:'temporaryEarnings',operation:'delete',ids:[req.params.id] }] });
     res.json({ deleted:true,version:Number(updated.rows[0].version),updated_at:updated.rows[0].updated_at });
   } catch (e) {
     try { await client.query('ROLLBACK'); } catch {}
@@ -2524,7 +2549,8 @@ app.post('/api/payroll-runs/:id/status', auth, writeLimiter, async (req, res, ne
     await client.query(`UPDATE ${q('payroll_runs')} SET status=$2,approved_at=NULLIF($3,'')::timestamptz,posted_at=NULLIF($4,'')::timestamptz,payload=$5::jsonb,updated_at=now() WHERE id=$1`, [record.id,record.status,record.approvedAt || '',record.postedAt || '',JSON.stringify(payload)]);
     const updated = await commitPayrollCommandState(client,stored,record,req.user,'PAYROLL_STATUS_TRANSITION');
     await client.query('COMMIT');
-    broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at });
+    broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at,
+      companyIds:[record.companyId],changes:[{ collection:'payrollRuns',operation:'upsert',records:[record] }] });
     res.json({ record,created:false,version:Number(updated.rows[0].version),updated_at:updated.rows[0].updated_at });
   } catch (e) {
     try { await client.query('ROLLBACK'); } catch {}
@@ -2558,7 +2584,8 @@ app.post('/api/payroll-runs/:id/payment-batches', auth, writeLimiter, async (req
       SELECT $1,employee_id,(ordinality-1)::integer FROM jsonb_array_elements_text($2::jsonb) WITH ORDINALITY AS ids(employee_id,ordinality)`, [batch.id,JSON.stringify(batch.employeeIds)]);
     const updated = await commitPayrollCommandState(client,stored,record,req.user,'CREATE_PAYMENT_BATCH');
     await client.query('COMMIT');
-    broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at });
+    broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at,
+      companyIds:[record.companyId],changes:[{ collection:'payrollRuns',operation:'upsert',records:[record] }] });
     res.json({ record,created:false,version:Number(updated.rows[0].version),updated_at:updated.rows[0].updated_at });
   } catch (e) {
     try { await client.query('ROLLBACK'); } catch {}
@@ -2594,7 +2621,8 @@ app.patch('/api/payroll-runs/:id/payment-batches/:batchId/status', auth, writeLi
     await client.query(`UPDATE ${q('payroll_payment_batches')} SET status=$3,payment_date=NULLIF($4,'')::date,payload=$5::jsonb,updated_at=now() WHERE id=$1 AND payroll_run_id=$2`, [nextBatch.id,previous.id,nextBatch.status,nextBatch.paymentDate || '',JSON.stringify(payload)]);
     const updated = await commitPayrollCommandState(client,stored,record,req.user,'PAYMENT_BATCH_STATUS_TRANSITION');
     await client.query('COMMIT');
-    broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at });
+    broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at,
+      companyIds:[record.companyId],changes:[{ collection:'payrollRuns',operation:'upsert',records:[record] }] });
     res.json({ record,created:false,version:Number(updated.rows[0].version),updated_at:updated.rows[0].updated_at });
   } catch (e) {
     try { await client.query('ROLLBACK'); } catch {}
@@ -2670,7 +2698,8 @@ app.put('/api/payroll-runs/:id', auth, writeLimiter, async (req, res, next) => {
     const updated = await bumpStateVersion(client,req.user.id);
     await appendStateAudit(client,q,{ companyIds:req.user.company_ids,user:req.user,action:existing.rowCount ? 'UPDATE_PAYROLL_RUN' : 'CREATE_PAYROLL_RUN',version:updated.rows[0].version });
     await client.query('COMMIT');
-    broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at });
+    broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at,
+      companyIds:[record.companyId],changes:[{ collection:'payrollRuns',operation:'upsert',records:[record] }] });
     res.json({ record,created:!existing.rowCount,version:Number(updated.rows[0].version),updated_at:updated.rows[0].updated_at });
   } catch (e) {
     try { await client.query('ROLLBACK'); } catch {}
@@ -2758,7 +2787,11 @@ app.post('/api/payroll-settlements', auth, writeLimiter, async (req, res, next) 
     const updated = await bumpStateVersion(client,req.user.id);
     await appendStateAudit(client,q,{ companyIds:req.user.company_ids,user:req.user,action:'CREATE_PAYROLL_SETTLEMENT',version:updated.rows[0].version });
     await client.query('COMMIT');
-    broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at });
+    broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at,
+      companyIds:[record.companyId],changes:[
+        { collection:'payrollSettlements',operation:'upsert',records:[record] },
+        ...(payrollRun ? [{ collection:'payrollRuns',operation:'upsert',records:[payrollRun] }] : []),
+      ] });
     res.status(201).json({ record,payrollRun,version:Number(updated.rows[0].version),updated_at:updated.rows[0].updated_at });
   } catch (e) {
     try { await client.query('ROLLBACK'); } catch {}
@@ -2794,7 +2827,11 @@ app.post('/api/payroll-settlements/:id/reverse', auth, writeLimiter, async (req,
     const updated = await bumpStateVersion(client,req.user.id);
     await appendStateAudit(client,q,{ companyIds:req.user.company_ids,user:req.user,action:'REVERSE_PAYROLL_SETTLEMENT',version:updated.rows[0].version });
     await client.query('COMMIT');
-    broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at });
+    broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at,
+      companyIds:[record.companyId],changes:[
+        { collection:'payrollSettlements',operation:'upsert',records:[record] },
+        ...(payrollRun ? [{ collection:'payrollRuns',operation:'upsert',records:[payrollRun] }] : []),
+      ] });
     res.json({ record,payrollRun,version:Number(updated.rows[0].version),updated_at:updated.rows[0].updated_at });
   } catch (e) {
     try { await client.query('ROLLBACK'); } catch {}
@@ -2815,7 +2852,8 @@ app.put('/api/journals/:id', auth, writeLimiter, async (req, res, next) => {
     const updated = await bumpStateVersion(client,req.user.id);
     await appendStateAudit(client,q,{ companyIds:req.user.company_ids,user:req.user,action:existed ? 'UPDATE_JOURNAL' : 'CREATE_JOURNAL',version:updated.rows[0].version });
     await client.query('COMMIT');
-    broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at });
+    broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at,
+      companyIds:[record.companyId],changes:[{ collection:'journals',operation:'upsert',records:[record] }] });
     res.json({ record,created:!existed,version:Number(updated.rows[0].version),updated_at:updated.rows[0].updated_at });
   } catch (e) {
     try { await client.query('ROLLBACK'); } catch {}
@@ -2838,7 +2876,8 @@ app.delete('/api/journals/:id', auth, writeLimiter, async (req, res, next) => {
     const updated = await bumpStateVersion(client,req.user.id);
     await appendStateAudit(client,q,{ companyIds:req.user.company_ids,user:req.user,action:'DELETE_JOURNAL',version:updated.rows[0].version });
     await client.query('COMMIT');
-    broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at });
+    broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at,
+      companyIds:[row.rows[0].company_id],changes:[{ collection:'journals',operation:'delete',ids:[req.params.id] }] });
     res.json({ deleted:true,version:Number(updated.rows[0].version),updated_at:updated.rows[0].updated_at });
   } catch (e) {
     try { await client.query('ROLLBACK'); } catch {}
@@ -2908,7 +2947,8 @@ app.post('/api/employees/import', auth, writeLimiter, async (req, res, next) => 
     await appendStateAudit(client,q,{ companyIds:[companyId],user:req.user,action:`IMPORT_EMPLOYEES:${employees.length}`,version:updated.rows[0].version });
     await client.query(`INSERT INTO ${q('audit_log')} (user_id,action,ip) VALUES ($1,$2,$3)`, [req.user.id,`IMPORT_EMPLOYEES:${employees.length}`,req.ip]);
     await client.query('COMMIT');
-    broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at });
+    broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at,
+      companyIds:[companyId],changes:[{ collection:'employees',operation:'upsert',records:employees }] });
     res.status(201).json({ employees,version:Number(updated.rows[0].version),updated_at:updated.rows[0].updated_at });
   } catch (e) {
     try { await client.query('ROLLBACK'); } catch {}
@@ -2981,7 +3021,8 @@ app.put('/api/employees/:id', auth, writeLimiter, async (req, res, next) => {
     ]);
 
     await client.query('COMMIT');
-    if (updated.rowCount) broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at });
+    if (updated.rowCount) broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at,
+      companyIds:[employee.companyId],changes:[{ collection:'employees',operation:'upsert',records:[employee] }] });
     res.json({ employee, created:!existing.rowCount, version:Number(updated.rows[0]?.version || 0), updated_at:updated.rows[0]?.updated_at || new Date().toISOString() });
   } catch (e) {
     try { await client.query('ROLLBACK'); } catch {}
@@ -3032,7 +3073,8 @@ app.delete('/api/employees/:id', auth, writeLimiter, async (req, res, next) => {
       JSON.stringify({ id:deleteAuditId, companyId:employee.rows[0].company_id, userId:req.user.id, userName:req.user.name || req.user.username || '', userRole:req.user.role, action:archived ? 'أرشفة موظف' : 'حذف موظف', entityType:'EMPLOYEE', entityId:req.params.id, timestamp:new Date().toISOString(), details:archived ? 'تمت أرشفة الموظف لوجود حركات مرتبطة' : 'تم حذف الموظف نهائيًا' })
     ]);
     await client.query('COMMIT');
-    if (updated.rowCount) broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at });
+    if (updated.rowCount) broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at,
+      companyIds:[employee.rows[0].company_id],changes:[{ collection:'employees',operation:'delete',ids:[req.params.id] }] });
     res.json({ deleted:!archived,archived });
   } catch (e) {
     try { await client.query('ROLLBACK'); } catch {}
@@ -3062,7 +3104,8 @@ app.post('/api/companies/:id/employees/archive', auth, writeLimiter, async (req,
     await appendStateAudit(client,q,{ companyIds:[req.params.id],user:req.user,action:`ARCHIVE_COMPANY_EMPLOYEES:${employeeIds.length}`,version:updated.rows[0].version });
     await client.query(`INSERT INTO ${q('audit_log')} (user_id,action,ip) VALUES ($1,$2,$3)`, [req.user.id,`ARCHIVE_COMPANY_EMPLOYEES:${employeeIds.length}`,req.ip]);
     await client.query('COMMIT');
-    broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at });
+    broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at,
+      companyIds:[req.params.id],changes:[{ collection:'employees',operation:'delete',ids:employeeIds }] });
     res.json({ employeeIds,archivedCount:employeeIds.length,version:Number(updated.rows[0].version),updated_at:updated.rows[0].updated_at });
   } catch (e) {
     try { await client.query('ROLLBACK'); } catch {}
@@ -3120,6 +3163,7 @@ app.put('/api/users/:id', auth, writeLimiter, async (req, res, next) => {
     await client.query(`INSERT INTO ${q('audit_log')} (user_id,action,ip) VALUES ($1,$2,$3)`, [req.user.id,`${existing.rowCount ? 'UPDATE_USER' : 'CREATE_USER'}:${record.id}`,req.ip]);
     await client.query('COMMIT');
     broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at });
+    disconnectStateEventClients(record.id);
     res.json({ record,version:Number(updated.rows[0].version),updated_at:updated.rows[0].updated_at });
   } catch (e) {
     if (client) { try { await client.query('ROLLBACK'); } catch {} }
@@ -3152,6 +3196,7 @@ app.delete('/api/users/:id', auth, writeLimiter, async (req, res, next) => {
     await client.query(`INSERT INTO ${q('audit_log')} (user_id,action,ip) VALUES ($1,$2,$3)`, [req.user.id,`DELETE_USER:${row.id}`,req.ip]);
     await client.query('COMMIT');
     broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at });
+    disconnectStateEventClients(row.id);
     res.json({ deleted:true,id:row.id,version:Number(updated.rows[0].version),updated_at:updated.rows[0].updated_at });
   } catch (e) {
     if (client) { try { await client.query('ROLLBACK'); } catch {} }
