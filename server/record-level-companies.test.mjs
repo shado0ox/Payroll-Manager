@@ -68,7 +68,8 @@ test('company deletion is a reversible-data archive, not cascading deletion', ()
   assert.match(route,/ONLY_MANAGED_COMPANY/);
   assert.match(route,/UPDATE.*companies.*SET is_archived=true/);
   assert.match(route,/company_ids=company_ids - \$1/);
-  assert.match(route,/state\.companies = .*filter/);
+  assert.match(route,/bumpStateVersion\(client,req\.user\.id\)/);
+  assert.doesNotMatch(route,/SELECT state FROM|state\.companies|SET state=/);
   assert.doesNotMatch(route,/DELETE FROM.*companies/);
   assert.doesNotMatch(route,/DELETE FROM.*employees|DELETE FROM.*payroll_runs/);
 });

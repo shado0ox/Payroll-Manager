@@ -24,25 +24,24 @@ test('employee save uses a dedicated server endpoint and committed response', ()
   assert.match(employeesViewSource, /await onSaveEmployee\(/);
 });
 
-test('employee PUT writes normalized employee and compatibility state in one transaction', () => {
+test('employee PUT writes the normalized employee and version metadata in one transaction', () => {
   const block = routeBlock('put', '/api/employees/:id', "app.delete('/api/employees/:id'");
   assert.match(block, /await client\.query\('BEGIN'\)/);
   assert.match(block, /INSERT INTO .*employees/s);
   assert.match(block, /ON CONFLICT \(id\) DO UPDATE SET/s);
-  assert.match(block, /SELECT state FROM .*app_state.*FOR UPDATE/s);
-  assert.match(block, /compatibilityState\.employees/);
-  assert.match(block, /UPDATE .*app_state.*version=version\+1/s);
+  assert.match(block, /bumpStateVersion\(client,req\.user\.id\)/);
+  assert.doesNotMatch(block, /SELECT state FROM|compatibilityState|SET state=/);
   assert.match(block, /INSERT INTO .*application_audit_logs/s);
   assert.match(block, /await client\.query\('COMMIT'\)/);
 });
 
-test('employee DELETE mutates PostgreSQL and compatibility state transactionally', () => {
+test('employee DELETE mutates PostgreSQL and version metadata transactionally', () => {
   const block = routeBlock('delete', '/api/employees/:id', "app.put('/api/users/:id'");
   assert.match(block, /SELECT id,company_id FROM .*employees.*FOR UPDATE/s);
   assert.match(block, /DELETE FROM .*employees.*WHERE id=\$1/s);
   assert.match(block, /UPDATE .*employees.*SET is_archived=true/s);
-  assert.match(block, /compatibilityState\.employees = .*filter/s);
-  assert.match(block, /UPDATE .*app_state.*version=version\+1/s);
+  assert.match(block, /bumpStateVersion\(client,req\.user\.id\)/);
+  assert.doesNotMatch(block, /SELECT state FROM|compatibilityState|SET state=/);
   assert.match(block, /INSERT INTO .*application_audit_logs/s);
   assert.match(block, /await client\.query\('COMMIT'\)/);
 });

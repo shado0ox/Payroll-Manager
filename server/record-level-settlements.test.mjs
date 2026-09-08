@@ -34,7 +34,9 @@ test('settlement creation is one atomic command with its source entitlement', ()
   const create = routeBlock('post','/api/payroll-settlements',"app.post('/api/payroll-settlements/:id/reverse'");
   assert.match(create,/INSERT INTO.*payroll_settlements/);
   assert.match(create,/UPDATE.*payroll_run_items/);
-  assert.match(create,/commitSettlementCompatibility/);
+  assert.match(create,/readNormalizedApplicationState\(client\)/);
+  assert.match(create,/bumpStateVersion\(client,req\.user\.id\)/);
+  assert.doesNotMatch(create,/SELECT state FROM|SET state=/);
   assert.match(create,/DUPLICATE_PAYROLL_SETTLEMENT/);
   assert.doesNotMatch(create,/replaceNormalized(?:Operations|Core|Payroll)Data/);
 });
@@ -46,6 +48,9 @@ test('settlement reversal is server-stamped and reopens its source atomically', 
   assert.match(reverse,/REVERSED_SETTLEMENT_LOCKED/);
   assert.match(reverse,/UPDATE.*payroll_settlements.*SET status='REVERSED'/);
   assert.match(reverse,/UPDATE.*payroll_run_items/);
+  assert.match(reverse,/readNormalizedApplicationState\(client\)/);
+  assert.match(reverse,/bumpStateVersion\(client,req\.user\.id\)/);
+  assert.doesNotMatch(reverse,/SELECT state FROM|SET state=/);
 });
 
 test('settlement UI uses committed command responses without a second payroll save', () => {

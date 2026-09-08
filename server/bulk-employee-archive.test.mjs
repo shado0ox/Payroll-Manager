@@ -14,7 +14,8 @@ test('bulk employee action archives active rows and preserves company history', 
   const route = server.slice(start,end);
   assert.match(route,/can\(req\.user,'MANAGE_EMPLOYEES'\)/);
   assert.match(route,/UPDATE.*employees.*SET is_archived=true/s);
-  assert.match(route,/state\.employees = .*filter/);
+  assert.match(route,/bumpStateVersion\(client,req\.user\.id\)/);
+  assert.doesNotMatch(route,/SELECT state FROM|state\.employees|SET state=/);
   assert.match(route,/ARCHIVE_COMPANY_EMPLOYEES/);
   assert.doesNotMatch(route,/DELETE FROM.*employees|DELETE FROM.*payroll|DELETE FROM.*attendance|DELETE FROM.*journal/s);
 });

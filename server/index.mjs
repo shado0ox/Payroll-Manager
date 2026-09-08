@@ -1815,6 +1815,17 @@ async function bumpStateVersion(client, userId) {
   return updated;
 }
 
+async function lockStateVersion(client) {
+  const current = await client.query(`SELECT version FROM ${q('app_state')} WHERE id=1 FOR UPDATE`);
+  if (!current.rowCount) throw workflowError(409, 'STATE_NOT_INITIALIZED');
+  return Number(current.rows[0].version || 0);
+}
+
+async function readLockedNormalizedState(client) {
+  await lockStateVersion(client);
+  return readNormalizedApplicationState(client);
+}
+
 const validPeriodMonth = value => typeof value === 'string' && /^[0-9]{4}-(0[1-9]|1[0-2])$/.test(value);
 const validIsoDate = value => {
   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
@@ -1990,13 +2001,7 @@ app.delete('/api/companies/:id', auth, writeLimiter, async (req, res, next) => {
       is_active=CASE WHEN role<>'ADMIN' AND jsonb_array_length(company_ids - $1)=0 THEN false ELSE is_active END,
       updated_at=now()
       WHERE company_ids ? $1`, [req.params.id]);
-    const stateRow = await client.query(`SELECT state FROM ${q('app_state')} WHERE id=1 FOR UPDATE`);
-    if (!stateRow.rowCount) throw workflowError(409,'STATE_NOT_INITIALIZED');
-    const state = clone(stateRow.rows[0].state || {});
-    state.companies = asArray(state.companies).filter(company => company?.id !== req.params.id);
-    if (state.activeCompanyId === req.params.id) state.activeCompanyId = nextCompanyId;
-    const updated = await client.query(`UPDATE ${q('app_state')} SET state=$1::jsonb,version=version+1,updated_by=$2,updated_at=now()
-      WHERE id=1 RETURNING version,updated_at`, [JSON.stringify(state),req.user.id]);
+    const updated = await bumpStateVersion(client,req.user.id);
     await appendStateAudit(client,q,{ companyIds:[req.params.id],user:req.user,action:'ARCHIVE_COMPANY',version:updated.rows[0].version });
     await client.query('COMMIT');
     broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at });
@@ -2101,9 +2106,7 @@ app.put('/api/attendance/:id', auth, writeLimiter, async (req, res, next) => {
       return res.status(400).json({ error:'INVALID_ATTENDANCE_RECORD' });
     }
     await client.query('BEGIN');
-    const stateRow = await client.query(`SELECT state FROM ${q('app_state')} WHERE id=1 FOR UPDATE`);
-    if (!stateRow.rowCount) throw workflowError(409, 'STATE_NOT_INITIALIZED');
-    const stored = await hydrateNormalizedStateData(client, stateRow.rows[0].state);
+    const stored = await readLockedNormalizedState(client);
     const existingRecord = asArray(stored.attendance).find(item => item.id === record.id);
     if ((existingRecord && payrollSourceLocked(stored,'attendance',existingRecord)) || payrollSourceLocked(stored,'attendance',record)) {
       throw workflowError(409, 'PAYROLL_SOURCE_ENTRY_LOCKED');
@@ -2150,9 +2153,7 @@ app.post('/api/attendance/import', auth, writeLimiter, async (req, res, next) =>
     if (new Set(ids).size !== ids.length || companyIds.size !== 1) return res.status(400).json({ error:'INVALID_ATTENDANCE_IMPORT' });
     const companyId = records[0].companyId;
     await client.query('BEGIN');
-    const stateRow = await client.query(`SELECT state FROM ${q('app_state')} WHERE id=1 FOR UPDATE`);
-    if (!stateRow.rowCount) throw workflowError(409,'STATE_NOT_INITIALIZED');
-    const stored = await hydrateNormalizedStateData(client,stateRow.rows[0].state);
+    const stored = await readLockedNormalizedState(client);
     const storedById = new Map(asArray(stored.attendance).map(record => [record.id,record]));
     if (records.some(record => (storedById.has(record.id) && payrollSourceLocked(stored,'attendance',storedById.get(record.id)))
       || payrollSourceLocked(stored,'attendance',record))) {
@@ -2196,8 +2197,7 @@ app.delete('/api/attendance/:id', auth, writeLimiter, async (req, res, next) => 
     const row = await client.query(`SELECT company_id,payload FROM ${q('attendance_records')} WHERE id=$1 FOR UPDATE`, [req.params.id]);
     if (!row.rowCount) throw workflowError(404, 'ATTENDANCE_NOT_FOUND');
     if (!req.user.company_ids.includes(row.rows[0].company_id)) throw workflowError(403, 'FORBIDDEN');
-    const stateRow = await client.query(`SELECT state FROM ${q('app_state')} WHERE id=1 FOR UPDATE`);
-    const stored = await hydrateNormalizedStateData(client,stateRow.rows[0]?.state || {});
+    const stored = await readLockedNormalizedState(client);
     if (payrollSourceLocked(stored,'attendance',row.rows[0].payload)) throw workflowError(409, 'PAYROLL_SOURCE_ENTRY_LOCKED');
     await client.query(`DELETE FROM ${q('attendance_records')} WHERE id=$1`, [req.params.id]);
     const updated = await bumpStateVersion(client,req.user.id);
@@ -2302,9 +2302,7 @@ app.put('/api/penalties/:id', auth, writeLimiter, async (req, res, next) => {
       return res.status(400).json({ error:'INVALID_PENALTY_RECORD' });
     }
     await client.query('BEGIN');
-    const stateRow = await client.query(`SELECT state FROM ${q('app_state')} WHERE id=1 FOR UPDATE`);
-    if (!stateRow.rowCount) throw workflowError(409, 'STATE_NOT_INITIALIZED');
-    const stored = await hydrateNormalizedStateData(client,stateRow.rows[0].state);
+    const stored = await readLockedNormalizedState(client);
     const existingRecord = asArray(stored.penalties).find(item => item.id === record.id);
     if ((existingRecord && payrollSourceLocked(stored,'penalty',existingRecord)) || payrollSourceLocked(stored,'penalty',record)) {
       throw workflowError(409, 'PAYROLL_SOURCE_ENTRY_LOCKED');
@@ -2340,8 +2338,7 @@ app.delete('/api/penalties/:id', auth, writeLimiter, async (req, res, next) => {
     const row = await client.query(`SELECT company_id,payload FROM ${q('penalties')} WHERE id=$1 FOR UPDATE`, [req.params.id]);
     if (!row.rowCount) throw workflowError(404, 'PENALTY_NOT_FOUND');
     if (!req.user.company_ids.includes(row.rows[0].company_id)) throw workflowError(403, 'FORBIDDEN');
-    const stateRow = await client.query(`SELECT state FROM ${q('app_state')} WHERE id=1 FOR UPDATE`);
-    const stored = await hydrateNormalizedStateData(client,stateRow.rows[0]?.state || {});
+    const stored = await readLockedNormalizedState(client);
     if (payrollSourceLocked(stored,'penalty',row.rows[0].payload)) throw workflowError(409, 'PAYROLL_SOURCE_ENTRY_LOCKED');
     await client.query(`DELETE FROM ${q('penalties')} WHERE id=$1`, [req.params.id]);
     const updated = await bumpStateVersion(client,req.user.id);
@@ -2370,9 +2367,7 @@ app.put('/api/loans/:id', auth, writeLimiter, async (req, res, next) => {
       return res.status(400).json({ error:'INVALID_LOAN_RECORD' });
     }
     await client.query('BEGIN');
-    const stateRow = await client.query(`SELECT state FROM ${q('app_state')} WHERE id=1 FOR UPDATE`);
-    if (!stateRow.rowCount) throw workflowError(409, 'STATE_NOT_INITIALIZED');
-    const stored = await hydrateNormalizedStateData(client,stateRow.rows[0].state);
+    const stored = await readLockedNormalizedState(client);
     const existingRecord = asArray(stored.loans).find(item => item.id === record.id);
     const appendOnlyAdjustment = existingRecord ? isAppendOnlyLoanAdjustment(existingRecord,record,req.user) : false;
     if (existingRecord && payrollSourceLocked(stored,'loan',existingRecord) && !appendOnlyAdjustment) {
@@ -2413,8 +2408,7 @@ app.delete('/api/loans/:id', auth, writeLimiter, async (req, res, next) => {
     const row = await client.query(`SELECT company_id,payload FROM ${q('loans')} WHERE id=$1 FOR UPDATE`, [req.params.id]);
     if (!row.rowCount) throw workflowError(404, 'LOAN_NOT_FOUND');
     if (!req.user.company_ids.includes(row.rows[0].company_id)) throw workflowError(403, 'FORBIDDEN');
-    const stateRow = await client.query(`SELECT state FROM ${q('app_state')} WHERE id=1 FOR UPDATE`);
-    const stored = await hydrateNormalizedStateData(client,stateRow.rows[0]?.state || {});
+    const stored = await readLockedNormalizedState(client);
     if (payrollSourceLocked(stored,'loan',row.rows[0].payload)) throw workflowError(409, 'PAYROLL_SOURCE_ENTRY_LOCKED');
     await client.query(`DELETE FROM ${q('loans')} WHERE id=$1`, [req.params.id]);
     const updated = await bumpStateVersion(client,req.user.id);
@@ -2441,9 +2435,7 @@ app.put('/api/temporary-earnings/:id', auth, writeLimiter, async (req, res, next
       return res.status(400).json({ error:'INVALID_TEMPORARY_EARNING_RECORD' });
     }
     await client.query('BEGIN');
-    const stateRow = await client.query(`SELECT state FROM ${q('app_state')} WHERE id=1 FOR UPDATE`);
-    if (!stateRow.rowCount) throw workflowError(409, 'STATE_NOT_INITIALIZED');
-    const stored = await hydrateNormalizedStateData(client,stateRow.rows[0].state);
+    const stored = await readLockedNormalizedState(client);
     const existingRecord = asArray(stored.temporaryEarnings).find(item => item.id === record.id);
     if ((existingRecord && payrollSourceLocked(stored,'earning',existingRecord)) || payrollSourceLocked(stored,'earning',record)) {
       throw workflowError(409, 'PAYROLL_SOURCE_ENTRY_LOCKED');
@@ -2481,8 +2473,7 @@ app.delete('/api/temporary-earnings/:id', auth, writeLimiter, async (req, res, n
     const row = await client.query(`SELECT company_id,payload FROM ${q('temporary_earnings')} WHERE id=$1 FOR UPDATE`, [req.params.id]);
     if (!row.rowCount) throw workflowError(404, 'TEMPORARY_EARNING_NOT_FOUND');
     if (!req.user.company_ids.includes(row.rows[0].company_id)) throw workflowError(403, 'FORBIDDEN');
-    const stateRow = await client.query(`SELECT state FROM ${q('app_state')} WHERE id=1 FOR UPDATE`);
-    const stored = await hydrateNormalizedStateData(client,stateRow.rows[0]?.state || {});
+    const stored = await readLockedNormalizedState(client);
     if (payrollSourceLocked(stored,'earning',row.rows[0].payload)) throw workflowError(409, 'PAYROLL_SOURCE_ENTRY_LOCKED');
     await client.query(`DELETE FROM ${q('temporary_earnings')} WHERE id=$1`, [req.params.id]);
     const updated = await bumpStateVersion(client,req.user.id);
@@ -2510,9 +2501,7 @@ app.post('/api/payroll-runs/:id/status', auth, writeLimiter, async (req, res, ne
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    const stateRow = await client.query(`SELECT state FROM ${q('app_state')} WHERE id=1 FOR UPDATE`);
-    if (!stateRow.rowCount) throw workflowError(409,'STATE_NOT_INITIALIZED');
-    const stored = await hydrateNormalizedStateData(client,stateRow.rows[0].state);
+    const stored = await readLockedNormalizedState(client);
     const previous = asArray(stored.payrollRuns).find(item => item.id === req.params.id);
     if (!previous) throw workflowError(404,'PAYROLL_RUN_NOT_FOUND');
     if (!req.user.company_ids.includes(previous.companyId)) throw workflowError(403,'FORBIDDEN');
@@ -2550,9 +2539,7 @@ app.post('/api/payroll-runs/:id/payment-batches', auth, writeLimiter, async (req
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    const stateRow = await client.query(`SELECT state FROM ${q('app_state')} WHERE id=1 FOR UPDATE`);
-    if (!stateRow.rowCount) throw workflowError(409,'STATE_NOT_INITIALIZED');
-    const stored = await hydrateNormalizedStateData(client,stateRow.rows[0].state);
+    const stored = await readLockedNormalizedState(client);
     const previous = asArray(stored.payrollRuns).find(item => item.id === req.params.id);
     if (!previous) throw workflowError(404,'PAYROLL_RUN_NOT_FOUND');
     if (!req.user.company_ids.includes(previous.companyId)) throw workflowError(403,'FORBIDDEN');
@@ -2587,9 +2574,7 @@ app.patch('/api/payroll-runs/:id/payment-batches/:batchId/status', auth, writeLi
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    const stateRow = await client.query(`SELECT state FROM ${q('app_state')} WHERE id=1 FOR UPDATE`);
-    if (!stateRow.rowCount) throw workflowError(409,'STATE_NOT_INITIALIZED');
-    const stored = await hydrateNormalizedStateData(client,stateRow.rows[0].state);
+    const stored = await readLockedNormalizedState(client);
     const previous = asArray(stored.payrollRuns).find(item => item.id === req.params.id);
     if (!previous) throw workflowError(404,'PAYROLL_RUN_NOT_FOUND');
     if (!req.user.company_ids.includes(previous.companyId)) throw workflowError(403,'FORBIDDEN');
@@ -2631,9 +2616,7 @@ app.put('/api/payroll-runs/:id', auth, writeLimiter, async (req, res, next) => {
       return res.status(400).json({ error:'INVALID_PAYROLL_RUN' });
     }
     await client.query('BEGIN');
-    const stateRow = await client.query(`SELECT state FROM ${q('app_state')} WHERE id=1 FOR UPDATE`);
-    if (!stateRow.rowCount) throw workflowError(409, 'STATE_NOT_INITIALIZED');
-    const stored = await hydrateNormalizedStateData(client,stateRow.rows[0].state);
+    const stored = await readLockedNormalizedState(client);
     const existingRecord = asArray(stored.payrollRuns).find(item => item.id === record.id);
     if (existingRecord && existingRecord.companyId !== record.companyId) throw workflowError(409, 'PAYROLL_COMPANY_IMMUTABLE');
     if (existingRecord && (existingRecord.status !== record.status || !sameJson(existingRecord.paymentBatches,record.paymentBatches))) {
@@ -2717,14 +2700,6 @@ function validateSettlementRecord(record, user) {
   if (sourceItemId && !sourceRunId) throw workflowError(400,'INVALID_SETTLEMENT_SOURCE');
 }
 
-function upsertCompatibilityItem(state, key, record) {
-  const rows = asArray(state[key]);
-  const index = rows.findIndex(item => item?.id === record.id);
-  state[key] = index >= 0
-    ? rows.map(item => item?.id === record.id ? clone(record) : item)
-    : [clone(record),...rows];
-}
-
 function settlementSourceRun(stored, record, entitlementStatus, entitlementReason) {
   if (!record.sourcePayrollRunId || !record.sourcePayrollItemId) return null;
   const run = asArray(stored.payrollRuns).find(item => item.id === record.sourcePayrollRunId);
@@ -2753,14 +2728,6 @@ function settlementSourceRun(stored, record, entitlementStatus, entitlementReaso
   };
 }
 
-async function commitSettlementCompatibility(client, rawState, settlement, payrollRun, userId) {
-  const state = clone(rawState || {});
-  upsertCompatibilityItem(state,'payrollSettlements',settlement);
-  if (payrollRun) upsertCompatibilityItem(state,'payrollRuns',payrollRun);
-  return client.query(`UPDATE ${q('app_state')} SET state=$1::jsonb,version=version+1,updated_by=$2,updated_at=now()
-    WHERE id=1 RETURNING version,updated_at`, [JSON.stringify(state),userId]);
-}
-
 app.post('/api/payroll-settlements', auth, writeLimiter, async (req, res, next) => {
   const client = await pool.connect();
   try {
@@ -2768,9 +2735,8 @@ app.post('/api/payroll-settlements', auth, writeLimiter, async (req, res, next) 
     const record = req.body || {};
     validateSettlementRecord(record,req.user);
     await client.query('BEGIN');
-    const stateRow = await client.query(`SELECT state FROM ${q('app_state')} WHERE id=1 FOR UPDATE`);
-    if (!stateRow.rowCount) throw workflowError(409,'STATE_NOT_INITIALIZED');
-    const stored = await hydrateNormalizedStateData(client,stateRow.rows[0].state);
+    await lockStateVersion(client);
+    const stored = await readNormalizedApplicationState(client);
     const employee = await client.query(`SELECT company_id,payload FROM ${q('employees')} WHERE id=$1 AND is_archived=false`, [record.employeeId]);
     if (!employee.rowCount || employee.rows[0].company_id !== record.companyId) throw workflowError(400,'INVALID_SETTLEMENT_EMPLOYEE');
     if (record.paymentMethod !== 'CASH' && !String(employee.rows[0].payload?.bankIban || '').startsWith('SA')) {
@@ -2791,7 +2757,7 @@ app.post('/api/payroll-settlements', auth, writeLimiter, async (req, res, next) 
       await client.query(`UPDATE ${q('payroll_run_items')} SET entitlement_status=$3,entitlement_reason=$4,payload=$5::jsonb,updated_at=now()
         WHERE payroll_run_id=$1 AND id=$2`, [payrollRun.id,item.id,item.entitlementStatus,item.entitlementReason,JSON.stringify(item)]);
     }
-    const updated = await commitSettlementCompatibility(client,stateRow.rows[0].state,record,payrollRun,req.user.id);
+    const updated = await bumpStateVersion(client,req.user.id);
     await appendStateAudit(client,q,{ companyIds:req.user.company_ids,user:req.user,action:'CREATE_PAYROLL_SETTLEMENT',version:updated.rows[0].version });
     await client.query('COMMIT');
     broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at });
@@ -2811,15 +2777,14 @@ app.post('/api/payroll-settlements/:id/reverse', auth, writeLimiter, async (req,
     const reversalReason = String(req.body?.reversalReason || '').trim();
     if (reversalReason.length < 5) return res.status(400).json({ error:'SETTLEMENT_REVERSAL_REASON_REQUIRED' });
     await client.query('BEGIN');
-    const stateRow = await client.query(`SELECT state FROM ${q('app_state')} WHERE id=1 FOR UPDATE`);
-    if (!stateRow.rowCount) throw workflowError(409,'STATE_NOT_INITIALIZED');
+    await lockStateVersion(client);
     const existing = await client.query(`SELECT company_id,status,payload FROM ${q('payroll_settlements')} WHERE id=$1 FOR UPDATE`, [req.params.id]);
     if (!existing.rowCount) throw workflowError(404,'PAYROLL_SETTLEMENT_NOT_FOUND');
     if (!req.user.company_ids.includes(existing.rows[0].company_id)) throw workflowError(403,'FORBIDDEN');
     if (existing.rows[0].status === 'REVERSED') throw workflowError(409,'REVERSED_SETTLEMENT_LOCKED');
     if (existing.rows[0].status !== 'PAID') throw workflowError(409,'SETTLEMENT_NOT_PAID');
     const record = { ...existing.rows[0].payload,status:'REVERSED',reversedAt:new Date().toISOString(),reversalReason };
-    const stored = await hydrateNormalizedStateData(client,stateRow.rows[0].state);
+    const stored = await readNormalizedApplicationState(client);
     const payrollRun = settlementSourceRun(stored,record,'HELD','SETTLEMENT_REVERSED');
     await client.query(`UPDATE ${q('payroll_settlements')} SET status='REVERSED',reversed_at=$2::timestamptz,
       reversal_reason=$3,payload=$4::jsonb,updated_at=now() WHERE id=$1`, [record.id,record.reversedAt,reversalReason,JSON.stringify(record)]);
@@ -2828,7 +2793,7 @@ app.post('/api/payroll-settlements/:id/reverse', auth, writeLimiter, async (req,
       await client.query(`UPDATE ${q('payroll_run_items')} SET entitlement_status=$3,entitlement_reason=$4,payload=$5::jsonb,updated_at=now()
         WHERE payroll_run_id=$1 AND id=$2`, [payrollRun.id,item.id,item.entitlementStatus,item.entitlementReason,JSON.stringify(item)]);
     }
-    const updated = await commitSettlementCompatibility(client,stateRow.rows[0].state,record,payrollRun,req.user.id);
+    const updated = await bumpStateVersion(client,req.user.id);
     await appendStateAudit(client,q,{ companyIds:req.user.company_ids,user:req.user,action:'REVERSE_PAYROLL_SETTLEMENT',version:updated.rows[0].version });
     await client.query('COMMIT');
     broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at });
@@ -3003,14 +2968,7 @@ app.put('/api/employees/:id', auth, writeLimiter, async (req, res, next) => {
       Number(salary.transportAllowance || 0), Number(salary.otherFixedAllowances || 0), employee.bankIban || '', JSON.stringify(employee), sortOrder
     ]);
 
-    const stateRow = await client.query(`SELECT state FROM ${q('app_state')} WHERE id=1 FOR UPDATE`);
-    const compatibilityState = clone(stateRow.rows[0]?.state || {});
-    const employees = asArray(compatibilityState.employees);
-    const employeeIndex = employees.findIndex(item => item?.id === employee.id);
-    if (employeeIndex >= 0) employees[employeeIndex] = clone(employee); else employees.push(clone(employee));
-    compatibilityState.employees = employees;
-    const updated = await client.query(`UPDATE ${q('app_state')} SET state=$1::jsonb,version=version+1,updated_by=$2,updated_at=now()
-      WHERE id=1 RETURNING version,updated_at`, [JSON.stringify(compatibilityState),req.user.id]);
+    const updated = await bumpStateVersion(client,req.user.id);
 
     const auditId = 'employee-save-' + crypto.randomUUID();
     const action = existing.rowCount ? 'UPDATE_EMPLOYEE' : 'CREATE_EMPLOYEE';
@@ -3062,11 +3020,7 @@ app.delete('/api/employees/:id', auth, writeLimiter, async (req, res, next) => {
     } else {
       await client.query(`DELETE FROM ${q('employees')} WHERE id=$1`, [req.params.id]);
     }
-    const stateRow = await client.query(`SELECT state FROM ${q('app_state')} WHERE id=1 FOR UPDATE`);
-    const compatibilityState = clone(stateRow.rows[0]?.state || {});
-    compatibilityState.employees = asArray(compatibilityState.employees).filter(item => item?.id !== req.params.id);
-    const updated = await client.query(`UPDATE ${q('app_state')} SET state=$1::jsonb,version=version+1,updated_by=$2,updated_at=now()
-      WHERE id=1 RETURNING version,updated_at`, [JSON.stringify(compatibilityState),req.user.id]);
+    const updated = await bumpStateVersion(client,req.user.id);
     await client.query(`INSERT INTO ${q('audit_log')} (user_id,action,ip) VALUES ($1,$2,$3)`,
       [req.user.id,`${archived ? 'ARCHIVE' : 'DELETE'}_EMPLOYEE:${req.params.id}`,req.ip]);
     const deleteAuditId = 'employee-delete-' + crypto.randomUUID();
@@ -3106,14 +3060,7 @@ app.post('/api/companies/:id/employees/archive', auth, writeLimiter, async (req,
     }
     await client.query(`UPDATE ${q('employees')} SET is_archived=true,updated_at=now()
       WHERE company_id=$1 AND id=ANY($2::text[])`, [req.params.id,employeeIds]);
-    const stateRow = await client.query(`SELECT state FROM ${q('app_state')} WHERE id=1 FOR UPDATE`);
-    if (!stateRow.rowCount) throw workflowError(409,'STATE_NOT_INITIALIZED');
-    const state = clone(stateRow.rows[0].state || {});
-    const archivedIds = new Set(employeeIds);
-    state.employees = asArray(state.employees).filter(employee => !archivedIds.has(employee?.id));
-    state.users = asArray(state.users).map(user => archivedIds.has(user?.employeeId) ? { ...user,employeeId:undefined } : user);
-    const updated = await client.query(`UPDATE ${q('app_state')} SET state=$1::jsonb,version=version+1,updated_by=$2,updated_at=now()
-      WHERE id=1 RETURNING version,updated_at`, [JSON.stringify(state),req.user.id]);
+    const updated = await bumpStateVersion(client,req.user.id);
     await appendStateAudit(client,q,{ companyIds:[req.params.id],user:req.user,action:`ARCHIVE_COMPANY_EMPLOYEES:${employeeIds.length}`,version:updated.rows[0].version });
     await client.query(`INSERT INTO ${q('audit_log')} (user_id,action,ip) VALUES ($1,$2,$3)`, [req.user.id,`ARCHIVE_COMPANY_EMPLOYEES:${employeeIds.length}`,req.ip]);
     await client.query('COMMIT');
