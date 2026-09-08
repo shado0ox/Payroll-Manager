@@ -25,6 +25,11 @@ test('full-state replacement requires an explicit developer restore', () => {
   assert.match(route,/replaceNormalizedPayrollData/);
   assert.match(route,/replaceNormalizedOperationsData/);
   assert.match(route,/replaceNormalizedCoreData/);
+  assert.match(route,/app_state_restore_snapshots/);
+  assert.match(route,/stateForRestoreSnapshot/);
+  assert.ok(route.indexOf('app_state_restore_snapshots') < route.indexOf('replaceNormalizedPayrollData'));
+  assert.doesNotMatch(route,/SELECT state,version FROM/);
+  assert.doesNotMatch(route,/SET state=/);
   assert.match(api,/restoreState: async/);
   assert.match(api,/operation:'RESTORE_BACKUP'/);
 });

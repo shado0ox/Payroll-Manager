@@ -32,3 +32,16 @@ test('runtime record routes never read or write the legacy JSON payload', () => 
   assert.match(runtimeRoutes, /readLockedNormalizedState\(client\)/);
   assert.doesNotMatch(runtimeRoutes, /SELECT state FROM .*app_state|SET state=/);
 });
+
+test('startup retires legacy JSON after migrations and keeps a redacted restore snapshot table', () => {
+  const migrateStart = server.indexOf('async function migrate()');
+  const migrateEnd = server.indexOf('\nconst app = express()', migrateStart);
+  const migration = server.slice(migrateStart, migrateEnd);
+  assert.match(migration, /app_state_restore_snapshots/);
+  assert.match(migration, /ALTER TABLE .*app_state.* DROP COLUMN IF EXISTS state/);
+  assert.ok(
+    migration.indexOf("version='005_normalized_settlements'") < migration.indexOf('DROP COLUMN IF EXISTS state'),
+    'legacy migrations must finish before the source JSON column is removed',
+  );
+  assert.match(server, /apiKey:'', apiKeyConfigured:Boolean\(config\?\.apiKey\)/);
+});

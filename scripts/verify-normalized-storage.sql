@@ -37,6 +37,23 @@ FROM masar_payroll.app_state_migration_backups
 ORDER BY id;
 
 SELECT
+  id,
+  source_version,
+  created_by,
+  reason,
+  created_at
+FROM masar_payroll.app_state_restore_snapshots
+ORDER BY id DESC;
+
+SELECT
+  NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'masar_payroll'
+      AND table_name = 'app_state'
+      AND column_name = 'state'
+  ) AS legacy_state_column_removed;
+
+SELECT
   (SELECT count(*) FROM masar_payroll.employees WHERE is_archived = true) AS archived_employee_references,
   (SELECT count(*) FROM masar_payroll.attendance_records) AS attendance_records,
   (SELECT count(*) FROM masar_payroll.leave_requests) AS leave_requests,
