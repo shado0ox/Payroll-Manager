@@ -17,7 +17,7 @@ test('normal React state updates never trigger a full-state persistence effect',
 
 test('full-state replacement requires an explicit developer restore', () => {
   const start = server.indexOf("app.put('/api/state'");
-  const end = server.indexOf('async function updateCompatibilityCollectionRecord',start);
+  const end = server.indexOf('async function bumpStateVersion',start);
   assert.ok(start >= 0 && end > start);
   const route = server.slice(start,end);
   assert.match(route,/req\.user\.id !== 'user-admin'/);

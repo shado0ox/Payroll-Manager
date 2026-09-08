@@ -27,7 +27,7 @@ test('leave decisions use a dedicated status command', () => {
   const patch = routeBlock('patch','/api/leaves/:id/status',"app.put('/api/penalties/:id'");
   assert.match(patch,/UPDATE.*leave_requests.*SET status=\$2/);
   assert.match(patch,/LEAVE_STATUS_TRANSITION/);
-  assert.match(patch,/updateCompatibilityCollectionRecord\(client,'leaves'/);
+  assert.match(patch,/bumpStateVersion\(client,req\.user\.id\)/);
   assert.doesNotMatch(patch,/replaceNormalized(?:Operations|Core|Payroll)Data/);
 });
 

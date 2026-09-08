@@ -1807,54 +1807,12 @@ app.put('/api/state', auth, writeLimiter, async (req, res, next) => {
   } finally { client.release(); }
 });
 
-async function updateCompatibilityCollectionRecord(client, key, record, userId) {
-  const stateRow = await client.query(`SELECT state FROM ${q('app_state')} WHERE id=1 FOR UPDATE`);
-  if (!stateRow.rowCount) throw workflowError(409, 'STATE_NOT_INITIALIZED');
-  const state = clone(stateRow.rows[0].state || {});
-  const records = asArray(state[key]);
-  const index = records.findIndex(item => item?.id === record.id);
-  if (index >= 0) records[index] = clone(record); else records.unshift(clone(record));
-  state[key] = records;
-  return client.query(`UPDATE ${q('app_state')} SET state=$1::jsonb,version=version+1,updated_by=$2,updated_at=now()
-    WHERE id=1 RETURNING version,updated_at`, [JSON.stringify(state),userId]);
-}
-
-async function updateCompatibilityCollectionRecords(client, key, committedRecords, userId) {
-  const stateRow = await client.query(`SELECT state FROM ${q('app_state')} WHERE id=1 FOR UPDATE`);
-  if (!stateRow.rowCount) throw workflowError(409, 'STATE_NOT_INITIALIZED');
-  const state = clone(stateRow.rows[0].state || {});
-  const records = asArray(state[key]);
-  const indexes = new Map(records.map((record,index) => [record?.id,index]).filter(([id]) => id));
-  for (const committed of committedRecords) {
-    const index = indexes.get(committed.id);
-    if (index == null) {
-      indexes.set(committed.id,records.length);
-      records.push(clone(committed));
-    } else {
-      records[index] = clone(committed);
-    }
-  }
-  state[key] = records;
-  return client.query(`UPDATE ${q('app_state')} SET state=$1::jsonb,version=version+1,updated_by=$2,updated_at=now()
-    WHERE id=1 RETURNING version,updated_at`, [JSON.stringify(state),userId]);
-}
-
-async function deleteCompatibilityCollectionRecord(client, key, id, userId) {
-  const stateRow = await client.query(`SELECT state FROM ${q('app_state')} WHERE id=1 FOR UPDATE`);
-  if (!stateRow.rowCount) throw workflowError(409, 'STATE_NOT_INITIALIZED');
-  const state = clone(stateRow.rows[0].state || {});
-  state[key] = asArray(state[key]).filter(item => item?.id !== id);
-  return client.query(`UPDATE ${q('app_state')} SET state=$1::jsonb,version=version+1,updated_by=$2,updated_at=now()
-    WHERE id=1 RETURNING version,updated_at`, [JSON.stringify(state),userId]);
-}
-
-async function updateCompatibilityObject(client, key, record, userId) {
-  const stateRow = await client.query(`SELECT state FROM ${q('app_state')} WHERE id=1 FOR UPDATE`);
-  if (!stateRow.rowCount) throw workflowError(409, 'STATE_NOT_INITIALIZED');
-  const state = clone(stateRow.rows[0].state || {});
-  state[key] = clone(record);
-  return client.query(`UPDATE ${q('app_state')} SET state=$1::jsonb,version=version+1,updated_by=$2,updated_at=now()
-    WHERE id=1 RETURNING version,updated_at`, [JSON.stringify(state),userId]);
+async function bumpStateVersion(client, userId) {
+  const updated = await client.query(`UPDATE ${q('app_state')}
+    SET version=version+1,updated_by=$1,updated_at=now()
+    WHERE id=1 RETURNING version,updated_at`, [userId]);
+  if (!updated.rowCount) throw workflowError(409, 'STATE_NOT_INITIALIZED');
+  return updated;
 }
 
 const validPeriodMonth = value => typeof value === 'string' && /^[0-9]{4}-(0[1-9]|1[0-2])$/.test(value);
@@ -1973,7 +1931,7 @@ app.put('/api/companies/:id', auth, writeLimiter, async (req, res, next) => {
     validateCompanyRecord(record,req.user);
     await client.query('BEGIN');
     const committed = await updateCompanyAggregate(client,record);
-    const updated = await updateCompatibilityCollectionRecord(client,'companies',committed,req.user.id);
+    const updated = await bumpStateVersion(client,req.user.id);
     await appendStateAudit(client,q,{ companyIds:[record.id],user:req.user,action:'UPDATE_COMPANY',version:updated.rows[0].version });
     await client.query('COMMIT');
     broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at });
@@ -2001,7 +1959,7 @@ app.post('/api/companies', auth, writeLimiter, async (req, res, next) => {
     const committed = await updateCompanyAggregate(client,record);
     await client.query(`UPDATE ${q('users')} SET company_ids=company_ids || jsonb_build_array($2::text),updated_at=now()
       WHERE id=$1 AND NOT (company_ids ? $2)`, [req.user.id,record.id]);
-    const updated = await updateCompatibilityCollectionRecord(client,'companies',committed,req.user.id);
+    const updated = await bumpStateVersion(client,req.user.id);
     await appendStateAudit(client,q,{ companyIds:[record.id],user:req.user,action:'CREATE_COMPANY',version:updated.rows[0].version });
     await client.query('COMMIT');
     broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at });
@@ -2166,7 +2124,7 @@ app.put('/api/attendance/:id', auth, writeLimiter, async (req, res, next) => {
       Number(record.delayMinutes || 0),Boolean(record.absence),Boolean(record.unpaidLeave),Number(record.overtimeHours || 0),
       record.overtimeType || 'STANDARD',record.notes || null,JSON.stringify(record),sortOrder
     ]);
-    const updated = await updateCompatibilityCollectionRecord(client,'attendance',record,req.user.id);
+    const updated = await bumpStateVersion(client,req.user.id);
     await appendStateAudit(client,q,{ companyIds:req.user.company_ids,user:req.user,action:existing.rowCount ? 'UPDATE_ATTENDANCE' : 'CREATE_ATTENDANCE',version:updated.rows[0].version });
     await client.query('COMMIT');
     broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at });
@@ -2218,7 +2176,7 @@ app.post('/api/attendance/import', auth, writeLimiter, async (req, res, next) =>
         record_date=EXCLUDED.record_date,end_date=EXCLUDED.end_date,days_count=EXCLUDED.days_count,delay_minutes=EXCLUDED.delay_minutes,
         absence=EXCLUDED.absence,unpaid_leave=EXCLUDED.unpaid_leave,overtime_hours=EXCLUDED.overtime_hours,
         overtime_type=EXCLUDED.overtime_type,notes=EXCLUDED.notes,payload=EXCLUDED.payload,updated_at=now()`, [JSON.stringify(records),startOrder]);
-    const updated = await updateCompatibilityCollectionRecords(client,'attendance',records,req.user.id);
+    const updated = await bumpStateVersion(client,req.user.id);
     await appendStateAudit(client,q,{ companyIds:[companyId],user:req.user,action:`IMPORT_ATTENDANCE:${records.length}`,version:updated.rows[0].version });
     await client.query('COMMIT');
     broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at });
@@ -2242,7 +2200,7 @@ app.delete('/api/attendance/:id', auth, writeLimiter, async (req, res, next) => 
     const stored = await hydrateNormalizedStateData(client,stateRow.rows[0]?.state || {});
     if (payrollSourceLocked(stored,'attendance',row.rows[0].payload)) throw workflowError(409, 'PAYROLL_SOURCE_ENTRY_LOCKED');
     await client.query(`DELETE FROM ${q('attendance_records')} WHERE id=$1`, [req.params.id]);
-    const updated = await deleteCompatibilityCollectionRecord(client,'attendance',req.params.id,req.user.id);
+    const updated = await bumpStateVersion(client,req.user.id);
     await appendStateAudit(client,q,{ companyIds:req.user.company_ids,user:req.user,action:'DELETE_ATTENDANCE',version:updated.rows[0].version });
     await client.query('COMMIT');
     broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at });
@@ -2295,7 +2253,7 @@ app.put('/api/leaves/:id', auth, writeLimiter, async (req, res, next) => {
       record.id,record.companyId,record.employeeId,record.type,record.startDate,record.endDate,Number(record.daysCount),
       record.status,record.isPaid,record.reason || null,JSON.stringify(record),sortOrder
     ]);
-    const updated = await updateCompatibilityCollectionRecord(client,'leaves',record,req.user.id);
+    const updated = await bumpStateVersion(client,req.user.id);
     await appendStateAudit(client,q,{ companyIds:req.user.company_ids,user:req.user,action:existing.rowCount ? 'UPDATE_LEAVE' : 'CREATE_LEAVE',version:updated.rows[0].version });
     await client.query('COMMIT');
     broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at });
@@ -2321,7 +2279,7 @@ app.patch('/api/leaves/:id/status', auth, writeLimiter, async (req, res, next) =
     const record = { ...existing.rows[0].payload,status };
     validateLeaveRecord(record,req.user);
     await client.query(`UPDATE ${q('leave_requests')} SET status=$2,payload=$3::jsonb,updated_at=now() WHERE id=$1`, [record.id,status,JSON.stringify(record)]);
-    const updated = await updateCompatibilityCollectionRecord(client,'leaves',record,req.user.id);
+    const updated = await bumpStateVersion(client,req.user.id);
     await appendStateAudit(client,q,{ companyIds:req.user.company_ids,user:req.user,action:'LEAVE_STATUS_TRANSITION',version:updated.rows[0].version });
     await client.query('COMMIT');
     broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at });
@@ -2362,7 +2320,7 @@ app.put('/api/penalties/:id', auth, writeLimiter, async (req, res, next) => {
         reason=EXCLUDED.reason,amount=EXCLUDED.amount,applied_in_payroll=EXCLUDED.applied_in_payroll,payload=EXCLUDED.payload,updated_at=now()`, [
       record.id,record.companyId,record.employeeId,record.periodMonth,record.date,record.reason.trim(),Number(record.amount),Boolean(record.appliedInPayroll),JSON.stringify(record),sortOrder
     ]);
-    const updated = await updateCompatibilityCollectionRecord(client,'penalties',record,req.user.id);
+    const updated = await bumpStateVersion(client,req.user.id);
     await appendStateAudit(client,q,{ companyIds:req.user.company_ids,user:req.user,action:existing.rowCount ? 'UPDATE_PENALTY' : 'CREATE_PENALTY',version:updated.rows[0].version });
     await client.query('COMMIT');
     broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at });
@@ -2386,7 +2344,7 @@ app.delete('/api/penalties/:id', auth, writeLimiter, async (req, res, next) => {
     const stored = await hydrateNormalizedStateData(client,stateRow.rows[0]?.state || {});
     if (payrollSourceLocked(stored,'penalty',row.rows[0].payload)) throw workflowError(409, 'PAYROLL_SOURCE_ENTRY_LOCKED');
     await client.query(`DELETE FROM ${q('penalties')} WHERE id=$1`, [req.params.id]);
-    const updated = await deleteCompatibilityCollectionRecord(client,'penalties',req.params.id,req.user.id);
+    const updated = await bumpStateVersion(client,req.user.id);
     await appendStateAudit(client,q,{ companyIds:req.user.company_ids,user:req.user,action:'DELETE_PENALTY',version:updated.rows[0].version });
     await client.query('COMMIT');
     broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at });
@@ -2435,7 +2393,7 @@ app.put('/api/loans/:id', auth, writeLimiter, async (req, res, next) => {
       record.id,record.companyId,record.employeeId,Number(record.totalAmount),Number(record.monthlyInstallment),Number(record.totalInstallments),
       Number(record.remainingInstallments),Number(record.remainingAmount),record.startDate,record.status,String(record.reason || ''),JSON.stringify(record),sortOrder
     ]);
-    const updated = await updateCompatibilityCollectionRecord(client,'loans',record,req.user.id);
+    const updated = await bumpStateVersion(client,req.user.id);
     await appendStateAudit(client,q,{ companyIds:req.user.company_ids,user:req.user,action:appendOnlyAdjustment ? 'ADJUST_LOAN' : existing.rowCount ? 'UPDATE_LOAN' : 'CREATE_LOAN',version:updated.rows[0].version });
     await client.query('COMMIT');
     broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at });
@@ -2459,7 +2417,7 @@ app.delete('/api/loans/:id', auth, writeLimiter, async (req, res, next) => {
     const stored = await hydrateNormalizedStateData(client,stateRow.rows[0]?.state || {});
     if (payrollSourceLocked(stored,'loan',row.rows[0].payload)) throw workflowError(409, 'PAYROLL_SOURCE_ENTRY_LOCKED');
     await client.query(`DELETE FROM ${q('loans')} WHERE id=$1`, [req.params.id]);
-    const updated = await deleteCompatibilityCollectionRecord(client,'loans',req.params.id,req.user.id);
+    const updated = await bumpStateVersion(client,req.user.id);
     await appendStateAudit(client,q,{ companyIds:req.user.company_ids,user:req.user,action:'DELETE_LOAN',version:updated.rows[0].version });
     await client.query('COMMIT');
     broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at });
@@ -2503,7 +2461,7 @@ app.put('/api/temporary-earnings/:id', auth, writeLimiter, async (req, res, next
       applied_in_payroll=EXCLUDED.applied_in_payroll,payload=EXCLUDED.payload,updated_at=now()`, [
       record.id,record.companyId,record.employeeId,record.periodMonth,record.date,record.type,Number(record.amount),record.reason.trim(),Boolean(record.appliedInPayroll),JSON.stringify(record),sortOrder
     ]);
-    const updated = await updateCompatibilityCollectionRecord(client,'temporaryEarnings',record,req.user.id);
+    const updated = await bumpStateVersion(client,req.user.id);
     await appendStateAudit(client,q,{ companyIds:req.user.company_ids,user:req.user,action:existing.rowCount ? 'UPDATE_TEMPORARY_EARNING' : 'CREATE_TEMPORARY_EARNING',version:updated.rows[0].version });
     await client.query('COMMIT');
     broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at });
@@ -2527,7 +2485,7 @@ app.delete('/api/temporary-earnings/:id', auth, writeLimiter, async (req, res, n
     const stored = await hydrateNormalizedStateData(client,stateRow.rows[0]?.state || {});
     if (payrollSourceLocked(stored,'earning',row.rows[0].payload)) throw workflowError(409, 'PAYROLL_SOURCE_ENTRY_LOCKED');
     await client.query(`DELETE FROM ${q('temporary_earnings')} WHERE id=$1`, [req.params.id]);
-    const updated = await deleteCompatibilityCollectionRecord(client,'temporaryEarnings',req.params.id,req.user.id);
+    const updated = await bumpStateVersion(client,req.user.id);
     await appendStateAudit(client,q,{ companyIds:req.user.company_ids,user:req.user,action:'DELETE_TEMPORARY_EARNING',version:updated.rows[0].version });
     await client.query('COMMIT');
     broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at });
@@ -2543,7 +2501,7 @@ async function commitPayrollCommandState(client, stored, record, user, action) {
   const nextRuns = asArray(stored.payrollRuns).map(item => item.id === record.id ? record : item);
   const nextState = { ...stored,payrollRuns:nextRuns };
   await appendPayrollFinancialAudit(client,q,{ stored,next:nextState,user });
-  const updated = await updateCompatibilityCollectionRecord(client,'payrollRuns',record,user.id);
+  const updated = await bumpStateVersion(client,user.id);
   await appendStateAudit(client,q,{ companyIds:user.company_ids,user,action,version:updated.rows[0].version });
   return updated;
 }
@@ -2728,7 +2686,7 @@ app.put('/api/payroll-runs/:id', auth, writeLimiter, async (req, res, next) => {
       FROM jsonb_array_elements($1::jsonb) AS source(batch)
       CROSS JOIN LATERAL jsonb_array_elements_text(COALESCE(batch->'employeeIds','[]'::jsonb)) WITH ORDINALITY AS employee_ids(employee_id,employee_ordinality)`, [JSON.stringify(record.paymentBatches || [])]);
 
-    const updated = await updateCompatibilityCollectionRecord(client,'payrollRuns',record,req.user.id);
+    const updated = await bumpStateVersion(client,req.user.id);
     await appendStateAudit(client,q,{ companyIds:req.user.company_ids,user:req.user,action:existing.rowCount ? 'UPDATE_PAYROLL_RUN' : 'CREATE_PAYROLL_RUN',version:updated.rows[0].version });
     await client.query('COMMIT');
     broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at });
@@ -2891,7 +2849,7 @@ app.put('/api/journals/:id', auth, writeLimiter, async (req, res, next) => {
     validateJournalRecord(record,req.user);
     await client.query('BEGIN');
     const existed = await upsertJournalAggregate(client,record);
-    const updated = await updateCompatibilityCollectionRecord(client,'journals',record,req.user.id);
+    const updated = await bumpStateVersion(client,req.user.id);
     await appendStateAudit(client,q,{ companyIds:req.user.company_ids,user:req.user,action:existed ? 'UPDATE_JOURNAL' : 'CREATE_JOURNAL',version:updated.rows[0].version });
     await client.query('COMMIT');
     broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at });
@@ -2914,7 +2872,7 @@ app.delete('/api/journals/:id', auth, writeLimiter, async (req, res, next) => {
     if (!req.user.company_ids.includes(row.rows[0].company_id)) throw workflowError(403,'FORBIDDEN');
     if (row.rows[0].status === 'POSTED') throw workflowError(409,'POSTED_JOURNAL_IMMUTABLE');
     await client.query(`DELETE FROM ${q('journal_batches')} WHERE id=$1`, [req.params.id]);
-    const updated = await deleteCompatibilityCollectionRecord(client,'journals',req.params.id,req.user.id);
+    const updated = await bumpStateVersion(client,req.user.id);
     await appendStateAudit(client,q,{ companyIds:req.user.company_ids,user:req.user,action:'DELETE_JOURNAL',version:updated.rows[0].version });
     await client.query('COMMIT');
     broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at });
@@ -2983,7 +2941,7 @@ app.post('/api/employees/import', auth, writeLimiter, async (req, res, next) => 
         suspension_end_date=EXCLUDED.suspension_end_date,base_salary=EXCLUDED.base_salary,housing_allowance=EXCLUDED.housing_allowance,
         transport_allowance=EXCLUDED.transport_allowance,other_fixed_allowances=EXCLUDED.other_fixed_allowances,
         bank_iban=EXCLUDED.bank_iban,payload=EXCLUDED.payload,is_archived=false,updated_at=now()`, [JSON.stringify(employees),startOrder]);
-    const updated = await updateCompatibilityCollectionRecords(client,'employees',employees,req.user.id);
+    const updated = await bumpStateVersion(client,req.user.id);
     await appendStateAudit(client,q,{ companyIds:[companyId],user:req.user,action:`IMPORT_EMPLOYEES:${employees.length}`,version:updated.rows[0].version });
     await client.query(`INSERT INTO ${q('audit_log')} (user_id,action,ip) VALUES ($1,$2,$3)`, [req.user.id,`IMPORT_EMPLOYEES:${employees.length}`,req.ip]);
     await client.query('COMMIT');
@@ -3272,7 +3230,7 @@ app.put('/api/integrations/qoyod/config', auth, writeLimiter, async (req, res, n
         updated_at=now()
       RETURNING public_config,(secret_value <> '') AS api_key_configured`, [companyId,JSON.stringify(publicConfig),apiKey.trim()]);
     const record = { ...saved.rows[0].public_config,apiKey:'',apiKeyConfigured:saved.rows[0].api_key_configured };
-    const updated = await updateCompatibilityObject(client,'qoyodConfig',record,req.user.id);
+    const updated = await bumpStateVersion(client,req.user.id);
     await appendStateAudit(client,q,{ companyIds:[companyId],user:req.user,action:'UPDATE_QOYOD_CONFIG',version:updated.rows[0].version });
     await client.query('COMMIT');
     broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at });

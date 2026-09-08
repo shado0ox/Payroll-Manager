@@ -14,7 +14,7 @@ test('company settings update only one company aggregate', () => {
   assert.ok(start >= 0 && end > start,'company update route must exist');
   const route = server.slice(start,end);
   assert.match(route,/updateCompanyAggregate\(client,record\)/);
-  assert.match(route,/updateCompatibilityCollectionRecord\(client,'companies',committed/);
+  assert.match(route,/bumpStateVersion\(client,req\.user\.id\)/);
   assert.doesNotMatch(route,/replaceNormalized(?:Operations|Core|Payroll)Data/);
   assert.match(server,/DELETE FROM.*company_departments.*WHERE company_id=\$1/);
   assert.match(server,/DELETE FROM.*cost_centers.*WHERE company_id=\$1/);
@@ -56,7 +56,7 @@ test('company creation inserts one aggregate and assigns it to the creator', () 
   assert.match(route,/INSERT INTO.*companies/);
   assert.match(route,/updateCompanyAggregate\(client,record\)/);
   assert.match(route,/company_ids=company_ids \|\| jsonb_build_array/);
-  assert.match(route,/updateCompatibilityCollectionRecord\(client,'companies',committed/);
+  assert.match(route,/bumpStateVersion\(client,req\.user\.id\)/);
   assert.doesNotMatch(route,/replaceNormalized(?:Operations|Core|Payroll)Data/);
 });
 

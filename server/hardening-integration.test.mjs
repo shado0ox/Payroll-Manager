@@ -16,7 +16,7 @@ function routeBlock(method, route, nextRouteMarker) {
 test('runtime state writers are tenant scoped', () => {
   assert.match(source, /createTenantScopedClient, scopeStateForCompanies/);
 
-  const putBlock = routeBlock('put', '/api/state', 'async function updateCompatibilityCollectionRecord');
+  const putBlock = routeBlock('put', '/api/state', 'async function bumpStateVersion');
 
   assert.match(putBlock, /createTenantScopedClient\(client, q, tenantCompanyIds\)/);
   assert.match(putBlock, /scopeStateForCompanies\(state, tenantCompanyIds\)/);
@@ -33,7 +33,7 @@ test('the generic state patch surface is removed and audit history stays server 
 
 test('state writes append server-owned audit events inside the transaction', () => {
   assert.match(source, /appendStateAudit/);
-  const putBlock = routeBlock('put', '/api/state', 'async function updateCompatibilityCollectionRecord');
+  const putBlock = routeBlock('put', '/api/state', 'async function bumpStateVersion');
   assert.match(putBlock, /appendStateAudit\(client, q, \{ companyIds:req\.user\.company_ids, user:req\.user, action:'STATE_REPLACE', version:r\.rows\[0\]\.version \}\);\s*await client\.query\('COMMIT'\)/);
 });
 

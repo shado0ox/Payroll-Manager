@@ -19,7 +19,7 @@ test('employee spreadsheet import is one atomic record-level transaction', () =>
   assert.match(source,/employees\.length > 2500/);
   assert.match(source,/jsonb_array_elements\(\$1::jsonb\).*WITH ORDINALITY/s);
   assert.match(source,/ON CONFLICT \(id\) DO UPDATE/);
-  assert.match(source,/updateCompatibilityCollectionRecords\(client,'employees',employees/);
+  assert.match(source,/bumpStateVersion\(client,req\.user\.id\)/);
   assert.match(source,/IMPORT_EMPLOYEES/);
   assert.doesNotMatch(source,/replaceNormalized|DELETE FROM.*employees/s);
 });
@@ -30,7 +30,7 @@ test('attendance import validates payroll locks and upserts one batch', () => {
   assert.match(source,/payrollSourceLocked/);
   assert.match(source,/jsonb_array_elements\(\$1::jsonb\).*WITH ORDINALITY/s);
   assert.match(source,/ON CONFLICT \(id\) DO UPDATE/);
-  assert.match(source,/updateCompatibilityCollectionRecords\(client,'attendance',records/);
+  assert.match(source,/bumpStateVersion\(client,req\.user\.id\)/);
   assert.doesNotMatch(source,/replaceNormalized|DELETE FROM.*attendance_records/s);
 });
 
