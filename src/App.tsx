@@ -43,7 +43,7 @@ import { hasPermission, isDeveloperAccount, TAB_PERMISSION } from './utils/permi
 import { Sidebar } from './components/Sidebar';
 import { LoginView } from './components/LoginView';
 import { DatabaseStatus } from './utils/databaseService';
-import { api } from './utils/api';
+import { api, type StateRecordChange } from './utils/api';
 import { WifiOff, Database, CheckCircle2, X } from 'lucide-react';
 import { synchronizeEmployeeBankDetails } from './utils/security';
 import { useLanguage } from './i18n/LanguageContext';
@@ -88,6 +88,31 @@ type MasarAppState = ReturnType<typeof loadInitialState> & { temporaryEarnings: 
 const payrollInputLockMessage = (language: 'ar' | 'en') => language === 'ar'
   ? 'هذه العملية مرتبطة بمسير رواتب معتمد/مرحل. يجب إرجاع المسير أولاً قبل تعديلها أو حذفها.'
   : 'This entry is linked to an approved/posted payroll run. Reopen the payroll run before editing or deleting it.';
+
+function applyRemoteRecordChanges(state: MasarAppState, changes: StateRecordChange[]): MasarAppState {
+  const next = { ...state } as MasarAppState;
+  for (const change of changes) {
+    const collection = [...((next as any)[change.collection] || [])];
+    if (change.operation === 'upsert') {
+      for (const record of change.records || []) {
+        if (!record || typeof record !== 'object' || typeof (record as any).id !== 'string') continue;
+        const index = collection.findIndex((item:any) => item?.id === (record as any).id);
+        if (index >= 0) collection[index] = record;
+        else collection.push(record);
+      }
+    } else {
+      const deletedIds = new Set(change.ids || []);
+      for (let index = collection.length - 1; index >= 0; index -= 1) {
+        if (deletedIds.has(collection[index]?.id)) collection.splice(index,1);
+      }
+    }
+    (next as any)[change.collection] = collection;
+  }
+  if (changes.some(change => change.collection === 'employees')) {
+    next.employees = synchronizeEmployeeBankDetails(next.companies,next.employees);
+  }
+  return next;
+}
 
 const BuildUpdateBanner = ({ language,onReload }: { language:'ar' | 'en';onReload:() => void }) => (
   <aside className="fixed left-1/2 top-4 z-[10000] flex w-[calc(100%-2rem)] max-w-xl -translate-x-1/2 items-center justify-between gap-4 rounded-2xl border border-amber-300 bg-amber-50 px-5 py-3 text-amber-950 shadow-2xl" dir={language === 'ar' ? 'rtl' : 'ltr'} role="alert">
@@ -296,9 +321,14 @@ export const App: React.FC = () => {
         setUpdateAvailable(true);
         return;
       }
-      if (!event?.version || event.updatedBy === currentUser.id) return;
+      if (!event?.version) return;
       persistenceQueueRef.current = persistenceQueueRef.current.catch(() => undefined).then(async () => {
         try {
+          const changes = api.acceptStateEvent(event);
+          if (changes !== null) {
+            if (changes.length) setState(prev => applyRemoteRecordChanges(prev,changes));
+            return;
+          }
           const remote = await api.getState();
           if (!remote.state) return;
           setState(prev => {

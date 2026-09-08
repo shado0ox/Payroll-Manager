@@ -1,6 +1,22 @@
 import { AppState } from './storage';
 import { AttendanceRecord, Company, Employee, JournalBatch, LeaveRequest, LoanSchedule, PayrollRun, PayrollSettlement, PenaltyRecord, QoyodApiConfig, TemporaryEarningRecord, UserAccount } from '../types';
 
+export type StateCollectionKey = 'employees' | 'attendance' | 'leaves' | 'loans' | 'penalties' | 'temporaryEarnings' | 'payrollRuns' | 'payrollSettlements' | 'journals';
+export type StateRecordChange = {
+  collection:StateCollectionKey;
+  operation:'upsert' | 'delete';
+  records?:unknown[];
+  ids?:string[];
+};
+export type StateUpdateEvent = {
+  version?:number;
+  updatedBy?:string;
+  updatedAt?:string;
+  buildId?:string;
+  connected?:boolean;
+  changes?:StateRecordChange[];
+};
+
 class ApiError extends Error {
   constructor(message: string, public status: number) { super(message); this.name = 'ApiError'; }
 }
@@ -31,6 +47,18 @@ function removeFromSyncedCollection(key: string, id: string) {
   if (!syncedState) return;
   const collection = Array.isArray(syncedState[key]) ? syncedState[key].filter((item:any) => item?.id !== id) : [];
   syncedState = { ...syncedState, [key]: collection };
+}
+
+function applyRecordChanges(changes: StateRecordChange[]) {
+  for (const change of changes) {
+    if (change.operation === 'upsert') {
+      for (const record of change.records || []) {
+        if (record && typeof record === 'object' && typeof (record as any).id === 'string') updateSyncedCollection(change.collection,record);
+      }
+    } else {
+      for (const id of change.ids || []) removeFromSyncedCollection(change.collection,id);
+    }
+  }
 }
 
 function withoutKeys(value: any, keys: string[]) {
@@ -262,7 +290,15 @@ export const api = {
   },
   health: () => request<{status:string;buildId:string}>('/api/health'),
   version: () => request<{buildId:string}>('/api/version', { headers:{ 'Cache-Control':'no-cache' } }),
-  subscribeStateEvents: (onUpdate: (event: { version?: number; updatedBy?: string; updatedAt?: string; buildId?: string; connected?: boolean }) => void) => {
+  acceptStateEvent: (event: StateUpdateEvent): StateRecordChange[] | null => {
+    const incomingVersion = Number(event.version || 0);
+    if (!incomingVersion || incomingVersion <= stateVersion) return [];
+    if (incomingVersion !== stateVersion + 1 || !Array.isArray(event.changes)) return null;
+    applyRecordChanges(event.changes);
+    stateVersion = incomingVersion;
+    return cloneState(event.changes);
+  },
+  subscribeStateEvents: (onUpdate: (event: StateUpdateEvent) => void) => {
     const source = new EventSource('/api/state/events', { withCredentials: true });
     const receive = (message: MessageEvent) => { try { onUpdate(JSON.parse(message.data)); } catch {} };
     source.onmessage = receive;
