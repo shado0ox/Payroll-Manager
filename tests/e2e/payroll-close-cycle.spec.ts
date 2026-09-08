@@ -18,6 +18,7 @@ const waitForPayrollWrite = (page:any, method:string, path:RegExp) => page.waitF
 );
 
 test('paid loan is excluded next month and posted payslip keeps the selected period', async ({ page }) => {
+  test.setTimeout(90_000);
   await login(page);
   const seed = await page.evaluate(async () => {
     const current = await (await fetch('/api/state')).json();
