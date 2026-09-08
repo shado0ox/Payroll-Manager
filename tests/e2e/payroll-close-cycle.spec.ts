@@ -73,9 +73,10 @@ test('paid loan is excluded next month and posted payslip keeps the selected per
   await search.fill(seed.employeeNo!);
   const currentEmployeeRow = page.locator('tr').filter({ hasText:seed.employeeNo! });
   await currentEmployeeRow.locator('button').last().click();
-  await expect(page.getByText(seed.payrollPeriod!,{ exact:true })).toBeVisible();
-  await expect(page.getByText(/لا توجد قسيمة راتب|No payslip exists/i)).toHaveCount(0);
-  await page.locator('.fixed.inset-0').getByRole('button').last().click();
+  const statementModal = page.locator('.fixed.inset-0').filter({ hasText:/كشف حساب الموظف وقسيمة الراتب|Employee Statement/i });
+  await expect(statementModal.getByText(seed.payrollPeriod!,{ exact:true }).first()).toBeVisible();
+  await expect(statementModal.getByText(/لا توجد قسيمة راتب|No payslip exists/i)).toHaveCount(0);
+  await statementModal.getByRole('button').last().click();
 
   const submitReview = waitForPayrollWrite(page,'POST',/\/api\/payroll-runs\/[^/]+\/status$/);
   await page.getByRole('button',{ name:/إرسال للمراجعة والتدقيق|Submit for review/i }).click();
