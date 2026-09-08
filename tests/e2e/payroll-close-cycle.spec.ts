@@ -69,6 +69,14 @@ test('paid loan is excluded next month and posted payslip keeps the selected per
   const currentRun = (await (await initialCalculation).json()).record;
   expect(currentRun.items.find((item:any) => item.employeeId === seed.employeeId)?.loanDeduction).toBe(300);
 
+  const search = page.getByPlaceholder(/بحث بالاسم، الرقم الوظيفي|Search by name/i);
+  await search.fill(seed.employeeNo!);
+  const currentEmployeeRow = page.locator('tr').filter({ hasText:seed.employeeNo! });
+  await currentEmployeeRow.locator('button').last().click();
+  await expect(page.getByText(seed.payrollPeriod!,{ exact:true })).toBeVisible();
+  await expect(page.getByText(/لا توجد قسيمة راتب|No payslip exists/i)).toHaveCount(0);
+  await page.locator('.fixed.inset-0').getByRole('button').last().click();
+
   const submitReview = waitForPayrollWrite(page,'POST',/\/api\/payroll-runs\/[^/]+\/status$/);
   await page.getByRole('button',{ name:/إرسال للمراجعة والتدقيق|Submit for review/i }).click();
   expect((await (await submitReview).json()).record.status).toBe('UNDER_REVIEW');
@@ -77,8 +85,6 @@ test('paid loan is excluded next month and posted payslip keeps the selected per
   await page.getByRole('button',{ name:/اعتماد المدير العام|General manager approval/i }).click();
   expect((await (await approve).json()).record.status).toBe('APPROVED');
 
-  const search = page.getByPlaceholder(/بحث بالاسم، الرقم الوظيفي|Search by name/i);
-  await search.fill(seed.employeeNo!);
   await page.getByRole('button',{ name:/تحديد المتاح|Select eligible/i }).click();
   await page.getByRole('button',{ name:/إنشاء دفعة للمحددين|Create selected batch/i }).click();
   await page.locator('select:has(option[value="CASH"])').selectOption('CASH');
@@ -100,11 +106,6 @@ test('paid loan is excluded next month and posted payslip keeps the selected per
   const nextCalculation = waitForPayrollWrite(page,'PUT',/\/api\/payroll-runs\/[^/]+$/);
   await page.getByRole('button',{ name:/إعادة احتساب المسير آلياً|Recalculate payroll/i }).click();
   const nextRun = (await (await nextCalculation).json()).record;
+  expect(nextRun.periodMonth).toBe(seed.nextPeriod);
   expect(nextRun.items.find((item:any) => item.employeeId === seed.employeeId)?.loanDeduction).toBe(0);
-
-  await search.fill(seed.employeeNo!);
-  const employeeRow = page.locator('tr').filter({ hasText:seed.employeeNo! });
-  await employeeRow.locator('button').last().click();
-  await expect(page.getByText(seed.nextPeriod!,{ exact:true })).toBeVisible();
-  await expect(page.getByText(/لا توجد قسيمة راتب|No payslip exists/i)).toHaveCount(0);
 });
