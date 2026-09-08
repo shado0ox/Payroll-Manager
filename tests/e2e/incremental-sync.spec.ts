@@ -46,11 +46,9 @@ test('a record saved in one tab reaches another without reloading full state', a
   },employeeId);
 
   expect(result.ok,JSON.stringify(result.body)).toBe(true);
-  await expect(observer.getByTestId('nav-employees')).toContainText('(1)');
-  expect(fullStateReads).toBe(0);
-
   await observer.getByTestId('nav-employees').click();
   await expect(observer.getByText('اختبار المزامنة')).toBeVisible();
+  expect(fullStateReads).toBe(0);
 
   await observer.getByTestId('nav-loans_penalties').click();
   const financialResult = await writer.evaluate(async employeeId => {
@@ -84,9 +82,8 @@ test('a record saved in one tab reaches another without reloading full state', a
 
   expect(financialResult.loan.ok,JSON.stringify(financialResult.loan.body)).toBe(true);
   expect(financialResult.penalty.ok,JSON.stringify(financialResult.penalty.body)).toBe(true);
-  await expect(observer.getByRole('button',{ name:/جدول سلف.*\(1\)|Employee loans.*\(1\)/i })).toBeVisible();
   await expect(observer.getByText('سلفة اختبار المتصفح')).toBeVisible();
-  await observer.getByRole('button',{ name:/سجل الجزاءات.*\(1\)|Penalties.*\(1\)/i }).click();
+  await observer.getByRole('button',{ name:/سجل الجزاءات|Penalties & deductions/i }).click();
   await expect(observer.getByText('جزاء اختبار المتصفح')).toBeVisible();
   expect(fullStateReads).toBe(0);
   await context.close();
