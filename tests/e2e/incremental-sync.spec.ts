@@ -19,8 +19,7 @@ test('a record saved in one tab reaches another without reloading full state', a
   await login(writer);
 
   const observer = await context.newPage();
-  await observer.goto('/');
-  await expect(observer.getByRole('button',{ name:/الموظفين|Employees/i })).toBeVisible();
+  await login(observer);
 
   let fullStateReads = 0;
   observer.on('request',request => {
