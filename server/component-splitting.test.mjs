@@ -7,6 +7,7 @@ const company = fs.readFileSync('src/components/CompanyProfileView.tsx', 'utf8')
 const payrollTable = fs.readFileSync('src/components/payroll/PayrollRunItemsTable.tsx', 'utf8');
 const paymentModal = fs.readFileSync('src/components/payroll/PayrollPaymentBatchModal.tsx', 'utf8');
 const companyTabs = fs.readFileSync('src/components/company/CompanyProfileTabs.tsx', 'utf8');
+const app = fs.readFileSync('src/App.tsx', 'utf8');
 
 test('large views delegate stable sections to memoized child components', () => {
   assert.match(payroll, /<PayrollRunItemsTable/);
@@ -31,4 +32,18 @@ test('large-view render filters and reductions are memoized', () => {
   assert.match(company, /const costCenterEmployeeCounts = useMemo/);
   assert.match(company, /const activeBankDefinitions = useMemo/);
   assert.match(company, /const assignableRoles = useMemo/);
+});
+
+test('authenticated views and closed modals are loaded only when requested', () => {
+  for (const component of [
+    'DashboardView','CompanyProfileView','EmployeesView','PayrollRunsView','PayrollSettlementsView',
+    'AttendanceLeavesView','LoansPenaltiesView','AccountingJournalsView','ReportsView','UserManagementView',
+    'SettingsView','AuditLogsView','EmployeeStatementModal','QoyodIntegrationModal','DatabaseStatusModal',
+  ]) {
+    assert.match(app, new RegExp(`const ${component} = lazy\\(\\(\\) => import\\('\\./components/${component}'\\)`));
+    assert.doesNotMatch(app, new RegExp(`import \\{ ${component} \\} from`));
+  }
+  assert.match(app, /<Suspense fallback={<ViewLoadingFallback language={language} \/>}>/);
+  assert.match(app, /statementSelection && \(\s*<Suspense fallback={null}>/);
+  assert.match(app, /canViewDatabaseTools && isDbModalOpen && \(/);
 });

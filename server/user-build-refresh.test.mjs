@@ -6,6 +6,7 @@ const server = fs.readFileSync(new URL('./index.mjs', import.meta.url), 'utf8');
 const app = fs.readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8');
 const api = fs.readFileSync(new URL('../src/utils/api.ts', import.meta.url), 'utf8');
 const vite = fs.readFileSync(new URL('../vite.config.ts', import.meta.url), 'utf8');
+const main = fs.readFileSync(new URL('../src/main.tsx', import.meta.url), 'utf8');
 
 const routeBlock = (method, route, boundary) => {
   const marker = `app.${method}('${route}'`;
@@ -55,4 +56,7 @@ test('every browser detects a new build and reload waits for pending saves', () 
   assert.match(app,/current\.buildId !== __MASAR_BUILD_ID__/);
   assert.match(app,/persistenceQueueRef\.current\.catch\(\(\) => undefined\)\.finally\(\(\) => window\.location\.reload\(\)\)/);
   assert.match(app,/BuildUpdateBanner/);
+  assert.match(main,/window\.addEventListener\('vite:preloadError'/);
+  assert.match(main,/sessionStorage\.getItem\(FAILED_CHUNK_BUILD_KEY\) === __MASAR_BUILD_ID__/);
+  assert.match(main,/sessionStorage\.setItem\(FAILED_CHUNK_BUILD_KEY, __MASAR_BUILD_ID__\)/);
 });
