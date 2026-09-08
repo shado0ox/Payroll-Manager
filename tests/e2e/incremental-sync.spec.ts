@@ -10,7 +10,7 @@ const login = async (page:any) => {
     page.waitForResponse((response:any) => response.url().endsWith('/api/state') && response.ok()),
     form.locator('button[type="submit"]').click(),
   ]);
-  await expect(page.getByRole('button',{ name:/الموظفين|Employees/i })).toBeVisible();
+  await expect(page.getByTestId('nav-employees')).toBeVisible();
 };
 
 test('a record saved in one tab reaches another without reloading full state', async ({ browser }) => {
@@ -46,10 +46,10 @@ test('a record saved in one tab reaches another without reloading full state', a
   },employeeId);
 
   expect(result.ok,JSON.stringify(result.body)).toBe(true);
-  await expect(observer.getByRole('button',{ name:/الموظفين|Employees/i })).toContainText('(1)');
+  await expect(observer.getByTestId('nav-employees')).toContainText('(1)');
   expect(fullStateReads).toBe(0);
 
-  await observer.getByRole('button',{ name:/الموظفين|Employees/i }).click();
+  await observer.getByTestId('nav-employees').click();
   await expect(observer.getByText('اختبار المزامنة')).toBeVisible();
   await context.close();
 });
