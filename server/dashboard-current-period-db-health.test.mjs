@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 const dashboard = fs.readFileSync(new URL('../src/components/DashboardView.tsx', import.meta.url), 'utf8');
+const dashboardCharts = fs.readFileSync(new URL('../src/components/dashboard/DashboardPayrollCharts.tsx', import.meta.url), 'utf8');
 const app = fs.readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8');
 const server = fs.readFileSync(new URL('./index.mjs', import.meta.url), 'utf8');
 
@@ -14,6 +15,16 @@ test('dashboard uses the company current month and never falls back to a histori
 
 test('Qoyod integration data is not rendered on the dashboard', () => {
   assert.doesNotMatch(dashboard, /تكامل نظام قيود|Qoyod Integration|فتح إعدادات قيود والترحيل/);
+});
+
+test('dashboard summary is company-scoped and paints before the chart library loads', () => {
+  assert.match(dashboard,/const companyEmployees = useMemo\(\(\) => employees\.filter\(employee => employee\.companyId === company\.id\)/);
+  assert.match(dashboard,/const activeEmployees = companyEmployees\.filter/);
+  assert.match(dashboard,/lazy\(\(\) => import\('\.\/dashboard\/DashboardPayrollCharts'\)/);
+  assert.match(dashboard,/window\.setTimeout\(\(\) => setChartsReady\(true\), 0\)/);
+  assert.doesNotMatch(dashboard,/from 'recharts'/);
+  assert.match(dashboardCharts,/from 'recharts'/);
+  assert.match(dashboardCharts,/React\.memo<DashboardPayrollChartsProps>/);
 });
 
 test('database status verifies PostgreSQL and automatically recovers without a refresh', () => {

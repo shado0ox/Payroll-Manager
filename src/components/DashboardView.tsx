@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import { 
   DollarSign, 
   Users, 
@@ -14,24 +14,9 @@ import {
   ArrowRight,
   ArrowLeft,
   FileText,
-  PieChart as PieChartIcon,
-  BarChart3,
   Target,
   ChevronDown
 } from 'lucide-react';
-import { 
-  ResponsiveContainer, 
-  BarChart, 
-  Bar, 
-  XAxis, 
-  YAxis, 
-  Tooltip, 
-  Legend, 
-  CartesianGrid, 
-  PieChart, 
-  Pie, 
-  Cell 
-} from 'recharts';
 import { Company, Employee, PayrollRun, LoanSchedule, UserRole, NavigationTab } from '../types';
 import { formatSAR, formatNumber } from '../utils/payrollEngine';
 import { useLanguage } from '../i18n/LanguageContext';
@@ -48,65 +33,7 @@ interface DashboardViewProps {
   onViewEmployeeStatement?: (emp: Employee, periodMonth: string) => void;
 }
 
-const PIE_COLORS = ['#10b981', '#0ea5e9', '#f59e0b', '#8b5cf6', '#ec4899'];
-
-// Custom CustomTooltip for Recharts in Arabic RTL
-const CustomBarTooltip = ({ active, payload, label }: any) => {
-  const { language } = useLanguage();
-  const tr = (ar: string, en: string) => language === 'ar' ? ar : en;
-  if (active && payload && payload.length) {
-    return (
-      <div className="bg-slate-900/95 backdrop-blur-md text-white p-3.5 rounded-xl shadow-xl border border-slate-700/80 text-xs z-50 text-right min-w-[190px]">
-        <p className="font-bold text-sm text-slate-100 mb-2 border-b border-slate-700 pb-1">{label}</p>
-        <div className="space-y-1.5">
-          {payload.map((entry: any, index: number) => (
-            <div key={`item-${index}`} className="flex justify-between items-center gap-3">
-              <span className="flex items-center gap-1.5 text-slate-300">
-                <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: entry.color }} />
-                <span>{entry.name}:</span>
-              </span>
-              <span className="font-semibold text-white">{formatNumber(entry.value)} SR</span>
-            </div>
-          ))}
-          {payload.length > 1 && (
-            <div className="pt-1.5 mt-1.5 border-t border-slate-700/80 flex justify-between font-bold text-emerald-400">
-              <span>{tr('الإجمالي:', 'Total:')}</span>
-              <span>
-                {formatNumber(payload.reduce((sum: number, p: any) => sum + (Number(p.value) || 0), 0))} SR
-              </span>
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  }
-  return null;
-};
-
-const CustomPieTooltip = ({ active, payload }: any) => {
-  const { language } = useLanguage();
-  const tr = (ar: string, en: string) => language === 'ar' ? ar : en;
-  if (active && payload && payload.length) {
-    const data = payload[0];
-    return (
-      <div className="bg-slate-900/95 backdrop-blur-md text-white p-3 rounded-xl shadow-xl border border-slate-700/80 text-xs z-50 text-right min-w-[170px]">
-        <div className="flex items-center gap-2 mb-1.5">
-          <span className="w-3 h-3 rounded-full" style={{ backgroundColor: data.payload.fill || data.color }} />
-          <span className="font-bold text-slate-100">{data.name}</span>
-        </div>
-        <div className="flex justify-between text-slate-300">
-          <span>{tr('المبلغ:', 'Amount:')}</span>
-          <span className="font-bold text-white">{formatNumber(data.value)} SR</span>
-        </div>
-        <div className="flex justify-between text-slate-300 mt-1">
-          <span>{tr('النسبة:', 'Percentage:')}</span>
-          <span className="font-bold text-emerald-400">{data.payload.percentage}%</span>
-        </div>
-      </div>
-    );
-  }
-  return null;
-};
+const DashboardPayrollCharts = lazy(() => import('./dashboard/DashboardPayrollCharts').then(module => ({ default:module.DashboardPayrollCharts })));
 
 export const DashboardView: React.FC<DashboardViewProps> = ({
   company,
@@ -119,9 +46,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 }) => {
   const { language } = useLanguage();
   const tr = (ar: string, en: string) => language === 'ar' ? ar : en;
-  const [chartViewMode, setChartViewMode] = useState<'total' | 'average'>('total');
+  const [chartsReady,setChartsReady] = useState(false);
+  const companyEmployees = useMemo(() => employees.filter(employee => employee.companyId === company.id), [employees,company.id]);
   const payrollReadiness = useMemo(() => {
-    const activeEmployees = employees.filter(employee => employee.employmentStatus === 'ACTIVE');
+    const activeEmployees = companyEmployees.filter(employee => employee.employmentStatus === 'ACTIVE');
     if (!activeEmployees.length) return 0;
     const ready = activeEmployees.filter(employee =>
       Number(employee.baseSalary) > 0 &&
@@ -129,21 +57,27 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       /^SA\d{22}$/.test((employee.bankIban || '').replace(/\s/g, ''))
     ).length;
     return Math.round((ready / activeEmployees.length) * 100);
-  }, [employees]);
+  }, [companyEmployees]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setChartsReady(true), 0);
+    return () => window.clearTimeout(timer);
+  }, []);
 
   // The dashboard represents the month currently in progress for the company.
   const currentPeriod = getCurrentPeriod(company.timezone || 'Asia/Riyadh');
-  const companyPayrollRuns = payrollRuns
-    .filter(r => r.companyId === company.id)
-    .sort((a, b) => b.periodMonth.localeCompare(a.periodMonth));
+  const companyPayrollRuns = useMemo(() => payrollRuns
+    .filter(run => run.companyId === company.id)
+    .sort((a,b) => b.periodMonth.localeCompare(a.periodMonth)), [payrollRuns,company.id]);
   const currentRun = companyPayrollRuns.find(run => run.periodMonth === currentPeriod);
-  const companyEmployees = employees.filter(e => e.companyId === company.id);
   const lifecycleAlerts = useMemo(() => getEmployeeLifecycleAlerts(companyEmployees), [companyEmployees]);
-  const iqamaAlerts = lifecycleAlerts.filter(a => a.type === 'IQAMA_EXPIRY').length;
-  const contractAlerts = lifecycleAlerts.filter(a => a.type === 'SAUDI_CONTRACT_EXPIRY').length;
-  const arrivalAlerts = lifecycleAlerts.filter(a => a.type === 'NEW_HIRE_ENTRY_DEADLINE').length;
-  const missingBankAlerts = lifecycleAlerts.filter(a => a.type === 'MISSING_BANK_ACCOUNT').length;
-  const topLifecycleAlerts = lifecycleAlerts
+  const alertCounts = useMemo(() => ({
+    iqama:lifecycleAlerts.filter(alert => alert.type === 'IQAMA_EXPIRY').length,
+    contract:lifecycleAlerts.filter(alert => alert.type === 'SAUDI_CONTRACT_EXPIRY').length,
+    arrival:lifecycleAlerts.filter(alert => alert.type === 'NEW_HIRE_ENTRY_DEADLINE').length,
+    missingBank:lifecycleAlerts.filter(alert => alert.type === 'MISSING_BANK_ACCOUNT').length,
+  }), [lifecycleAlerts]);
+  const topLifecycleAlerts = useMemo(() => lifecycleAlerts
     .slice()
     .sort((a, b) => {
       const rank = { EXPIRED: 0, URGENT: 1, WARNING: 2, INFO: 3 } as const;
@@ -151,80 +85,18 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       if (severityDiff !== 0) return severityDiff;
       return String(a.dueDate || '9999-12-31').localeCompare(String(b.dueDate || '9999-12-31'));
     })
-    .slice(0, 8);
-  const onboardingEmployees = companyEmployees
+    .slice(0, 8), [lifecycleAlerts]);
+  const onboardingEmployees = useMemo(() => companyEmployees
     .filter(employee => employee.status === 'ONBOARDING' || employee.onboardingStatus === 'NEW_ARRIVAL' || employee.onboardingStatus === 'WAITING_IQAMA' || employee.onboardingStatus === 'WAITING_BANK')
     .sort((a, b) => String(b.entryDate || b.hireDate || '').localeCompare(String(a.entryDate || a.hireDate || '')))
-    .slice(0, 4);
-
-  // Department Salary Distribution Aggregation
-  const departmentChartData = useMemo(() => {
-    if (companyEmployees.length === 0) return [];
-    const deptMap: Record<string, { basic: number; allowances: number; count: number; name: string }> = {};
-
-    companyEmployees.forEach((emp) => {
-      const deptName = emp.department || tr('عام', 'General');
-      if (!deptMap[deptName]) {
-        deptMap[deptName] = { basic: 0, allowances: 0, count: 0, name: deptName };
-      }
-      const base = Number(emp.salaryPackage?.baseSalary || emp.basicSalary) || 0;
-      const allw = (Number(emp.salaryPackage?.housingAllowance || emp.housingAllowance) || 0) + 
-                   (Number(emp.salaryPackage?.transportAllowance || emp.transportationAllowance) || 0) + 
-                   (Number(emp.salaryPackage?.otherFixedAllowances || emp.otherAllowances) || 0) +
-                   (Number(emp.salaryPackage?.nonGosiOtherAllowances) || 0);
-      deptMap[deptName].basic += base;
-      deptMap[deptName].allowances += allw;
-      deptMap[deptName].count += 1;
-    });
-
-    return Object.values(deptMap).map(d => ({
-      name: d.name,
-      basic: chartViewMode === 'total' ? Math.round(d.basic) : Math.round(d.basic / Math.max(1, d.count)),
-      allowances: chartViewMode === 'total' ? Math.round(d.allowances) : Math.round(d.allowances / Math.max(1, d.count)),
-      count: d.count,
-    }));
-  }, [companyEmployees, chartViewMode, language]);
-
-  // Salary Structure / Allowances vs. Basic Salary Data
-  const salaryStructureData = useMemo(() => {
-    let totalBasic = 0;
-    let totalHousing = 0;
-    let totalTransport = 0;
-    let totalOther = 0;
-
-    companyEmployees.forEach(emp => {
-      totalBasic += Number(emp.salaryPackage?.baseSalary || emp.basicSalary) || 0;
-      totalHousing += Number(emp.salaryPackage?.housingAllowance || emp.housingAllowance) || 0;
-      totalTransport += Number(emp.salaryPackage?.transportAllowance || emp.transportationAllowance) || 0;
-      totalOther += (Number(emp.salaryPackage?.otherFixedAllowances || emp.otherAllowances) || 0) +
-                    (Number(emp.salaryPackage?.nonGosiOtherAllowances) || 0);
-    });
-
-    const grandTotal = totalBasic + totalHousing + totalTransport + totalOther;
-
-    if (grandTotal === 0) {
-      return [
-        { name: tr('الراتب الأساسي', 'Basic Salary'), value: 0, percentage: '0.0', fill: '#10b981' },
-        { name: tr('بدل السكن', 'Housing Allowance'), value: 0, percentage: '0.0', fill: '#0ea5e9' },
-        { name: tr('بدل النقل', 'Transport Allowance'), value: 0, percentage: '0.0', fill: '#f59e0b' },
-        { name: tr('بدلات أخرى ومكافآت', 'Other Allowances & Bonuses'), value: 0, percentage: '0.0', fill: '#8b5cf6' },
-      ];
-    }
-
-    return [
-      { name: tr('الراتب الأساسي', 'Basic Salary'), value: Math.round(totalBasic), percentage: ((totalBasic / grandTotal) * 100).toFixed(1), fill: '#10b981' },
-      { name: tr('بدل السكن', 'Housing Allowance'), value: Math.round(totalHousing), percentage: ((totalHousing / grandTotal) * 100).toFixed(1), fill: '#0ea5e9' },
-      { name: tr('بدل النقل', 'Transport Allowance'), value: Math.round(totalTransport), percentage: ((totalTransport / grandTotal) * 100).toFixed(1), fill: '#f59e0b' },
-      { name: tr('بدلات أخرى ومكافآت', 'Other Allowances & Bonuses'), value: Math.round(totalOther), percentage: ((totalOther / grandTotal) * 100).toFixed(1), fill: '#8b5cf6' },
-    ];
-  }, [companyEmployees, language]);
+    .slice(0, 4), [companyEmployees]);
 
   // Monthly Budget Metrics
   const totalEmployeesCount = companyEmployees.length;
-  const calculatedGross = companyEmployees.reduce((acc, e) => {
+  const calculatedGross = useMemo(() => companyEmployees.reduce((acc, e) => {
     const pkg = e.salaryPackage || {};
     return acc + (pkg.baseSalary || e.basicSalary || 0) + (pkg.housingAllowance || e.housingAllowance || 0) + (pkg.transportAllowance || e.transportationAllowance || 0) + (pkg.otherFixedAllowances || e.otherAllowances || 0) + (pkg.nonGosiOtherAllowances || 0);
-  }, 0);
+  }, 0), [companyEmployees]);
   
   const totalGross = currentRun ? currentRun.totalGrossSalaries : calculatedGross;
   const totalDeductions = currentRun ? currentRun.totalDeductions : 0;
@@ -282,10 +154,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           <div className="grid gap-0 lg:grid-cols-[auto_1fr]">
             <div className="grid grid-cols-2 gap-2 border-b border-slate-100 p-4 sm:grid-cols-4 lg:w-[430px] lg:grid-cols-2 lg:border-b-0 lg:border-e">
               {[
-                { value: iqamaAlerts, ar: 'إقامات', en: 'Iqamas' },
-                { value: contractAlerts, ar: 'عقود سعوديين', en: 'Saudi contracts' },
-                { value: arrivalAlerts, ar: 'قادمون جدد', en: 'New arrivals' },
-                { value: missingBankAlerts, ar: 'بدون IBAN', en: 'Missing IBAN' },
+                { value: alertCounts.iqama, ar: 'إقامات', en: 'Iqamas' },
+                { value: alertCounts.contract, ar: 'عقود سعوديين', en: 'Saudi contracts' },
+                { value: alertCounts.arrival, ar: 'قادمون جدد', en: 'New arrivals' },
+                { value: alertCounts.missingBank, ar: 'بدون IBAN', en: 'Missing IBAN' },
               ].map(card => (
                 <button key={card.en} type="button" onClick={() => onNavigate('employees')} className="flex items-center justify-between gap-3 rounded-xl border border-slate-100 bg-slate-50/70 px-3 py-2.5 text-start transition hover:border-amber-200 hover:bg-amber-50/40">
                   <span className="text-[11px] font-semibold text-slate-600">{tr(card.ar, card.en)}</span>
@@ -387,146 +259,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
       </section>
 
-      {/* 2. Interactive Charts & Budget Analytics Section (Recharts) */}
-      <section className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        
-        {/* Chart 1: Department Salary Distribution (2 Cols) */}
-        <div className="lg:col-span-2 bg-white p-6 rounded-xl border border-slate-200 shadow-xs flex flex-col">
-          <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
-            <div>
-              <div className="flex items-center gap-2">
-                <BarChart3 className="w-5 h-5 text-emerald-600" />
-                <h4 className="font-bold text-slate-800 text-base">{tr('توزيع كتلة الرواتب حسب القسم', 'Payroll Distribution by Department')}</h4>
-              </div>
-              <p className="text-xs text-slate-400 mt-0.5">{tr('مقارنة الرواتب الأساسية والبدلات عبر الأقسام التشغيلية', 'Compare basic salaries and allowances across departments.')}</p>
-            </div>
-
-            {/* Toggle View: Total vs Average */}
-            <div className="flex items-center bg-slate-100 p-1 rounded-lg border border-slate-200 text-xs font-semibold">
-              <button
-                onClick={() => setChartViewMode('total')}
-                className={`px-3 py-1 rounded-md transition-colors cursor-pointer ${
-                  chartViewMode === 'total'
-                    ? 'bg-white text-slate-800 shadow-xs font-bold'
-                    : 'text-slate-500 hover:text-slate-800'
-                }`}
-              >
-                {tr('إجمالي القسم', 'Department Total')}
-              </button>
-              <button
-                onClick={() => setChartViewMode('average')}
-                className={`px-3 py-1 rounded-md transition-colors cursor-pointer ${
-                  chartViewMode === 'average'
-                    ? 'bg-white text-slate-800 shadow-xs font-bold'
-                    : 'text-slate-500 hover:text-slate-800'
-                }`}
-              >
-                {tr('متوسط الموظف', 'Employee Average')}
-              </button>
-            </div>
-          </div>
-
-          {/* Bar Chart Container */}
-          <div className="h-72 w-full" dir="ltr">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart
-                data={departmentChartData}
-                margin={{ top: 10, right: 10, left: 10, bottom: 25 }}
-                barSize={24}
-              >
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                <XAxis 
-                  dataKey="name" 
-                  tick={{ fill: '#64748b', fontSize: 11 }}
-                  interval={0}
-                  angle={-15}
-                  textAnchor="end"
-                  tickLine={false}
-                  axisLine={{ stroke: '#cbd5e1' }}
-                />
-                <YAxis 
-                  tick={{ fill: '#64748b', fontSize: 11 }}
-                  tickFormatter={(val) => `${val >= 1000 ? `${(val / 1000).toFixed(0)}k` : val}`}
-                  tickLine={false}
-                  axisLine={false}
-                  orientation="right"
-                />
-                <Tooltip content={<CustomBarTooltip />} />
-                <Legend 
-                  verticalAlign="top" 
-                  align="right"
-                  wrapperStyle={{ paddingBottom: '16px', fontSize: '12px' }}
-                />
-                <Bar 
-                  dataKey="basic"
-                  name={tr('الراتب الأساسي', 'Basic Salary')}
-                  fill="#10b981" 
-                  radius={[4, 4, 0, 0]} 
-                />
-                <Bar 
-                  dataKey="allowances"
-                  name={tr('البدلات والمزايا', 'Allowances & Benefits')}
-                  fill="#0ea5e9" 
-                  radius={[4, 4, 0, 0]} 
-                />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-
-        {/* Chart 2: Allowances vs. Basic Salary Donut Pie Chart (1 Col) */}
-        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-xs flex flex-col justify-between">
-          <div>
-            <div className="flex items-center gap-2 mb-1">
-              <PieChartIcon className="w-5 h-5 text-sky-600" />
-              <h4 className="font-bold text-slate-800 text-base">{tr('هيكل الأجور والبدلات', 'Salary & Allowance Structure')}</h4>
-            </div>
-            <p className="text-xs text-slate-400">{tr('نسبة البدلات مقابل الراتب الأساسي', 'Allowances compared with basic salary')}</p>
-
-            {/* Donut Chart */}
-            <div className="h-52 w-full relative mt-2" dir="ltr">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={salaryStructureData}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={55}
-                    outerRadius={78}
-                    paddingAngle={3}
-                    dataKey="value"
-                  >
-                    {salaryStructureData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.fill} />
-                    ))}
-                  </Pie>
-                  <Tooltip content={<CustomPieTooltip />} />
-                </PieChart>
-              </ResponsiveContainer>
-              {/* Centered Total Label inside Donut */}
-              <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none text-center">
-                <span className="text-[10px] text-slate-400 font-semibold">{tr('إجمالي الكتلة', 'Total Payroll')}</span>
-                <span className="text-sm font-bold text-slate-800">{formatNumber(totalGross)}</span>
-                <span className="text-[9px] text-slate-400">SR</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Breakdown Legend Items */}
-          <div className="grid grid-cols-2 gap-2.5 pt-4 border-t border-slate-100">
-            {salaryStructureData.map((item, idx) => (
-              <div key={idx} className="flex items-center justify-between p-2 rounded-lg bg-slate-50 border border-slate-100 text-xs">
-                <div className="flex items-center gap-1.5 min-w-0">
-                  <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: item.fill }} />
-                  <span className="text-slate-600 truncate font-medium">{item.name}</span>
-                </div>
-                <span className="font-bold text-slate-800 shrink-0 mr-1">{item.percentage}%</span>
-              </div>
-            ))}
-          </div>
-        </div>
-
-      </section>
+      {/* Load charting code only after the dashboard summary has painted. */}
+      {chartsReady ? (
+        <Suspense fallback={<div className="h-[370px] animate-pulse rounded-xl border border-slate-200 bg-slate-100" aria-label={tr('جاري تحميل الرسوم', 'Loading charts')} />}>
+          <DashboardPayrollCharts employees={companyEmployees} totalGross={totalGross} />
+        </Suspense>
+      ) : (
+        <div className="h-[370px] animate-pulse rounded-xl border border-slate-200 bg-slate-100" aria-hidden="true" />
+      )}
 
       {/* 3. Monthly Payroll Budget Visual Gauge & Indicators */}
       <section data-no-translate className="bg-white p-6 rounded-xl border border-slate-200 shadow-xs">
