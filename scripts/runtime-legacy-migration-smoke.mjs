@@ -62,6 +62,8 @@ async function seed() {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+    // Recreate the retired column to simulate a database produced by an older release.
+    await client.query(`ALTER TABLE ${q('app_state')} ADD COLUMN IF NOT EXISTS state jsonb NOT NULL DEFAULT '{}'::jsonb`);
     await client.query(`INSERT INTO ${q('employees')} (
         id,company_id,employee_no,national_id_or_iqama,status,first_name_ar,last_name_ar,first_name_en,last_name_en,
         hire_date,salary_start_date,base_salary,bank_iban,payload,is_archived
@@ -86,12 +88,14 @@ async function seed() {
 }
 
 async function verify() {
-  const [migration,row,count,backup,status] = await Promise.all([
+  const [migration,row,count,backup,status,legacyColumn] = await Promise.all([
     pool.query(`SELECT 1 FROM ${q('schema_migrations')} WHERE version='005_normalized_settlements'`),
     pool.query(`SELECT dedupe_key,status,amount::text,payload FROM ${q('payroll_settlements')} WHERE id=$1`, [settlementId]),
     pool.query(`SELECT count(*)::integer AS count FROM ${q('payroll_settlements')} WHERE id=$1`, [settlementId]),
     pool.query(`SELECT reason FROM ${q('app_state_migration_backups')} WHERE source_version=77`),
     pool.query(`SELECT counts_match FROM ${q('normalization_status')}`),
+    pool.query(`SELECT 1 FROM information_schema.columns
+      WHERE table_schema=$1 AND table_name='app_state' AND column_name='state'`, [schema]),
   ]);
   assert.equal(migration.rowCount,1,'Settlement migration marker must be committed');
   assert.equal(row.rowCount,1,'Legacy settlement must be preserved');
@@ -101,8 +105,9 @@ async function verify() {
   assert.equal(row.rows[0].payload.paymentReference,'CI-LEGACY-PAYMENT');
   assert.equal(count.rows[0].count,1,'Migration and restart must never duplicate the settlement');
   assert.equal(backup.rowCount,1,'Migration must retain a backup of the source state');
-  assert.equal(status.rows[0]?.counts_match,true,'Normalized and compatibility record counts must match');
-  console.log('Legacy PostgreSQL migration verified: preserved, backed up, normalized, and idempotent.');
+  assert.equal(status.rows[0]?.counts_match,true,'Normalized payroll summary and item totals must match');
+  assert.equal(legacyColumn.rowCount,0,'The legacy app_state.state JSON column must be removed after migration');
+  console.log('Legacy PostgreSQL migration verified: preserved, backed up, normalized, retired, and idempotent.');
 }
 
 try {

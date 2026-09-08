@@ -5,11 +5,11 @@ Company profiles and definitions, accounting journals, application audit history
 
 ## Safety model
 
-- `app_state` remains available as a temporary compatibility and rollback copy.
-- The first migration stores the source JSON in `app_state_migration_backups` before inserting relational rows.
-- State writes update the relational tables and compatibility JSON in one PostgreSQL transaction.
-- API reads hydrate employees and payroll runs from the relational tables.
-- A failed constraint or insert rolls back the complete write.
+- `app_state` contains version/update metadata only; the legacy `state` JSON column is removed automatically after all startup migrations finish.
+- Startup migration stores the original legacy JSON in `app_state_migration_backups` before inserting relational rows.
+- An explicit developer restore stores the current normalized state in `app_state_restore_snapshots` before replacing any rows. Integration secrets are redacted from that snapshot.
+- API reads and normal writes use the relational tables directly.
+- A failed constraint, snapshot, or insert rolls back the complete transaction.
 
 ## Tables
 
@@ -30,19 +30,21 @@ Company profiles and definitions, accounting journals, application audit history
 - `journal_lines`
 - `application_audit_logs`
 - `integration_configs`
+- `app_state` (version metadata only)
 - `app_state_migration_backups`
+- `app_state_restore_snapshots`
 - `schema_migrations`
 - `normalization_status` (view)
 
 ## Deployment checks
 
-Before deployment, create a PostgreSQL custom-format backup. After deployment, run `scripts/verify-normalized-storage.sql` in pgAdmin. `counts_match` must be true, every payroll `net_total_matches` value must be true, and duplicate employee-number results should be empty.
+Before deployment, create a PostgreSQL custom-format backup. After deployment, run `scripts/verify-normalized-storage.sql` in pgAdmin. `counts_match` verifies that every payroll summary agrees with its normalized items; it must be true. Every payroll `net_total_matches` value must also be true, and duplicate employee-number results should be empty.
 
 Historical operational records whose employee was already deleted are preserved through hidden archived employee references. They are not returned as active employees to the application.
 
-Deleted companies are retained as archived relational references when historical payroll or journal records still depend on them. Qoyod's API key is stored separately in `integration_configs.secret_value` and is redacted from the compatibility state after the next successful write.
+Deleted companies are retained as archived relational references when historical payroll or journal records still depend on them. Qoyod's API key is stored separately in `integration_configs.secret_value` and is never copied into restore snapshots.
 
-Do not delete `app_state` or `app_state_migration_backups` during this transition release.
+Do not delete `app_state`, `app_state_migration_backups`, or `app_state_restore_snapshots`.
 
 ## Concurrent record updates
 
@@ -58,15 +60,15 @@ Server-sent events continue to notify other authenticated sessions, which reload
 the company-filtered result through `GET /api/state`.
 
 `PUT /api/state` remains available only to the developer account for an explicit,
-confirmed backup restore. `app_state` remains a temporary compatibility snapshot
-until the final normalized-read migration and rollback checks are complete.
+confirmed backup restore. Before that operation changes normalized records, the
+server creates a redacted snapshot in `app_state_restore_snapshots` in the same
+transaction.
 
 Normal `GET /api/state` responses and HR lifecycle processing are now assembled
 directly from the normalized tables. They read only version metadata from
 `app_state`; the JSON payload is no longer a source for normal application reads.
-Dedicated record and workflow writes now update only `app_state` version metadata
-after committing their normalized rows; they no longer mirror each saved record
-back into the legacy JSON payload. Employee create/delete, bulk employee archive,
-company archive, and settlement create/reversal now follow the same rule. Only
-the explicit developer restore and startup migration/rollback paths should write
-the legacy JSON payload.
+Dedicated record and workflow writes update only `app_state` version metadata
+after changing their normalized rows. Employee create/delete, bulk employee
+archive, company archive, settlement create/reversal, and explicit restore all
+follow the same rule. The legacy JSON payload is read only during a one-time
+startup migration and its column is then removed.

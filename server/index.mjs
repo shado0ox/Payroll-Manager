@@ -804,7 +804,7 @@ async function hydrateNormalizedStateData(client, rawState) {
 }
 
 // Normal application reads are assembled from normalized PostgreSQL tables.
-// app_state is retained only as temporary write/restore compatibility state.
+// app_state retains only the shared browser-visible version metadata.
 async function readNormalizedApplicationState(client) {
   return hydrateNormalizedStateData(client, {});
 }
@@ -873,6 +873,12 @@ async function migrate() {
     id bigserial PRIMARY KEY, source_version bigint NOT NULL UNIQUE, state jsonb NOT NULL,
     reason text NOT NULL, created_at timestamptz NOT NULL DEFAULT now()
   )`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS ${q('app_state_restore_snapshots')} (
+    id bigserial PRIMARY KEY, source_version bigint NOT NULL, state jsonb NOT NULL,
+    created_by text, reason text NOT NULL, created_at timestamptz NOT NULL DEFAULT now()
+  )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS app_state_restore_snapshots_created_idx
+    ON ${q('app_state_restore_snapshots')}(created_at DESC)`);
   await pool.query(`CREATE TABLE IF NOT EXISTS ${q('schema_migrations')} (
     version text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now()
   )`);
@@ -1170,64 +1176,33 @@ async function migrate() {
 
   await pool.query(`DROP VIEW IF EXISTS ${q('normalization_status')}`);
   await pool.query(`CREATE VIEW ${q('normalization_status')} AS
-    WITH legacy AS (
-      SELECT state,
-        jsonb_array_length(COALESCE(state->'employees','[]'::jsonb)) AS legacy_employees,
-        jsonb_array_length(COALESCE(state->'payrollRuns','[]'::jsonb)) AS legacy_runs,
-        COALESCE((SELECT sum(jsonb_array_length(COALESCE(run->'items','[]'::jsonb)))
-          FROM jsonb_array_elements(COALESCE(state->'payrollRuns','[]'::jsonb)) AS runs(run)),0) AS legacy_items,
-        jsonb_array_length(COALESCE(state->'attendance','[]'::jsonb)) AS legacy_attendance,
-        jsonb_array_length(COALESCE(state->'leaves','[]'::jsonb)) AS legacy_leaves,
-        jsonb_array_length(COALESCE(state->'loans','[]'::jsonb)) AS legacy_loans,
-        jsonb_array_length(COALESCE(state->'penalties','[]'::jsonb)) AS legacy_penalties,
-        jsonb_array_length(COALESCE(state->'temporaryEarnings','[]'::jsonb)) AS legacy_temporary_earnings,
-        jsonb_array_length(COALESCE(state->'payrollSettlements','[]'::jsonb)) AS legacy_payroll_settlements,
-        jsonb_array_length(COALESCE(state->'companies','[]'::jsonb)) AS legacy_companies,
-        COALESCE((SELECT sum(jsonb_array_length(COALESCE(company->'departments','[]'::jsonb)))
-          FROM jsonb_array_elements(COALESCE(state->'companies','[]'::jsonb)) AS companies(company)),0) AS legacy_departments,
-        COALESCE((SELECT sum(jsonb_array_length(COALESCE(company->'costCenters','[]'::jsonb)))
-          FROM jsonb_array_elements(COALESCE(state->'companies','[]'::jsonb)) AS companies(company)),0) AS legacy_cost_centers,
-        COALESCE((SELECT sum(jsonb_array_length(COALESCE(company->'bankDefinitions','[]'::jsonb)))
-          FROM jsonb_array_elements(COALESCE(state->'companies','[]'::jsonb)) AS companies(company)),0) AS legacy_bank_definitions,
-        jsonb_array_length(COALESCE(state->'journals','[]'::jsonb)) AS legacy_journals,
-        COALESCE((SELECT sum(jsonb_array_length(COALESCE(journal->'lines','[]'::jsonb)))
-          FROM jsonb_array_elements(COALESCE(state->'journals','[]'::jsonb)) AS journals(journal)),0) AS legacy_journal_lines,
-        jsonb_array_length(COALESCE(state->'auditLogs','[]'::jsonb)) AS legacy_audit_logs
-      FROM ${q('app_state')} WHERE id=1
-    )
-    SELECT legacy_employees,(SELECT count(*) FROM ${q('employees')} WHERE is_archived=false) AS table_employees,
-      legacy_runs,(SELECT count(*) FROM ${q('payroll_runs')}) AS table_runs,
-      legacy_items,(SELECT count(*) FROM ${q('payroll_run_items')}) AS table_items,
-      legacy_attendance,(SELECT count(*) FROM ${q('attendance_records')}) AS table_attendance,
-      legacy_leaves,(SELECT count(*) FROM ${q('leave_requests')}) AS table_leaves,
-      legacy_loans,(SELECT count(*) FROM ${q('loans')}) AS table_loans,
-      legacy_penalties,(SELECT count(*) FROM ${q('penalties')}) AS table_penalties,
-      legacy_temporary_earnings,(SELECT count(*) FROM ${q('temporary_earnings')}) AS table_temporary_earnings,
-      legacy_payroll_settlements,(SELECT count(*) FROM ${q('payroll_settlements')}) AS table_payroll_settlements,
-      legacy_companies,(SELECT count(*) FROM ${q('companies')} WHERE is_archived=false) AS table_companies,
-      legacy_departments,(SELECT count(*) FROM ${q('company_departments')}) AS table_departments,
-      legacy_cost_centers,(SELECT count(*) FROM ${q('cost_centers')}) AS table_cost_centers,
-      legacy_bank_definitions,(SELECT count(*) FROM ${q('company_bank_definitions')}) AS table_bank_definitions,
-      legacy_journals,(SELECT count(*) FROM ${q('journal_batches')}) AS table_journals,
-      legacy_journal_lines,(SELECT count(*) FROM ${q('journal_lines')}) AS table_journal_lines,
-      legacy_audit_logs,(SELECT count(*) FROM ${q('application_audit_logs')}) AS table_audit_logs,
-      legacy_employees=(SELECT count(*) FROM ${q('employees')} WHERE is_archived=false)
-        AND legacy_runs=(SELECT count(*) FROM ${q('payroll_runs')})
-        AND legacy_items=(SELECT count(*) FROM ${q('payroll_run_items')})
-        AND legacy_attendance=(SELECT count(*) FROM ${q('attendance_records')})
-        AND legacy_leaves=(SELECT count(*) FROM ${q('leave_requests')})
-        AND legacy_loans=(SELECT count(*) FROM ${q('loans')})
-        AND legacy_penalties=(SELECT count(*) FROM ${q('penalties')})
-        AND legacy_temporary_earnings=(SELECT count(*) FROM ${q('temporary_earnings')})
-        AND legacy_payroll_settlements=(SELECT count(*) FROM ${q('payroll_settlements')})
-        AND legacy_companies=(SELECT count(*) FROM ${q('companies')} WHERE is_archived=false)
-        AND legacy_departments=(SELECT count(*) FROM ${q('company_departments')})
-        AND legacy_cost_centers=(SELECT count(*) FROM ${q('cost_centers')})
-        AND legacy_bank_definitions=(SELECT count(*) FROM ${q('company_bank_definitions')})
-        AND legacy_journals=(SELECT count(*) FROM ${q('journal_batches')})
-        AND legacy_journal_lines=(SELECT count(*) FROM ${q('journal_lines')})
-        AND legacy_audit_logs=(SELECT count(*) FROM ${q('application_audit_logs')}) AS counts_match
-    FROM legacy`);
+    SELECT
+      (SELECT count(*) FROM ${q('employees')} WHERE is_archived=false) AS table_employees,
+      (SELECT count(*) FROM ${q('payroll_runs')}) AS table_runs,
+      (SELECT count(*) FROM ${q('payroll_run_items')}) AS table_items,
+      (SELECT count(*) FROM ${q('attendance_records')}) AS table_attendance,
+      (SELECT count(*) FROM ${q('leave_requests')}) AS table_leaves,
+      (SELECT count(*) FROM ${q('loans')}) AS table_loans,
+      (SELECT count(*) FROM ${q('penalties')}) AS table_penalties,
+      (SELECT count(*) FROM ${q('temporary_earnings')}) AS table_temporary_earnings,
+      (SELECT count(*) FROM ${q('payroll_settlements')}) AS table_payroll_settlements,
+      (SELECT count(*) FROM ${q('companies')} WHERE is_archived=false) AS table_companies,
+      (SELECT count(*) FROM ${q('company_departments')}) AS table_departments,
+      (SELECT count(*) FROM ${q('cost_centers')}) AS table_cost_centers,
+      (SELECT count(*) FROM ${q('company_bank_definitions')}) AS table_bank_definitions,
+      (SELECT count(*) FROM ${q('journal_batches')}) AS table_journals,
+      (SELECT count(*) FROM ${q('journal_lines')}) AS table_journal_lines,
+      (SELECT count(*) FROM ${q('application_audit_logs')}) AS table_audit_logs,
+      NOT EXISTS (
+        SELECT 1 FROM ${q('payroll_runs')} run
+        LEFT JOIN LATERAL (
+          SELECT count(*)::integer AS item_count,COALESCE(sum(item.net_salary),0) AS item_net_total
+          FROM ${q('payroll_run_items')} item WHERE item.payroll_run_id=run.id
+        ) totals ON true
+        WHERE run.employees_count <> totals.item_count OR run.total_net_salaries <> totals.item_net_total
+      ) AS counts_match`);
+  await pool.query(`ALTER TABLE ${q('app_state')} DROP COLUMN IF EXISTS state`);
+  await pool.query(`INSERT INTO ${q('app_state')} (id,version) VALUES (1,1) ON CONFLICT (id) DO NOTHING`);
 }
 
 const app = express();
@@ -1748,6 +1723,26 @@ app.get('/api/state', auth, async (req, res, next) => {
 
 // Full-state replacement is reserved for an explicit developer backup restore.
 // Normal UI mutations must use the record-level endpoints below.
+function stateForRestoreSnapshot(rawState) {
+  const snapshot = clone(rawState || {});
+  delete snapshot.currentUser;
+  delete snapshot.users;
+  if (snapshot.qoyodConfig && typeof snapshot.qoyodConfig === 'object') {
+    snapshot.qoyodConfig = {
+      ...snapshot.qoyodConfig,
+      apiKey:'',
+      apiKeyConfigured:Boolean(snapshot.qoyodConfig.apiKey),
+    };
+  }
+  if (snapshot.qoyodConfigsByCompany && typeof snapshot.qoyodConfigsByCompany === 'object') {
+    snapshot.qoyodConfigsByCompany = Object.fromEntries(Object.entries(snapshot.qoyodConfigsByCompany).map(([companyId, config]) => [
+      companyId,
+      { ...(config || {}), apiKey:'', apiKeyConfigured:Boolean(config?.apiKey) },
+    ]));
+  }
+  return snapshot;
+}
+
 app.put('/api/state', auth, writeLimiter, async (req, res, next) => {
   const client = await pool.connect();
   try {
@@ -1759,21 +1754,33 @@ app.put('/api/state', auth, writeLimiter, async (req, res, next) => {
     delete state.currentUser;
     if (Array.isArray(state.users)) state.users = state.users.map(({ password, ...u }) => u);
     await client.query('BEGIN');
-    const current = await client.query(`SELECT state,version FROM ${q('app_state')} WHERE id=1 FOR UPDATE`);
+    const current = await client.query(`SELECT version FROM ${q('app_state')} WHERE id=1 FOR UPDATE`);
     const currentVersion = Number(current.rows[0]?.version || 0);
     if (currentVersion !== expectedVersion) {
       await client.query('ROLLBACK');
       return res.status(409).json({ error:'STATE_CONFLICT_RELOAD_REQUIRED' });
     }
-    const stored = current.rowCount
-      ? await hydrateNormalizedStateData(client, current.rows[0].state)
-      : {};
+    const normalizedStored = await readNormalizedApplicationState(client);
+    const assignedCompanyIds = new Set(Array.isArray(req.user.company_ids) ? req.user.company_ids : []);
+    const requestedCompanyId = String(state.activeCompanyId || '');
+    const activeCompanyId = assignedCompanyIds.has(requestedCompanyId)
+      ? requestedCompanyId
+      : String(req.user.company_ids?.[0] || '');
+    const stored = {
+      ...normalizedStored,
+      activeCompanyId,
+      qoyodConfig: normalizedStored.qoyodConfigsByCompany?.[activeCompanyId] || {},
+    };
+    delete stored.qoyodConfigsByCompany;
     // A redacted key from GET must not erase the existing server-side secret.
     if (stored.qoyodConfig?.apiKey && !state.qoyodConfig?.apiKey) {
       state.qoyodConfig = { ...(state.qoyodConfig || {}), apiKey: stored.qoyodConfig.apiKey };
     }
     delete state.qoyodConfig?.apiKeyConfigured;
     state = mergeStateForUser(stored, state, req.user);
+    await client.query(`INSERT INTO ${q('app_state_restore_snapshots')} (source_version,state,created_by,reason)
+      VALUES ($1,$2::jsonb,$3,'Before explicit developer backup restore')`,
+      [currentVersion, JSON.stringify(stateForRestoreSnapshot(normalizedStored)), req.user.id]);
     await appendPayrollFinancialAudit(client, q, { stored, next:state, user:req.user });
     const tenantCompanyIds = Array.isArray(req.user.company_ids) ? req.user.company_ids : [];
     const scopedState = scopeStateForCompanies(state, tenantCompanyIds);
@@ -1781,20 +1788,11 @@ app.put('/api/state', auth, writeLimiter, async (req, res, next) => {
     await replaceNormalizedPayrollData(tenantClient, scopedState);
     await replaceNormalizedOperationsData(tenantClient, scopedState);
     await replaceNormalizedCoreData(tenantClient, scopedState);
-    const compatibilityState = clone(state);
-    if (compatibilityState.qoyodConfig && typeof compatibilityState.qoyodConfig === 'object') {
-      compatibilityState.qoyodConfig = { ...compatibilityState.qoyodConfig, apiKey:'', apiKeyConfigured:Boolean(state.qoyodConfig?.apiKey) };
-    }
     const r = current.rowCount
-      ? await client.query(`UPDATE ${q('app_state')} SET state=$1::jsonb,version=version+1,updated_by=$2,updated_at=now()
-          WHERE id=1 RETURNING version,updated_at`, [JSON.stringify(compatibilityState), req.user.id])
-      : await client.query(`INSERT INTO ${q('app_state')} (id,state,version,updated_by) VALUES (1,$1::jsonb,1,$2)
-          RETURNING version,updated_at`, [JSON.stringify(compatibilityState), req.user.id]);
-    await client.query(`INSERT INTO ${q('app_state_migration_backups')} (source_version,state,reason)
-      SELECT $1,$2::jsonb,'Normalized storage baseline'
-      WHERE NOT EXISTS (SELECT 1 FROM ${q('app_state_migration_backups')})
-      ON CONFLICT (source_version) DO NOTHING`,
-      [r.rows[0].version, JSON.stringify(compatibilityState)]);
+      ? await client.query(`UPDATE ${q('app_state')} SET version=version+1,updated_by=$1,updated_at=now()
+          WHERE id=1 RETURNING version,updated_at`, [req.user.id])
+      : await client.query(`INSERT INTO ${q('app_state')} (id,version,updated_by) VALUES (1,1,$1)
+          RETURNING version,updated_at`, [req.user.id]);
     await appendStateAudit(client, q, { companyIds:req.user.company_ids, user:req.user, action:'STATE_REPLACE', version:r.rows[0].version });
     await client.query('COMMIT');
     broadcastStateUpdate({ version:r.rows[0].version, updatedBy:req.user.id, updatedAt:r.rows[0].updated_at });

@@ -43,15 +43,12 @@ async function loadState() {
   return body.state;
 }
 
-async function initializeCompatibilityStateIfMissing() {
+async function initializeStateMetadataIfMissing() {
   const pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: false });
   try {
     const existing = await pool.query(`SELECT 1 FROM "${schema}".app_state WHERE id=1`);
     if (!existing.rowCount) {
-      await pool.query(
-        `INSERT INTO "${schema}".app_state (id,state,version) VALUES (1,$1::jsonb,0)`,
-        [JSON.stringify({ companies: [], employees: [], payrollRuns: [], attendance: [], leaves: [], loans: [], penalties: [], temporaryEarnings: [], journals: [], auditLogs: [] })],
-      );
+      await pool.query(`INSERT INTO "${schema}".app_state (id,version) VALUES (1,0)`);
     }
   } finally {
     await pool.end();
@@ -63,7 +60,7 @@ function findRun(state, id) {
 }
 
 await waitForHealth();
-await initializeCompatibilityStateIfMissing();
+await initializeStateMetadataIfMissing();
 
 const login = await request('/api/auth/login', {
   method: 'POST',
