@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { lazy, Suspense, useState, useEffect, useMemo, useRef } from 'react';
 import { 
   Building2, 
   Users, 
@@ -42,27 +42,28 @@ import { Navbar } from './components/Navbar';
 import { hasPermission, isDeveloperAccount, TAB_PERMISSION } from './utils/permissions';
 import { Sidebar } from './components/Sidebar';
 import { LoginView } from './components/LoginView';
-import { UserManagementView } from './components/UserManagementView';
-import { DashboardView } from './components/DashboardView';
-import { EmployeesView } from './components/EmployeesView';
-import { PayrollRunsView } from './components/PayrollRunsView';
-import { PayrollSettlementsView } from './components/PayrollSettlementsView';
-import { AttendanceLeavesView } from './components/AttendanceLeavesView';
-import { LoansPenaltiesView } from './components/LoansPenaltiesView';
-import { AccountingJournalsView } from './components/AccountingJournalsView';
-import { ReportsView } from './components/ReportsView';
-import { SettingsView } from './components/SettingsView';
-import { CompanyProfileView } from './components/CompanyProfileView';
-import { AuditLogsView } from './components/AuditLogsView';
-import { EmployeeStatementModal } from './components/EmployeeStatementModal';
-import { QoyodIntegrationModal } from './components/QoyodIntegrationModal';
-import { DatabaseStatusModal } from './components/DatabaseStatusModal';
 import { DatabaseStatus } from './utils/databaseService';
 import { api } from './utils/api';
 import { WifiOff, Database, CheckCircle2, X } from 'lucide-react';
 import { synchronizeEmployeeBankDetails } from './utils/security';
 import { useLanguage } from './i18n/LanguageContext';
 import { getCurrentPeriod } from './utils/period';
+
+const UserManagementView = lazy(() => import('./components/UserManagementView').then(module => ({ default:module.UserManagementView })));
+const DashboardView = lazy(() => import('./components/DashboardView').then(module => ({ default:module.DashboardView })));
+const EmployeesView = lazy(() => import('./components/EmployeesView').then(module => ({ default:module.EmployeesView })));
+const PayrollRunsView = lazy(() => import('./components/PayrollRunsView').then(module => ({ default:module.PayrollRunsView })));
+const PayrollSettlementsView = lazy(() => import('./components/PayrollSettlementsView').then(module => ({ default:module.PayrollSettlementsView })));
+const AttendanceLeavesView = lazy(() => import('./components/AttendanceLeavesView').then(module => ({ default:module.AttendanceLeavesView })));
+const LoansPenaltiesView = lazy(() => import('./components/LoansPenaltiesView').then(module => ({ default:module.LoansPenaltiesView })));
+const AccountingJournalsView = lazy(() => import('./components/AccountingJournalsView').then(module => ({ default:module.AccountingJournalsView })));
+const ReportsView = lazy(() => import('./components/ReportsView').then(module => ({ default:module.ReportsView })));
+const SettingsView = lazy(() => import('./components/SettingsView').then(module => ({ default:module.SettingsView })));
+const CompanyProfileView = lazy(() => import('./components/CompanyProfileView').then(module => ({ default:module.CompanyProfileView })));
+const AuditLogsView = lazy(() => import('./components/AuditLogsView').then(module => ({ default:module.AuditLogsView })));
+const EmployeeStatementModal = lazy(() => import('./components/EmployeeStatementModal').then(module => ({ default:module.EmployeeStatementModal })));
+const QoyodIntegrationModal = lazy(() => import('./components/QoyodIntegrationModal').then(module => ({ default:module.QoyodIntegrationModal })));
+const DatabaseStatusModal = lazy(() => import('./components/DatabaseStatusModal').then(module => ({ default:module.DatabaseStatusModal })));
 
 const TAB_SESSION_KEY = 'masar_tab_session_v1';
 const LAST_ACTIVITY_KEY = 'masar_last_activity_v1';
@@ -99,6 +100,15 @@ const BuildUpdateBanner = ({ language,onReload }: { language:'ar' | 'en';onReloa
       {language === 'ar' ? 'تحديث الآن' : 'Update now'}
     </button>
   </aside>
+);
+
+const ViewLoadingFallback = ({ language }: { language:'ar' | 'en' }) => (
+  <div className="flex min-h-64 items-center justify-center" role="status" aria-live="polite">
+    <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-bold text-slate-600 shadow-sm">
+      <RefreshCw className="h-4 w-4 animate-spin text-emerald-600" />
+      {language === 'ar' ? 'جاري فتح الشاشة…' : 'Loading view…'}
+    </div>
+  </div>
 );
 
 function isClosedPayrollInputLocked(
@@ -1233,6 +1243,7 @@ export const App: React.FC = () => {
         {/* Scrollable Workspace Content */}
         <div className="flex-1 overflow-y-auto p-6 sm:p-8">
           <div className="max-w-7xl mx-auto w-full">
+            <Suspense fallback={<ViewLoadingFallback language={language} />}>
             {activeTab === 'dashboard' && hasPermission(state.currentUser, 'VIEW_DASHBOARD') && (
               <DashboardView
                 company={activeCompany}
@@ -1401,48 +1412,57 @@ export const App: React.FC = () => {
             {activeTab === 'audit_logs' && hasPermission(state.currentUser, 'VIEW_AUDIT_LOGS') && (
               <AuditLogsView logs={state.auditLogs} />
             )}
+            </Suspense>
           </div>
         </div>
 
       </main>
 
       {/* Printable Employee Statement & Payslip Modal */}
-      <EmployeeStatementModal
-        employee={statementSelection?.employee || null}
-        company={activeCompany}
-        payrollRuns={state.payrollRuns}
-        periodMonth={statementSelection?.periodMonth || getCurrentPeriod(activeCompany.timezone || 'Asia/Riyadh')}
-        settlements={state.payrollSettlements}
-        loans={state.loans}
-        onClose={() => setStatementSelection(null)}
-      />
+      {statementSelection && (
+        <Suspense fallback={null}>
+          <EmployeeStatementModal
+            employee={statementSelection.employee}
+            company={activeCompany}
+            payrollRuns={state.payrollRuns}
+            periodMonth={statementSelection.periodMonth || getCurrentPeriod(activeCompany.timezone || 'Asia/Riyadh')}
+            settlements={state.payrollSettlements}
+            loans={state.loans}
+            onClose={() => setStatementSelection(null)}
+          />
+        </Suspense>
+      )}
 
       {/* Qoyod Accounting Integration Modal */}
       {isQoyodModalOpen && (
-        <QoyodIntegrationModal
-          company={activeCompany}
-          latestRun={latestCompanyRun}
-          journalBatch={qoyodJournalBatch}
-          existingJournal={qoyodJournalBatch ? state.journals.find(journal => journal.id === qoyodJournalBatch.id) : undefined}
-          qoyodConfig={state.qoyodConfig}
-          onSaveConfig={handleSaveQoyodConfig}
-          onJournalSynced={handleSaveJournal}
-          onClose={() => {
-            setIsQoyodModalOpen(false);
-            setQoyodJournalBatch(null);
-          }}
-        />
+        <Suspense fallback={null}>
+          <QoyodIntegrationModal
+            company={activeCompany}
+            latestRun={latestCompanyRun}
+            journalBatch={qoyodJournalBatch}
+            existingJournal={qoyodJournalBatch ? state.journals.find(journal => journal.id === qoyodJournalBatch.id) : undefined}
+            qoyodConfig={state.qoyodConfig}
+            onSaveConfig={handleSaveQoyodConfig}
+            onJournalSynced={handleSaveJournal}
+            onClose={() => {
+              setIsQoyodModalOpen(false);
+              setQoyodJournalBatch(null);
+            }}
+          />
+        </Suspense>
       )}
 
       {/* Database Management & Diagnostics Modal */}
-      {canViewDatabaseTools && (
-        <DatabaseStatusModal
-          isOpen={isDbModalOpen}
-          onClose={() => setIsDbModalOpen(false)}
-          state={state}
-          dbStatus={dbStatus}
-          onRestoreState={handleRestoreState}
-        />
+      {canViewDatabaseTools && isDbModalOpen && (
+        <Suspense fallback={null}>
+          <DatabaseStatusModal
+            isOpen={isDbModalOpen}
+            onClose={() => setIsDbModalOpen(false)}
+            state={state}
+            dbStatus={dbStatus}
+            onRestoreState={handleRestoreState}
+          />
+        </Suspense>
       )}
 
     </div>
