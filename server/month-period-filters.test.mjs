@@ -21,3 +21,11 @@ test('temporary earnings have an inclusive month range filter', () => {
   assert.match(earnings, /value={periodTo}/);
   assert.match(earnings, /filteredEarnings\.map/);
 });
+
+test('loan tab defaults to open schedules and can reveal settled history for review', () => {
+  assert.match(view, /useState<'OPEN' \| 'COMPLETED' \| 'ALL'>\('OPEN'\)/);
+  assert.match(view, /data-loan-visibility-filter/);
+  assert.match(view, /value={loanVisibility}/);
+  assert.match(view, /visibleCompanyLoans\.map/);
+  assert.match(view, /<option value="COMPLETED">/);
+});

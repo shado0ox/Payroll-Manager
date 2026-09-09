@@ -68,6 +68,7 @@ export const LoansPenaltiesView: React.FC<LoansPenaltiesViewProps> = ({
   const [isPenaltyModalOpen, setIsPenaltyModalOpen] = useState(false);
   const [editingLoan, setEditingLoan] = useState<LoanSchedule | null>(null);
   const [editingPenalty, setEditingPenalty] = useState<PenaltyRecord | null>(null);
+  const [loanVisibility, setLoanVisibility] = useState<'OPEN' | 'COMPLETED' | 'ALL'>('OPEN');
   const [penaltyPeriodFrom, setPenaltyPeriodFrom] = useState(currentPeriod);
   const [penaltyPeriodTo, setPenaltyPeriodTo] = useState(currentPeriod);
 
@@ -111,6 +112,13 @@ export const LoansPenaltiesView: React.FC<LoansPenaltiesViewProps> = ({
   const companyPenalties = useMemo(() => {
     return penalties.filter(p => p.companyId === company.id);
   }, [penalties, company.id]);
+
+  const visibleCompanyLoans = useMemo(() => companyLoans.filter(loan => {
+    const completed = loan.status === 'COMPLETED' || Number(loan.remainingAmount || 0) <= 0 || Number(loan.remainingInstallments || 0) <= 0;
+    if (loanVisibility === 'COMPLETED') return completed;
+    if (loanVisibility === 'OPEN') return !completed;
+    return true;
+  }), [companyLoans,loanVisibility]);
 
   const filteredPenalties = useMemo(() => companyPenalties.filter(penalty =>
     penalty.periodMonth >= penaltyPeriodFrom && penalty.periodMonth <= penaltyPeriodTo
@@ -278,7 +286,7 @@ export const LoansPenaltiesView: React.FC<LoansPenaltiesViewProps> = ({
               : 'text-slate-600 hover:bg-slate-100'
           }`}
         >
-          {tr('جدول سلف وأقساط الموظفين', 'Employee loans & installments')} ({companyLoans.length})
+          {tr('جدول سلف وأقساط الموظفين', 'Employee loans & installments')} ({visibleCompanyLoans.length}/{companyLoans.length})
         </button>
 
         <button
@@ -303,6 +311,21 @@ export const LoansPenaltiesView: React.FC<LoansPenaltiesViewProps> = ({
       {/* Loans Table */}
       {activeTab === 'loans' ? (
         <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+          <div data-loan-visibility-filter className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-4 py-3 border-b border-slate-200 bg-slate-50/60">
+            <div>
+              <div className="text-xs font-bold text-slate-700">{tr('عرض السلف', 'Loan display')}</div>
+              <div className="text-[10px] text-slate-500">{tr('السلف المسددة محفوظة ويمكن إظهارها للمراجعة في أي وقت.', 'Settled loans remain saved and can be shown for review at any time.')}</div>
+            </div>
+            <select
+              value={loanVisibility}
+              onChange={event => setLoanVisibility(event.target.value as 'OPEN' | 'COMPLETED' | 'ALL')}
+              className="w-full sm:w-52 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 outline-none focus:border-emerald-500"
+            >
+              <option value="OPEN">{tr('السلف القائمة فقط', 'Open loans only')}</option>
+              <option value="COMPLETED">{tr('المسددة والمنتهية', 'Settled and completed')}</option>
+              <option value="ALL">{tr('جميع السلف', 'All loans')}</option>
+            </select>
+          </div>
           <div className="overflow-x-auto">
             <table className="w-full text-right text-xs">
               <thead>
@@ -319,14 +342,18 @@ export const LoansPenaltiesView: React.FC<LoansPenaltiesViewProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {companyLoans.length === 0 ? (
+                {visibleCompanyLoans.length === 0 ? (
                   <tr>
                     <td colSpan={9} className="py-12 text-center text-slate-400">
-                      {tr('لا توجد سلف مسجلة حالياً', 'No loans recorded')}
+                      {loanVisibility === 'OPEN'
+                        ? tr('لا توجد سلف قائمة حالياً', 'No open loans')
+                        : loanVisibility === 'COMPLETED'
+                          ? tr('لا توجد سلف مسددة أو منتهية', 'No settled or completed loans')
+                          : tr('لا توجد سلف مسجلة حالياً', 'No loans recorded')}
                     </td>
                   </tr>
                 ) : (
-                  companyLoans.map((loan) => {
+                  visibleCompanyLoans.map((loan) => {
                     const emp = companyEmployees.find(e => e.id === loan.employeeId);
                     return (
                       <tr key={loan.id} className="hover:bg-slate-50">
@@ -350,9 +377,13 @@ export const LoansPenaltiesView: React.FC<LoansPenaltiesViewProps> = ({
                             <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-bold border border-emerald-200">
                               {tr('سارية الخصم', 'Active')}
                             </span>
+                          ) : loan.status === 'COMPLETED' || loan.remainingAmount <= 0 || loan.remainingInstallments <= 0 ? (
+                            <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 text-[10px] font-bold border border-blue-200">
+                              {tr('مسددة', 'Settled')}
+                            </span>
                           ) : (
                             <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 text-[10px] font-bold">
-                              {tr('موقوفة / مسددة', 'Paused / settled')}
+                              {tr('موقوفة مؤقتاً', 'Paused')}
                             </span>
                           )}
                         </td>
@@ -380,14 +411,14 @@ export const LoansPenaltiesView: React.FC<LoansPenaltiesViewProps> = ({
                             >
                               {tr('إيقاف مؤقت', 'Pause')}
                             </button>
-                          ) : (
+                          ) : loan.status === 'PAUSED' && loan.remainingAmount > 0 && loan.remainingInstallments > 0 ? (
                             <button
                               onClick={() => onUpdateLoanStatus(loan.id, 'ACTIVE')}
                               className="text-[11px] font-semibold text-emerald-700 hover:text-emerald-800"
                             >
                               {tr('تفعيل الخصم', 'Resume deductions')}
                             </button>
-                          )}
+                          ) : null}
                           </div>
                         </td>
                       </tr>
