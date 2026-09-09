@@ -13,9 +13,12 @@ import {
   Layers,
   Activity
 } from 'lucide-react';
+import { Wrench } from 'lucide-react';
 import { AppState } from '../utils/storage';
 import { DatabaseStatus, pingDatabase, exportDatabaseBackup } from '../utils/databaseService';
 import { useLanguage } from '../i18n/LanguageContext';
+import { api, PayrollRepairIssue } from '../utils/api';
+import { PayrollRun } from '../types';
 
 interface DatabaseStatusModalProps {
   isOpen: boolean;
@@ -23,6 +26,7 @@ interface DatabaseStatusModalProps {
   state: AppState;
   dbStatus: DatabaseStatus;
   onRestoreState: (restoredState: AppState) => Promise<boolean>;
+  onPayrollRunsRepaired: (runs:PayrollRun[]) => void;
 }
 
 export const DatabaseStatusModal: React.FC<DatabaseStatusModalProps> = ({
@@ -31,12 +35,17 @@ export const DatabaseStatusModal: React.FC<DatabaseStatusModalProps> = ({
   state,
   dbStatus,
   onRestoreState,
+  onPayrollRunsRepaired,
 }) => {
   const { language } = useLanguage();
   const tr = (ar: string, en: string) => language === 'ar' ? ar : en;
   const [isPinging, setIsPinging] = useState(false);
   const [isRestoring, setIsRestoring] = useState(false);
   const [pingResult, setPingResult] = useState<{ status: 'HEALTHY' | 'ERROR'; latencyMs: number; message: string } | null>(null);
+  const [repairIssues,setRepairIssues] = useState<PayrollRepairIssue[] | null>(null);
+  const [selectedRepairIds,setSelectedRepairIds] = useState<string[]>([]);
+  const [isScanningRepair,setIsScanningRepair] = useState(false);
+  const [isRepairing,setIsRepairing] = useState(false);
   
   if (!isOpen) return null;
 
@@ -54,6 +63,37 @@ export const DatabaseStatusModal: React.FC<DatabaseStatusModalProps> = ({
   const handleExportBackup = () => {
     exportDatabaseBackup(state);
   };
+
+  const scanPayrollData = async () => {
+    setIsScanningRepair(true);
+    try {
+      const result = await api.scanPayrollData();
+      setRepairIssues(result.issues);
+      setSelectedRepairIds(result.issues.filter(issue => issue.repairable).map(issue => issue.id));
+    } catch (error:any) {
+      alert(`${tr('تعذر فحص بيانات الرواتب:', 'Could not scan payroll data:')} ${error?.message || 'UNKNOWN_ERROR'}`);
+    } finally { setIsScanningRepair(false); }
+  };
+
+  const repairSelectedPayrollData = async () => {
+    if (!selectedRepairIds.length || !confirm(tr(`سيتم إصلاح ${selectedRepairIds.length} مسير قابل للتعديل مع تسجيل العملية. متابعة؟`, `Repair ${selectedRepairIds.length} editable payroll run(s) and audit the operation?`))) return;
+    setIsRepairing(true);
+    try {
+      const result = await api.repairPayrollData(selectedRepairIds);
+      onPayrollRunsRepaired(result.repairedRuns);
+      setRepairIssues(result.remainingIssues);
+      setSelectedRepairIds([]);
+      alert(tr('تم إصلاح البيانات المحددة وتسجيل العملية بنجاح.', 'Selected data was repaired and audited successfully.'));
+    } catch (error:any) {
+      alert(`${tr('تعذر تنفيذ الإصلاح:', 'Repair failed:')} ${error?.message || 'UNKNOWN_ERROR'}`);
+    } finally { setIsRepairing(false); }
+  };
+
+  const repairFindingLabel = (finding:PayrollRepairIssue['findings'][number]) => ({
+    CARRY_FORWARD_MISMATCH:tr('اختلاف في الرصيد المرحّل', 'Carry-forward mismatch'),
+    AUTOMATIC_HOLD_STALE:tr('تعليق آلي منتهي السبب', 'Stale automatic hold'),
+    RUN_TOTAL_MISMATCH:tr('اختلاف في إجماليات المسير', 'Payroll total mismatch'),
+  })[finding];
 
   const handleImportBackup = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -227,6 +267,34 @@ export const DatabaseStatusModal: React.FC<DatabaseStatusModalProps> = ({
             <span>{isRestoring ? tr('جاري الاستعادة...', 'Restoring...') : tr('استعادة نسخة', 'Restore Backup')}</span>
             <input type="file" accept=".json" onChange={handleImportBackup} disabled={isRestoring} className="hidden" />
           </label>
+        </div>
+
+        <div data-payroll-repair-panel className="mb-5 rounded-2xl border border-violet-200 bg-violet-50/50 p-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <h4 className="flex items-center gap-2 text-xs font-black text-violet-900"><Wrench className="w-4 h-4" />{tr('فحص وإصلاح بيانات الرواتب', 'Payroll data scan and repair')}</h4>
+              <p className="mt-1 text-[10px] leading-relaxed text-violet-700">{tr('الفحص لا يغيّر البيانات. الإصلاح متاح للمسيرات القابلة للتعديل فقط ويُسجل في سجل المراجعة.', 'Scanning never changes data. Repair is limited to editable payroll runs and is audit logged.')}</p>
+            </div>
+            <button type="button" disabled={isScanningRepair || isRepairing} onClick={scanPayrollData} className="inline-flex items-center justify-center gap-2 rounded-xl bg-violet-700 px-4 py-2 text-xs font-bold text-white disabled:bg-slate-300">
+              <RefreshCw className={`w-4 h-4 ${isScanningRepair ? 'animate-spin' : ''}`} />
+              {isScanningRepair ? tr('جاري الفحص...', 'Scanning...') : tr('فحص الآن', 'Scan now')}
+            </button>
+          </div>
+          {repairIssues && <div className="mt-4 space-y-2">
+            {repairIssues.length === 0 ? <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-xs font-bold text-emerald-800">{tr('لم يتم اكتشاف اختلافات في المسيرات.', 'No payroll inconsistencies were found.')}</div> : repairIssues.map(issue => (
+              <label key={issue.id} className={`flex items-start gap-3 rounded-xl border p-3 ${issue.repairable ? 'cursor-pointer border-violet-200 bg-white' : 'border-amber-200 bg-amber-50'}`}>
+                <input type="checkbox" disabled={!issue.repairable || isRepairing} checked={selectedRepairIds.includes(issue.id)} onChange={event => setSelectedRepairIds(current => event.target.checked ? [...current,issue.id] : current.filter(id => id !== issue.id))} className="mt-0.5" />
+                <div className="min-w-0 flex-1">
+                  <div className="text-xs font-black text-slate-900">{tr('مسير', 'Payroll')} {issue.periodMonth} · {issue.runId}</div>
+                  <div className="mt-1 flex flex-wrap gap-1">{issue.findings.map(finding => <span key={finding} className="rounded-md bg-violet-100 px-2 py-0.5 text-[10px] font-bold text-violet-800">{repairFindingLabel(finding)}</span>)}</div>
+                  {!issue.repairable && <div className="mt-1 text-[10px] font-bold text-amber-800">{tr('للمراجعة فقط: المسير معتمد أو مرحّل ولا يتم تعديله آليًا.', 'Review only: approved or posted payroll is never auto-modified.')}</div>}
+                </div>
+              </label>
+            ))}
+            {repairIssues.some(issue => issue.repairable) && <button type="button" disabled={!selectedRepairIds.length || isRepairing} onClick={repairSelectedPayrollData} className="mt-2 w-full rounded-xl bg-emerald-600 px-4 py-2.5 text-xs font-black text-white disabled:bg-slate-300">
+              {isRepairing ? tr('جاري الإصلاح...', 'Repairing...') : tr(`إصلاح المحدد (${selectedRepairIds.length})`, `Repair selected (${selectedRepairIds.length})`)}
+            </button>}
+          </div>}
         </div>
 
         {/* Ping Result Display */}

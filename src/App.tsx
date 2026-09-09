@@ -1494,6 +1494,10 @@ export const App: React.FC = () => {
             state={state}
             dbStatus={dbStatus}
             onRestoreState={handleRestoreState}
+            onPayrollRunsRepaired={(runs) => setState(prev => {
+              const repairedById = new Map(runs.map(run => [run.id,run]));
+              return { ...prev,payrollRuns:prev.payrollRuns.map(run => repairedById.get(run.id) || run) };
+            })}
           />
         </Suspense>
       )}
