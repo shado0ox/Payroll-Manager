@@ -16,6 +16,17 @@ export type StateUpdateEvent = {
   connected?:boolean;
   changes?:StateRecordChange[];
 };
+export type PayrollRepairIssue = {
+  id:string;
+  type:'PAYROLL_RUN_INCONSISTENCY';
+  companyId:string;
+  runId:string;
+  periodMonth:string;
+  status:string;
+  findings:Array<'CARRY_FORWARD_MISMATCH' | 'AUTOMATIC_HOLD_STALE' | 'RUN_TOTAL_MISMATCH'>;
+  repairable:boolean;
+  blockedReason:string | null;
+};
 
 class ApiError extends Error {
   constructor(message: string, public status: number) { super(message); this.name = 'ApiError'; }
@@ -290,6 +301,15 @@ export const api = {
     return result;
   },
   health: () => request<{status:string;buildId:string}>('/api/health'),
+  scanPayrollData: () => request<{issues:PayrollRepairIssue[];scannedAt:string}>('/api/admin/payroll-data-repair/scan'),
+  repairPayrollData: async (issueIds:string[]) => {
+    const result = await request<{repairedRuns:PayrollRun[];remainingIssues:PayrollRepairIssue[];version:number;updated_at:string}>('/api/admin/payroll-data-repair/repair', {
+      method:'POST',body:JSON.stringify({ issueIds }),
+    });
+    stateVersion = result.version;
+    for (const run of result.repairedRuns) updateSyncedCollection('payrollRuns',run);
+    return result;
+  },
   version: () => request<{buildId:string}>('/api/version', { headers:{ 'Cache-Control':'no-cache' } }),
   acceptStateEvent: (event: StateUpdateEvent): StateRecordChange[] | null => {
     const incomingVersion = Number(event.version || 0);

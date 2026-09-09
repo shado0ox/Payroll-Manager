@@ -1,0 +1,55 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { buildPayrollRepairPlan } from './payroll-data-repair.mjs';
+
+const employee = { id:'employee-1',companyId:'company-1',status:'ACTIVE',bankIban:'SA0380000000608010167519',bankAccountStatus:'ACTIVE' };
+const item = (id,overrides = {}) => ({ id,employeeId:'employee-1',totalGrossSalary:1000,totalDeductions:100,netSalary:900,
+  totalCompanyBurden:920,priorPeriodGross:0,priorPeriodDeductions:0,priorPeriodNet:0,priorPeriodDetails:[],
+  entitlementStatus:'PAYABLE',...overrides });
+const run = (id,periodMonth,status,runItem,overrides = {}) => ({ id,companyId:'company-1',periodMonth,status,items:[runItem],paymentBatches:[],
+  employeesCount:1,totalGrossSalaries:1000,totalDeductions:100,totalNetSalaries:900,totalCompanyCost:920,...overrides });
+
+test('scan proposes one safe repair for stale carry, totals, and automatic hold', () => {
+  const august = run('august','2026-08','POSTED',item('august-item'),{
+    paymentBatches:[{ id:'paid',status:'PAID',employeeIds:['employee-1'] }],
+  });
+  const september = run('september','2026-09','DRAFT',item('september-item',{
+    priorPeriodGross:1000,priorPeriodDeductions:100,priorPeriodNet:900,
+    priorPeriodDetails:[{ periodMonth:'2026-08',gross:1000,deductions:100,net:900 }],
+    netSalary:1800,totalCompanyBurden:1820,entitlementStatus:'HELD',entitlementReason:'MISSING_BANK_ACCOUNT',
+  }),{ totalGrossSalaries:2000,totalDeductions:200,totalNetSalaries:1800,totalCompanyCost:1820 });
+  const plan = buildPayrollRepairPlan({ employees:[employee],payrollRuns:[august,september] },['company-1']);
+  assert.equal(plan.issues.length,1);
+  assert.deepEqual(plan.issues[0].findings,['CARRY_FORWARD_MISMATCH','AUTOMATIC_HOLD_STALE','RUN_TOTAL_MISMATCH']);
+  const repaired = plan.proposedRuns.get('payroll-run:september');
+  assert.equal(repaired.items[0].priorPeriodNet,0);
+  assert.equal(repaired.items[0].netSalary,900);
+  assert.equal(repaired.items[0].entitlementStatus,'PAYABLE');
+  assert.equal(repaired.totalNetSalaries,900);
+});
+
+test('unpaid salary missing from a later draft is restored but a closed run is report-only', () => {
+  const august = run('august','2026-08','POSTED',item('august-item'));
+  const september = run('september','2026-09','DRAFT',item('september-item'));
+  const october = run('october','2026-10','APPROVED',item('october-item'));
+  const plan = buildPayrollRepairPlan({ employees:[employee],payrollRuns:[august,september,october] },['company-1']);
+  assert.equal(plan.proposedRuns.get('payroll-run:september').items[0].priorPeriodNet,900);
+  assert.equal(plan.issues.find(issue => issue.runId === 'october').repairable,false);
+  assert.equal(plan.issues.find(issue => issue.runId === 'october').blockedReason,'LOCKED_PAYROLL_RUN');
+});
+
+test('active prior-entitlement reservation prevents a false missing-carry repair', () => {
+  const august = run('august','2026-08','POSTED',item('august-item',{ entitlementStatus:'HELD',entitlementReason:'MISSING_BANK_ACCOUNT' }));
+  const september = run('september','2026-09','DRAFT',item('september-item'),{
+    paymentBatches:[{ id:'scheduled',status:'SCHEDULED',employeeIds:['employee-1'],priorEntitlements:[{
+      sourcePayrollRunId:'august',sourcePayrollItemId:'august-item',employeeId:'employee-1',amount:900,
+    }]}],
+  });
+  const bankPendingEmployee = { ...employee,bankIban:'',bankAccountStatus:'PENDING' };
+  assert.equal(buildPayrollRepairPlan({ employees:[bankPendingEmployee],payrollRuns:[august,september] },['company-1']).issues.length,0);
+});
+
+test('company scope excludes unassigned tenant payroll', () => {
+  const foreign = { ...run('foreign','2026-09','DRAFT',item('foreign-item'),{ totalNetSalaries:1 }),companyId:'company-2' };
+  assert.equal(buildPayrollRepairPlan({ employees:[employee],payrollRuns:[foreign] },['company-1']).issues.length,0);
+});
