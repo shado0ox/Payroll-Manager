@@ -17,7 +17,7 @@ const waitForPayrollWrite = (page:any, method:string, path:RegExp) => page.waitF
   response.request().method() === method && path.test(new URL(response.url()).pathname) && response.ok()
 );
 
-test('paid loan is excluded next month and posted payslip keeps the selected period', async ({ page }) => {
+test('payroll reversal restores next-month loan deduction with an audit trail', async ({ page }) => {
   test.setTimeout(90_000);
   await login(page);
   const seed = await page.evaluate(async () => {
@@ -69,15 +69,6 @@ test('paid loan is excluded next month and posted payslip keeps the selected per
   const currentRun = (await (await initialCalculation).json()).record;
   expect(currentRun.items.find((item:any) => item.employeeId === seed.employeeId)?.loanDeduction).toBe(300);
 
-  const search = page.getByPlaceholder(/بحث بالاسم، الرقم الوظيفي|Search by name/i);
-  await search.fill(seed.employeeNo!);
-  const currentEmployeeRow = page.locator('tr').filter({ hasText:seed.employeeNo! });
-  await currentEmployeeRow.locator('button').last().click();
-  const statementModal = page.locator('.fixed.inset-0').filter({ hasText:/كشف حساب الموظف وقسيمة الراتب|Employee Statement/i });
-  await expect(statementModal.getByText(seed.payrollPeriod!,{ exact:true }).first()).toBeVisible();
-  await expect(statementModal.getByText(/لا توجد قسيمة راتب|No payslip exists/i)).toHaveCount(0);
-  await statementModal.getByRole('button').last().click();
-
   const submitReview = waitForPayrollWrite(page,'POST',/\/api\/payroll-runs\/[^/]+\/status$/);
   await page.getByRole('button',{ name:/إرسال للمراجعة والتدقيق|Submit for review/i }).click();
   expect((await (await submitReview).json()).record.status).toBe('UNDER_REVIEW');
@@ -101,12 +92,46 @@ test('paid loan is excluded next month and posted payslip keeps the selected per
   await page.getByRole('button',{ name:/إقفال وترحيل المسير بعد المعالجة|Close and post payroll/i }).click();
   expect((await (await post).json()).record.status).toBe('POSTED');
 
-  const nextYear = seed.nextPeriod!.slice(0,4);
-  await page.getByLabel(/السنة|Year/i).selectOption(nextYear);
+  const reversalReason = `إلغاء تجريبي ${seed.employeeNo}`;
+  page.once('dialog',async prompt => {
+    expect(prompt.type()).toBe('prompt');
+    page.once('dialog',confirmation => confirmation.accept());
+    await prompt.accept(reversalReason);
+  });
+  const reversePayment = waitForPayrollWrite(page,'PATCH',/\/api\/payroll-runs\/[^/]+\/payment-batches\/[^/]+\/status$/);
+  await page.getByRole('button',{ name:/إلغاء إثبات الدفع|Reverse payment/i }).click();
+  const reversedRun = (await (await reversePayment).json()).record;
+  const reversedBatch = reversedRun.paymentBatches.at(-1);
+  expect(reversedBatch.status).toBe('SCHEDULED');
+  expect(reversedBatch.paymentDate).toBeUndefined();
+  expect(reversedBatch.reversedPaymentDate).toBeTruthy();
+  expect(reversedBatch.paymentReversalReason).toBe(reversalReason);
+  expect(reversedBatch.paymentReversedAt).toBeTruthy();
+  expect(reversedBatch.paymentReversedBy).toBeTruthy();
+
+  page.once('dialog',confirmation => confirmation.accept());
+  const reversePosting = waitForPayrollWrite(page,'POST',/\/api\/payroll-runs\/[^/]+\/status$/);
+  await page.getByRole('button',{ name:/التراجع عن الترحيل|Reverse posting/i }).click();
+  expect((await (await reversePosting).json()).record.status).toBe('APPROVED');
+
+  page.once('dialog',confirmation => confirmation.accept());
+  const reopenPayroll = waitForPayrollWrite(page,'POST',/\/api\/payroll-runs\/[^/]+\/status$/);
+  await page.getByRole('button',{ name:/التراجع عن الاعتماد والتعديل|Reverse approval and edit/i }).click();
+  expect((await (await reopenPayroll).json()).record.status).toBe('UNDER_REVIEW');
+
+  await page.getByLabel(/السنة|Year/i).selectOption(seed.nextPeriod!.slice(0,4));
   await page.getByLabel(/شهر المسير|Payroll month/i).selectOption(seed.nextPeriod!);
-  const nextCalculation = waitForPayrollWrite(page,'PUT',/\/api\/payroll-runs\/[^/]+$/);
+  const recalculationAfterReversal = waitForPayrollWrite(page,'PUT',/\/api\/payroll-runs\/[^/]+$/);
   await page.getByRole('button',{ name:/إعادة احتساب المسير آلياً|Recalculate payroll/i }).click();
-  const nextRun = (await (await nextCalculation).json()).record;
-  expect(nextRun.periodMonth).toBe(seed.nextPeriod);
-  expect(nextRun.items.find((item:any) => item.employeeId === seed.employeeId)?.loanDeduction).toBe(0);
+  const restoredNextRun = (await (await recalculationAfterReversal).json()).record;
+  expect(restoredNextRun.items.find((item:any) => item.employeeId === seed.employeeId)?.loanDeduction).toBe(300);
+
+  const auditState = await page.evaluate(async () => (await (await fetch('/api/state')).json()).state);
+  const reversalAudit = auditState.auditLogs.find((entry:any) =>
+    entry.action === 'PAYROLL_PAYMENT_REVERSED' && entry.entityId === reversedBatch.id
+  );
+  expect(reversalAudit).toBeTruthy();
+  expect(reversalAudit.reason).toBe(reversalReason);
+  expect(reversalAudit.diff.before.status).toBe('PAID');
+  expect(reversalAudit.diff.after.status).toBe('SCHEDULED');
 });

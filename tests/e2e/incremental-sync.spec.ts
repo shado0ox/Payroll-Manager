@@ -48,7 +48,7 @@ test('a record saved in one tab reaches another without reloading full state', a
 
   expect(result.ok,JSON.stringify(result.body)).toBe(true);
   await observer.getByTestId('nav-employees').click();
-  await expect(observer.getByText(result.employeeName,{ exact:true })).toBeVisible();
+  await expect(observer.locator('tbody').getByText(result.employeeName,{ exact:true })).toBeVisible();
   expect(fullStateReads).toBe(0);
 
   await observer.getByTestId('nav-loans_penalties').click();
