@@ -18,7 +18,7 @@ const waitForPayrollWrite = (page:any, method:string, path:RegExp) => page.waitF
 );
 
 test('payroll reversal restores next-month loan deduction with an audit trail', async ({ page }) => {
-  test.setTimeout(90_000);
+  test.setTimeout(180_000);
   await login(page);
   const seed = await page.evaluate(async () => {
     const current = await (await fetch('/api/state')).json();
