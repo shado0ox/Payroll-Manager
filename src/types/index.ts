@@ -363,6 +363,7 @@ export interface PayrollRunItem {
   entitlementReason?: string;
   entitlementDocumentRef?: string;
   entitlementUpdatedAt?: string;
+  entitlementHoldSource?: 'MISSING_BANK_ACCOUNT' | 'EMPLOYEE_SUSPENSION' | 'MANUAL';
 
   // Flags & Warnings
   isSuspended: boolean;

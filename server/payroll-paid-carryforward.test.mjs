@@ -52,6 +52,26 @@ test('a released employee is no longer held in the later draft payroll', () => {
   assert.equal(result.items[0].isSuspended,false);
 });
 
+test('a legacy suspension hold is released by matching the saved employee suspension reason', () => {
+  const legacyItem = carriedItem({ isSuspended:false,entitlementReason:'إيقاف مؤقت للموظف' });
+  const [result] = reconcilePaidPayrollCarryForward({
+    runs:[futureRun(legacyItem)],employees:[{ ...readyEmployee,status:'ACTIVE',suspensionReason:'إيقاف مؤقت للموظف' }],sourceRun,
+    paidBatch:{ employeeIds:['employee-1'] },
+  });
+  assert.equal(result.items[0].entitlementStatus,'PAYABLE');
+  assert.equal(result.items[0].entitlementReason,undefined);
+});
+
+test('an explicitly manual hold is never inferred as an automatic suspension hold', () => {
+  const manualItem = carriedItem({ isSuspended:false,entitlementReason:'مراجعة يدوية',entitlementHoldSource:'MANUAL' });
+  const [result] = reconcilePaidPayrollCarryForward({
+    runs:[futureRun(manualItem)],employees:[{ ...readyEmployee,status:'ACTIVE',suspensionReason:'سبب مختلف' }],sourceRun,
+    paidBatch:{ employeeIds:['employee-1'] },
+  });
+  assert.equal(result.items[0].entitlementStatus,'HELD');
+  assert.equal(result.items[0].entitlementHoldSource,'MANUAL');
+});
+
 test('paid, reserved, and closed future payroll records are not mutated', () => {
   const reserved = futureRun(carriedItem(), { paymentBatches:[{ status:'SCHEDULED',employeeIds:['employee-1'] }] });
   const approved = futureRun(carriedItem(), { id:'approved-september',status:'APPROVED' });

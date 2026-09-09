@@ -184,7 +184,7 @@ const payrollItemPaymentLockCore = (item) => {
     totalCompanyBurden:number(item.totalCompanyBurden), saudiGosiPaymentMode:text(item.saudiGosiPaymentMode),
     manualAddition:number(item.manualAddition), manualDeduction:number(item.manualDeduction), adjustmentNotes:text(item.adjustmentNotes),
     entitlementStatus:text(item.entitlementStatus || 'PAYABLE'), entitlementReason:text(item.entitlementReason),
-    entitlementDocumentRef:text(item.entitlementDocumentRef), isSuspended:Boolean(item.isSuspended),
+    entitlementDocumentRef:text(item.entitlementDocumentRef), entitlementHoldSource:text(item.entitlementHoldSource), isSuspended:Boolean(item.isSuspended),
     priorPeriodGross:number(item.priorPeriodGross), priorPeriodDeductions:number(item.priorPeriodDeductions), priorPeriodNet:number(item.priorPeriodNet),
     priorPeriodDetails:asArray(item.priorPeriodDetails).map(row => ({
       periodMonth:text(row?.periodMonth), gross:number(row?.gross), deductions:number(row?.deductions), net:number(row?.net)
