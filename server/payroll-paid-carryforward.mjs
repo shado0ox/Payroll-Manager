@@ -42,7 +42,10 @@ export function reconcilePaidPayrollCarryForward({ runs, employees, sourceRun, p
         && item.entitlementReason === 'MISSING_BANK_ACCOUNT'
         && hasReadyBankAccount(employee);
       const releaseAutomaticSuspensionHold = item.entitlementStatus === 'HELD'
-        && item.isSuspended === true
+        && item.entitlementHoldSource !== 'MANUAL'
+        && (item.isSuspended === true
+          || item.entitlementHoldSource === 'EMPLOYEE_SUSPENSION'
+          || (Boolean(employee?.suspensionReason?.trim()) && item.entitlementReason === employee.suspensionReason.trim()))
         && employee?.status !== 'SUSPENDED';
       const releaseAutomaticHold = releaseAutomaticBankHold || releaseAutomaticSuspensionHold;
       if (!removedDetails.length && !releaseAutomaticHold) return item;
@@ -65,6 +68,7 @@ export function reconcilePaidPayrollCarryForward({ runs, employees, sourceRun, p
         next.isSuspended = false;
         delete next.entitlementReason;
         delete next.entitlementDocumentRef;
+        delete next.entitlementHoldSource;
         next.entitlementUpdatedAt = now;
       }
       return next;
