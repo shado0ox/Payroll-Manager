@@ -53,3 +53,27 @@ test('company scope excludes unassigned tenant payroll', () => {
   const foreign = { ...run('foreign','2026-09','DRAFT',item('foreign-item'),{ totalNetSalaries:1 }),companyId:'company-2' };
   assert.equal(buildPayrollRepairPlan({ employees:[employee],payrollRuns:[foreign] },['company-1']).issues.length,0);
 });
+
+test('scan repairs a legacy released suspension hold by matching its reason', () => {
+  const releasedEmployee = { ...employee,status:'ACTIVE',suspensionReason:'تعليق قديم' };
+  const september = run('september','2026-09','DRAFT',item('september-item',{
+    entitlementStatus:'HELD',entitlementReason:'تعليق قديم',isSuspended:false,
+  }));
+  const plan = buildPayrollRepairPlan({ employees:[releasedEmployee],payrollRuns:[september] },['company-1']);
+  const repaired = plan.proposedRuns.get('payroll-run:september');
+  assert.deepEqual(plan.issues[0].findings,['AUTOMATIC_HOLD_STALE']);
+  assert.equal(repaired.items[0].entitlementStatus,'PAYABLE');
+});
+
+test('selected repair releases an unmarked legacy hold after an earlier salary was paid', () => {
+  const august = run('august','2026-08','POSTED',item('august-item'),{
+    paymentBatches:[{ id:'paid-august',status:'PAID',employeeIds:['employee-1'] }],
+  });
+  const september = run('september','2026-09','DRAFT',item('september-item',{
+    entitlementStatus:'HELD',entitlementReason:'تعليق قديم غير مصنف',isSuspended:false,
+  }));
+  const plan = buildPayrollRepairPlan({ employees:[employee],payrollRuns:[august,september] },['company-1']);
+  const repaired = plan.proposedRuns.get('payroll-run:september');
+  assert.ok(plan.issues.find(issue => issue.runId === 'september')?.findings.includes('AUTOMATIC_HOLD_STALE'));
+  assert.equal(repaired.items[0].entitlementStatus,'PAYABLE');
+});

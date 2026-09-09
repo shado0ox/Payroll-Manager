@@ -76,12 +76,26 @@ export function buildPayrollRepairPlan(state,companyIds = []) {
       }
       const employee = employeesById.get(originalItem.employeeId);
       const staleBankHold = item.entitlementStatus === 'HELD' && item.entitlementReason === 'MISSING_BANK_ACCOUNT' && validReadyBank(employee);
-      const staleSuspensionHold = item.entitlementStatus === 'HELD' && item.isSuspended === true && employee?.status !== 'SUSPENDED';
-      if (staleBankHold || staleSuspensionHold) {
+      const earlierSalaryWasPaid = runs.some(sourceRun => sourceRun.companyId === originalRun.companyId
+        && sourceRun.periodMonth < originalRun.periodMonth
+        && asArray(sourceRun.paymentBatches).some(batch => batch.status === 'PAID' && asArray(batch.employeeIds).includes(originalItem.employeeId)));
+      const legacyPaidHold = item.entitlementStatus === 'HELD'
+        && !item.entitlementHoldSource
+        && employee?.status !== 'SUSPENDED'
+        && validReadyBank(employee)
+        && earlierSalaryWasPaid;
+      const staleSuspensionHold = item.entitlementStatus === 'HELD'
+        && item.entitlementHoldSource !== 'MANUAL'
+        && (item.isSuspended === true
+          || item.entitlementHoldSource === 'EMPLOYEE_SUSPENSION'
+          || (Boolean(employee?.suspensionReason?.trim()) && item.entitlementReason === employee.suspensionReason.trim()))
+        && employee?.status !== 'SUSPENDED';
+      if (staleBankHold || staleSuspensionHold || legacyPaidHold) {
         holdChanged = true;
         item = { ...item,entitlementStatus:'PAYABLE',isSuspended:false,entitlementUpdatedAt:new Date().toISOString() };
         delete item.entitlementReason;
         delete item.entitlementDocumentRef;
+        delete item.entitlementHoldSource;
       }
       return item;
     });

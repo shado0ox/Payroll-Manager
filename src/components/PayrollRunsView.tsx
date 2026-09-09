@@ -362,6 +362,7 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
       entitlementStatus: status,
       entitlementReason: status === 'PAYABLE' ? undefined : reason,
       entitlementDocumentRef: ['SETTLED', 'CANCELLED_WITH_DOCUMENT'].includes(status) ? documentRef : undefined,
+      entitlementHoldSource: status === 'HELD' ? 'MANUAL' : undefined,
       entitlementUpdatedAt: new Date().toISOString(),
     } : current);
     setSelectedPaymentEmployeeIds(selected => selected.filter(id => id !== item.employeeId));
@@ -611,7 +612,10 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
           && previousItem.entitlementReason === 'MISSING_BANK_ACCOUNT'
           && hasReadyBankAccount;
         const shouldReleaseSuspensionHold = previousItem?.entitlementStatus === 'HELD'
-          && previousItem.isSuspended === true
+          && previousItem.entitlementHoldSource !== 'MANUAL'
+          && (previousItem.isSuspended === true
+            || previousItem.entitlementHoldSource === 'EMPLOYEE_SUSPENSION'
+            || (Boolean(emp.suspensionReason?.trim()) && previousItem.entitlementReason === emp.suspensionReason?.trim()))
           && !calculated.isSuspended;
         const shouldReleaseAutomaticHold = shouldReleaseMissingBankHold || shouldReleaseSuspensionHold;
         const missingBankHold = !hasReadyBankAccount && previousEntitlementStatus === 'PAYABLE';
@@ -627,6 +631,9 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
             ? automaticHoldReason
             : (shouldReleaseAutomaticHold ? undefined : previousItem.entitlementReason),
           entitlementDocumentRef: shouldReleaseAutomaticHold ? undefined : previousItem.entitlementDocumentRef,
+          entitlementHoldSource: shouldApplyAutomaticHold
+            ? (missingBankHold ? 'MISSING_BANK_ACCOUNT' : 'EMPLOYEE_SUSPENSION')
+            : (shouldReleaseAutomaticHold ? undefined : previousItem.entitlementHoldSource),
           entitlementUpdatedAt: (shouldApplyAutomaticHold || shouldReleaseAutomaticHold) ? new Date().toISOString() : previousItem.entitlementUpdatedAt,
         } : (!hasReadyBankAccount || calculated.isSuspended) ? {
           ...calculated,
@@ -634,6 +641,7 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
           entitlementReason: !hasReadyBankAccount
             ? 'MISSING_BANK_ACCOUNT'
             : (emp.suspensionReason?.trim() || tr('تعليق تلقائي من ملف الموظف', 'Automatically held from employee profile')),
+          entitlementHoldSource: !hasReadyBankAccount ? 'MISSING_BANK_ACCOUNT' : 'EMPLOYEE_SUSPENSION',
           entitlementUpdatedAt: new Date().toISOString(),
         } : calculated;
       });
