@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { reconcilePaidPayrollCarryForward } from './payroll-paid-carryforward.mjs';
+import { reconcilePaidPayrollCarryForward, reconcileReleasedPayrollCarryForward } from './payroll-paid-carryforward.mjs';
 
 const readyEmployee = { id:'employee-1',bankIban:'SA0380000000608010167519',bankAccountStatus:'ACTIVE' };
 const sourceRun = { id:'august',companyId:'company-1',periodMonth:'2026-08' };
@@ -59,4 +59,37 @@ test('paid, reserved, and closed future payroll records are not mutated', () => 
     runs:[reserved,approved],employees:[readyEmployee],sourceRun,paidBatch:{ employeeIds:['employee-1'] },
   });
   assert.deepEqual(result,[]);
+});
+
+test('cancelling the released batch restores its salary carry exactly once', () => {
+  const paidSource = {
+    ...sourceRun,
+    items:[{ employeeId:'employee-1',totalGrossSalary:500,totalDeductions:100,netSalary:400,priorPeriodNet:0 }],
+  };
+  const cleanFuture = futureRun(carriedItem({
+    entitlementStatus:'PAYABLE',entitlementReason:undefined,priorPeriodGross:0,priorPeriodDeductions:0,priorPeriodNet:0,
+    priorPeriodDetails:[],netSalary:1000,totalCompanyBurden:1020,
+  }),{ totalGrossSalaries:1000,totalDeductions:0,totalNetSalaries:1000,totalCompanyCost:1020 });
+  const [restored] = reconcileReleasedPayrollCarryForward({
+    runs:[paidSource,cleanFuture],sourceRun:paidSource,releasedBatch:{ employeeIds:['employee-1'] },
+  });
+  assert.deepEqual(restored.items[0].priorPeriodDetails,[{ periodMonth:'2026-08',gross:500,deductions:100,net:400 }]);
+  assert.equal(restored.items[0].netSalary,1400);
+  assert.equal(restored.totalGrossSalaries,1500);
+  assert.equal(restored.totalDeductions,100);
+  assert.equal(restored.totalNetSalaries,1400);
+  assert.equal(restored.totalCompanyCost,1420);
+  assert.deepEqual(reconcileReleasedPayrollCarryForward({
+    runs:[paidSource,restored],sourceRun:paidSource,releasedBatch:{ employeeIds:['employee-1'] },
+  }),[]);
+});
+
+test('a released batch does not alter locked or closed later payroll', () => {
+  const paidSource = { ...sourceRun,items:[{ employeeId:'employee-1',totalGrossSalary:500,totalDeductions:100,netSalary:400 }] };
+  const cleanItem = carriedItem({ priorPeriodDetails:[],priorPeriodNet:0 });
+  const reserved = futureRun(cleanItem,{ paymentBatches:[{ status:'PAID',employeeIds:['employee-1'] }] });
+  const posted = futureRun(cleanItem,{ id:'posted-september',status:'POSTED' });
+  assert.deepEqual(reconcileReleasedPayrollCarryForward({
+    runs:[paidSource,reserved,posted],sourceRun:paidSource,releasedBatch:{ employeeIds:['employee-1'] },
+  }),[]);
 });
