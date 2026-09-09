@@ -81,3 +81,70 @@ export function reconcilePaidPayrollCarryForward({ runs, employees, sourceRun, p
   }
   return affectedRuns;
 }
+
+const sourceCarryDetails = (runs,sourceRun,employeeId) => {
+  const sourceItem = asArray(sourceRun?.items).find(item => String(item.employeeId || '') === employeeId);
+  if (!sourceItem) return [];
+  const byPeriod = new Map();
+  for (const detail of asArray(sourceItem.priorPeriodDetails)) {
+    if (!detail?.periodMonth) continue;
+    byPeriod.set(String(detail.periodMonth),{
+      periodMonth:String(detail.periodMonth),gross:roundAmount(detail.gross),deductions:roundAmount(detail.deductions),net:roundAmount(detail.net),
+    });
+  }
+  const currentNet = roundAmount(Number(sourceItem.netSalary || 0) - Number(sourceItem.priorPeriodNet || 0));
+  if (currentNet > 0) byPeriod.set(String(sourceRun.periodMonth),{
+    periodMonth:String(sourceRun.periodMonth),gross:roundAmount(sourceItem.totalGrossSalary),
+    deductions:roundAmount(sourceItem.totalDeductions),net:currentNet,
+  });
+  return [...byPeriod.values()];
+};
+
+/** Restores released salary reservations to later editable runs after a batch fails or is cancelled. */
+export function reconcileReleasedPayrollCarryForward({ runs, sourceRun, releasedBatch }) {
+  const employeeIds = new Set(asArray(releasedBatch?.employeeIds).map(String));
+  if (!sourceRun?.periodMonth || !employeeIds.size) return [];
+  const affectedRuns = [];
+  for (const run of asArray(runs)) {
+    if (run.id === sourceRun.id || run.companyId !== sourceRun.companyId || run.periodMonth <= sourceRun.periodMonth) continue;
+    if (!['DRAFT','UNDER_REVIEW'].includes(String(run.status || 'DRAFT'))) continue;
+    let addedGross = 0;
+    let addedDeductions = 0;
+    let addedNet = 0;
+    let changed = false;
+    const items = asArray(run.items).map(item => {
+      const employeeId = String(item.employeeId || '');
+      if (!employeeIds.has(employeeId) || employeeIsPaymentLocked(run,employeeId)) return item;
+      const existingPeriods = new Set(asArray(item.priorPeriodDetails).map(detail => String(detail?.periodMonth || '')));
+      const detailsToAdd = sourceCarryDetails(runs,sourceRun,employeeId)
+        .filter(detail => detail.periodMonth < run.periodMonth && !existingPeriods.has(detail.periodMonth));
+      if (!detailsToAdd.length) return item;
+      const itemAddedGross = roundAmount(detailsToAdd.reduce((sum,detail) => sum + detail.gross,0));
+      const itemAddedDeductions = roundAmount(detailsToAdd.reduce((sum,detail) => sum + detail.deductions,0));
+      const itemAddedNet = roundAmount(detailsToAdd.reduce((sum,detail) => sum + detail.net,0));
+      if (!(itemAddedNet > 0)) return item;
+      changed = true;
+      addedGross = roundAmount(addedGross + itemAddedGross);
+      addedDeductions = roundAmount(addedDeductions + itemAddedDeductions);
+      addedNet = roundAmount(addedNet + itemAddedNet);
+      return {
+        ...item,
+        priorPeriodGross:roundAmount(Number(item.priorPeriodGross || 0) + itemAddedGross),
+        priorPeriodDeductions:roundAmount(Number(item.priorPeriodDeductions || 0) + itemAddedDeductions),
+        priorPeriodNet:roundAmount(Number(item.priorPeriodNet || 0) + itemAddedNet),
+        priorPeriodDetails:[...asArray(item.priorPeriodDetails),...detailsToAdd].sort((a,b) => a.periodMonth.localeCompare(b.periodMonth)),
+        netSalary:roundAmount(Number(item.netSalary || 0) + itemAddedNet),
+        totalCompanyBurden:roundAmount(Number(item.totalCompanyBurden || 0) + itemAddedNet),
+      };
+    });
+    if (!changed) continue;
+    affectedRuns.push({
+      ...run,items,
+      totalGrossSalaries:roundAmount(Number(run.totalGrossSalaries || 0) + addedGross),
+      totalDeductions:roundAmount(Number(run.totalDeductions || 0) + addedDeductions),
+      totalNetSalaries:roundAmount(Number(run.totalNetSalaries || 0) + addedNet),
+      totalCompanyCost:roundAmount(Number(run.totalCompanyCost || 0) + addedNet),
+    });
+  }
+  return affectedRuns;
+}

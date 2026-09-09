@@ -11,7 +11,7 @@ import pg from 'pg';
 import { createTenantScopedClient, scopeStateForCompanies } from './tenant-storage.mjs';
 import { appendStateAudit } from './state-audit.mjs';
 import { appendPayrollFinancialAudit } from './payroll-financial-audit.mjs';
-import { reconcilePaidPayrollCarryForward } from './payroll-paid-carryforward.mjs';
+import { reconcilePaidPayrollCarryForward, reconcileReleasedPayrollCarryForward } from './payroll-paid-carryforward.mjs';
 
 const { Pool } = pg;
 const port = Number(process.env.PORT || 3000);
@@ -2636,7 +2636,9 @@ app.patch('/api/payroll-runs/:id/payment-batches/:batchId/status', auth, writeLi
     const record = { ...previous,paymentBatches:asArray(previous.paymentBatches).map(item => item.id === nextBatch.id ? nextBatch : item) };
     const affectedPayrollRuns = oldBatch.status === 'SCHEDULED' && status === 'PAID'
       ? reconcilePaidPayrollCarryForward({ runs:stored.payrollRuns,employees:stored.employees,sourceRun:record,paidBatch:nextBatch })
-      : [];
+      : oldBatch.status === 'SCHEDULED' && ['CANCELLED','FAILED'].includes(status)
+        ? reconcileReleasedPayrollCarryForward({ runs:stored.payrollRuns,sourceRun:record,releasedBatch:nextBatch })
+        : [];
     const affectedById = new Map(affectedPayrollRuns.map(item => [item.id,item]));
     const nextRuns = asArray(stored.payrollRuns).map(item => item.id === record.id ? record : (affectedById.get(item.id) || item));
     validatePayrollWorkflowChanges(stored.payrollRuns,nextRuns,req.user);
