@@ -11,6 +11,7 @@ import pg from 'pg';
 import { createTenantScopedClient, scopeStateForCompanies } from './tenant-storage.mjs';
 import { appendStateAudit } from './state-audit.mjs';
 import { appendPayrollFinancialAudit } from './payroll-financial-audit.mjs';
+import { reconcilePaidPayrollCarryForward } from './payroll-paid-carryforward.mjs';
 
 const { Pool } = pg;
 const port = Number(process.env.PORT || 3000);
@@ -2511,13 +2512,33 @@ app.delete('/api/temporary-earnings/:id', auth, writeLimiter, async (req, res, n
   } finally { client.release(); }
 });
 
-async function commitPayrollCommandState(client, stored, record, user, action) {
-  const nextRuns = asArray(stored.payrollRuns).map(item => item.id === record.id ? record : item);
+async function commitPayrollCommandState(client, stored, record, user, action, affectedRecords = []) {
+  const recordsById = new Map([record,...affectedRecords].map(item => [item.id,item]));
+  const nextRuns = asArray(stored.payrollRuns).map(item => recordsById.get(item.id) || item);
   const nextState = { ...stored,payrollRuns:nextRuns };
   await appendPayrollFinancialAudit(client,q,{ stored,next:nextState,user });
   const updated = await bumpStateVersion(client,user.id);
   await appendStateAudit(client,q,{ companyIds:user.company_ids,user,action,version:updated.rows[0].version });
   return updated;
+}
+
+async function persistReconciledPayrollRun(client, run) {
+  const runPayload = clone(run);
+  delete runPayload.items;
+  delete runPayload.paymentBatches;
+  await client.query(`UPDATE ${q('payroll_runs')} SET employees_count=$2,total_gross_salaries=$3,total_deductions=$4,
+    total_net_salaries=$5,total_company_cost=$6,payload=$7::jsonb,updated_at=now() WHERE id=$1`, [
+    run.id,Number(run.employeesCount || asArray(run.items).length),Number(run.totalGrossSalaries || 0),
+    Number(run.totalDeductions || 0),Number(run.totalNetSalaries || 0),Number(run.totalCompanyCost || 0),JSON.stringify(runPayload),
+  ]);
+  for (const item of asArray(run.items)) {
+    await client.query(`UPDATE ${q('payroll_run_items')} SET entitlement_status=$3,entitlement_reason=NULLIF($4,''),
+      total_gross_salary=$5,total_deductions=$6,net_salary=$7,payload=$8::jsonb,updated_at=now()
+      WHERE payroll_run_id=$1 AND id=$2`, [
+      run.id,item.id,item.entitlementStatus || 'PAYABLE',item.entitlementReason || '',Number(item.totalGrossSalary || 0),
+      Number(item.totalDeductions || 0),Number(item.netSalary || 0),JSON.stringify(item),
+    ]);
+  }
 }
 
 app.post('/api/payroll-runs/:id/status', auth, writeLimiter, async (req, res, next) => {
@@ -2613,17 +2634,22 @@ app.patch('/api/payroll-runs/:id/payment-batches/:batchId/status', auth, writeLi
       nextBatch = { ...nextBatch,reversedPaymentDate:oldBatch.paymentDate,paymentDate:undefined,paymentReversalReason:String(req.body?.paymentReversalReason || '').trim() };
     }
     const record = { ...previous,paymentBatches:asArray(previous.paymentBatches).map(item => item.id === nextBatch.id ? nextBatch : item) };
-    const nextRuns = asArray(stored.payrollRuns).map(item => item.id === record.id ? record : item);
+    const affectedPayrollRuns = oldBatch.status === 'SCHEDULED' && status === 'PAID'
+      ? reconcilePaidPayrollCarryForward({ runs:stored.payrollRuns,employees:stored.employees,sourceRun:record,paidBatch:nextBatch })
+      : [];
+    const affectedById = new Map(affectedPayrollRuns.map(item => [item.id,item]));
+    const nextRuns = asArray(stored.payrollRuns).map(item => item.id === record.id ? record : (affectedById.get(item.id) || item));
     validatePayrollWorkflowChanges(stored.payrollRuns,nextRuns,req.user);
     validatePayrollCarryForwardState(stored.payrollRuns,nextRuns);
     nextBatch = record.paymentBatches.find(item => item.id === nextBatch.id);
     const payload = clone(nextBatch); delete payload.employeeIds;
     await client.query(`UPDATE ${q('payroll_payment_batches')} SET status=$3,payment_date=NULLIF($4,'')::date,payload=$5::jsonb,updated_at=now() WHERE id=$1 AND payroll_run_id=$2`, [nextBatch.id,previous.id,nextBatch.status,nextBatch.paymentDate || '',JSON.stringify(payload)]);
-    const updated = await commitPayrollCommandState(client,stored,record,req.user,'PAYMENT_BATCH_STATUS_TRANSITION');
+    for (const affectedRun of affectedPayrollRuns) await persistReconciledPayrollRun(client,affectedRun);
+    const updated = await commitPayrollCommandState(client,stored,record,req.user,'PAYMENT_BATCH_STATUS_TRANSITION',affectedPayrollRuns);
     await client.query('COMMIT');
     broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at,
-      companyIds:[record.companyId],changes:[{ collection:'payrollRuns',operation:'upsert',records:[record] }] });
-    res.json({ record,created:false,version:Number(updated.rows[0].version),updated_at:updated.rows[0].updated_at });
+      companyIds:[record.companyId],changes:[{ collection:'payrollRuns',operation:'upsert',records:[record,...affectedPayrollRuns] }] });
+    res.json({ record,affectedPayrollRuns,created:false,version:Number(updated.rows[0].version),updated_at:updated.rows[0].updated_at });
   } catch (e) {
     try { await client.query('ROLLBACK'); } catch {}
     if (Number.isInteger(e?.status) && e.status >= 400 && e.status < 500) return res.status(e.status).json({ error:e.message });

@@ -252,7 +252,7 @@ export const api = {
   savePayrollRun: async (record: any) => {
     const previous = Array.isArray(syncedState?.payrollRuns) ? syncedState!.payrollRuns.find((item:any) => item?.id === record.id) : null;
     const command = classifyPayrollCommand(previous,record);
-    let result;
+    let result: { record:any;affectedPayrollRuns?:any[];created:boolean;version:number;updated_at:string };
     if (command.kind === 'status') {
       result = await request<{record:any;created:boolean;version:number;updated_at:string}>(`/api/payroll-runs/${encodeURIComponent(record.id)}/status`, { method:'POST',body:JSON.stringify({ status:record.status }) });
     } else if (command.kind === 'createBatch') {
@@ -264,6 +264,7 @@ export const api = {
     }
     stateVersion = result.version;
     updateSyncedCollection('payrollRuns', result.record);
+    for (const affectedRun of (result.affectedPayrollRuns || [])) updateSyncedCollection('payrollRuns',affectedRun);
     return result;
   },
   deleteEmployee: (employeeId:string) => request<{deleted:boolean;archived:boolean}>(`/api/employees/${encodeURIComponent(employeeId)}`, { method:'DELETE' }),

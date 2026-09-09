@@ -605,9 +605,12 @@ export const App: React.FC = () => {
       setDbStatus(prev => ({ ...prev, isChecking: true }));
       const result = await operation;
       setState(prev => {
-        const payrollRuns = prev.payrollRuns.some(candidate => candidate.id === result.record.id)
-          ? prev.payrollRuns.map(candidate => candidate.id === result.record.id ? result.record as PayrollRun : candidate)
-          : [result.record as PayrollRun, ...prev.payrollRuns];
+        const returnedRuns = [result.record as PayrollRun,...((result.affectedPayrollRuns || []) as PayrollRun[])];
+        const returnedById = new Map(returnedRuns.map(candidate => [candidate.id,candidate]));
+        const payrollRuns = [
+          ...prev.payrollRuns.map(candidate => returnedById.get(candidate.id) || candidate),
+          ...returnedRuns.filter(candidate => !prev.payrollRuns.some(existing => existing.id === candidate.id)),
+        ];
         const next = { ...prev, payrollRuns };
         return next;
       });
