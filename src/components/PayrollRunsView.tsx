@@ -607,6 +607,13 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
         const previousEntitlementStatus = previousItem?.entitlementStatus || 'PAYABLE';
         const normalizedIban = String(emp.bankIban || '').replace(/\s/g, '').toUpperCase();
         const hasReadyBankAccount = /^SA\d{22}$/.test(normalizedIban) && emp.bankAccountStatus !== 'PENDING';
+        const shouldReleaseMissingBankHold = previousItem?.entitlementStatus === 'HELD'
+          && previousItem.entitlementReason === 'MISSING_BANK_ACCOUNT'
+          && hasReadyBankAccount;
+        const shouldReleaseSuspensionHold = previousItem?.entitlementStatus === 'HELD'
+          && previousItem.isSuspended === true
+          && !calculated.isSuspended;
+        const shouldReleaseAutomaticHold = shouldReleaseMissingBankHold || shouldReleaseSuspensionHold;
         const missingBankHold = !hasReadyBankAccount && previousEntitlementStatus === 'PAYABLE';
         const suspensionHold = calculated.isSuspended && previousEntitlementStatus === 'PAYABLE';
         const shouldApplyAutomaticHold = missingBankHold || suspensionHold;
@@ -615,12 +622,12 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
           : (emp.suspensionReason?.trim() || tr('تعليق تلقائي من ملف الموظف', 'Automatically held from employee profile'));
         return previousItem ? {
           ...calculated,
-          entitlementStatus: shouldApplyAutomaticHold ? 'HELD' : previousItem.entitlementStatus,
+          entitlementStatus: shouldApplyAutomaticHold ? 'HELD' : (shouldReleaseAutomaticHold ? 'PAYABLE' : previousItem.entitlementStatus),
           entitlementReason: shouldApplyAutomaticHold
             ? automaticHoldReason
-            : previousItem.entitlementReason,
-          entitlementDocumentRef: previousItem.entitlementDocumentRef,
-          entitlementUpdatedAt: shouldApplyAutomaticHold ? new Date().toISOString() : previousItem.entitlementUpdatedAt,
+            : (shouldReleaseAutomaticHold ? undefined : previousItem.entitlementReason),
+          entitlementDocumentRef: shouldReleaseAutomaticHold ? undefined : previousItem.entitlementDocumentRef,
+          entitlementUpdatedAt: (shouldApplyAutomaticHold || shouldReleaseAutomaticHold) ? new Date().toISOString() : previousItem.entitlementUpdatedAt,
         } : (!hasReadyBankAccount || calculated.isSuspended) ? {
           ...calculated,
           entitlementStatus: 'HELD',
