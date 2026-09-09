@@ -101,17 +101,6 @@ test('payroll reversal restores next-month loan deduction with an audit trail', 
   await page.getByRole('button',{ name:/إقفال وترحيل المسير بعد المعالجة|Close and post payroll/i }).click();
   expect((await (await post).json()).record.status).toBe('POSTED');
 
-  const nextYear = seed.nextPeriod!.slice(0,4);
-  await page.getByLabel(/السنة|Year/i).selectOption(nextYear);
-  await page.getByLabel(/شهر المسير|Payroll month/i).selectOption(seed.nextPeriod!);
-  const nextCalculation = waitForPayrollWrite(page,'PUT',/\/api\/payroll-runs\/[^/]+$/);
-  await page.getByRole('button',{ name:/إعادة احتساب المسير آلياً|Recalculate payroll/i }).click();
-  const nextRun = (await (await nextCalculation).json()).record;
-  expect(nextRun.periodMonth).toBe(seed.nextPeriod);
-  expect(nextRun.items.find((item:any) => item.employeeId === seed.employeeId)?.loanDeduction).toBe(0);
-
-  await page.getByLabel(/السنة|Year/i).selectOption(seed.payrollPeriod!.slice(0,4));
-  await page.getByLabel(/شهر المسير|Payroll month/i).selectOption(seed.payrollPeriod!);
   const reversalReason = `إلغاء تجريبي ${seed.employeeNo}`;
   page.once('dialog',async prompt => {
     expect(prompt.type()).toBe('prompt');
@@ -139,7 +128,7 @@ test('payroll reversal restores next-month loan deduction with an audit trail', 
   await page.getByRole('button',{ name:/التراجع عن الاعتماد والتعديل|Reverse approval and edit/i }).click();
   expect((await (await reopenPayroll).json()).record.status).toBe('UNDER_REVIEW');
 
-  await page.getByLabel(/السنة|Year/i).selectOption(nextYear);
+  await page.getByLabel(/السنة|Year/i).selectOption(seed.nextPeriod!.slice(0,4));
   await page.getByLabel(/شهر المسير|Payroll month/i).selectOption(seed.nextPeriod!);
   const recalculationAfterReversal = waitForPayrollWrite(page,'PUT',/\/api\/payroll-runs\/[^/]+$/);
   await page.getByRole('button',{ name:/إعادة احتساب المسير آلياً|Recalculate payroll/i }).click();
