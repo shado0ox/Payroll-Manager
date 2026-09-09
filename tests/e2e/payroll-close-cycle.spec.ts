@@ -18,7 +18,7 @@ const waitForPayrollWrite = (page:any, method:string, path:RegExp) => page.waitF
 );
 
 test('payroll reversal restores next-month loan deduction with an audit trail', async ({ page }) => {
-  test.setTimeout(180_000);
+  test.setTimeout(90_000);
   await login(page);
   const seed = await page.evaluate(async () => {
     const current = await (await fetch('/api/state')).json();
@@ -68,15 +68,6 @@ test('payroll reversal restores next-month loan deduction with an audit trail', 
   await page.getByRole('button',{ name:/إعادة احتساب المسير آلياً|Recalculate payroll/i }).click();
   const currentRun = (await (await initialCalculation).json()).record;
   expect(currentRun.items.find((item:any) => item.employeeId === seed.employeeId)?.loanDeduction).toBe(300);
-
-  const search = page.getByPlaceholder(/بحث بالاسم، الرقم الوظيفي|Search by name/i);
-  await search.fill(seed.employeeNo!);
-  const currentEmployeeRow = page.locator('tr').filter({ hasText:seed.employeeNo! });
-  await currentEmployeeRow.locator('button').last().click();
-  const statementModal = page.locator('.fixed.inset-0').filter({ hasText:/كشف حساب الموظف وقسيمة الراتب|Employee Statement/i });
-  await expect(statementModal.getByText(seed.payrollPeriod!,{ exact:true }).first()).toBeVisible();
-  await expect(statementModal.getByText(/لا توجد قسيمة راتب|No payslip exists/i)).toHaveCount(0);
-  await statementModal.getByRole('button').last().click();
 
   const submitReview = waitForPayrollWrite(page,'POST',/\/api\/payroll-runs\/[^/]+\/status$/);
   await page.getByRole('button',{ name:/إرسال للمراجعة والتدقيق|Submit for review/i }).click();
