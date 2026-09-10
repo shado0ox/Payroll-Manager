@@ -624,7 +624,7 @@ export const App: React.FC = () => {
       return true;
     } catch (error: any) {
       setDbStatus(prev => ({ ...prev,isChecking:false,lastError:error?.message || tr('تعذر حفظ عملية الرواتب', 'Could not save the payroll action') }));
-      alert(tr('تعذر حفظ تعديل المسير. لم يتم اعتماد أي تغيير غير مؤكد.', 'The payroll change could not be saved. No unconfirmed change was applied.'));
+      alert(`${tr('تعذر حفظ تعديل المسير. لم يتم اعتماد أي تغيير غير مؤكد.', 'The payroll change could not be saved. No unconfirmed change was applied.')} (${error?.message || 'UNKNOWN_ERROR'})`);
       return false;
     }
   };
