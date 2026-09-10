@@ -13,6 +13,7 @@ import { appendStateAudit } from './state-audit.mjs';
 import { appendPayrollFinancialAudit } from './payroll-financial-audit.mjs';
 import { reconcilePaidPayrollCarryForward, reconcileReleasedPayrollCarryForward } from './payroll-paid-carryforward.mjs';
 import { buildPayrollRepairPlan } from './payroll-data-repair.mjs';
+import { createSystemRouter } from './routes/system-routes.mjs';
 
 const { Pool } = pg;
 const port = Number(process.env.PORT || 3000);
@@ -1450,22 +1451,15 @@ async function auth(req, res, next) {
   } catch (error) { next(error); }
 }
 
-app.get('/api/health', async (_req, res, next) => {
-  try { await pool.query('SELECT 1'); res.json({ status:'ok',buildId }); } catch (e) { next(e); }
-});
-
-app.get('/api/version', (_req, res) => {
-  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
-  res.json({ buildId });
-});
-
-app.get('/api/public/config', (_req, res) => {
-  res.json({
-    registrationEnabled:publicRegistrationEnabled && Boolean(resendApiKey && verificationEmailFrom),
-    trialDays,
-    developerContactPhone,
-  });
-});
+app.use('/api', createSystemRouter({
+  pool,
+  buildId,
+  publicRegistrationEnabled,
+  resendApiKey,
+  verificationEmailFrom,
+  trialDays,
+  developerContactPhone,
+}));
 
 app.post('/api/auth/register/start', registrationLimiter, async (req, res, next) => {
   try {
