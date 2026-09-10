@@ -122,9 +122,6 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
   const companyEmployees = useMemo(() => {
     return employees.filter(e => e.companyId === formData.id);
   }, [employees, formData.id]);
-  const deleteEmployeesConfirmationValid = ['أرشفة جميع الموظفين', 'ARCHIVE ALL EMPLOYEES']
-    .includes(deleteEmployeesConfirmation.trim().toUpperCase());
-
   const companyUsers = useMemo(() => {
     return users.filter(u => u.companyIds.includes(formData.id) || u.role === 'ADMIN');
   }, [users, formData.id]);
