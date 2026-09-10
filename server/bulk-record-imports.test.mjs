@@ -5,7 +5,10 @@ import test from 'node:test';
 const server = fs.readFileSync(new URL('./index.mjs',import.meta.url),'utf8');
 const api = fs.readFileSync(new URL('../src/utils/api.ts',import.meta.url),'utf8');
 const app = fs.readFileSync(new URL('../src/App.tsx',import.meta.url),'utf8');
-const employeesView = fs.readFileSync(new URL('../src/components/EmployeesView.tsx',import.meta.url),'utf8');
+const employeesView = [
+  fs.readFileSync(new URL('../src/components/EmployeesView.tsx',import.meta.url),'utf8'),
+  fs.readFileSync(new URL('../src/components/employees/useEmployeeImport.ts',import.meta.url),'utf8'),
+].join('\n');
 
 function route(startMarker,endMarker) {
   const start = server.indexOf(startMarker);
