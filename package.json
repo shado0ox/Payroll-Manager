@@ -12,6 +12,7 @@
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
     "test:security": "node --test server/*.test.mjs",
+    "test:acceptance": "node scripts/runtime-payroll-acceptance.mjs",
     "test:e2e": "playwright test"
   },
   "dependencies": {

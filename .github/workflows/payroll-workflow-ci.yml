@@ -61,6 +61,7 @@ jobs:
       TRUST_PROXY: '0'
       APP_ORIGIN: http://127.0.0.1:3034
       ALLOW_PUBLIC_REGISTRATION: 'false'
+      ACCEPTANCE_CONFIRM_ISOLATED_DB: 'YES'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -75,6 +76,8 @@ jobs:
           echo $! > runtime-server.pid
       - name: Exercise approval and payment persistence
         run: node scripts/runtime-payroll-smoke.mjs
+      - name: Exercise full isolated payroll acceptance cycle
+        run: node scripts/runtime-payroll-acceptance.mjs
       - name: Exercise password reset and session revocation
         run: node scripts/runtime-password-reset-smoke.mjs
       - name: Reject concurrent PoolClient queries
