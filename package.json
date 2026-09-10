@@ -13,6 +13,8 @@
     "lint": "tsc --noEmit",
     "test:security": "node --test server/*.test.mjs",
     "test:acceptance": "node scripts/runtime-payroll-acceptance.mjs",
+    "ops:backup": "bash scripts/postgres-backup.sh",
+    "ops:restore-drill": "bash scripts/postgres-restore-drill.sh",
     "test:e2e": "playwright test"
   },
   "dependencies": {

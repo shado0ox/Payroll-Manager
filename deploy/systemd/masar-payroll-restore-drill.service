@@ -1,0 +1,15 @@
+[Unit]
+Description=Masar Payroll PostgreSQL restore drill
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+User=orangepi
+WorkingDirectory=/mnt/ssd/projects/payroll-manager
+EnvironmentFile=-/mnt/ssd/projects/payroll-manager/.env.backup
+Environment=RESTORE_DRILL_CONFIRM=YES
+ExecStart=/mnt/ssd/projects/payroll-manager/scripts/postgres-restore-drill.sh
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
