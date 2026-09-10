@@ -14,6 +14,7 @@ import { appendPayrollFinancialAudit } from './payroll-financial-audit.mjs';
 import { reconcilePaidPayrollCarryForward, reconcileReleasedPayrollCarryForward } from './payroll-paid-carryforward.mjs';
 import { buildPayrollRepairPlan } from './payroll-data-repair.mjs';
 import { createSystemRouter } from './routes/system-routes.mjs';
+import { createAuthSessionRouter } from './routes/auth-session-routes.mjs';
 
 const { Pool } = pg;
 const port = Number(process.env.PORT || 3000);
@@ -1628,12 +1629,7 @@ app.post('/api/auth/login', loginLimiter, async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
-app.get('/api/auth/session', auth, async (req, res) => {
-  const user = req.user;
-  res.json({
-    user: { id:user.id, username:user.username, name:user.name, email:user.email, phone:user.phone, role:user.role, companyIds:user.company_ids, permissions:permissionsFor(user), isActive:true },
-  });
-});
+app.use('/api/auth', createAuthSessionRouter({ auth, pool, q, cookieValue, sha256, permissionsFor }));
 
 app.get('/api/admin/database/normalization-status', auth, async (req, res, next) => {
   try {
@@ -1748,15 +1744,6 @@ app.get('/api/state/events', auth, (req, res) => {
   // Reconnect periodically so long-lived streams cannot retain stale tenant access.
   const recycle = setTimeout(() => { stateEventClients.delete(eventClient); res.end(); }, 5 * 60_000);
   req.on('close', () => { clearInterval(heartbeat); clearTimeout(recycle); stateEventClients.delete(eventClient); });
-});
-
-app.post('/api/auth/logout', auth, async (req, res, next) => {
-  try {
-    const token = cookieValue(req, 'masar_session');
-    await pool.query(`DELETE FROM ${q('sessions')} WHERE token_hash=$1`, [sha256(token)]);
-    res.setHeader('Set-Cookie', 'masar_session=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0');
-    res.status(204).end();
-  } catch (e) { next(e); }
 });
 
 app.get('/api/state', auth, async (req, res, next) => {
