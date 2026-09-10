@@ -2,7 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
-const view = fs.readFileSync('src/components/EmployeesView.tsx', 'utf8');
+const view = [
+  fs.readFileSync('src/components/EmployeesView.tsx', 'utf8'),
+  fs.readFileSync('src/components/employees/EmployeesTable.tsx', 'utf8'),
+].join('\n');
 
 test('onboarding employees have a dedicated completion and activation action', () => {
   assert.match(view, /emp\.status === 'ONBOARDING'/);
