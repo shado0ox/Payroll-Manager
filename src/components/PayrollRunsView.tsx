@@ -486,8 +486,17 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
         if (!duplicateEmployeeNumbers.has(employeeNo)) previousItemsByEmployeeNo.set(employeeNo, item);
       });
 
-      const runItems: PayrollRunItem[] = companyEmployees
+      const companyEmployeeIds = new Set(companyEmployees.map(employee => employee.id));
+      // A paid/scheduled payroll item is historical financial evidence. Preserve it even when
+      // the employee was later archived and is no longer returned by the active employee query.
+      const lockedHistoricalItems = previousItems.filter(item =>
+        committedEmployeeIds.has(item.employeeId) && !companyEmployeeIds.has(item.employeeId)
+      );
+      const recalculatedItems: PayrollRunItem[] = companyEmployees
         .filter(emp => {
+          // Preserve transferred employees before applying current lifecycle or salary-start
+          // filters. A later profile change must never remove a historical paid payroll item.
+          if (committedEmployeeIds.has(emp.id) && previousItemsByEmployeeId.has(emp.id)) return true;
           if (emp.status === 'ABSCONDED') return false;
           if (emp.salaryStartDate && emp.salaryStartDate.slice(0, 7) > selectedPeriod) return false;
           if (emp.status === 'TERMINATED') return Boolean(emp.terminationDate && selectedPeriod <= emp.terminationDate.slice(0, 7));
@@ -645,6 +654,7 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
           entitlementUpdatedAt: new Date().toISOString(),
         } : calculated;
       });
+      const runItems: PayrollRunItem[] = [...lockedHistoricalItems, ...recalculatedItems];
 
       const decimals = company.calculationRules?.roundingDecimals ?? 2;
       const totalBaseSalaries = roundAmount(runItems.reduce((s, i) => s + i.baseSalary, 0), decimals);

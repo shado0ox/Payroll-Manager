@@ -10,9 +10,20 @@ const types = fs.readFileSync('src/types/index.ts', 'utf8');
 
 test('recalculation preserves employees already in active or paid transfer batches', () => {
   assert.match(payroll, /if \(previousItem && committedEmployeeIds\.has\(emp\.id\)\) return previousItem/);
+  assert.match(payroll, /if \(committedEmployeeIds\.has\(emp\.id\) && previousItemsByEmployeeId\.has\(emp\.id\)\) return true;[\s\S]{0,300}emp\.salaryStartDate/);
+  assert.match(payroll, /const lockedHistoricalItems = previousItems\.filter\(item =>[\s\S]{0,200}committedEmployeeIds\.has\(item\.employeeId\)/);
+  assert.match(payroll, /const runItems: PayrollRunItem\[\] = \[\.\.\.lockedHistoricalItems, \.\.\.recalculatedItems\]/);
   assert.doesNotMatch(payroll, /An approved or posted payroll cannot be recalculated/);
   assert.doesNotMatch(payroll, /Payroll cannot be recalculated while a scheduled or paid payment batch exists/);
   assert.match(server, /TRANSFERRED_EMPLOYEE_PAYROLL_IMMUTABLE/);
+});
+
+test('a later salary-start or lifecycle change cannot remove a historically transferred employee', () => {
+  const preserve = payroll.indexOf('if (committedEmployeeIds.has(emp.id) && previousItemsByEmployeeId.has(emp.id)) return true;');
+  const abscondedFilter = payroll.indexOf("if (emp.status === 'ABSCONDED') return false;", preserve);
+  const salaryStartFilter = payroll.indexOf('if (emp.salaryStartDate && emp.salaryStartDate.slice(0, 7) > selectedPeriod) return false;', preserve);
+  const terminationFilter = payroll.indexOf("if (emp.status === 'TERMINATED')", preserve);
+  assert.ok(preserve >= 0 && abscondedFilter > preserve && salaryStartFilter > preserve && terminationFilter > preserve);
 });
 
 test('new and unpaid employees use the full payroll engine including prior period inputs', () => {
