@@ -6,6 +6,7 @@ const server = fs.readFileSync('server/index.mjs', 'utf8');
 const systemRoutes = fs.readFileSync('server/routes/system-routes.mjs', 'utf8');
 const authSessionRoutes = fs.readFileSync('server/routes/auth-session-routes.mjs', 'utf8');
 const authLoginRoutes = fs.readFileSync('server/routes/auth-login-routes.mjs', 'utf8');
+const authRegistrationRoutes = fs.readFileSync('server/routes/auth-registration-routes.mjs', 'utf8');
 
 test('public system endpoints are delegated to an isolated router', () => {
   assert.match(server, /createSystemRouter/);
@@ -14,6 +15,18 @@ test('public system endpoints are delegated to an isolated router', () => {
   assert.match(systemRoutes, /router\.get\('\/health'/);
   assert.match(systemRoutes, /router\.get\('\/version'/);
   assert.match(systemRoutes, /router\.get\('\/public\/config'/);
+});
+
+test('registration start and verification are delegated as one bounded workflow', () => {
+  assert.match(server, /app\.use\('\/api\/auth', createAuthRegistrationRouter/);
+  assert.doesNotMatch(server, /app\.post\('\/api\/auth\/register\/(?:start|verify)'/);
+  assert.match(authRegistrationRoutes, /router\.post\('\/register\/start', registrationLimiter/);
+  assert.match(authRegistrationRoutes, /router\.post\('\/register\/verify', registrationLimiter/);
+  assert.match(authRegistrationRoutes, /now\(\)\+interval '15 minutes'/);
+  assert.match(authRegistrationRoutes, /row\.attempts >= 5/);
+  assert.match(authRegistrationRoutes, /await client\.query\('BEGIN'\)/);
+  assert.match(authRegistrationRoutes, /'COMPANY_MANAGER'/);
+  assert.match(authRegistrationRoutes, /await client\.query\('COMMIT'\)/);
 });
 
 test('login is delegated with rate limiting, transaction, and secure cookie behavior', () => {
