@@ -17,6 +17,7 @@ const companyPolicies = fs.readFileSync('src/components/company/CompanyPayrollPo
 const companyAccounts = fs.readFileSync('src/components/company/CompanyAccountsTab.tsx', 'utf8');
 const companyDangerZone = fs.readFileSync('src/components/company/CompanyDangerZoneTab.tsx', 'utf8');
 const employeeImportPreview = fs.readFileSync('src/components/employees/EmployeeImportPreviewModal.tsx', 'utf8');
+const employeesTable = fs.readFileSync('src/components/employees/EmployeesTable.tsx', 'utf8');
 const app = fs.readFileSync('src/App.tsx', 'utf8');
 
 test('large views delegate stable sections to memoized child components', () => {
@@ -33,6 +34,7 @@ test('large views delegate stable sections to memoized child components', () => 
   assert.match(company, /<CompanyAccountsTab/);
   assert.match(company, /<CompanyDangerZoneTab/);
   assert.match(fs.readFileSync('src/components/EmployeesView.tsx', 'utf8'), /<EmployeeImportPreviewModal/);
+  assert.match(fs.readFileSync('src/components/EmployeesView.tsx', 'utf8'), /<EmployeesTable/);
   assert.match(payrollTable, /React\.memo/);
   assert.match(paymentModal, /React\.memo/);
   assert.match(companyTabs, /React\.memo/);
@@ -46,6 +48,7 @@ test('large views delegate stable sections to memoized child components', () => 
   assert.match(companyAccounts, /React\.memo/);
   assert.match(companyDangerZone, /React\.memo/);
   assert.match(employeeImportPreview, /React\.memo/);
+  assert.match(employeesTable, /React\.memo/);
 });
 
 test('prior balance remains owned by the payroll item table after compact mobile rendering', () => {
