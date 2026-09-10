@@ -11,6 +11,7 @@ const companyDetails = fs.readFileSync('src/components/company/CompanyDetailsTab
 const companyBanking = fs.readFileSync('src/components/company/CompanyBankingTab.tsx', 'utf8');
 const companyQoyod = fs.readFileSync('src/components/company/CompanyQoyodTab.tsx', 'utf8');
 const companyUsers = fs.readFileSync('src/components/company/CompanyUsersTab.tsx', 'utf8');
+const companyDepartments = fs.readFileSync('src/components/company/CompanyDepartmentsTab.tsx', 'utf8');
 const app = fs.readFileSync('src/App.tsx', 'utf8');
 
 test('large views delegate stable sections to memoized child components', () => {
@@ -21,6 +22,7 @@ test('large views delegate stable sections to memoized child components', () => 
   assert.match(company, /<CompanyBankingTab/);
   assert.match(company, /<CompanyQoyodTab/);
   assert.match(company, /<CompanyUsersTab/);
+  assert.match(company, /<CompanyDepartmentsTab/);
   assert.match(payrollTable, /React\.memo/);
   assert.match(paymentModal, /React\.memo/);
   assert.match(companyTabs, /React\.memo/);
@@ -28,6 +30,7 @@ test('large views delegate stable sections to memoized child components', () => 
   assert.match(companyBanking, /React\.memo/);
   assert.match(companyQoyod, /React\.memo/);
   assert.match(companyUsers, /React\.memo/);
+  assert.match(companyDepartments, /React\.memo/);
 });
 
 test('prior balance remains owned by the payroll item table after compact mobile rendering', () => {
@@ -40,7 +43,7 @@ test('large-view render filters and reductions are memoized', () => {
   assert.match(payroll, /const eligibleFilteredItems = useMemo/);
   assert.match(payroll, /const selectedPaymentItems = useMemo/);
   assert.match(payroll, /const totalWarnings = useMemo/);
-  assert.match(company, /const departmentEmployeesByName = useMemo/);
+  assert.match(companyDepartments, /const departmentEmployeesByName = useMemo/);
   assert.match(company, /const costCenterEmployeeCounts = useMemo/);
   assert.match(company, /const activeBankDefinitions = useMemo/);
   assert.match(companyUsers, /const assignableRoles = useMemo/);
