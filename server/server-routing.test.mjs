@@ -64,7 +64,9 @@ test('session lookup and logout are delegated to an authenticated router', () =>
 test('health checks PostgreSQL and public config remains environment-driven', () => {
   assert.match(systemRoutes, /await pool\.query\('SELECT 1'\)/);
   assert.match(systemRoutes, /registrationEnabled:publicRegistrationEnabled && Boolean\(resendApiKey && verificationEmailFrom\)/);
-  assert.match(systemRoutes, /res\.json\(\{ status:'ok', buildId \}\)/);
+  assert.match(systemRoutes, /status:'ok'/);
+  assert.match(systemRoutes, /database:\{ status:'ok', latencyMs:/);
+  assert.match(systemRoutes, /status:'degraded'/);
 });
 
 test('database diagnostics and payroll repair are delegated to an admin router', () => {

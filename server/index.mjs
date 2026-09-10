@@ -18,6 +18,7 @@ import { createAuthLoginRouter } from './routes/auth-login-routes.mjs';
 import { createAuthRegistrationRouter } from './routes/auth-registration-routes.mjs';
 import { createAuthPasswordResetRouter } from './routes/auth-password-reset-routes.mjs';
 import { createAdminDatabaseRouter } from './routes/admin-database-routes.mjs';
+import { createOperationalAlertSender, createOperationalLogger, requestContextMiddleware, startDatabaseHealthMonitor } from './operational-monitoring.mjs';
 
 const { Pool } = pg;
 const port = Number(process.env.PORT || 3000);
@@ -43,6 +44,14 @@ const publicRegistrationEnabled = process.env.ALLOW_PUBLIC_REGISTRATION === 'tru
 const developerContactPhone = String(process.env.DEVELOPER_CONTACT_PHONE || '').trim();
 const resendApiKey = String(process.env.RESEND_API_KEY || '').trim();
 const verificationEmailFrom = String(process.env.EMAIL_FROM || '').trim();
+const operationalLogger = createOperationalLogger({ buildId });
+const sendOperationalAlert = createOperationalAlertSender({
+  logger:operationalLogger,
+  resendApiKey,
+  emailFrom:verificationEmailFrom,
+  recipients:String(process.env.OPS_ALERT_EMAILS || '').split(','),
+  webhookUrl:String(process.env.OPS_ALERT_WEBHOOK_URL || '').trim(),
+});
 const isStrongPassword = (value) => typeof value === 'string' && value.length >= 8 && value.length <= 128
   && /[A-Z]/.test(value) && /[a-z]/.test(value) && /\d/.test(value) && /[^A-Za-z0-9]/.test(value);
 if (!isStrongPassword(process.env.ADMIN_PASSWORD)) {
@@ -1229,6 +1238,7 @@ app.disable('x-powered-by');
 app.set('trust proxy', Number(process.env.TRUST_PROXY || 1));
 app.use(helmet({ contentSecurityPolicy: { directives: { defaultSrc: ["'self'"], scriptSrc: ["'self'"], styleSrc: ["'self'", "'unsafe-inline'"], imgSrc: ["'self'", 'data:', 'blob:'], connectSrc: ["'self'"] } } }));
 app.use(express.json({ limit: '5mb' }));
+app.use(requestContextMiddleware(operationalLogger));
 app.use((req, res, next) => {
   if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
     const origin = req.get('origin');
@@ -3141,15 +3151,29 @@ app.get('*', (_req, res) => {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
   res.sendFile(path.join(root, 'index.html'));
 });
-app.use((error, _req, res, _next) => {
-  console.error(error);
+app.use((error, req, res, _next) => {
+  operationalLogger('error', 'request_failed', { requestId:req.requestId,method:req.method,path:req.originalUrl?.split('?')[0],userId:req.user?.id,error });
   res.status(Number(error?.status) || 500).json({ error:Number(error?.status) < 500 ? error.message : 'INTERNAL_ERROR' });
 });
 
 await migrate();
+const databaseHealthMonitor = startDatabaseHealthMonitor({
+  pool,
+  logger:operationalLogger,
+  sendAlert:sendOperationalAlert,
+  intervalMs:Number(process.env.DB_HEALTH_INTERVAL_MS || 60_000),
+  failureThreshold:Number(process.env.DB_HEALTH_FAILURE_THRESHOLD || 3),
+});
 const hrAlertTimer = setInterval(() => { void runHrLifecycleAlerts(); }, 6 * 60 * 60 * 1000);
 setTimeout(() => { void runHrLifecycleAlerts(); }, 60 * 1000);
-const server = app.listen(port, '0.0.0.0', () => console.log(`Masar Payroll listening on ${port}`));
-const shutdown = async () => { clearInterval(hrAlertTimer); server.close(); await pool.end(); process.exit(0); };
+const server = app.listen(port, '0.0.0.0', () => operationalLogger('info', 'server_started', { port }));
+const shutdown = async signal => {
+  operationalLogger('info', 'server_shutdown', { signal });
+  databaseHealthMonitor.stop();
+  clearInterval(hrAlertTimer);
+  server.close();
+  await pool.end();
+  process.exit(0);
+};
 process.on('SIGTERM', shutdown);
 process.on('SIGINT', shutdown);

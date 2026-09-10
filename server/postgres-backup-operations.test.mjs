@@ -7,11 +7,20 @@ const backup = fs.readFileSync('scripts/postgres-backup.sh','utf8');
 const restore = fs.readFileSync('scripts/postgres-restore-drill.sh','utf8');
 const backupTimer = fs.readFileSync('deploy/systemd/masar-payroll-backup.timer','utf8');
 const restoreTimer = fs.readFileSync('deploy/systemd/masar-payroll-restore-drill.timer','utf8');
+const alertScript = fs.readFileSync('scripts/operational-alert.sh','utf8');
 const workflow = fs.readFileSync('.github/workflows/payroll-workflow-ci.yml','utf8');
 
 test('backup and restore scripts have valid shell syntax', () => {
   execFileSync('bash',['-n','scripts/postgres-backup.sh']);
   execFileSync('bash',['-n','scripts/postgres-restore-drill.sh']);
+  execFileSync('bash',['-n','scripts/operational-alert.sh']);
+});
+
+test('failed scheduled operations invoke a configurable alert channel without printing secrets', () => {
+  assert.match(alertScript,/OPS_ALERT_WEBHOOK_URL/);
+  assert.match(alertScript,/OPS_ALERT_EMAILS/);
+  assert.match(alertScript,/Authorization: Bearer \$\{resend_api_key\}/);
+  assert.doesNotMatch(alertScript,/echo .*resend_api_key|echo .*webhook_url/);
 });
 
 test('daily backup is atomic, verified, checksummed, and retained', () => {

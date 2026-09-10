@@ -11,12 +11,30 @@ export function createSystemRouter({
 }) {
   const router = express.Router();
 
-  router.get('/health', async (_req, res, next) => {
+  router.get('/health', async (_req, res) => {
+    const startedAt = process.hrtime.bigint();
     try {
       await pool.query('SELECT 1');
-      res.json({ status:'ok', buildId });
-    } catch (error) {
-      next(error);
+      const databaseLatencyMs = Number(process.hrtime.bigint() - startedAt) / 1e6;
+      res.setHeader('Cache-Control', 'no-store');
+      res.json({
+        status:'ok',
+        service:'masar-payroll',
+        buildId,
+        uptimeSeconds:Math.floor(process.uptime()),
+        timestamp:new Date().toISOString(),
+        database:{ status:'ok', latencyMs:Number(databaseLatencyMs.toFixed(1)) },
+      });
+    } catch {
+      res.setHeader('Cache-Control', 'no-store');
+      res.status(503).json({
+        status:'degraded',
+        service:'masar-payroll',
+        buildId,
+        uptimeSeconds:Math.floor(process.uptime()),
+        timestamp:new Date().toISOString(),
+        database:{ status:'down' },
+      });
     }
   });
 

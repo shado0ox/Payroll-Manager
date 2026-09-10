@@ -1,0 +1,9 @@
+[Unit]
+Description=Masar Payroll operational alert for %i
+
+[Service]
+Type=oneshot
+User=orangepi
+WorkingDirectory=/mnt/ssd/projects/payroll-manager
+EnvironmentFile=-/mnt/ssd/projects/payroll-manager/.env.backup
+ExecStart=/mnt/ssd/projects/payroll-manager/scripts/operational-alert.sh %i failed

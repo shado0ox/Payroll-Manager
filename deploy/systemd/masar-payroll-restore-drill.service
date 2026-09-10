@@ -2,6 +2,7 @@
 Description=Masar Payroll PostgreSQL restore drill
 Requires=docker.service
 After=docker.service
+OnFailure=masar-payroll-ops-alert@%n.service
 
 [Service]
 Type=oneshot
