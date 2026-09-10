@@ -6,6 +6,7 @@ const server = fs.readFileSync('server/index.mjs','utf8');
 const api = fs.readFileSync('src/utils/api.ts','utf8');
 const app = fs.readFileSync('src/App.tsx','utf8');
 const profile = fs.readFileSync('src/components/CompanyProfileView.tsx','utf8');
+const profileQoyod = fs.readFileSync('src/components/company/CompanyQoyodTab.tsx','utf8');
 const modal = fs.readFileSync('src/components/QoyodIntegrationModal.tsx','utf8');
 
 function configRoute() {
@@ -37,7 +38,8 @@ test('Qoyod UI waits for the committed redacted config', () => {
   assert.match(api,/\/api\/integrations\/qoyod\/config/);
   assert.match(app,/api\.saveQoyodConfig\(activeCompany\.id,config\)/);
   assert.match(app,/qoyodConfig:result\.record/);
-  assert.match(profile,/const saved = await onSaveQoyodConfig\(qConfig\)/);
+  assert.match(profile,/onSaveQoyodConfig={onSaveQoyodConfig}/);
+  assert.match(profileQoyod,/const saved = await onSaveQoyodConfig\(qConfig\)/);
   assert.match(modal,/const saved = await onSaveConfig\(config\)/);
   const handler = app.slice(app.indexOf('const handleSaveQoyodConfig'),app.indexOf('const handleResetData'));
   assert.doesNotMatch(handler,/api\.saveState|saveQoyodConfig\(config\);/);
