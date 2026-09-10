@@ -9,6 +9,7 @@ const paymentModal = fs.readFileSync('src/components/payroll/PayrollPaymentBatch
 const companyTabs = fs.readFileSync('src/components/company/CompanyProfileTabs.tsx', 'utf8');
 const companyDetails = fs.readFileSync('src/components/company/CompanyDetailsTab.tsx', 'utf8');
 const companyBanking = fs.readFileSync('src/components/company/CompanyBankingTab.tsx', 'utf8');
+const companyQoyod = fs.readFileSync('src/components/company/CompanyQoyodTab.tsx', 'utf8');
 const app = fs.readFileSync('src/App.tsx', 'utf8');
 
 test('large views delegate stable sections to memoized child components', () => {
@@ -17,11 +18,13 @@ test('large views delegate stable sections to memoized child components', () => 
   assert.match(company, /<CompanyProfileTabs/);
   assert.match(company, /<CompanyDetailsTab/);
   assert.match(company, /<CompanyBankingTab/);
+  assert.match(company, /<CompanyQoyodTab/);
   assert.match(payrollTable, /React\.memo/);
   assert.match(paymentModal, /React\.memo/);
   assert.match(companyTabs, /React\.memo/);
   assert.match(companyDetails, /React\.memo/);
   assert.match(companyBanking, /React\.memo/);
+  assert.match(companyQoyod, /React\.memo/);
 });
 
 test('prior balance remains owned by the payroll item table after compact mobile rendering', () => {
