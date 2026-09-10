@@ -8,6 +8,7 @@ const authSessionRoutes = fs.readFileSync('server/routes/auth-session-routes.mjs
 const authLoginRoutes = fs.readFileSync('server/routes/auth-login-routes.mjs', 'utf8');
 const authRegistrationRoutes = fs.readFileSync('server/routes/auth-registration-routes.mjs', 'utf8');
 const authPasswordResetRoutes = fs.readFileSync('server/routes/auth-password-reset-routes.mjs', 'utf8');
+const adminDatabaseRoutes = fs.readFileSync('server/routes/admin-database-routes.mjs', 'utf8');
 
 test('public system endpoints are delegated to an isolated router', () => {
   assert.match(server, /createSystemRouter/);
@@ -64,4 +65,14 @@ test('health checks PostgreSQL and public config remains environment-driven', ()
   assert.match(systemRoutes, /await pool\.query\('SELECT 1'\)/);
   assert.match(systemRoutes, /registrationEnabled:publicRegistrationEnabled && Boolean\(resendApiKey && verificationEmailFrom\)/);
   assert.match(systemRoutes, /res\.json\(\{ status:'ok', buildId \}\)/);
+});
+
+test('database diagnostics and payroll repair are delegated to an admin router', () => {
+  assert.match(server, /app\.use\('\/api\/admin', createAdminDatabaseRouter/);
+  assert.doesNotMatch(server, /app\.(?:get|post)\('\/api\/admin\/(?:database|payroll-data-repair)/);
+  assert.match(adminDatabaseRoutes, /router\.get\('\/database\/normalization-status', auth/);
+  assert.match(adminDatabaseRoutes, /req\.user\.role !== 'ADMIN'/);
+  assert.match(adminDatabaseRoutes, /router\.get\('\/payroll-data-repair\/scan', auth/);
+  assert.match(adminDatabaseRoutes, /router\.post\('\/payroll-data-repair\/repair', auth, writeLimiter/);
+  assert.match(adminDatabaseRoutes, /isDeveloperUser\(req\.user\)/);
 });
