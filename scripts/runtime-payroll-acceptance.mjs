@@ -9,6 +9,15 @@ const adminUsername = process.env.ADMIN_USERNAME || 'admin';
 const adminPassword = process.env.ADMIN_PASSWORD || 'TestAdmin1!';
 const companyCode = process.env.COMPANY_CODE || '101';
 const companyId = process.env.COMPANY_ID || 'comp-1';
+const priorPeriod = process.env.ACCEPTANCE_PRIOR_PERIOD || '2090-01';
+if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(priorPeriod)) throw new Error('ACCEPTANCE_PRIOR_PERIOD must use YYYY-MM');
+const [priorYear,priorMonthNumber] = priorPeriod.split('-').map(Number);
+const currentPeriodDate = new Date(Date.UTC(priorYear,priorMonthNumber,1));
+const currentPeriod = currentPeriodDate.toISOString().slice(0,7);
+const periodEnd = period => {
+  const [year,month] = period.split('-').map(Number);
+  return new Date(Date.UTC(year,month,0)).toISOString().slice(0,10);
+};
 
 if (process.env.ACCEPTANCE_CONFIRM_ISOLATED_DB !== 'YES') {
   throw new Error('Set ACCEPTANCE_CONFIRM_ISOLATED_DB=YES only after targeting a disposable restored database.');
@@ -29,10 +38,10 @@ const key = String(process.env.ACCEPTANCE_RUN_KEY || Date.now()).replace(/[^A-Za
 const ids = {
   employee:`acceptance-employee-${key}`,
   loan:`acceptance-loan-${key}`,
-  augustRun:`acceptance-payroll-2026-08-${key}`,
-  augustItem:`acceptance-item-2026-08-${key}`,
-  septemberRun:`acceptance-payroll-2026-09-${key}`,
-  septemberItem:`acceptance-item-2026-09-${key}`,
+  augustRun:`acceptance-payroll-${priorPeriod}-${key}`,
+  augustItem:`acceptance-item-${priorPeriod}-${key}`,
+  septemberRun:`acceptance-payroll-${currentPeriod}-${key}`,
+  septemberItem:`acceptance-item-${currentPeriod}-${key}`,
   batch:`acceptance-payment-${key}`,
   adjustment:`acceptance-loan-adjustment-${key}`,
 };
@@ -78,7 +87,7 @@ function payrollItem({ id,runId,entitlementStatus,entitlementReason,isSuspended,
     netSalary:prior ? 1900 : 900,gosiEmployerShare:0,totalCompanyBurden:prior ? 1900 : 900,
     entitlementStatus,entitlementReason,entitlementHoldSource:'EMPLOYEE_SUSPENSION',isSuspended,
     priorPeriodGross:prior ? 1000 : 0,priorPeriodDeductions:prior ? 100 : 0,priorPeriodNet:prior ? 900 : 0,
-    priorPeriodDetails:prior ? [{ periodMonth:'2026-08',gross:1000,deductions:100,net:900 }] : [],
+    priorPeriodDetails:prior ? [{ periodMonth:priorPeriod,gross:1000,deductions:100,net:900 }] : [],
     warningFlags:[],
   };
 }
@@ -86,10 +95,10 @@ function payrollItem({ id,runId,entitlementStatus,entitlementReason,isSuspended,
 function payrollRun({ id,periodMonth,status,item,totalGrossSalaries,totalDeductions,totalNetSalaries }) {
   const now = new Date().toISOString();
   return {
-    id,companyId,periodMonth,startDate:`${periodMonth}-01`,endDate:periodMonth === '2026-08' ? '2026-08-31' : '2026-09-30',
+    id,companyId,periodMonth,startDate:`${periodMonth}-01`,endDate:periodEnd(periodMonth),
     status,createdAt:now,calculatedAt:now,employeesCount:1,totalBaseSalaries:1000,totalAllowances:0,totalOvertime:0,
     totalGrossSalaries,totalAbsenceDeductions:0,totalDelayDeductions:0,totalGosiEmployee:0,totalGosiEmployer:0,
-    totalLoanDeductions:periodMonth === '2026-08' ? 100 : 0,totalPenalties:0,totalDeductions,totalNetSalaries,
+    totalLoanDeductions:periodMonth === priorPeriod ? 100 : 0,totalPenalties:0,totalDeductions,totalNetSalaries,
     totalCompanyCost:totalNetSalaries,items:[item],paymentBatches:[],
   };
 }
@@ -105,7 +114,7 @@ const suspendedEmployee = {
   id:ids.employee,companyId,employeeNo:`ACC${key.slice(-12)}`,firstNameAr:'اختبار',lastNameAr:'قبول',
   firstNameEn:'Acceptance',lastNameEn:'Employee',nationalIdOrIqama:`ACC-${key}`,nationality:'NON_SAUDI',country:'TEST',
   email:`acceptance-${key}@example.test`,phone:'0500000000',department:'Acceptance',jobTitle:'Payroll Tester',costCenterId:'',
-  hireDate:'2026-08-01',salaryStartDate:'2026-08-01',status:'SUSPENDED',suspensionStartDate:'2026-08-15',
+  hireDate:`${priorPeriod}-01`,salaryStartDate:`${priorPeriod}-01`,status:'SUSPENDED',suspensionStartDate:`${priorPeriod}-15`,
   suspensionReason:'اختبار تعليق الموظف',bankName:'Acceptance Bank',bankIban:'SA0380000000608010167519',bankAccountStatus:'ACTIVE',
   salaryPackage:{ baseSalary:1000,housingAllowance:0,transportAllowance:0,otherFixedAllowances:0,customAllowances:[],customDeductions:[] },
 };
@@ -113,18 +122,18 @@ await request(`/api/employees/${ids.employee}`,{ method:'PUT',body:JSON.stringif
 
 const loan = {
   id:ids.loan,companyId,employeeId:ids.employee,totalAmount:100,monthlyInstallment:100,totalInstallments:1,
-  remainingInstallments:1,remainingAmount:100,startDate:'2026-08',status:'ACTIVE',reason:'اختبار سداد سلفة',adjustments:[],
+  remainingInstallments:1,remainingAmount:100,startDate:priorPeriod,status:'ACTIVE',reason:'اختبار سداد سلفة',adjustments:[],
 };
 await request(`/api/loans/${ids.loan}`,{ method:'PUT',body:JSON.stringify(loan) });
 
 const augustItem = payrollItem({ id:ids.augustItem,runId:ids.augustRun,entitlementStatus:'HELD',entitlementReason:suspendedEmployee.suspensionReason,isSuspended:true });
-const augustRun = payrollRun({ id:ids.augustRun,periodMonth:'2026-08',status:'UNDER_REVIEW',item:augustItem,totalGrossSalaries:1000,totalDeductions:100,totalNetSalaries:900 });
+const augustRun = payrollRun({ id:ids.augustRun,periodMonth:priorPeriod,status:'UNDER_REVIEW',item:augustItem,totalGrossSalaries:1000,totalDeductions:100,totalNetSalaries:900 });
 await request(`/api/payroll-runs/${ids.augustRun}`,{ method:'PUT',body:JSON.stringify(augustRun) });
 await request(`/api/payroll-runs/${ids.augustRun}/status`,{ method:'POST',body:JSON.stringify({ status:'APPROVED' }) });
 await request(`/api/payroll-runs/${ids.augustRun}/status`,{ method:'POST',body:JSON.stringify({ status:'POSTED' }) });
 
 const septemberItem = payrollItem({ id:ids.septemberItem,runId:ids.septemberRun,entitlementStatus:'HELD',entitlementReason:suspendedEmployee.suspensionReason,isSuspended:true,prior:true });
-const septemberRun = payrollRun({ id:ids.septemberRun,periodMonth:'2026-09',status:'DRAFT',item:septemberItem,totalGrossSalaries:2000,totalDeductions:100,totalNetSalaries:1900 });
+const septemberRun = payrollRun({ id:ids.septemberRun,periodMonth:currentPeriod,status:'DRAFT',item:septemberItem,totalGrossSalaries:2000,totalDeductions:100,totalNetSalaries:1900 });
 await request(`/api/payroll-runs/${ids.septemberRun}`,{ method:'PUT',body:JSON.stringify(septemberRun) });
 
 const activeEmployee = { ...suspendedEmployee,status:'ACTIVE',suspensionStartDate:'',suspensionEndDate:'',suspensionReason:'' };
@@ -138,13 +147,13 @@ source = { ...source,items:[payableSourceItem],calculatedAt:new Date().toISOStri
 await request(`/api/payroll-runs/${ids.augustRun}`,{ method:'PUT',body:JSON.stringify(source) });
 
 const batch = {
-  id:ids.batch,batchNumber:`ACC-202608-${key}`,payrollRunId:ids.augustRun,companyId,periodMonth:'2026-08',
+  id:ids.batch,batchNumber:`ACC-${priorPeriod}-${key}`,payrollRunId:ids.augustRun,companyId,periodMonth:priorPeriod,
   employeeIds:[ids.employee],employeesCount:1,totalAmount:900,method:'BANK_TRANSFER',status:'SCHEDULED',
-  scheduledDate:'2026-09-10',reference:'ACCEPTANCE-LATE-PAYMENT',notes:'Isolated acceptance test',createdAt:new Date().toISOString(),
+  scheduledDate:`${currentPeriod}-10`,reference:'ACCEPTANCE-LATE-PAYMENT',notes:'Isolated acceptance test',createdAt:new Date().toISOString(),
 };
 await request(`/api/payroll-runs/${ids.augustRun}/payment-batches`,{ method:'POST',body:JSON.stringify(batch) });
 await request(`/api/payroll-runs/${ids.augustRun}/payment-batches/${ids.batch}/status`,{
-  method:'PATCH',body:JSON.stringify({ status:'PAID',paymentDate:'2026-09-10' }),
+  method:'PATCH',body:JSON.stringify({ status:'PAID',paymentDate:`${currentPeriod}-10` }),
 });
 state = await loadState();
 let september = findRun(state,ids.septemberRun);
@@ -169,7 +178,7 @@ state = await loadState();
 source = findRun(state,ids.augustRun);
 september = findRun(state,ids.septemberRun);
 assert.equal(source.paymentBatches[0].status,'CANCELLED','Cancelled payment must persist');
-assert.deepEqual(september.items[0].priorPeriodDetails,[{ periodMonth:'2026-08',gross:1000,deductions:100,net:900 }]);
+assert.deepEqual(september.items[0].priorPeriodDetails,[{ periodMonth:priorPeriod,gross:1000,deductions:100,net:900 }]);
 assert.equal(september.totalNetSalaries,1925,'Cancellation must restore prior salary exactly once');
 
 await request(`/api/payroll-runs/${ids.augustRun}/status`,{ method:'POST',body:JSON.stringify({ status:'APPROVED' }) });
@@ -182,7 +191,7 @@ assert.equal(source.approvedAt,undefined);
 
 const settledLoan = {
   ...findLoan(state,ids.loan),remainingAmount:0,remainingInstallments:0,status:'COMPLETED',
-  adjustments:[{ id:ids.adjustment,amount:-100,date:'2026-09-10',reason:'سداد كامل السلفة' }],
+  adjustments:[{ id:ids.adjustment,amount:-100,date:`${currentPeriod}-10`,reason:'سداد كامل السلفة' }],
 };
 await request(`/api/loans/${ids.loan}`,{ method:'PUT',body:JSON.stringify(settledLoan) });
 state = await loadState();
