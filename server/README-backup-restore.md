@@ -24,6 +24,10 @@ PAYROLL_DB_SCHEMA=masar_payroll
 PAYROLL_BACKUP_DIR=/mnt/ssd/projects/payroll-manager/backups/postgres
 PAYROLL_BACKUP_RETENTION_DAYS=30
 PAYROLL_RESTORE_TEST_DB=masar_payroll_restore_test
+OPS_ALERT_EMAILS=operations@example.com
+# Optional alternative or additional JSON webhook:
+# OPS_ALERT_WEBHOOK_URL=https://alerts.example.com/hooks/replace-me
+# Reuses RESEND_API_KEY and EMAIL_FROM when email alerts are enabled.
 ```
 
 Protect that file if it contains additional secrets:
@@ -53,6 +57,10 @@ sudo systemctl start masar-payroll-backup.service
 sudo systemctl start masar-payroll-restore-drill.service
 systemctl list-timers 'masar-payroll-*'
 ```
+
+The backup and restore services trigger `masar-payroll-ops-alert@.service` on failure. Configure at least one alert channel (`OPS_ALERT_EMAILS` with Resend, or `OPS_ALERT_WEBHOOK_URL`) before enabling the timers. The application server uses the same variables for persistent database connection failures and sends one recovery notification after connectivity returns.
+
+`GET /api/health` returns server uptime, build identifier, PostgreSQL state, and query latency. It returns HTTP 503 with `status: degraded` when PostgreSQL is unavailable, without exposing connection details. Server events and request failures are emitted as one JSON object per line with request IDs; sensitive fields are redacted.
 
 Inspect the latest results:
 
