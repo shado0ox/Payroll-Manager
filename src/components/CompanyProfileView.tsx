@@ -63,6 +63,8 @@ import { CompanyUsersTab } from './company/CompanyUsersTab';
 import { CompanyDepartmentsTab } from './company/CompanyDepartmentsTab';
 import { CompanyCostCentersTab } from './company/CompanyCostCentersTab';
 import { CompanyPayrollPoliciesTab } from './company/CompanyPayrollPoliciesTab';
+import { CompanyAccountsTab } from './company/CompanyAccountsTab';
+import { CompanyDangerZoneTab } from './company/CompanyDangerZoneTab';
 import { hasPermission } from '../utils/permissions';
 
 interface CompanyProfileViewProps {
@@ -102,10 +104,6 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
   const tr = (ar: string, en: string) => language === 'ar' ? ar : en;
   const [activeSubTab, setActiveSubTab] = useState<ProfileSubTab>('details');
   const [saveSuccessMessage, setSaveSuccessMessage] = useState<string | null>(null);
-  const [isDeleteEmployeesModalOpen, setIsDeleteEmployeesModalOpen] = useState(false);
-  const [deleteEmployeesConfirmation, setDeleteEmployeesConfirmation] = useState('');
-  const [isArchivingEmployees, setIsArchivingEmployees] = useState(false);
-
   // Local editable company state
   const [formData, setFormData] = useState<Company>(() => ({
     ...JSON.parse(JSON.stringify(company)),
@@ -389,151 +387,29 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
       )}
       {/* SUB-TAB 7: Chart of Accounts */}
       {activeSubTab === 'accounts' && (
-        <div className="bg-white rounded-2xl p-6 border border-slate-200/80 shadow-sm space-y-6">
-          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-            <div>
-              <h3 className="text-sm font-bold text-slate-900">{tr('ربط شجرة الحسابات المحاسبية لقيود الرواتب', 'Payroll Chart of Accounts Mapping')}</h3>
-              <p className="text-xs text-slate-500">{tr('أرقام الحسابات في النظام المحاسبي (تكامل برنامج قيود والأنظمة المحاسبية)', 'Map payroll accounts for Qoyod and other accounting integrations')}</p>
-            </div>
-            <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
-              {tr('متوافق مع معايير المحاسبة الدولية IFRS', 'IFRS-ready mapping')}
-            </span>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {Object.entries({
-              salariesExpenseAccount: tr('حساب مصروف الرواتب الأساسية', 'Basic salaries expense account'),
-              housingAllowanceAccount: tr('حساب مصروف بدل السكن', 'Housing allowance expense account'),
-              transportAllowanceAccount: tr('حساب مصروف بدل النقل', 'Transport allowance expense account'),
-              overtimeExpenseAccount: tr('حساب مصروف العمل الإضافي', 'Overtime expense account'),
-              otherAllowancesExpenseAccount: tr('حساب مصروف البدلات الأخرى', 'Other allowances expense account'),
-              gosiEmployerExpenseAccount: tr('حساب مصروف مساهمة المنشأة في التأمينات', 'Employer GOSI expense account'),
-              salariesPayableAccount: tr('حساب الرواتب المستحقة (التزامات)', 'Salaries payable account'),
-              gosiPayableAccount: tr('حساب التأمينات الاجتماعية المستحقة', 'GOSI payable account'),
-              employeeAdvancesAccount: tr('حساب سلف الموظفين (أصول متداولة)', 'Employee advances account'),
-              penaltiesPayableAccount: tr('حساب الجزاءات والخصومات', 'Penalties and deductions account'),
-              bankAccount: tr('حساب البنك / النقدية للصرف', 'Payroll bank / cash account'),
-            }).map(([key, label]) => (
-              <div key={key}>
-                <label className="block text-xs font-bold text-slate-700 mb-1">{label}</label>
-                <input
-                  type="text"
-                  value={(formData.chartOfAccounts as any)?.[key] || ''}
-                  onChange={(e) => setFormData({
-                    ...formData,
-                    chartOfAccounts: {
-                      ...formData.chartOfAccounts!,
-                      [key]: e.target.value
-                    }
-                  })}
-                  className="w-full px-3.5 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white font-mono font-bold text-slate-900"
-                />
-              </div>
-            ))}
-          </div>
-
-          <div className="flex justify-end pt-3">
-            <button
-              type="button"
-              onClick={() => handleSaveCompany()}
-              className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-md transition-all cursor-pointer flex items-center gap-2"
-            >
-              <Save className="w-4 h-4" />
-              <span>{tr('حفظ دليل الحسابات', 'Save account mapping')}</span>
-            </button>
-          </div>
-        </div>
+        <CompanyAccountsTab
+          formData={formData}
+          setFormData={setFormData}
+          onSave={() => { void handleSaveCompany(); }}
+          tr={tr}
+        />
       )}
 
       {/* SUB-TAB 8: Sensitive Data Management */}
       {activeSubTab === 'danger' && hasPermission(currentUser, 'MANAGE_EMPLOYEES') && (
-        <div className="bg-white rounded-2xl p-6 border border-rose-200 shadow-sm space-y-5">
-          <div className="flex items-start gap-3 border-b border-rose-100 pb-4">
-            <div className="w-10 h-10 rounded-xl bg-rose-100 text-rose-700 flex items-center justify-center shrink-0">
-              <AlertCircle className="w-5 h-5" />
-            </div>
-            <div>
-              <h3 className="text-sm font-bold text-rose-900">{tr('منطقة الخطر وإدارة البيانات الحساسة', 'Danger Zone and Sensitive Data')}</h3>
-              <p className="text-xs text-rose-700 mt-1">{tr('العمليات في هذا القسم حساسة وتؤثر على بيانات المنشأة الحالية فقط.', 'Actions in this section are sensitive and affect the current company only.')}</p>
-            </div>
-          </div>
-
-          <div className="rounded-2xl border border-rose-200 bg-rose-50/60 p-5 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-            <div>
-              <h4 className="text-sm font-black text-slate-900">{tr('أرشفة جميع موظفي المنشأة', 'Archive All Company Employees')}</h4>
-              <p className="text-xs text-slate-600 mt-1 max-w-3xl leading-6">
-                {tr(`سيتم إخفاء ${companyEmployees.length} موظفًا من القوائم والمسيرات الجديدة، مع الاحتفاظ بسجلات الحضور والإجازات والسلف والجزاءات ومسيرات الرواتب والقيود السابقة للمراجعة.`, `${companyEmployees.length} employees will be hidden from active lists and new payroll runs while attendance, leave, loan, penalty, payroll and journal history remains preserved.`)}
-              </p>
-            </div>
-            <button
-              type="button"
-              disabled={!companyEmployees.length || !onDeleteAllCompanyEmployees}
-              onClick={() => { setDeleteEmployeesConfirmation(''); setIsDeleteEmployeesModalOpen(true); }}
-              className="px-5 py-2.5 bg-rose-700 hover:bg-rose-800 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
-            >
-              <Trash2 className="w-4 h-4" />
-              {tr('أرشفة جميع الموظفين', 'Archive all employees')} ({companyEmployees.length})
-            </button>
-          </div>
-        </div>
+        <CompanyDangerZoneTab
+          company={formData}
+          employeesCount={companyEmployees.length}
+          language={language}
+          onArchiveEmployees={onDeleteAllCompanyEmployees}
+          onSuccess={(message) => {
+            setSaveSuccessMessage(message);
+            setTimeout(() => setSaveSuccessMessage(null), 4000);
+          }}
+          tr={tr}
+        />
       )}
 
-      {isDeleteEmployeesModalOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm">
-          <div data-no-translate className="bg-white rounded-3xl max-w-lg w-full shadow-2xl border border-rose-200 overflow-hidden">
-            <div className="bg-rose-700 text-white p-5 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <AlertCircle className="w-6 h-6" />
-                <div>
-                  <h3 className="font-black">{tr('تأكيد أرشفة جميع الموظفين', 'Confirm Employee Archival')}</h3>
-                  <p className="text-xs text-rose-100">{tr('سيتم إخفاء الموظفين دون حذف التاريخ المالي', 'Employees will be hidden without deleting financial history')}</p>
-                </div>
-              </div>
-              <button type="button" onClick={() => setIsDeleteEmployeesModalOpen(false)} className="p-1.5 hover:bg-white/10 rounded-lg cursor-pointer"><X className="w-5 h-5" /></button>
-            </div>
-
-            <div className="p-6 space-y-4">
-              <div className="rounded-xl bg-rose-50 border border-rose-200 p-4 text-xs text-rose-900 leading-6">
-                {tr('سيتم أرشفة', 'This will archive')} <b>{companyEmployees.length} {tr('موظفًا', 'employees')}</b> {tr('في منشأة', 'in')} <b>{language === 'ar' ? formData.nameAr : (formData.nameEn || formData.nameAr)}</b>. {tr('ستظل كل المعاملات والمسيرات السابقة محفوظة للمراجعة ولن يدخل الموظفون المؤرشفون في أي مسير جديد.', 'All prior transactions and payroll runs remain available for audit, and archived employees will not enter new payroll runs.')}
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1.5">{tr('اكتب «أرشفة جميع الموظفين» للتأكيد:', 'Type “ARCHIVE ALL EMPLOYEES” to confirm:')}</label>
-                <input
-                  autoFocus
-                  value={deleteEmployeesConfirmation}
-                  onChange={event => setDeleteEmployeesConfirmation(event.target.value)}
-                  className="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl text-sm font-bold focus:outline-none focus:border-rose-500 focus:ring-2 focus:ring-rose-500/15"
-                  placeholder={tr('أرشفة جميع الموظفين', 'ARCHIVE ALL EMPLOYEES')}
-                />
-              </div>
-            </div>
-
-            <div className="p-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-2">
-              <button type="button" onClick={() => setIsDeleteEmployeesModalOpen(false)} className="px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold cursor-pointer">{tr('إلغاء', 'Cancel')}</button>
-              <button
-                type="button"
-                disabled={!deleteEmployeesConfirmationValid || isArchivingEmployees}
-                onClick={async () => {
-                  if (!deleteEmployeesConfirmationValid) return;
-                  setIsArchivingEmployees(true);
-                  try {
-                    const archived = await onDeleteAllCompanyEmployees?.(formData.id);
-                    if (archived === false) return;
-                    setIsDeleteEmployeesModalOpen(false);
-                    setDeleteEmployeesConfirmation('');
-                    setSaveSuccessMessage(tr(`تمت أرشفة جميع موظفي المنشأة (${companyEmployees.length}) مع الاحتفاظ بالتاريخ`, `All company employees (${companyEmployees.length}) were archived with history preserved.`));
-                  } finally {
-                    setIsArchivingEmployees(false);
-                  }
-                }}
-                className="px-5 py-2 bg-rose-700 hover:bg-rose-800 text-white rounded-xl text-xs font-black cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                {isArchivingEmployees ? tr('جاري الأرشفة...', 'Archiving...') : tr('تأكيد الأرشفة', 'Confirm archive')}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* ========================================================================= */}
       {/* USER MODAL */}

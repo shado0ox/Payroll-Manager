@@ -6,6 +6,7 @@ const server = fs.readFileSync(new URL('./index.mjs',import.meta.url),'utf8');
 const api = fs.readFileSync(new URL('../src/utils/api.ts',import.meta.url),'utf8');
 const app = fs.readFileSync(new URL('../src/App.tsx',import.meta.url),'utf8');
 const profile = fs.readFileSync(new URL('../src/components/CompanyProfileView.tsx',import.meta.url),'utf8');
+const dangerZone = fs.readFileSync(new URL('../src/components/company/CompanyDangerZoneTab.tsx',import.meta.url),'utf8');
 
 test('bulk employee action archives active rows and preserves company history', () => {
   const start = server.indexOf("app.post('/api/companies/:id/employees/archive'");
@@ -26,8 +27,9 @@ test('bulk employee archive UI waits for the committed server response', () => {
   const handler = app.slice(app.indexOf('const handleDeleteAllCompanyEmployees'),app.indexOf('const handleSavePayrollRunConfirmed'));
   assert.match(handler,/api\.archiveCompanyEmployees\(companyId\)/);
   assert.doesNotMatch(handler,/saveEmployees|saveAttendance|savePayrollRuns|saveJournals|saveState/);
-  assert.match(profile,/const archived = await onDeleteAllCompanyEmployees\?\.\(formData\.id\)/);
-  assert.match(profile,/أرشفة جميع الموظفين/);
-  assert.match(profile,/الاحتفاظ بالتاريخ/);
-  assert.doesNotMatch(profile,/حذف نهائي/);
+  assert.match(profile,/onArchiveEmployees={onDeleteAllCompanyEmployees}/);
+  assert.match(dangerZone,/const archived = await onArchiveEmployees\?\.\(company\.id\)/);
+  assert.match(dangerZone,/أرشفة جميع الموظفين/);
+  assert.match(dangerZone,/الاحتفاظ بالتاريخ/);
+  assert.doesNotMatch(dangerZone,/حذف نهائي/);
 });
