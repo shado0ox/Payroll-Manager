@@ -3,21 +3,23 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 const server = fs.readFileSync(new URL('./index.mjs', import.meta.url), 'utf8');
+const passwordResetRoutes = fs.readFileSync(new URL('./routes/auth-password-reset-routes.mjs', import.meta.url), 'utf8');
+const passwordResetServer = [server,passwordResetRoutes].join('\n');
 const login = fs.readFileSync(new URL('../src/components/LoginView.tsx', import.meta.url), 'utf8');
 const users = fs.readFileSync(new URL('../src/components/UserManagementView.tsx', import.meta.url), 'utf8');
 
 test('password reset API is exposed without account enumeration', () => {
-  assert.match(server, /\/api\/auth\/password-reset\/request/);
-  assert.match(server, /\/api\/auth\/password-reset\/confirm/);
-  assert.match(server, /PASSWORD_RESET_REQUEST_ACCEPTED/);
+  assert.match(passwordResetServer, /password-reset\/request/);
+  assert.match(passwordResetServer, /password-reset\/confirm/);
+  assert.match(passwordResetServer, /PASSWORD_RESET_REQUEST_ACCEPTED/);
 });
 
 test('reset tokens are hashed, expiring, single use, and sessions are revoked', () => {
-  assert.match(server, /password_reset_tokens/);
-  assert.match(server, /token_hash/);
-  assert.match(server, /expires_at/);
-  assert.match(server, /used_at/);
-  assert.match(server, /DELETE FROM .*sessions.*user_id/si);
+  assert.match(passwordResetServer, /password_reset_tokens/);
+  assert.match(passwordResetServer, /token_hash/);
+  assert.match(passwordResetServer, /expires_at/);
+  assert.match(passwordResetServer, /used_at/);
+  assert.match(passwordResetServer, /DELETE FROM .*sessions.*user_id/si);
 });
 
 test('login page exposes forgot password flow', () => {

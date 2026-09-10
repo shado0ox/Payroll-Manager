@@ -7,6 +7,7 @@ const systemRoutes = fs.readFileSync('server/routes/system-routes.mjs', 'utf8');
 const authSessionRoutes = fs.readFileSync('server/routes/auth-session-routes.mjs', 'utf8');
 const authLoginRoutes = fs.readFileSync('server/routes/auth-login-routes.mjs', 'utf8');
 const authRegistrationRoutes = fs.readFileSync('server/routes/auth-registration-routes.mjs', 'utf8');
+const authPasswordResetRoutes = fs.readFileSync('server/routes/auth-password-reset-routes.mjs', 'utf8');
 
 test('public system endpoints are delegated to an isolated router', () => {
   assert.match(server, /createSystemRouter/);
@@ -37,6 +38,17 @@ test('login is delegated with rate limiting, transaction, and secure cookie beha
   assert.match(authLoginRoutes, /INSERT INTO \$\{q\('sessions'\)\}/);
   assert.match(authLoginRoutes, /INSERT INTO \$\{q\('audit_log'\)\} \(user_id,action,ip\) VALUES \(\$1,'LOGIN',\$2\)/);
   assert.match(authLoginRoutes, /SameSite=Strict\$\{process\.env\.COOKIE_SECURE/);
+});
+
+test('password reset is delegated while preserving expiry, single use, and session revocation', () => {
+  assert.match(server, /app\.use\('\/api\/auth', createAuthPasswordResetRouter/);
+  assert.doesNotMatch(server, /app\.post\('\/api\/auth\/password-reset\/(?:request|confirm)'/);
+  assert.match(authPasswordResetRoutes, /router\.post\('\/password-reset\/request', loginLimiter/);
+  assert.match(authPasswordResetRoutes, /router\.post\('\/password-reset\/confirm', loginLimiter/);
+  assert.match(authPasswordResetRoutes, /PASSWORD_RESET_REQUEST_ACCEPTED/);
+  assert.match(authPasswordResetRoutes, /now\(\)\+interval '30 minutes'/);
+  assert.match(authPasswordResetRoutes, /used_at IS NULL AND expires_at > now\(\) FOR UPDATE/);
+  assert.match(authPasswordResetRoutes, /DELETE FROM \$\{q\('sessions'\)\} WHERE user_id=\$1/);
 });
 
 test('session lookup and logout are delegated to an authenticated router', () => {
