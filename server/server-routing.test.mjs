@@ -5,6 +5,7 @@ import test from 'node:test';
 const server = fs.readFileSync('server/index.mjs', 'utf8');
 const systemRoutes = fs.readFileSync('server/routes/system-routes.mjs', 'utf8');
 const authSessionRoutes = fs.readFileSync('server/routes/auth-session-routes.mjs', 'utf8');
+const authLoginRoutes = fs.readFileSync('server/routes/auth-login-routes.mjs', 'utf8');
 
 test('public system endpoints are delegated to an isolated router', () => {
   assert.match(server, /createSystemRouter/);
@@ -13,6 +14,16 @@ test('public system endpoints are delegated to an isolated router', () => {
   assert.match(systemRoutes, /router\.get\('\/health'/);
   assert.match(systemRoutes, /router\.get\('\/version'/);
   assert.match(systemRoutes, /router\.get\('\/public\/config'/);
+});
+
+test('login is delegated with rate limiting, transaction, and secure cookie behavior', () => {
+  assert.match(server, /app\.use\('\/api\/auth', createAuthLoginRouter/);
+  assert.doesNotMatch(server, /app\.post\('\/api\/auth\/login'/);
+  assert.match(authLoginRoutes, /router\.post\('\/login', loginLimiter/);
+  assert.match(authLoginRoutes, /bcrypt\.compare\(password, user\.password_hash\)/);
+  assert.match(authLoginRoutes, /INSERT INTO \$\{q\('sessions'\)\}/);
+  assert.match(authLoginRoutes, /INSERT INTO \$\{q\('audit_log'\)\} \(user_id,action,ip\) VALUES \(\$1,'LOGIN',\$2\)/);
+  assert.match(authLoginRoutes, /SameSite=Strict\$\{process\.env\.COOKIE_SECURE/);
 });
 
 test('session lookup and logout are delegated to an authenticated router', () => {
