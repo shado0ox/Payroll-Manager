@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import test from 'node:test';
 
 const server = fs.readFileSync(new URL('./index.mjs', import.meta.url), 'utf8');
+const systemRoutes = fs.readFileSync(new URL('./routes/system-routes.mjs', import.meta.url), 'utf8');
 const app = fs.readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8');
 const api = fs.readFileSync(new URL('../src/utils/api.ts', import.meta.url), 'utf8');
 const vite = fs.readFileSync(new URL('../vite.config.ts', import.meta.url), 'utf8');
@@ -47,8 +48,9 @@ test('user UI consumes committed records without legacy full-state helper writes
 test('every browser detects a new build and reload waits for pending saves', () => {
   assert.match(vite,/fileName: 'build-meta\.json'/);
   assert.match(vite,/__MASAR_BUILD_ID__/);
-  assert.match(server,/app\.get\('\/api\/version'/);
-  assert.match(server,/no-store, no-cache, must-revalidate/);
+  assert.match(server,/app\.use\('\/api', createSystemRouter/);
+  assert.match(systemRoutes,/router\.get\('\/version'/);
+  assert.match(systemRoutes,/no-store, no-cache, must-revalidate/);
   assert.match(server,/connected:true,buildId/);
   assert.match(api,/source\.addEventListener\('ready'/);
   assert.match(app,/window\.setInterval\(\(\) => \{ void checkVersion\(\); \}, 30_000\)/);
