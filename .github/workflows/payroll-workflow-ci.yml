@@ -156,6 +156,78 @@ jobs:
         if: always()
         run: kill "$(cat browser-server.pid)" 2>/dev/null || true
 
+  backup-restore-drill:
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      PORT: 3037
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:55432/masar_backup_test
+      DB_SCHEMA: masar_payroll
+      DB_SSL: 'false'
+      ADMIN_USERNAME: admin
+      ADMIN_PASSWORD: 'TestAdmin1!'
+      ADMIN_NAME: Backup Test Admin
+      ADMIN_EMAIL: backup-admin@example.test
+      COMPANY_ID: comp-1
+      COMPANY_CODE: '101'
+      COMPANY_NAME_AR: شركة اختبار النسخ
+      COMPANY_NAME_EN: Backup Test Company
+      COOKIE_SECURE: 'false'
+      TRUST_PROXY: '0'
+      APP_ORIGIN: http://127.0.0.1:3037
+      ALLOW_PUBLIC_REGISTRATION: 'false'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20.19
+          cache: npm
+      - run: npm ci
+      - name: Start dedicated PostgreSQL container
+        run: |
+          docker run -d --name masar-backup-ci \
+            -e POSTGRES_USER=postgres \
+            -e POSTGRES_PASSWORD=postgres \
+            -e POSTGRES_DB=masar_backup_test \
+            -p 55432:5432 postgres:15-alpine
+          for attempt in $(seq 1 60); do
+            docker exec masar-backup-ci pg_isready -U postgres -d masar_backup_test && break
+            sleep 1
+          done
+          docker exec masar-backup-ci pg_isready -U postgres -d masar_backup_test
+      - name: Create application schema
+        run: |
+          node server/index.mjs > backup-test-server.log 2>&1 &
+          echo $! > backup-test-server.pid
+          for attempt in $(seq 1 60); do
+            curl --fail --silent http://127.0.0.1:3037/api/health && break
+            sleep 1
+          done
+          curl --fail --silent http://127.0.0.1:3037/api/health
+          kill "$(cat backup-test-server.pid)"
+          wait "$(cat backup-test-server.pid)" || true
+      - name: Create and restore a verified backup
+        env:
+          PAYROLL_DB_CONTAINER: masar-backup-ci
+          PAYROLL_DB_NAME: masar_backup_test
+          PAYROLL_DB_USER: postgres
+          PAYROLL_DB_ADMIN_USER: postgres
+          PAYROLL_BACKUP_DIR: ${{ runner.temp }}/masar-backups
+          PAYROLL_RESTORE_TEST_DB: masar_payroll_restore_test
+          RESTORE_DRILL_CONFIRM: 'YES'
+        run: |
+          ./scripts/postgres-backup.sh
+          ./scripts/postgres-restore-drill.sh
+      - name: Show server log on failure
+        if: failure()
+        run: cat backup-test-server.log 2>/dev/null || true
+      - name: Stop backup test resources
+        if: always()
+        run: |
+          kill "$(cat backup-test-server.pid)" 2>/dev/null || true
+          docker rm -f masar-backup-ci 2>/dev/null || true
+
   legacy-migration-postgres:
     needs: verify
     runs-on: ubuntu-latest
