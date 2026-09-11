@@ -7,6 +7,8 @@ const app = fs.readFileSync('src/App.tsx', 'utf8');
 const server = fs.readFileSync('server/index.mjs', 'utf8');
 const sidebar = fs.readFileSync('src/components/Sidebar.tsx', 'utf8');
 const types = fs.readFileSync('src/types/index.ts', 'utf8');
+const paymentCoverage = fs.readFileSync('src/utils/payrollPaymentCoverage.ts', 'utf8');
+const payrollItemsTable = fs.readFileSync('src/components/payroll/PayrollRunItemsTable.tsx', 'utf8');
 
 test('recalculation preserves employees already in active or paid transfer batches', () => {
   assert.match(payroll, /if \(previousItem && committedEmployeeIds\.has\(emp\.id\)\) return previousItem/);
@@ -37,8 +39,18 @@ test('new and unpaid employees use the full payroll engine including prior perio
 
 test('prior unpaid periods are carried into the current payable balance once and paid periods are skipped', () => {
   assert.match(payroll, /alreadyTransferred/);
-  assert.match(payroll, /\['SCHEDULED', 'PAID'\]\.includes\(batch\.status\)/);
+  assert.match(payroll, /paymentCoverages\.some\(coverage =>/);
+  assert.match(paymentCoverage, /item\.priorPeriodDetails/);
+  assert.match(paymentCoverage, /sourcePeriodMonth: detail\.periodMonth/);
   assert.match(payroll, /netSalary: roundAmount\(calculated\.netSalary \+ priorPeriodNet\)/);
+});
+
+test('a cumulative later payment is visible and locked in every covered source month', () => {
+  assert.match(payroll, /externalCoverages = paymentCoverages\.filter/);
+  assert.match(payroll, /externalCoverages\.map\(coverage => coverage\.employeeId\)/);
+  assert.match(payroll, /coverage\.sourcePeriodMonth === selectedPeriod/);
+  assert.match(payrollItemsTable, /paymentBatch\.batchNumber/);
+  assert.match(payrollItemsTable, /paymentBatch\.periodMonth/);
 });
 
 test('period-specific deductions remain editable until that employee enters a transfer batch', () => {

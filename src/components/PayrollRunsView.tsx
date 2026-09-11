@@ -63,6 +63,7 @@ import { useLanguage } from '../i18n/LanguageContext';
 import { PayrollRunItemsTable } from './payroll/PayrollRunItemsTable';
 import { PayrollPaymentBatchModal } from './payroll/PayrollPaymentBatchModal';
 import { getCurrentPeriod } from '../utils/period';
+import { getPayrollPaymentCoverages } from '../utils/payrollPaymentCoverage';
 
 interface PayrollRunsViewProps {
   company: Company;
@@ -203,11 +204,24 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
   }, [currentRun, searchTerm, filterWarningOnly, filterDept]);
 
   const paymentBatches = useMemo(() => currentRun?.paymentBatches || [], [currentRun?.paymentBatches]);
+  const paymentCoverages = useMemo(() => getPayrollPaymentCoverages(companyRuns), [companyRuns]);
   const paymentSummary = useMemo(() => {
     const committedPaymentBatches = paymentBatches.filter(batch => ['SCHEDULED', 'PAID'].includes(batch.status));
-    const committedEmployeeIds = new Set(committedPaymentBatches.flatMap(batch => batch.employeeIds));
-    const paidAmount = paymentBatches.filter(batch => batch.status === 'PAID').reduce((sum, batch) => sum + batch.totalAmount, 0);
-    const scheduledAmount = paymentBatches.filter(batch => batch.status === 'SCHEDULED').reduce((sum, batch) => sum + batch.totalAmount, 0);
+    const externalCoverages = paymentCoverages.filter(coverage =>
+      coverage.sourcePeriodMonth === selectedPeriod && coverage.paymentPayrollRunId !== currentRun?.id
+    );
+    const committedEmployeeIds = new Set([
+      ...committedPaymentBatches.flatMap(batch => batch.employeeIds),
+      ...externalCoverages.map(coverage => coverage.employeeId),
+    ]);
+    const paidAmount = roundAmount(
+      paymentBatches.filter(batch => batch.status === 'PAID').reduce((sum, batch) => sum + batch.totalAmount, 0)
+      + externalCoverages.filter(coverage => coverage.batch.status === 'PAID').reduce((sum, coverage) => sum + coverage.amount, 0)
+    );
+    const scheduledAmount = roundAmount(
+      paymentBatches.filter(batch => batch.status === 'SCHEDULED').reduce((sum, batch) => sum + batch.totalAmount, 0)
+      + externalCoverages.filter(coverage => coverage.batch.status === 'SCHEDULED').reduce((sum, coverage) => sum + coverage.amount, 0)
+    );
     const entitlementTotals = (currentRun?.items || []).reduce<Record<PayrollEntitlementStatus, number>>((totals, item) => {
       const status = item.entitlementStatus || 'PAYABLE';
       totals[status] += item.netSalary;
@@ -226,11 +240,14 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
       unpaidAmount: Math.max(0, (currentRun?.totalNetSalaries || 0) - paidAmount - exceptionalProcessedAmount),
       closeOutstandingAmount: Math.max(0, (currentRun?.totalNetSalaries || 0) - paidAmount - exceptionalProcessedAmount),
     };
-  }, [paymentBatches, currentRun?.items, currentRun?.totalNetSalaries]);
+  }, [paymentBatches, paymentCoverages, selectedPeriod, currentRun?.id, currentRun?.items, currentRun?.totalNetSalaries]);
   const { committedEmployeeIds, paidAmount, scheduledAmount, heldAmount, underSettlementAmount, settledAmount, cancelledByDocumentAmount, remainingToSchedule, unpaidAmount, closeOutstandingAmount } = paymentSummary;
 
   const getEmployeePaymentBatch = (employeeId: string) => {
-    return [...paymentBatches].reverse().find(batch => batch.employeeIds.includes(employeeId) && ['SCHEDULED', 'PAID'].includes(batch.status));
+    return [...paymentBatches].reverse().find(batch => batch.employeeIds.includes(employeeId) && ['SCHEDULED', 'PAID'].includes(batch.status))
+      || [...paymentCoverages].reverse().find(coverage =>
+        coverage.sourcePeriodMonth === selectedPeriod && coverage.employeeId === employeeId
+      )?.batch;
   };
 
   const eligibleFilteredItems = useMemo(() => filteredItems.filter(item =>
@@ -562,9 +579,9 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
         let cursor = salaryStartMonth;
         while (cursor < selectedPeriod && priorPeriodDetails.length < 240) {
           const historicalRun = companyRuns.find(run => run.periodMonth === cursor);
-          const alreadyTransferred = Boolean(historicalRun?.paymentBatches?.some(batch =>
-            ['SCHEDULED', 'PAID'].includes(batch.status) && (batch.employeeIds || []).includes(emp.id)
-          ));
+          const alreadyTransferred = paymentCoverages.some(coverage =>
+            coverage.sourcePeriodMonth === cursor && coverage.employeeId === emp.id
+          );
           if (!alreadyTransferred) {
             const [priorYear, priorMonthNo] = cursor.split('-').map(Number);
             const priorEnd = `${cursor}-${String(new Date(Date.UTC(priorYear, priorMonthNo, 0)).getUTCDate()).padStart(2, '0')}`;

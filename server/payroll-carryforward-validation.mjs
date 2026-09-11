@@ -8,6 +8,15 @@ export function validatePayrollCarryForwardState(storedRuns, incomingRuns) {
   const runs = asArray(incomingRuns);
   const runById = new Map(runs.map(run => [run.id, run]));
   const reservedSources = new Map();
+  const coveredEntitlements = new Map();
+
+  const claimCoverage = (companyId,periodMonth,employeeId,batchId) => {
+    if (!companyId || !periodMonth || !employeeId || !batchId) return;
+    const key = `${companyId}:${periodMonth}:${employeeId}`;
+    const existingBatch = coveredEntitlements.get(key);
+    if (existingBatch && existingBatch !== batchId) fail('PAYROLL_ENTITLEMENT_ALREADY_COVERED');
+    coveredEntitlements.set(key,batchId);
+  };
 
   for (const destinationRun of runs) {
     for (const batch of asArray(destinationRun.paymentBatches)) {
@@ -17,6 +26,7 @@ export function validatePayrollCarryForwardState(storedRuns, incomingRuns) {
       if (employeeIds.length !== new Set(employeeIds).size) fail('PAYMENT_BATCH_DUPLICATE_EMPLOYEE');
 
       const destinationItems = new Map(asArray(destinationRun.items).map(item => [String(item.employeeId), item]));
+      const generalCoverages = [];
       let currentTotal = 0;
       for (const employeeId of employeeIds) {
         const item = destinationItems.get(employeeId);
@@ -24,6 +34,16 @@ export function validatePayrollCarryForwardState(storedRuns, incomingRuns) {
         if ((item.entitlementStatus || 'PAYABLE') !== 'PAYABLE') fail('PAYMENT_BATCH_EMPLOYEE_NOT_PAYABLE');
         if (Number(item.netSalary || 0) <= 0) fail('PAYMENT_BATCH_INVALID_CURRENT_AMOUNT');
         currentTotal = roundAmount(currentTotal + Number(item.netSalary || 0));
+        const priorDetails = asArray(item.priorPeriodDetails);
+        const priorNet = roundAmount(priorDetails.reduce((sum,detail) => sum + Number(detail?.net || 0),0));
+        if (roundAmount(Number(item.netSalary || 0) - priorNet) > 0) {
+          generalCoverages.push([destinationRun.periodMonth,employeeId]);
+        }
+        for (const detail of priorDetails) {
+          const sourcePeriodMonth = String(detail?.periodMonth || '');
+          if (!sourcePeriodMonth || sourcePeriodMonth >= String(destinationRun.periodMonth || '')) fail('PAYROLL_CARRY_PERIOD_INVALID');
+          if (Number(detail?.net || 0) > 0) generalCoverages.push([sourcePeriodMonth,employeeId]);
+        }
       }
 
       let priorTotal = 0;
@@ -52,11 +72,15 @@ export function validatePayrollCarryForwardState(storedRuns, incomingRuns) {
         const existingBatch = reservedSources.get(sourceKey);
         if (existingBatch && existingBatch !== batch.id) fail('PRIOR_ENTITLEMENT_ALREADY_RESERVED');
         reservedSources.set(sourceKey, batch.id);
+        claimCoverage(destinationRun.companyId,String(ref?.sourcePeriodMonth || ''),String(ref?.employeeId || ''),String(batch.id));
         priorTotal = roundAmount(priorTotal + referencedAmount);
       }
 
       const expectedBatchTotal = roundAmount(currentTotal + priorTotal);
       if (roundAmount(batch.totalAmount) !== expectedBatchTotal) fail('PAYMENT_BATCH_TOTAL_MISMATCH');
+      for (const [periodMonth,employeeId] of generalCoverages) {
+        claimCoverage(destinationRun.companyId,periodMonth,employeeId,String(batch.id));
+      }
     }
   }
 

@@ -16,6 +16,7 @@ import {
 import { Company, Employee, PayrollRun, PayrollSettlement, LoanSchedule } from '../types';
 import { formatSAR, formatNumber, roundAmount } from '../utils/payrollEngine';
 import { useLanguage } from '../i18n/LanguageContext';
+import { getPayrollPaymentCoverages } from '../utils/payrollPaymentCoverage';
 
 interface EmployeeStatementModalProps {
   employee: Employee | null;
@@ -59,11 +60,17 @@ export const EmployeeStatementModal: React.FC<EmployeeStatementModalProps> = ({
   const selectedHistory = employeeHistory.find(history => history.run.periodMonth === periodMonth);
   const latestItem = selectedHistory?.item;
   const latestRun = selectedHistory?.run;
-  const paidPriorSettlements = payrollRuns.filter(run => run.companyId === company.id).flatMap(run => (run.paymentBatches || [])
-    .filter(batch => batch.status === 'PAID')
-    .flatMap(batch => (batch.priorEntitlements || [])
-      .filter(ref => ref.employeeId === employee.id)
-      .map(ref => ({ ...ref, paymentBatchNumber: batch.batchNumber, paymentDate: batch.paymentDate || batch.scheduledDate }))));
+  const paidPriorSettlements = getPayrollPaymentCoverages(payrollRuns.filter(run => run.companyId === company.id))
+    .filter(coverage => coverage.batch.status === 'PAID' && coverage.isPriorPeriod && coverage.employeeId === employee.id)
+    .map(coverage => ({
+      sourcePayrollRunId: coverage.paymentPayrollRunId,
+      sourcePayrollItemId: `${coverage.employeeId}:${coverage.sourcePeriodMonth}`,
+      sourcePeriodMonth: coverage.sourcePeriodMonth,
+      employeeId: coverage.employeeId,
+      amount: coverage.amount,
+      paymentBatchNumber: coverage.batch.batchNumber,
+      paymentDate: coverage.batch.paymentDate || coverage.batch.scheduledDate,
+    }));
   const paidPriorSettlementTotal = roundAmount(paidPriorSettlements.reduce((sum, ref) => sum + ref.amount, 0));
 
   const handlePrint = () => {
