@@ -19,6 +19,13 @@ export function reconcilePaidPayrollCarryForward({ runs, employees, sourceRun, p
   const employeeIds = new Set(asArray(paidBatch?.employeeIds).map(String));
   if (!sourceRun?.periodMonth || !employeeIds.size) return [];
   const employeesById = new Map(asArray(employees).map(employee => [String(employee.id), employee]));
+  const coveredPeriodsByEmployee = new Map([...employeeIds].map(employeeId => [
+    employeeId,
+    new Set([
+      sourceRun.periodMonth,
+      ...sourceCarryDetails(runs,sourceRun,employeeId).map(detail => detail.periodMonth),
+    ]),
+  ]));
   const affectedRuns = [];
 
   for (const run of asArray(runs)) {
@@ -32,8 +39,9 @@ export function reconcilePaidPayrollCarryForward({ runs, employees, sourceRun, p
     const items = asArray(run.items).map(item => {
       const employeeId = String(item.employeeId || '');
       if (!employeeIds.has(employeeId) || employeeIsPaymentLocked(run, employeeId)) return item;
-      const removedDetails = asArray(item.priorPeriodDetails).filter(detail => detail?.periodMonth === sourceRun.periodMonth);
-      const keptDetails = asArray(item.priorPeriodDetails).filter(detail => detail?.periodMonth !== sourceRun.periodMonth);
+      const coveredPeriods = coveredPeriodsByEmployee.get(employeeId) || new Set();
+      const removedDetails = asArray(item.priorPeriodDetails).filter(detail => coveredPeriods.has(String(detail?.periodMonth || '')));
+      const keptDetails = asArray(item.priorPeriodDetails).filter(detail => !coveredPeriods.has(String(detail?.periodMonth || '')));
       const itemRemovedGross = roundAmount(removedDetails.reduce((sum, detail) => sum + Number(detail?.gross || 0), 0));
       const itemRemovedDeductions = roundAmount(removedDetails.reduce((sum, detail) => sum + Number(detail?.deductions || 0), 0));
       const itemRemovedNet = roundAmount(removedDetails.reduce((sum, detail) => sum + Number(detail?.net || 0), 0));

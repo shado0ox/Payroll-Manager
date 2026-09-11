@@ -32,6 +32,41 @@ test('late payment removes its carry and releases an automatic bank hold', () =>
   assert.equal(result.totalCompanyCost,1020);
 });
 
+test('a cumulative August payment removes May through August from a later payroll', () => {
+  const cumulativeSource = {
+    ...sourceRun,
+    items:[{
+      employeeId:'employee-1',totalGrossSalary:1000,totalDeductions:0,netSalary:4000,priorPeriodNet:3000,
+      priorPeriodDetails:[
+        { periodMonth:'2026-05',gross:1000,deductions:0,net:1000 },
+        { periodMonth:'2026-06',gross:1000,deductions:0,net:1000 },
+        { periodMonth:'2026-07',gross:1000,deductions:0,net:1000 },
+      ],
+    }],
+  };
+  const septemberItem = carriedItem({
+    entitlementStatus:'PAYABLE',entitlementReason:undefined,
+    priorPeriodGross:4000,priorPeriodDeductions:0,priorPeriodNet:4000,
+    priorPeriodDetails:[
+      { periodMonth:'2026-05',gross:1000,deductions:0,net:1000 },
+      { periodMonth:'2026-06',gross:1000,deductions:0,net:1000 },
+      { periodMonth:'2026-07',gross:1000,deductions:0,net:1000 },
+      { periodMonth:'2026-08',gross:1000,deductions:0,net:1000 },
+    ],
+    netSalary:5000,totalCompanyBurden:5020,
+  });
+  const [result] = reconcilePaidPayrollCarryForward({
+    runs:[cumulativeSource,futureRun(septemberItem,{
+      totalGrossSalaries:5000,totalDeductions:0,totalNetSalaries:5000,totalCompanyCost:5020,
+    })],
+    employees:[readyEmployee],sourceRun:cumulativeSource,paidBatch:{ employeeIds:['employee-1'] },
+  });
+  assert.deepEqual(result.items[0].priorPeriodDetails,[]);
+  assert.equal(result.items[0].priorPeriodNet,0);
+  assert.equal(result.items[0].netSalary,1000);
+  assert.equal(result.totalNetSalaries,1000);
+});
+
 test('manual holds are preserved while the paid carry is removed', () => {
   const [result] = reconcilePaidPayrollCarryForward({
     runs:[futureRun(carriedItem({ entitlementReason:'MANUAL_REVIEW' }))],employees:[readyEmployee],sourceRun,
@@ -102,6 +137,30 @@ test('cancelling the released batch restores its salary carry exactly once', () 
   assert.deepEqual(reconcileReleasedPayrollCarryForward({
     runs:[paidSource,restored],sourceRun:paidSource,releasedBatch:{ employeeIds:['employee-1'] },
   }),[]);
+});
+
+test('cancelling a cumulative batch restores every covered source month', () => {
+  const cumulativeSource = {
+    ...sourceRun,
+    items:[{
+      employeeId:'employee-1',totalGrossSalary:1000,totalDeductions:0,netSalary:4000,priorPeriodNet:3000,
+      priorPeriodDetails:[
+        { periodMonth:'2026-05',gross:1000,deductions:0,net:1000 },
+        { periodMonth:'2026-06',gross:1000,deductions:0,net:1000 },
+        { periodMonth:'2026-07',gross:1000,deductions:0,net:1000 },
+      ],
+    }],
+  };
+  const cleanFuture = futureRun(carriedItem({
+    entitlementStatus:'PAYABLE',entitlementReason:undefined,priorPeriodGross:0,priorPeriodDeductions:0,priorPeriodNet:0,
+    priorPeriodDetails:[],netSalary:1000,totalCompanyBurden:1020,
+  }),{ totalGrossSalaries:1000,totalDeductions:0,totalNetSalaries:1000,totalCompanyCost:1020 });
+  const [result] = reconcileReleasedPayrollCarryForward({
+    runs:[cumulativeSource,cleanFuture],sourceRun:cumulativeSource,releasedBatch:{ employeeIds:['employee-1'] },
+  });
+  assert.deepEqual(result.items[0].priorPeriodDetails.map(detail => detail.periodMonth),['2026-05','2026-06','2026-07','2026-08']);
+  assert.equal(result.items[0].priorPeriodNet,4000);
+  assert.equal(result.items[0].netSalary,5000);
 });
 
 test('a released batch does not alter locked or closed later payroll', () => {

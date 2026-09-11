@@ -50,8 +50,11 @@ export const PayrollRunItemsTable = React.memo(function PayrollRunItemsTable({
     const entitlementStatus = item.entitlementStatus || 'PAYABLE';
     if (paymentBatch) {
       return (
-        <span className={`inline-flex px-1.5 py-0.5 rounded border text-[9px] font-bold ${PAYMENT_STATUS_CONFIG[paymentBatch.status].classes}`}>
-          {language === 'ar' ? PAYMENT_STATUS_CONFIG[paymentBatch.status].labelAr : PAYMENT_STATUS_CONFIG[paymentBatch.status].labelEn}
+        <span className="inline-flex flex-col items-start gap-0.5">
+          <span className={`inline-flex px-1.5 py-0.5 rounded border text-[9px] font-bold ${PAYMENT_STATUS_CONFIG[paymentBatch.status].classes}`}>
+            {language === 'ar' ? PAYMENT_STATUS_CONFIG[paymentBatch.status].labelAr : PAYMENT_STATUS_CONFIG[paymentBatch.status].labelEn}
+          </span>
+          <span className="text-[8px] font-mono text-slate-500">{paymentBatch.batchNumber} • {paymentBatch.periodMonth}</span>
         </span>
       );
     }

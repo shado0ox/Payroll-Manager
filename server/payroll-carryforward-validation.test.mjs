@@ -66,3 +66,37 @@ test('keeps an active stored reservation owned by the same batch', () => {
   const incoming = makeRuns({ status: 'PAID' });
   assert.doesNotThrow(() => validatePayrollCarryForwardState(stored, incoming));
 });
+
+test('a later cumulative payment covers its prior salary months and blocks duplicate payment', () => {
+  const mayItem = { ...currentItem,id:'item-may-1',netSalary:1000 };
+  const augustItem = {
+    ...currentItem,id:'item-aug-current',netSalary:4000,priorPeriodNet:3000,
+    priorPeriodDetails:[
+      { periodMonth:'2026-05',gross:1000,deductions:0,net:1000 },
+      { periodMonth:'2026-06',gross:1000,deductions:0,net:1000 },
+      { periodMonth:'2026-07',gross:1000,deductions:0,net:1000 },
+    ],
+  };
+  const runs = [
+    { id:'run-may',companyId:'comp-1',periodMonth:'2026-05',items:[mayItem],paymentBatches:[
+      { id:'batch-may',status:'SCHEDULED',employeeIds:['emp-1'],totalAmount:1000 },
+    ] },
+    { id:'run-aug',companyId:'comp-1',periodMonth:'2026-08',items:[augustItem],paymentBatches:[
+      { id:'batch-aug',status:'PAID',employeeIds:['emp-1'],totalAmount:4000 },
+    ] },
+  ];
+  expectCode(() => validatePayrollCarryForwardState([],runs),'PAYROLL_ENTITLEMENT_ALREADY_COVERED');
+});
+
+test('a cancelled cumulative batch does not reserve its prior salary months', () => {
+  const runs = [
+    { id:'run-may',companyId:'comp-1',periodMonth:'2026-05',items:[{ ...currentItem,id:'item-may',netSalary:1000 }],paymentBatches:[
+      { id:'batch-may',status:'SCHEDULED',employeeIds:['emp-1'],totalAmount:1000 },
+    ] },
+    { id:'run-aug',companyId:'comp-1',periodMonth:'2026-08',items:[{
+      ...currentItem,id:'item-aug',netSalary:4000,priorPeriodNet:3000,
+      priorPeriodDetails:[{ periodMonth:'2026-05',gross:1000,deductions:0,net:1000 }],
+    }],paymentBatches:[{ id:'batch-aug',status:'CANCELLED',employeeIds:['emp-1'],totalAmount:4000 }] },
+  ];
+  assert.doesNotThrow(() => validatePayrollCarryForwardState([],runs));
+});
