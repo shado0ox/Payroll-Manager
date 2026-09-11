@@ -17,7 +17,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20.19
+          node-version: "22"
           cache: npm
       - run: npm ci
       - run: npm run prepare:security
@@ -66,14 +66,28 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20.19
+          node-version: "22"
           cache: npm
       - run: npm ci
       - run: npm run prepare:security
+
       - name: Start isolated Masar server
         run: |
+          set -euo pipefail
           node server/index.mjs > runtime-server.log 2>&1 &
           echo $! > runtime-server.pid
+
+          for i in $(seq 1 60); do
+            if curl --fail --silent http://127.0.0.1:3034/api/health >/dev/null; then
+              echo "✅ Server ready."
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "❌ Server did not become ready."
+          cat runtime-server.log || true
+          exit 1
+
       - name: Exercise approval and payment persistence
         run: node scripts/runtime-payroll-smoke.mjs
       - name: Exercise full isolated payroll acceptance cycle
@@ -133,13 +147,14 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20.19
+          node-version: "22"
           cache: npm
       - run: npm ci
       - run: npm run build
       - run: npx playwright install --with-deps chromium
       - name: Start isolated Masar server
         run: |
+          set -euo pipefail
           node server/index.mjs > browser-server.log 2>&1 &
           echo $! > browser-server.pid
           for attempt in $(seq 1 60); do
@@ -181,23 +196,43 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20.19
+          node-version: "22"
           cache: npm
       - run: npm ci
+
+      # ✅ الإصلاح الرئيسي: healthcheck + انتظار حالة healthy
       - name: Start dedicated PostgreSQL container
         run: |
+          set -euo pipefail
           docker run -d --name masar-backup-ci \
             -e POSTGRES_USER=postgres \
             -e POSTGRES_PASSWORD=postgres \
             -e POSTGRES_DB=masar_backup_test \
+            --health-cmd="pg_isready -U postgres -d masar_backup_test" \
+            --health-interval=2s \
+            --health-timeout=3s \
+            --health-retries=30 \
+            --health-start-period=5s \
             -p 55432:5432 postgres:15-alpine
-          for attempt in $(seq 1 60); do
-            docker exec masar-backup-ci pg_isready -U postgres -d masar_backup_test && break
-            sleep 1
+
+          status="starting"
+          for i in $(seq 1 60); do
+            status=$(docker inspect --format='{{.State.Health.Status}}' masar-backup-ci 2>/dev/null || echo "unknown")
+            echo "  attempt $i/60 → health: $status"
+            [ "$status" = "healthy" ] && break
+            sleep 2
           done
-          docker exec masar-backup-ci pg_isready -U postgres -d masar_backup_test
+
+          if [ "$status" != "healthy" ]; then
+            echo "❌ PostgreSQL did not become healthy in time."
+            docker logs masar-backup-ci || true
+            exit 1
+          fi
+          echo "✅ PostgreSQL is healthy."
+
       - name: Create application schema
         run: |
+          set -euo pipefail
           node server/index.mjs > backup-test-server.log 2>&1 &
           echo $! > backup-test-server.pid
           for attempt in $(seq 1 60); do
@@ -207,6 +242,7 @@ jobs:
           curl --fail --silent http://127.0.0.1:3037/api/health
           kill "$(cat backup-test-server.pid)"
           wait "$(cat backup-test-server.pid)" || true
+
       - name: Create and restore a verified backup
         env:
           PAYROLL_DB_CONTAINER: masar-backup-ci
@@ -219,6 +255,7 @@ jobs:
         run: |
           ./scripts/postgres-backup.sh
           ./scripts/postgres-restore-drill.sh
+
       - name: Show server log on failure
         if: failure()
         run: cat backup-test-server.log 2>/dev/null || true
@@ -267,11 +304,13 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20.19
+          node-version: "22"
           cache: npm
       - run: npm ci
+
       - name: Create the current schema once
         run: |
+          set -euo pipefail
           node server/index.mjs > migration-initial.log 2>&1 &
           echo $! > migration-server.pid
           for attempt in $(seq 1 60); do
@@ -281,10 +320,13 @@ jobs:
           curl --fail --silent http://127.0.0.1:3035/api/health
           kill "$(cat migration-server.pid)"
           wait "$(cat migration-server.pid)" || true
+
       - name: Seed isolated legacy application state
         run: node scripts/runtime-legacy-migration-smoke.mjs seed
+
       - name: Run legacy migrations against PostgreSQL
         run: |
+          set -euo pipefail
           node server/index.mjs > migration-upgrade.log 2>&1 &
           echo $! > migration-server.pid
           for attempt in $(seq 1 60); do
@@ -295,8 +337,10 @@ jobs:
           node scripts/runtime-legacy-migration-smoke.mjs verify
           kill "$(cat migration-server.pid)"
           wait "$(cat migration-server.pid)" || true
+
       - name: Verify migrations are restart-safe
         run: |
+          set -euo pipefail
           node server/index.mjs > migration-restart.log 2>&1 &
           echo $! > migration-server.pid
           for attempt in $(seq 1 60); do
@@ -305,9 +349,11 @@ jobs:
           done
           curl --fail --silent http://127.0.0.1:3035/api/health
           node scripts/runtime-legacy-migration-smoke.mjs verify
+
       - name: Show migration server logs on failure
         if: failure()
         run: cat migration-initial.log migration-upgrade.log migration-restart.log 2>/dev/null || true
+
       - name: Stop isolated migration server
         if: always()
         run: kill "$(cat migration-server.pid)" 2>/dev/null || true
