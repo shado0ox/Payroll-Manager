@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildPayrollRepairPlan } from './payroll-data-repair.mjs';
 
-const employee = { id:'employee-1',companyId:'company-1',status:'ACTIVE',bankIban:'SA0380000000608010167519',bankAccountStatus:'ACTIVE' };
+const employee = { id:'employee-1',employeeNo:'E001',firstNameAr:'أحمد',lastNameAr:'محمد',companyId:'company-1',status:'ACTIVE',bankIban:'SA0380000000608010167519',bankAccountStatus:'ACTIVE' };
 const item = (id,overrides = {}) => ({ id,employeeId:'employee-1',totalGrossSalary:1000,totalDeductions:100,netSalary:900,
   totalCompanyBurden:920,priorPeriodGross:0,priorPeriodDeductions:0,priorPeriodNet:0,priorPeriodDetails:[],
   entitlementStatus:'PAYABLE',...overrides });
@@ -21,6 +21,19 @@ test('scan proposes one safe repair for stale carry, totals, and automatic hold'
   const plan = buildPayrollRepairPlan({ employees:[employee],payrollRuns:[august,september] },['company-1']);
   assert.equal(plan.issues.length,1);
   assert.deepEqual(plan.issues[0].findings,['CARRY_FORWARD_MISMATCH','AUTOMATIC_HOLD_STALE','RUN_TOTAL_MISMATCH']);
+  assert.deepEqual(plan.issues[0].details.carryMismatches,[{
+    employeeId:'employee-1',employeeNo:'E001',employeeName:'أحمد محمد',sourcePeriodMonth:'2026-08',
+    recordedNet:900,expectedNet:0,difference:-900,
+  }]);
+  assert.deepEqual(plan.issues[0].details.holdMismatches,[{
+    employeeId:'employee-1',employeeNo:'E001',employeeName:'أحمد محمد',
+  }]);
+  assert.deepEqual(plan.issues[0].details.totalMismatches,[
+    { metric:'totalGrossSalaries',stored:2000,computed:1000,difference:-1000 },
+    { metric:'totalDeductions',stored:200,computed:100,difference:-100 },
+    { metric:'totalNetSalaries',stored:1800,computed:900,difference:-900 },
+    { metric:'totalCompanyCost',stored:1820,computed:920,difference:-900 },
+  ]);
   const repaired = plan.proposedRuns.get('payroll-run:september');
   assert.equal(repaired.items[0].priorPeriodNet,0);
   assert.equal(repaired.items[0].netSalary,900);
@@ -62,6 +75,9 @@ test('closed runs still report internally inconsistent stored totals without pro
   assert.deepEqual(issue?.findings,['RUN_TOTAL_MISMATCH']);
   assert.equal(issue?.repairable,false);
   assert.equal(issue?.blockedReason,'LOCKED_PAYROLL_RUN');
+  assert.deepEqual(issue?.details.totalMismatches,[
+    { metric:'totalNetSalaries',stored:1,computed:900,difference:899 },
+  ]);
   assert.equal(plan.proposedRuns.has('payroll-run:july'),false);
 });
 
