@@ -27,3 +27,10 @@ test('non-Saudi GOSI remains employer-only and is visible in employee and payrol
   assert.match(employeesView, /تطبيق تأمين المخاطر المهنية/);
   assert.match(payrollView, /على الشركة فقط/);
 });
+
+test('occupational hazards insurance defaults to enabled when adding or editing a non-Saudi employee', () => {
+  assert.match(employeesView, /nationality: 'NON_SAUDI', country: '', gosiEnabled: true/);
+  assert.match(employeesView, /empCopy\.nationality === 'NON_SAUDI'\) empCopy\.gosiEnabled = true/);
+  assert.match(employeesView, /handleCompleteOnboarding[\s\S]{0,900}empCopy\.gosiEnabled = true/);
+  assert.doesNotMatch(employeesView, /nationality: 'NON_SAUDI', country: '', gosiEnabled: false/);
+});
