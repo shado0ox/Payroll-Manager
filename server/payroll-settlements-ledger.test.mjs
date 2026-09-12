@@ -1,11 +1,11 @@
 import test from 'node:test';
+import { serverSource as server } from './test-server-source.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 const transform = fs.readFileSync('scripts/apply-payroll-settlements-ledger.mjs', 'utf8');
 const component = fs.readFileSync('src/components/PayrollSettlementsView.tsx', 'utf8');
 const featureHardening = fs.readFileSync('scripts/apply-feature-hardening.mjs', 'utf8');
-const server = fs.readFileSync('server/index.mjs','utf8');
 
 test('PR21 transform runs after its compatibility shims and restores server-owned audit protection afterwards', () => {
   const compat = featureHardening.indexOf("apply-pr21-patchable-anchor-compat.mjs");
