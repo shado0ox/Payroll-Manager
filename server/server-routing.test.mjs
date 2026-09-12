@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
+import { createEmployeeRouter } from './routes/employee-routes.mjs';
+import { createAttendanceLeaveRouter } from './routes/attendance-leave-routes.mjs';
+import { createLoanPenaltyRouter } from './routes/loan-penalty-routes.mjs';
+import { createPayrollRouter } from './routes/payroll-routes.mjs';
+import { createJournalQoyodRouter } from './routes/journal-qoyod-routes.mjs';
 
 const server = fs.readFileSync('server/index.mjs', 'utf8');
 const systemRoutes = fs.readFileSync('server/routes/system-routes.mjs', 'utf8');
@@ -97,4 +102,12 @@ test('operational domains are delegated to isolated routers', () => {
     assert.match(source,route);
   }
   assert.doesNotMatch(server,/app\.(?:get|post|put|patch|delete)\('\/api\/(?:employees|attendance|leaves|loans|penalties|temporary-earnings|payroll-runs|payroll-settlements|journals|integrations\/qoyod)/);
+});
+
+test('operational router factories register without monolith globals', () => {
+  const middleware = (_req,_res,next) => next();
+  for (const factory of [createEmployeeRouter,createAttendanceLeaveRouter,createLoanPenaltyRouter,createPayrollRouter,createJournalQoyodRouter]) {
+    const router = factory({ auth:middleware,writeLimiter:middleware });
+    assert.equal(typeof router,'function');
+  }
 });
