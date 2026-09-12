@@ -64,6 +64,12 @@ export function buildPayrollRepairPlan(state,companyIds = []) {
     let holdChanged = false;
     const items = asArray(originalRun.items).map(originalItem => {
       if (employeeLockedInRun(originalRun,originalItem.employeeId)) return originalItem;
+      // Approved and posted payroll runs are immutable historical snapshots.
+      // A payment created in a later month can legitimately change today's
+      // carry-forward expectation without making the closed snapshot wrong.
+      // Only validate their stored aggregates below; never recalculate their
+      // employee carry or entitlement state from current payment coverage.
+      if (!repairable) return originalItem;
       let item = { ...originalItem };
       const expectedDetails = canonicalCarryDetails(runs,originalRun,originalItem.employeeId);
       const currentDetails = asArray(originalItem.priorPeriodDetails).map(detail => ({

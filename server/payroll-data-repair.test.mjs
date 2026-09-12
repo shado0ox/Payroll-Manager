@@ -28,14 +28,41 @@ test('scan proposes one safe repair for stale carry, totals, and automatic hold'
   assert.equal(repaired.totalNetSalaries,900);
 });
 
-test('unpaid salary missing from a later draft is restored but a closed run is report-only', () => {
+test('unpaid salary missing from a later draft is restored without rewriting a closed run', () => {
   const august = run('august','2026-08','POSTED',item('august-item'));
   const september = run('september','2026-09','DRAFT',item('september-item'));
   const october = run('october','2026-10','APPROVED',item('october-item'));
   const plan = buildPayrollRepairPlan({ employees:[employee],payrollRuns:[august,september,october] },['company-1']);
   assert.equal(plan.proposedRuns.get('payroll-run:september').items[0].priorPeriodNet,900);
-  assert.equal(plan.issues.find(issue => issue.runId === 'october').repairable,false);
-  assert.equal(plan.issues.find(issue => issue.runId === 'october').blockedReason,'LOCKED_PAYROLL_RUN');
+  assert.equal(plan.issues.find(issue => issue.runId === 'october'),undefined);
+});
+
+test('closed historical carry remains valid after the source salary is paid in a later month', () => {
+  const june = run('june','2026-06','POSTED',item('june-item'));
+  const july = run('july','2026-07','POSTED',item('july-item',{
+    priorPeriodGross:1000,priorPeriodDeductions:100,priorPeriodNet:900,
+    priorPeriodDetails:[{ periodMonth:'2026-06',gross:1000,deductions:100,net:900 }],
+    netSalary:1800,totalCompanyBurden:1820,
+  }),{
+    totalGrossSalaries:2000,totalDeductions:200,totalNetSalaries:1800,totalCompanyCost:1820,
+  });
+  const august = run('august','2026-08','POSTED',item('august-item'),{
+    paymentBatches:[{ id:'paid-june-later',status:'PAID',employeeIds:['employee-1'],priorEntitlements:[{
+      sourcePayrollRunId:'june',sourcePayrollItemId:'june-item',employeeId:'employee-1',amount:900,
+    }]}],
+  });
+  const plan = buildPayrollRepairPlan({ employees:[employee],payrollRuns:[june,july,august] },['company-1']);
+  assert.equal(plan.issues.find(issue => issue.runId === 'july'),undefined);
+});
+
+test('closed runs still report internally inconsistent stored totals without proposing repair', () => {
+  const july = run('july','2026-07','POSTED',item('july-item'),{ totalNetSalaries:1 });
+  const plan = buildPayrollRepairPlan({ employees:[employee],payrollRuns:[july] },['company-1']);
+  const issue = plan.issues.find(candidate => candidate.runId === 'july');
+  assert.deepEqual(issue?.findings,['RUN_TOTAL_MISMATCH']);
+  assert.equal(issue?.repairable,false);
+  assert.equal(issue?.blockedReason,'LOCKED_PAYROLL_RUN');
+  assert.equal(plan.proposedRuns.has('payroll-run:july'),false);
 });
 
 test('active prior-entitlement reservation prevents a false missing-carry repair', () => {
