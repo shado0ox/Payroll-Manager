@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
+import { createEmployeeRouter } from './routes/employee-routes.mjs';
+import { createAttendanceLeaveRouter } from './routes/attendance-leave-routes.mjs';
+import { createLoanPenaltyRouter } from './routes/loan-penalty-routes.mjs';
+import { createPayrollRouter } from './routes/payroll-routes.mjs';
+import { createJournalQoyodRouter } from './routes/journal-qoyod-routes.mjs';
 
 const server = fs.readFileSync('server/index.mjs', 'utf8');
 const systemRoutes = fs.readFileSync('server/routes/system-routes.mjs', 'utf8');
@@ -9,6 +14,11 @@ const authLoginRoutes = fs.readFileSync('server/routes/auth-login-routes.mjs', '
 const authRegistrationRoutes = fs.readFileSync('server/routes/auth-registration-routes.mjs', 'utf8');
 const authPasswordResetRoutes = fs.readFileSync('server/routes/auth-password-reset-routes.mjs', 'utf8');
 const adminDatabaseRoutes = fs.readFileSync('server/routes/admin-database-routes.mjs', 'utf8');
+const employeeRoutes = fs.readFileSync('server/routes/employee-routes.mjs', 'utf8');
+const attendanceLeaveRoutes = fs.readFileSync('server/routes/attendance-leave-routes.mjs', 'utf8');
+const loanPenaltyRoutes = fs.readFileSync('server/routes/loan-penalty-routes.mjs', 'utf8');
+const payrollRoutes = fs.readFileSync('server/routes/payroll-routes.mjs', 'utf8');
+const journalQoyodRoutes = fs.readFileSync('server/routes/journal-qoyod-routes.mjs', 'utf8');
 
 test('public system endpoints are delegated to an isolated router', () => {
   assert.match(server, /createSystemRouter/);
@@ -77,4 +87,27 @@ test('database diagnostics and payroll repair are delegated to an admin router',
   assert.match(adminDatabaseRoutes, /router\.get\('\/payroll-data-repair\/scan', auth/);
   assert.match(adminDatabaseRoutes, /router\.post\('\/payroll-data-repair\/repair', auth, writeLimiter/);
   assert.match(adminDatabaseRoutes, /isDeveloperUser\(req\.user\)/);
+});
+
+test('operational domains are delegated to isolated routers', () => {
+  const routers = [
+    ['createEmployeeRouter',employeeRoutes,/router\.put\('\/employees\/:id'/],
+    ['createAttendanceLeaveRouter',attendanceLeaveRoutes,/router\.put\('\/attendance\/:id'/],
+    ['createLoanPenaltyRouter',loanPenaltyRoutes,/router\.put\('\/loans\/:id'/],
+    ['createPayrollRouter',payrollRoutes,/router\.put\('\/payroll-runs\/:id'/],
+    ['createJournalQoyodRouter',journalQoyodRoutes,/router\.post\('\/integrations\/qoyod\/journal'/],
+  ];
+  for (const [factory,source,route] of routers) {
+    assert.match(server,new RegExp(`app\\.use\\('\\/api', ${factory}`));
+    assert.match(source,route);
+  }
+  assert.doesNotMatch(server,/app\.(?:get|post|put|patch|delete)\('\/api\/(?:employees|attendance|leaves|loans|penalties|temporary-earnings|payroll-runs|payroll-settlements|journals|integrations\/qoyod)/);
+});
+
+test('operational router factories register without monolith globals', () => {
+  const middleware = (_req,_res,next) => next();
+  for (const factory of [createEmployeeRouter,createAttendanceLeaveRouter,createLoanPenaltyRouter,createPayrollRouter,createJournalQoyodRouter]) {
+    const router = factory({ auth:middleware,writeLimiter:middleware });
+    assert.equal(typeof router,'function');
+  }
 });

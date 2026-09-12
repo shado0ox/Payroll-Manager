@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
+import { serverSource as server } from './test-server-source.mjs';
 
-const server = fs.readFileSync(new URL('./index.mjs',import.meta.url),'utf8');
 const api = fs.readFileSync(new URL('../src/utils/api.ts',import.meta.url),'utf8');
 const app = fs.readFileSync(new URL('../src/App.tsx',import.meta.url),'utf8');
 const profile = fs.readFileSync(new URL('../src/components/CompanyProfileView.tsx',import.meta.url),'utf8');

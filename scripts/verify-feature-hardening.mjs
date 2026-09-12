@@ -2,13 +2,13 @@ import fs from 'node:fs';
 
 const requirements = {
   'server/index.mjs': [
-    "app.put('/api/employees/:id'",
-    "app.put('/api/payroll-runs/:id'",
     'LEGACY_EMPLOYEE_IDENTITY_COMPAT',
     'attendance_company_period_idx',
     'penalties_company_period_idx',
     'earnings_company_period_idx',
   ],
+  'server/routes/employee-routes.mjs': ["router.put('/employees/:id'"],
+  'server/routes/payroll-routes.mjs': ["router.put('/payroll-runs/:id'"],
   'src/App.tsx': ['await api.saveEmployee(employee)', 'subscribeStateEvents'],
   'src/components/PayrollRunsView.tsx': [
     "from './payroll/PayrollRunItemsTable'",

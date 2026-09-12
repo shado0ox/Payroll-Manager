@@ -18,6 +18,12 @@ import { createAuthLoginRouter } from './routes/auth-login-routes.mjs';
 import { createAuthRegistrationRouter } from './routes/auth-registration-routes.mjs';
 import { createAuthPasswordResetRouter } from './routes/auth-password-reset-routes.mjs';
 import { createAdminDatabaseRouter } from './routes/admin-database-routes.mjs';
+import { createEmployeeRouter } from './routes/employee-routes.mjs';
+import { createAttendanceLeaveRouter } from './routes/attendance-leave-routes.mjs';
+import { createLoanPenaltyRouter } from './routes/loan-penalty-routes.mjs';
+import { createPayrollRouter } from './routes/payroll-routes.mjs';
+import { createJournalQoyodRouter } from './routes/journal-qoyod-routes.mjs';
+import { createPayrollRunPersistence } from './payroll-run-persistence.mjs';
 import { createOperationalAlertSender, createOperationalLogger, requestContextMiddleware, startDatabaseHealthMonitor } from './operational-monitoring.mjs';
 
 const { Pool } = pg;
@@ -477,6 +483,7 @@ function mergeStateForUser(stored, incoming, user) {
 }
 
 const asArray = (value) => Array.isArray(value) ? value : [];
+const persistReconciledPayrollRun = createPayrollRunPersistence({ q,clone,asArray });
 
 async function replaceNormalizedPayrollData(client, state) {
   const companies = asArray(state?.companies);
@@ -1731,32 +1738,6 @@ function validateCompanyRecord(record, user, requireAssigned = true) {
   }
 }
 
-function validateQoyodConfig(companyId, config, user) {
-  if (!companyId || !user.company_ids.includes(companyId)) throw workflowError(403, 'FORBIDDEN');
-  if (!config || typeof config !== 'object' || Array.isArray(config)) throw workflowError(400, 'INVALID_QOYOD_CONFIG');
-  if ((config.apiKey != null && typeof config.apiKey !== 'string') || String(config.apiKey || '').length > 1_000
-    || (config.organizationId != null && typeof config.organizationId !== 'string') || String(config.organizationId || '').length > 200
-    || (config.autoSyncOnApprove != null && typeof config.autoSyncOnApprove !== 'boolean')
-    || (config.lastTestStatus != null && !['SUCCESS','FAILED'].includes(config.lastTestStatus))
-    || (config.lastTestMessage != null && (typeof config.lastTestMessage !== 'string' || config.lastTestMessage.length > 1_000))) {
-    throw workflowError(400, 'INVALID_QOYOD_CONFIG');
-  }
-  let baseUrl;
-  try { baseUrl = new URL(String(config.baseUrl || '')); }
-  catch { throw workflowError(400, 'INVALID_QOYOD_URL'); }
-  if (baseUrl.protocol !== 'https:' || baseUrl.hostname !== 'api.qoyod.com') {
-    throw workflowError(400, 'INVALID_QOYOD_URL');
-  }
-  return {
-    apiKey:String(config.apiKey || '').trim(),
-    baseUrl:baseUrl.toString().replace(/\/$/,''),
-    organizationId:String(config.organizationId || '').trim(),
-    autoSyncOnApprove:config.autoSyncOnApprove === true,
-    ...(config.lastTestStatus ? { lastTestStatus:config.lastTestStatus } : {}),
-    ...(config.lastTestMessage != null ? { lastTestMessage:config.lastTestMessage } : {}),
-  };
-}
-
 async function updateCompanyAggregate(client, record) {
   const existing = await client.query(`SELECT id,subscription_status,trial_ends_at,subscription_ends_at
     FROM ${q('companies')} WHERE id=$1 AND is_archived=false FOR UPDATE`, [record.id]);
@@ -1876,1121 +1857,99 @@ app.delete('/api/companies/:id', auth, writeLimiter, async (req, res, next) => {
   } finally { client.release(); }
 });
 
-function validateJournalRecord(record, user) {
-  if (!record || typeof record !== 'object' || typeof record.id !== 'string' || !record.id
-    || typeof record.companyId !== 'string' || !user.company_ids.includes(record.companyId)
-    || typeof record.payrollRunId !== 'string' || !record.payrollRunId
-    || !validPeriodMonth(record.periodMonth) || !validIsoDate(record.date)
-    || typeof record.batchNumber !== 'string' || !record.batchNumber.trim()
-    || typeof record.description !== 'string' || !record.description.trim()
-    || !['DRAFT','EXPORTED_TO_QOYOD','POSTED'].includes(record.status)
-    || (record.status === 'POSTED' && (!record.qoyodSyncStatus?.synced || !String(record.qoyodSyncStatus?.qoyodJournalId || '').trim()))
-    || !Array.isArray(record.lines) || !record.lines.length
-    || !Number.isFinite(Number(record.totalDebit)) || !Number.isFinite(Number(record.totalCredit))) {
-    throw workflowError(400,'INVALID_JOURNAL_RECORD');
-  }
-  const lineIds = new Set();
-  let debit = 0;
-  let credit = 0;
-  for (const line of record.lines) {
-    const lineDebit = Number(line?.debit);
-    const lineCredit = Number(line?.credit);
-    if (!line || typeof line.id !== 'string' || !line.id || lineIds.has(line.id)
-      || typeof line.accountCode !== 'string' || !line.accountCode.trim()
-      || typeof line.accountNameAr !== 'string' || !line.accountNameAr.trim()
-      || typeof line.descriptionAr !== 'string'
-      || !Number.isFinite(lineDebit) || !Number.isFinite(lineCredit)
-      || lineDebit < 0 || lineCredit < 0 || (lineDebit > 0 && lineCredit > 0) || (lineDebit === 0 && lineCredit === 0)) {
-      throw workflowError(400,'INVALID_JOURNAL_LINE');
-    }
-    lineIds.add(line.id);
-    debit += lineDebit;
-    credit += lineCredit;
-  }
-  if (Math.abs(debit - credit) >= 0.01
-    || Math.abs(debit - Number(record.totalDebit)) >= 0.01
-    || Math.abs(credit - Number(record.totalCredit)) >= 0.01) {
-    throw workflowError(400,'UNBALANCED_JOURNAL');
-  }
-}
+app.use('/api', createAttendanceLeaveRouter({
+  auth,
+  writeLimiter,
+  pool,
+  q,
+  can,
+  validPeriodMonth,
+  validIsoDate,
+  readLockedNormalizedState,
+  asArray,
+  payrollSourceLocked,
+  workflowError,
+  bumpStateVersion,
+  appendStateAudit,
+  broadcastStateUpdate,
+}));
 
-async function upsertJournalAggregate(client, record) {
-  const existing = await client.query(`SELECT company_id,status,payload,sort_order FROM ${q('journal_batches')} WHERE id=$1 FOR UPDATE`, [record.id]);
-  if (existing.rowCount && existing.rows[0].company_id !== record.companyId) throw workflowError(409,'JOURNAL_COMPANY_IMMUTABLE');
-  if (existing.rows[0]?.status === 'POSTED' && !sameJson(existing.rows[0].payload, { ...record,lines:undefined })) {
-    throw workflowError(409,'POSTED_JOURNAL_IMMUTABLE');
-  }
-  const run = await client.query(`SELECT company_id,period_month FROM ${q('payroll_runs')} WHERE id=$1`, [record.payrollRunId]);
-  if (!run.rowCount || run.rows[0].company_id !== record.companyId || run.rows[0].period_month !== record.periodMonth) {
-    throw workflowError(400,'INVALID_JOURNAL_PAYROLL_RUN');
-  }
-  const sortOrder = existing.rowCount ? existing.rows[0].sort_order : Number((await client.query(
-    `SELECT COALESCE(min(sort_order),0)-1 AS sort_order FROM ${q('journal_batches')} WHERE company_id=$1`, [record.companyId]
-  )).rows[0]?.sort_order || 0);
-  const payload = clone(record);
-  delete payload.lines;
-  await client.query(`INSERT INTO ${q('journal_batches')} (
-      id,company_id,payroll_run_id,period_month,batch_number,journal_date,description,status,total_debit,total_credit,payload,sort_order,updated_at
-    ) VALUES ($1,$2,$3,$4,$5,$6::date,$7,$8,$9,$10,$11::jsonb,$12,now())
-    ON CONFLICT (id) DO UPDATE SET payroll_run_id=EXCLUDED.payroll_run_id,period_month=EXCLUDED.period_month,
-      batch_number=EXCLUDED.batch_number,journal_date=EXCLUDED.journal_date,description=EXCLUDED.description,status=EXCLUDED.status,
-      total_debit=EXCLUDED.total_debit,total_credit=EXCLUDED.total_credit,payload=EXCLUDED.payload,updated_at=now()`, [
-    record.id,record.companyId,record.payrollRunId,record.periodMonth,record.batchNumber,record.date,record.description,
-    record.status,Number(record.totalDebit),Number(record.totalCredit),JSON.stringify(payload),sortOrder
-  ]);
-  await client.query(`DELETE FROM ${q('journal_lines')} WHERE journal_batch_id=$1`, [record.id]);
-  await client.query(`INSERT INTO ${q('journal_lines')} (
-      journal_batch_id,id,account_code,account_name_ar,description_ar,debit,credit,cost_center_code,payload,sort_order
-    ) SELECT $1,line->>'id',line->>'accountCode',line->>'accountNameAr',COALESCE(line->>'descriptionAr',''),
-      COALESCE(NULLIF(line->>'debit','')::numeric,0),COALESCE(NULLIF(line->>'credit','')::numeric,0),
-      NULLIF(line->>'costCenterCode',''),line,(ordinality-1)::integer
-      FROM jsonb_array_elements($2::jsonb) WITH ORDINALITY AS source(line,ordinality)`, [record.id,JSON.stringify(record.lines)]);
-  return existing.rowCount > 0;
-}
 
-function validateAttendanceRecord(record, user) {
-  return record && typeof record === 'object' && typeof record.id === 'string' && Boolean(record.id)
-    && typeof record.companyId === 'string' && user.company_ids.includes(record.companyId)
-    && typeof record.employeeId === 'string' && Boolean(record.employeeId)
-    && validPeriodMonth(record.periodMonth) && validIsoDate(record.date)
-    && (!record.endDate || validIsoDate(record.endDate)) && (!record.endDate || record.endDate >= record.date)
-    && Number.isInteger(Number(record.daysCount ?? 1)) && Number(record.daysCount ?? 1) >= 0
-    && Number.isInteger(Number(record.delayMinutes ?? 0)) && Number(record.delayMinutes ?? 0) >= 0
-    && Number.isFinite(Number(record.overtimeHours ?? 0)) && Number(record.overtimeHours ?? 0) >= 0
-    && ['STANDARD','WEEKEND'].includes(record.overtimeType || 'STANDARD');
-}
+app.use('/api', createLoanPenaltyRouter({
+  auth,
+  writeLimiter,
+  pool,
+  q,
+  can,
+  validPeriodMonth,
+  validIsoDate,
+  readLockedNormalizedState,
+  asArray,
+  payrollSourceLocked,
+  isAppendOnlyLoanAdjustment,
+  workflowError,
+  bumpStateVersion,
+  appendStateAudit,
+  broadcastStateUpdate,
+}));
 
-app.put('/api/attendance/:id', auth, writeLimiter, async (req, res, next) => {
-  const client = await pool.connect();
-  try {
-    if (!can(req.user,'MANAGE_ATTENDANCE')) return res.status(403).json({ error:'FORBIDDEN' });
-    const record = req.body || {};
-    if (record.id !== req.params.id || !validateAttendanceRecord(record,req.user)) {
-      return res.status(400).json({ error:'INVALID_ATTENDANCE_RECORD' });
-    }
-    await client.query('BEGIN');
-    const stored = await readLockedNormalizedState(client);
-    const existingRecord = asArray(stored.attendance).find(item => item.id === record.id);
-    if ((existingRecord && payrollSourceLocked(stored,'attendance',existingRecord)) || payrollSourceLocked(stored,'attendance',record)) {
-      throw workflowError(409, 'PAYROLL_SOURCE_ENTRY_LOCKED');
-    }
-    const employee = await client.query(`SELECT company_id FROM ${q('employees')} WHERE id=$1 AND is_archived=false`, [record.employeeId]);
-    if (!employee.rowCount || employee.rows[0].company_id !== record.companyId) throw workflowError(400, 'INVALID_ATTENDANCE_EMPLOYEE');
-    const existing = await client.query(`SELECT company_id,sort_order FROM ${q('attendance_records')} WHERE id=$1 FOR UPDATE`, [record.id]);
-    if (existing.rowCount && existing.rows[0].company_id !== record.companyId) throw workflowError(409, 'ATTENDANCE_COMPANY_IMMUTABLE');
-    const sortOrder = existing.rowCount ? existing.rows[0].sort_order : Number((await client.query(`SELECT COALESCE(min(sort_order),0)-1 AS sort_order FROM ${q('attendance_records')} WHERE company_id=$1`, [record.companyId])).rows[0]?.sort_order || 0);
-    await client.query(`INSERT INTO ${q('attendance_records')} (
-      id,company_id,employee_id,period_month,record_date,end_date,days_count,delay_minutes,absence,unpaid_leave,overtime_hours,overtime_type,notes,payload,sort_order,updated_at
-    ) VALUES ($1,$2,$3,$4,$5::date,NULLIF($6,'')::date,$7,$8,$9,$10,$11,$12,$13,$14::jsonb,$15,now())
-    ON CONFLICT (id) DO UPDATE SET employee_id=EXCLUDED.employee_id,period_month=EXCLUDED.period_month,
-      record_date=EXCLUDED.record_date,end_date=EXCLUDED.end_date,days_count=EXCLUDED.days_count,delay_minutes=EXCLUDED.delay_minutes,
-      absence=EXCLUDED.absence,unpaid_leave=EXCLUDED.unpaid_leave,overtime_hours=EXCLUDED.overtime_hours,
-      overtime_type=EXCLUDED.overtime_type,notes=EXCLUDED.notes,payload=EXCLUDED.payload,updated_at=now()`, [
-      record.id,record.companyId,record.employeeId,record.periodMonth,record.date,record.endDate || '',Number(record.daysCount ?? 1),
-      Number(record.delayMinutes || 0),Boolean(record.absence),Boolean(record.unpaidLeave),Number(record.overtimeHours || 0),
-      record.overtimeType || 'STANDARD',record.notes || null,JSON.stringify(record),sortOrder
-    ]);
-    const updated = await bumpStateVersion(client,req.user.id);
-    await appendStateAudit(client,q,{ companyIds:req.user.company_ids,user:req.user,action:existing.rowCount ? 'UPDATE_ATTENDANCE' : 'CREATE_ATTENDANCE',version:updated.rows[0].version });
-    await client.query('COMMIT');
-    broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at,
-      companyIds:[record.companyId],changes:[{ collection:'attendance',operation:'upsert',records:[record] }] });
-    res.json({ record,created:!existing.rowCount,version:Number(updated.rows[0].version),updated_at:updated.rows[0].updated_at });
-  } catch (e) {
-    try { await client.query('ROLLBACK'); } catch {}
-    if (Number.isInteger(e?.status) && e.status >= 400 && e.status < 500) return res.status(e.status).json({ error:e.message });
-    next(e);
-  } finally { client.release(); }
-});
 
-app.post('/api/attendance/import', auth, writeLimiter, async (req, res, next) => {
-  const client = await pool.connect();
-  try {
-    if (!can(req.user,'MANAGE_ATTENDANCE')) return res.status(403).json({ error:'FORBIDDEN' });
-    const records = req.body?.records;
-    if (!Array.isArray(records) || !records.length || records.length > 2500
-      || records.some(record => !validateAttendanceRecord(record,req.user))) {
-      return res.status(400).json({ error:'INVALID_ATTENDANCE_IMPORT' });
-    }
-    const ids = records.map(record => record.id);
-    const companyIds = new Set(records.map(record => record.companyId));
-    if (new Set(ids).size !== ids.length || companyIds.size !== 1) return res.status(400).json({ error:'INVALID_ATTENDANCE_IMPORT' });
-    const companyId = records[0].companyId;
-    await client.query('BEGIN');
-    const stored = await readLockedNormalizedState(client);
-    const storedById = new Map(asArray(stored.attendance).map(record => [record.id,record]));
-    if (records.some(record => (storedById.has(record.id) && payrollSourceLocked(stored,'attendance',storedById.get(record.id)))
-      || payrollSourceLocked(stored,'attendance',record))) {
-      throw workflowError(409,'PAYROLL_SOURCE_ENTRY_LOCKED');
-    }
-    const employees = await client.query(`SELECT id,company_id FROM ${q('employees')} WHERE id=ANY($1::text[]) AND is_archived=false`, [[...new Set(records.map(record => record.employeeId))]]);
-    const employeeCompanies = new Map(employees.rows.map(row => [row.id,row.company_id]));
-    if (records.some(record => employeeCompanies.get(record.employeeId) !== companyId)) throw workflowError(400,'INVALID_ATTENDANCE_EMPLOYEE');
-    const existing = await client.query(`SELECT id,company_id FROM ${q('attendance_records')} WHERE id=ANY($1::text[]) FOR UPDATE`, [ids]);
-    if (existing.rows.some(row => row.company_id !== companyId)) throw workflowError(409,'ATTENDANCE_COMPANY_IMMUTABLE');
-    const startOrder = Number((await client.query(`SELECT COALESCE(max(sort_order),-1)+1 AS sort_order FROM ${q('attendance_records')} WHERE company_id=$1`, [companyId])).rows[0]?.sort_order || 0);
-    await client.query(`INSERT INTO ${q('attendance_records')} (
-        id,company_id,employee_id,period_month,record_date,end_date,days_count,delay_minutes,absence,unpaid_leave,overtime_hours,overtime_type,notes,payload,sort_order,updated_at
-      ) SELECT record->>'id',record->>'companyId',record->>'employeeId',record->>'periodMonth',(record->>'date')::date,
-        NULLIF(record->>'endDate','')::date,COALESCE(NULLIF(record->>'daysCount','')::integer,1),
-        COALESCE(NULLIF(record->>'delayMinutes','')::integer,0),COALESCE((record->>'absence')::boolean,false),
-        COALESCE((record->>'unpaidLeave')::boolean,false),COALESCE(NULLIF(record->>'overtimeHours','')::numeric,0),
-        COALESCE(NULLIF(record->>'overtimeType',''),'STANDARD'),NULLIF(record->>'notes',''),record,$2+(ordinality-1)::integer,now()
-      FROM jsonb_array_elements($1::jsonb) WITH ORDINALITY AS source(record,ordinality)
-      ON CONFLICT (id) DO UPDATE SET employee_id=EXCLUDED.employee_id,period_month=EXCLUDED.period_month,
-        record_date=EXCLUDED.record_date,end_date=EXCLUDED.end_date,days_count=EXCLUDED.days_count,delay_minutes=EXCLUDED.delay_minutes,
-        absence=EXCLUDED.absence,unpaid_leave=EXCLUDED.unpaid_leave,overtime_hours=EXCLUDED.overtime_hours,
-        overtime_type=EXCLUDED.overtime_type,notes=EXCLUDED.notes,payload=EXCLUDED.payload,updated_at=now()`, [JSON.stringify(records),startOrder]);
-    const updated = await bumpStateVersion(client,req.user.id);
-    await appendStateAudit(client,q,{ companyIds:[companyId],user:req.user,action:`IMPORT_ATTENDANCE:${records.length}`,version:updated.rows[0].version });
-    await client.query('COMMIT');
-    broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at,
-      companyIds:[companyId],changes:[{ collection:'attendance',operation:'upsert',records }] });
-    res.status(201).json({ records,version:Number(updated.rows[0].version),updated_at:updated.rows[0].updated_at });
-  } catch (e) {
-    try { await client.query('ROLLBACK'); } catch {}
-    if (Number.isInteger(e?.status) && e.status >= 400 && e.status < 500) return res.status(e.status).json({ error:e.message });
-    next(e);
-  } finally { client.release(); }
-});
+app.use('/api', createPayrollRouter({
+  auth,
+  writeLimiter,
+  pool,
+  q,
+  can,
+  asArray,
+  clone,
+  sameJson,
+  validPeriodMonth,
+  validIsoDate,
+  workflowError,
+  readLockedNormalizedState,
+  readNormalizedApplicationState,
+  validatePayrollWorkflowChanges,
+  validatePayrollCarryForwardState,
+  appendPayrollFinancialAudit,
+  reconcilePaidPayrollCarryForward,
+  reconcileReleasedPayrollCarryForward,
+  bumpStateVersion,
+  appendStateAudit,
+  broadcastStateUpdate,
+  persistReconciledPayrollRun,
+}));
 
-app.delete('/api/attendance/:id', auth, writeLimiter, async (req, res, next) => {
-  const client = await pool.connect();
-  try {
-    if (!can(req.user,'MANAGE_ATTENDANCE')) return res.status(403).json({ error:'FORBIDDEN' });
-    await client.query('BEGIN');
-    const row = await client.query(`SELECT company_id,payload FROM ${q('attendance_records')} WHERE id=$1 FOR UPDATE`, [req.params.id]);
-    if (!row.rowCount) throw workflowError(404, 'ATTENDANCE_NOT_FOUND');
-    if (!req.user.company_ids.includes(row.rows[0].company_id)) throw workflowError(403, 'FORBIDDEN');
-    const stored = await readLockedNormalizedState(client);
-    if (payrollSourceLocked(stored,'attendance',row.rows[0].payload)) throw workflowError(409, 'PAYROLL_SOURCE_ENTRY_LOCKED');
-    await client.query(`DELETE FROM ${q('attendance_records')} WHERE id=$1`, [req.params.id]);
-    const updated = await bumpStateVersion(client,req.user.id);
-    await appendStateAudit(client,q,{ companyIds:req.user.company_ids,user:req.user,action:'DELETE_ATTENDANCE',version:updated.rows[0].version });
-    await client.query('COMMIT');
-    broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at,
-      companyIds:[row.rows[0].company_id],changes:[{ collection:'attendance',operation:'delete',ids:[req.params.id] }] });
-    res.json({ deleted:true,version:Number(updated.rows[0].version),updated_at:updated.rows[0].updated_at });
-  } catch (e) {
-    try { await client.query('ROLLBACK'); } catch {}
-    if (Number.isInteger(e?.status) && e.status >= 400 && e.status < 500) return res.status(e.status).json({ error:e.message });
-    next(e);
-  } finally { client.release(); }
-});
 
-function validateLeaveRecord(record, user) {
-  if (!record || typeof record !== 'object' || typeof record.id !== 'string' || !record.id
-    || typeof record.companyId !== 'string' || !user.company_ids.includes(record.companyId)
-    || typeof record.employeeId !== 'string' || !record.employeeId
-    || !['ANNUAL','SICK','UNPAID','EMERGENCY','MATERNITY'].includes(record.type)
-    || !validIsoDate(record.startDate) || !validIsoDate(record.endDate) || record.endDate < record.startDate
-    || !Number.isInteger(Number(record.daysCount)) || Number(record.daysCount) < 1
-    || !['PENDING','APPROVED','REJECTED'].includes(record.status)
-    || typeof record.isPaid !== 'boolean') {
-    throw workflowError(400,'INVALID_LEAVE_REQUEST');
-  }
-  const expectedDays = Math.floor((Date.parse(`${record.endDate}T00:00:00Z`) - Date.parse(`${record.startDate}T00:00:00Z`)) / 86_400_000) + 1;
-  if (Number(record.daysCount) > expectedDays) throw workflowError(400,'INVALID_LEAVE_DAYS_COUNT');
-}
+app.use('/api', createJournalQoyodRouter({
+  auth,
+  writeLimiter,
+  pool,
+  q,
+  can,
+  validPeriodMonth,
+  validIsoDate,
+  workflowError,
+  sameJson,
+  clone,
+  bumpStateVersion,
+  appendStateAudit,
+  broadcastStateUpdate,
+}));
 
-app.put('/api/leaves/:id', auth, writeLimiter, async (req, res, next) => {
-  const client = await pool.connect();
-  try {
-    if (!can(req.user,'MANAGE_ATTENDANCE')) return res.status(403).json({ error:'FORBIDDEN' });
-    const record = req.body || {};
-    if (record.id !== req.params.id) return res.status(400).json({ error:'INVALID_LEAVE_REQUEST' });
-    validateLeaveRecord(record,req.user);
-    await client.query('BEGIN');
-    const employee = await client.query(`SELECT company_id FROM ${q('employees')} WHERE id=$1 AND is_archived=false`, [record.employeeId]);
-    if (!employee.rowCount || employee.rows[0].company_id !== record.companyId) throw workflowError(400,'INVALID_LEAVE_EMPLOYEE');
-    const existing = await client.query(`SELECT company_id,status,sort_order FROM ${q('leave_requests')} WHERE id=$1 FOR UPDATE`, [record.id]);
-    if (existing.rowCount && existing.rows[0].company_id !== record.companyId) throw workflowError(409,'LEAVE_COMPANY_IMMUTABLE');
-    if (existing.rowCount && existing.rows[0].status !== record.status) throw workflowError(409,'LEAVE_STATUS_ENDPOINT_REQUIRED');
-    if (!existing.rowCount && record.status !== 'PENDING') throw workflowError(400,'NEW_LEAVE_MUST_BE_PENDING');
-    const sortOrder = existing.rowCount ? existing.rows[0].sort_order : Number((await client.query(
-      `SELECT COALESCE(min(sort_order),0)-1 AS sort_order FROM ${q('leave_requests')} WHERE company_id=$1`, [record.companyId]
-    )).rows[0]?.sort_order || 0);
-    await client.query(`INSERT INTO ${q('leave_requests')} (
-        id,company_id,employee_id,leave_type,start_date,end_date,days_count,status,is_paid,reason,payload,sort_order,updated_at
-      ) VALUES ($1,$2,$3,$4,$5::date,$6::date,$7,$8,$9,$10,$11::jsonb,$12,now())
-      ON CONFLICT (id) DO UPDATE SET employee_id=EXCLUDED.employee_id,leave_type=EXCLUDED.leave_type,
-        start_date=EXCLUDED.start_date,end_date=EXCLUDED.end_date,days_count=EXCLUDED.days_count,
-        is_paid=EXCLUDED.is_paid,reason=EXCLUDED.reason,payload=EXCLUDED.payload,updated_at=now()`, [
-      record.id,record.companyId,record.employeeId,record.type,record.startDate,record.endDate,Number(record.daysCount),
-      record.status,record.isPaid,record.reason || null,JSON.stringify(record),sortOrder
-    ]);
-    const updated = await bumpStateVersion(client,req.user.id);
-    await appendStateAudit(client,q,{ companyIds:req.user.company_ids,user:req.user,action:existing.rowCount ? 'UPDATE_LEAVE' : 'CREATE_LEAVE',version:updated.rows[0].version });
-    await client.query('COMMIT');
-    broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at,
-      companyIds:[record.companyId],changes:[{ collection:'leaves',operation:'upsert',records:[record] }] });
-    res.json({ record,created:!existing.rowCount,version:Number(updated.rows[0].version),updated_at:updated.rows[0].updated_at });
-  } catch (e) {
-    try { await client.query('ROLLBACK'); } catch {}
-    if (Number.isInteger(e?.status) && e.status >= 400 && e.status < 500) return res.status(e.status).json({ error:e.message });
-    next(e);
-  } finally { client.release(); }
-});
 
-app.patch('/api/leaves/:id/status', auth, writeLimiter, async (req, res, next) => {
-  const client = await pool.connect();
-  try {
-    if (!can(req.user,'MANAGE_ATTENDANCE')) return res.status(403).json({ error:'FORBIDDEN' });
-    const status = String(req.body?.status || '');
-    if (!['PENDING','APPROVED','REJECTED'].includes(status)) return res.status(400).json({ error:'INVALID_LEAVE_STATUS' });
-    await client.query('BEGIN');
-    const existing = await client.query(`SELECT company_id,payload FROM ${q('leave_requests')} WHERE id=$1 FOR UPDATE`, [req.params.id]);
-    if (!existing.rowCount) throw workflowError(404,'LEAVE_NOT_FOUND');
-    if (!req.user.company_ids.includes(existing.rows[0].company_id)) throw workflowError(403,'FORBIDDEN');
-    if (existing.rows[0].payload?.status === status) throw workflowError(409,'LEAVE_STATUS_UNCHANGED');
-    const record = { ...existing.rows[0].payload,status };
-    validateLeaveRecord(record,req.user);
-    await client.query(`UPDATE ${q('leave_requests')} SET status=$2,payload=$3::jsonb,updated_at=now() WHERE id=$1`, [record.id,status,JSON.stringify(record)]);
-    const updated = await bumpStateVersion(client,req.user.id);
-    await appendStateAudit(client,q,{ companyIds:req.user.company_ids,user:req.user,action:'LEAVE_STATUS_TRANSITION',version:updated.rows[0].version });
-    await client.query('COMMIT');
-    broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at,
-      companyIds:[record.companyId],changes:[{ collection:'leaves',operation:'upsert',records:[record] }] });
-    res.json({ record,created:false,version:Number(updated.rows[0].version),updated_at:updated.rows[0].updated_at });
-  } catch (e) {
-    try { await client.query('ROLLBACK'); } catch {}
-    if (Number.isInteger(e?.status) && e.status >= 400 && e.status < 500) return res.status(e.status).json({ error:e.message });
-    next(e);
-  } finally { client.release(); }
-});
+app.use('/api', createEmployeeRouter({
+  auth,
+  writeLimiter,
+  pool,
+  q,
+  can,
+  validIsoDate,
+  workflowError,
+  bumpStateVersion,
+  appendStateAudit,
+  broadcastStateUpdate,
+}));
 
-app.put('/api/penalties/:id', auth, writeLimiter, async (req, res, next) => {
-  const client = await pool.connect();
-  try {
-    if (!can(req.user,'MANAGE_LOANS_PENALTIES')) return res.status(403).json({ error:'FORBIDDEN' });
-    const record = req.body || {};
-    if (record.id !== req.params.id || typeof record.companyId !== 'string' || !req.user.company_ids.includes(record.companyId)
-      || typeof record.employeeId !== 'string' || !validPeriodMonth(record.periodMonth) || !validIsoDate(record.date)
-      || typeof record.reason !== 'string' || !record.reason.trim() || !Number.isFinite(Number(record.amount)) || Number(record.amount) < 0) {
-      return res.status(400).json({ error:'INVALID_PENALTY_RECORD' });
-    }
-    await client.query('BEGIN');
-    const stored = await readLockedNormalizedState(client);
-    const existingRecord = asArray(stored.penalties).find(item => item.id === record.id);
-    if ((existingRecord && payrollSourceLocked(stored,'penalty',existingRecord)) || payrollSourceLocked(stored,'penalty',record)) {
-      throw workflowError(409, 'PAYROLL_SOURCE_ENTRY_LOCKED');
-    }
-    const employee = await client.query(`SELECT company_id FROM ${q('employees')} WHERE id=$1 AND is_archived=false`, [record.employeeId]);
-    if (!employee.rowCount || employee.rows[0].company_id !== record.companyId) throw workflowError(400, 'INVALID_PENALTY_EMPLOYEE');
-    const existing = await client.query(`SELECT company_id,sort_order FROM ${q('penalties')} WHERE id=$1 FOR UPDATE`, [record.id]);
-    if (existing.rowCount && existing.rows[0].company_id !== record.companyId) throw workflowError(409, 'PENALTY_COMPANY_IMMUTABLE');
-    const sortOrder = existing.rowCount ? existing.rows[0].sort_order : Number((await client.query(`SELECT COALESCE(min(sort_order),0)-1 AS sort_order FROM ${q('penalties')} WHERE company_id=$1`, [record.companyId])).rows[0]?.sort_order || 0);
-    await client.query(`INSERT INTO ${q('penalties')} (id,company_id,employee_id,period_month,record_date,reason,amount,applied_in_payroll,payload,sort_order,updated_at)
-      VALUES ($1,$2,$3,$4,$5::date,$6,$7,$8,$9::jsonb,$10,now())
-      ON CONFLICT (id) DO UPDATE SET employee_id=EXCLUDED.employee_id,period_month=EXCLUDED.period_month,record_date=EXCLUDED.record_date,
-        reason=EXCLUDED.reason,amount=EXCLUDED.amount,applied_in_payroll=EXCLUDED.applied_in_payroll,payload=EXCLUDED.payload,updated_at=now()`, [
-      record.id,record.companyId,record.employeeId,record.periodMonth,record.date,record.reason.trim(),Number(record.amount),Boolean(record.appliedInPayroll),JSON.stringify(record),sortOrder
-    ]);
-    const updated = await bumpStateVersion(client,req.user.id);
-    await appendStateAudit(client,q,{ companyIds:req.user.company_ids,user:req.user,action:existing.rowCount ? 'UPDATE_PENALTY' : 'CREATE_PENALTY',version:updated.rows[0].version });
-    await client.query('COMMIT');
-    broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at,
-      companyIds:[record.companyId],changes:[{ collection:'penalties',operation:'upsert',records:[record] }] });
-    res.json({ record,created:!existing.rowCount,version:Number(updated.rows[0].version),updated_at:updated.rows[0].updated_at });
-  } catch (e) {
-    try { await client.query('ROLLBACK'); } catch {}
-    if (Number.isInteger(e?.status) && e.status >= 400 && e.status < 500) return res.status(e.status).json({ error:e.message });
-    next(e);
-  } finally { client.release(); }
-});
-
-app.delete('/api/penalties/:id', auth, writeLimiter, async (req, res, next) => {
-  const client = await pool.connect();
-  try {
-    if (!can(req.user,'MANAGE_LOANS_PENALTIES')) return res.status(403).json({ error:'FORBIDDEN' });
-    await client.query('BEGIN');
-    const row = await client.query(`SELECT company_id,payload FROM ${q('penalties')} WHERE id=$1 FOR UPDATE`, [req.params.id]);
-    if (!row.rowCount) throw workflowError(404, 'PENALTY_NOT_FOUND');
-    if (!req.user.company_ids.includes(row.rows[0].company_id)) throw workflowError(403, 'FORBIDDEN');
-    const stored = await readLockedNormalizedState(client);
-    if (payrollSourceLocked(stored,'penalty',row.rows[0].payload)) throw workflowError(409, 'PAYROLL_SOURCE_ENTRY_LOCKED');
-    await client.query(`DELETE FROM ${q('penalties')} WHERE id=$1`, [req.params.id]);
-    const updated = await bumpStateVersion(client,req.user.id);
-    await appendStateAudit(client,q,{ companyIds:req.user.company_ids,user:req.user,action:'DELETE_PENALTY',version:updated.rows[0].version });
-    await client.query('COMMIT');
-    broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at,
-      companyIds:[row.rows[0].company_id],changes:[{ collection:'penalties',operation:'delete',ids:[req.params.id] }] });
-    res.json({ deleted:true,version:Number(updated.rows[0].version),updated_at:updated.rows[0].updated_at });
-  } catch (e) {
-    try { await client.query('ROLLBACK'); } catch {}
-    if (Number.isInteger(e?.status) && e.status >= 400 && e.status < 500) return res.status(e.status).json({ error:e.message });
-    next(e);
-  } finally { client.release(); }
-});
-
-app.put('/api/loans/:id', auth, writeLimiter, async (req, res, next) => {
-  const client = await pool.connect();
-  try {
-    if (!can(req.user,'MANAGE_LOANS_PENALTIES')) return res.status(403).json({ error:'FORBIDDEN' });
-    const record = req.body || {};
-    const numericFields = ['totalAmount','monthlyInstallment','totalInstallments','remainingInstallments','remainingAmount'];
-    if (record.id !== req.params.id || typeof record.companyId !== 'string' || !req.user.company_ids.includes(record.companyId)
-      || typeof record.employeeId !== 'string' || !validPeriodMonth(record.startDate)
-      || !['ACTIVE','COMPLETED','PAUSED'].includes(record.status)
-      || numericFields.some(key => !Number.isFinite(Number(record[key])) || Number(record[key]) < 0)
-      || !Number.isInteger(Number(record.totalInstallments)) || !Number.isInteger(Number(record.remainingInstallments))) {
-      return res.status(400).json({ error:'INVALID_LOAN_RECORD' });
-    }
-    await client.query('BEGIN');
-    const stored = await readLockedNormalizedState(client);
-    const existingRecord = asArray(stored.loans).find(item => item.id === record.id);
-    const appendOnlyAdjustment = existingRecord ? isAppendOnlyLoanAdjustment(existingRecord,record,req.user) : false;
-    if (existingRecord && payrollSourceLocked(stored,'loan',existingRecord) && !appendOnlyAdjustment) {
-      throw workflowError(409, 'PAYROLL_SOURCE_ENTRY_LOCKED');
-    }
-    const employee = await client.query(`SELECT company_id FROM ${q('employees')} WHERE id=$1 AND is_archived=false`, [record.employeeId]);
-    if (!employee.rowCount || employee.rows[0].company_id !== record.companyId) throw workflowError(400, 'INVALID_LOAN_EMPLOYEE');
-    const existing = await client.query(`SELECT company_id,sort_order FROM ${q('loans')} WHERE id=$1 FOR UPDATE`, [record.id]);
-    if (existing.rowCount && existing.rows[0].company_id !== record.companyId) throw workflowError(409, 'LOAN_COMPANY_IMMUTABLE');
-    const sortOrder = existing.rowCount ? existing.rows[0].sort_order : Number((await client.query(`SELECT COALESCE(min(sort_order),0)-1 AS sort_order FROM ${q('loans')} WHERE company_id=$1`, [record.companyId])).rows[0]?.sort_order || 0);
-    await client.query(`INSERT INTO ${q('loans')} (
-      id,company_id,employee_id,total_amount,monthly_installment,total_installments,remaining_installments,remaining_amount,start_month,status,reason,payload,sort_order,updated_at
-    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::jsonb,$13,now())
-    ON CONFLICT (id) DO UPDATE SET employee_id=EXCLUDED.employee_id,total_amount=EXCLUDED.total_amount,
-      monthly_installment=EXCLUDED.monthly_installment,total_installments=EXCLUDED.total_installments,
-      remaining_installments=EXCLUDED.remaining_installments,remaining_amount=EXCLUDED.remaining_amount,start_month=EXCLUDED.start_month,
-      status=EXCLUDED.status,reason=EXCLUDED.reason,payload=EXCLUDED.payload,updated_at=now()`, [
-      record.id,record.companyId,record.employeeId,Number(record.totalAmount),Number(record.monthlyInstallment),Number(record.totalInstallments),
-      Number(record.remainingInstallments),Number(record.remainingAmount),record.startDate,record.status,String(record.reason || ''),JSON.stringify(record),sortOrder
-    ]);
-    const updated = await bumpStateVersion(client,req.user.id);
-    await appendStateAudit(client,q,{ companyIds:req.user.company_ids,user:req.user,action:appendOnlyAdjustment ? 'ADJUST_LOAN' : existing.rowCount ? 'UPDATE_LOAN' : 'CREATE_LOAN',version:updated.rows[0].version });
-    await client.query('COMMIT');
-    broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at,
-      companyIds:[record.companyId],changes:[{ collection:'loans',operation:'upsert',records:[record] }] });
-    res.json({ record,created:!existing.rowCount,version:Number(updated.rows[0].version),updated_at:updated.rows[0].updated_at });
-  } catch (e) {
-    try { await client.query('ROLLBACK'); } catch {}
-    if (Number.isInteger(e?.status) && e.status >= 400 && e.status < 500) return res.status(e.status).json({ error:e.message });
-    next(e);
-  } finally { client.release(); }
-});
-
-app.delete('/api/loans/:id', auth, writeLimiter, async (req, res, next) => {
-  const client = await pool.connect();
-  try {
-    if (!can(req.user,'MANAGE_LOANS_PENALTIES')) return res.status(403).json({ error:'FORBIDDEN' });
-    await client.query('BEGIN');
-    const row = await client.query(`SELECT company_id,payload FROM ${q('loans')} WHERE id=$1 FOR UPDATE`, [req.params.id]);
-    if (!row.rowCount) throw workflowError(404, 'LOAN_NOT_FOUND');
-    if (!req.user.company_ids.includes(row.rows[0].company_id)) throw workflowError(403, 'FORBIDDEN');
-    const stored = await readLockedNormalizedState(client);
-    if (payrollSourceLocked(stored,'loan',row.rows[0].payload)) throw workflowError(409, 'PAYROLL_SOURCE_ENTRY_LOCKED');
-    await client.query(`DELETE FROM ${q('loans')} WHERE id=$1`, [req.params.id]);
-    const updated = await bumpStateVersion(client,req.user.id);
-    await appendStateAudit(client,q,{ companyIds:req.user.company_ids,user:req.user,action:'DELETE_LOAN',version:updated.rows[0].version });
-    await client.query('COMMIT');
-    broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at,
-      companyIds:[row.rows[0].company_id],changes:[{ collection:'loans',operation:'delete',ids:[req.params.id] }] });
-    res.json({ deleted:true,version:Number(updated.rows[0].version),updated_at:updated.rows[0].updated_at });
-  } catch (e) {
-    try { await client.query('ROLLBACK'); } catch {}
-    if (Number.isInteger(e?.status) && e.status >= 400 && e.status < 500) return res.status(e.status).json({ error:e.message });
-    next(e);
-  } finally { client.release(); }
-});
-
-app.put('/api/temporary-earnings/:id', auth, writeLimiter, async (req, res, next) => {
-  const client = await pool.connect();
-  try {
-    if (!can(req.user,'MANAGE_LOANS_PENALTIES')) return res.status(403).json({ error:'FORBIDDEN' });
-    const record = req.body || {};
-    if (record.id !== req.params.id || typeof record.companyId !== 'string' || !req.user.company_ids.includes(record.companyId)
-      || typeof record.employeeId !== 'string' || !validPeriodMonth(record.periodMonth) || !validIsoDate(record.date)
-      || !['COMMISSION','BONUS','INCENTIVE','OTHER'].includes(record.type)
-      || !Number.isFinite(Number(record.amount)) || Number(record.amount) < 0 || typeof record.reason !== 'string' || !record.reason.trim()) {
-      return res.status(400).json({ error:'INVALID_TEMPORARY_EARNING_RECORD' });
-    }
-    await client.query('BEGIN');
-    const stored = await readLockedNormalizedState(client);
-    const existingRecord = asArray(stored.temporaryEarnings).find(item => item.id === record.id);
-    if ((existingRecord && payrollSourceLocked(stored,'earning',existingRecord)) || payrollSourceLocked(stored,'earning',record)) {
-      throw workflowError(409, 'PAYROLL_SOURCE_ENTRY_LOCKED');
-    }
-    const employee = await client.query(`SELECT company_id FROM ${q('employees')} WHERE id=$1 AND is_archived=false`, [record.employeeId]);
-    if (!employee.rowCount || employee.rows[0].company_id !== record.companyId) throw workflowError(400, 'INVALID_TEMPORARY_EARNING_EMPLOYEE');
-    const existing = await client.query(`SELECT company_id,sort_order FROM ${q('temporary_earnings')} WHERE id=$1 FOR UPDATE`, [record.id]);
-    if (existing.rowCount && existing.rows[0].company_id !== record.companyId) throw workflowError(409, 'TEMPORARY_EARNING_COMPANY_IMMUTABLE');
-    const sortOrder = existing.rowCount ? existing.rows[0].sort_order : Number((await client.query(`SELECT COALESCE(min(sort_order),0)-1 AS sort_order FROM ${q('temporary_earnings')} WHERE company_id=$1`, [record.companyId])).rows[0]?.sort_order || 0);
-    await client.query(`INSERT INTO ${q('temporary_earnings')} (
-      id,company_id,employee_id,period_month,record_date,earning_type,amount,reason,applied_in_payroll,payload,sort_order,updated_at
-    ) VALUES ($1,$2,$3,$4,$5::date,$6,$7,$8,$9,$10::jsonb,$11,now())
-    ON CONFLICT (id) DO UPDATE SET employee_id=EXCLUDED.employee_id,period_month=EXCLUDED.period_month,
-      record_date=EXCLUDED.record_date,earning_type=EXCLUDED.earning_type,amount=EXCLUDED.amount,reason=EXCLUDED.reason,
-      applied_in_payroll=EXCLUDED.applied_in_payroll,payload=EXCLUDED.payload,updated_at=now()`, [
-      record.id,record.companyId,record.employeeId,record.periodMonth,record.date,record.type,Number(record.amount),record.reason.trim(),Boolean(record.appliedInPayroll),JSON.stringify(record),sortOrder
-    ]);
-    const updated = await bumpStateVersion(client,req.user.id);
-    await appendStateAudit(client,q,{ companyIds:req.user.company_ids,user:req.user,action:existing.rowCount ? 'UPDATE_TEMPORARY_EARNING' : 'CREATE_TEMPORARY_EARNING',version:updated.rows[0].version });
-    await client.query('COMMIT');
-    broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at,
-      companyIds:[record.companyId],changes:[{ collection:'temporaryEarnings',operation:'upsert',records:[record] }] });
-    res.json({ record,created:!existing.rowCount,version:Number(updated.rows[0].version),updated_at:updated.rows[0].updated_at });
-  } catch (e) {
-    try { await client.query('ROLLBACK'); } catch {}
-    if (Number.isInteger(e?.status) && e.status >= 400 && e.status < 500) return res.status(e.status).json({ error:e.message });
-    next(e);
-  } finally { client.release(); }
-});
-
-app.delete('/api/temporary-earnings/:id', auth, writeLimiter, async (req, res, next) => {
-  const client = await pool.connect();
-  try {
-    if (!can(req.user,'MANAGE_LOANS_PENALTIES')) return res.status(403).json({ error:'FORBIDDEN' });
-    await client.query('BEGIN');
-    const row = await client.query(`SELECT company_id,payload FROM ${q('temporary_earnings')} WHERE id=$1 FOR UPDATE`, [req.params.id]);
-    if (!row.rowCount) throw workflowError(404, 'TEMPORARY_EARNING_NOT_FOUND');
-    if (!req.user.company_ids.includes(row.rows[0].company_id)) throw workflowError(403, 'FORBIDDEN');
-    const stored = await readLockedNormalizedState(client);
-    if (payrollSourceLocked(stored,'earning',row.rows[0].payload)) throw workflowError(409, 'PAYROLL_SOURCE_ENTRY_LOCKED');
-    await client.query(`DELETE FROM ${q('temporary_earnings')} WHERE id=$1`, [req.params.id]);
-    const updated = await bumpStateVersion(client,req.user.id);
-    await appendStateAudit(client,q,{ companyIds:req.user.company_ids,user:req.user,action:'DELETE_TEMPORARY_EARNING',version:updated.rows[0].version });
-    await client.query('COMMIT');
-    broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at,
-      companyIds:[row.rows[0].company_id],changes:[{ collection:'temporaryEarnings',operation:'delete',ids:[req.params.id] }] });
-    res.json({ deleted:true,version:Number(updated.rows[0].version),updated_at:updated.rows[0].updated_at });
-  } catch (e) {
-    try { await client.query('ROLLBACK'); } catch {}
-    if (Number.isInteger(e?.status) && e.status >= 400 && e.status < 500) return res.status(e.status).json({ error:e.message });
-    next(e);
-  } finally { client.release(); }
-});
-
-async function commitPayrollCommandState(client, stored, record, user, action, affectedRecords = []) {
-  const recordsById = new Map([record,...affectedRecords].map(item => [item.id,item]));
-  const nextRuns = asArray(stored.payrollRuns).map(item => recordsById.get(item.id) || item);
-  const nextState = { ...stored,payrollRuns:nextRuns };
-  await appendPayrollFinancialAudit(client,q,{ stored,next:nextState,user });
-  const updated = await bumpStateVersion(client,user.id);
-  await appendStateAudit(client,q,{ companyIds:user.company_ids,user,action,version:updated.rows[0].version });
-  return updated;
-}
-
-async function persistReconciledPayrollRun(client, run) {
-  const runPayload = clone(run);
-  delete runPayload.items;
-  delete runPayload.paymentBatches;
-  await client.query(`UPDATE ${q('payroll_runs')} SET employees_count=$2,total_gross_salaries=$3,total_deductions=$4,
-    total_net_salaries=$5,total_company_cost=$6,payload=$7::jsonb,updated_at=now() WHERE id=$1`, [
-    run.id,Number(run.employeesCount || asArray(run.items).length),Number(run.totalGrossSalaries || 0),
-    Number(run.totalDeductions || 0),Number(run.totalNetSalaries || 0),Number(run.totalCompanyCost || 0),JSON.stringify(runPayload),
-  ]);
-  for (const item of asArray(run.items)) {
-    await client.query(`UPDATE ${q('payroll_run_items')} SET entitlement_status=$3,entitlement_reason=NULLIF($4,''),
-      total_gross_salary=$5,total_deductions=$6,net_salary=$7,payload=$8::jsonb,updated_at=now()
-      WHERE payroll_run_id=$1 AND id=$2`, [
-      run.id,item.id,item.entitlementStatus || 'PAYABLE',item.entitlementReason || '',Number(item.totalGrossSalary || 0),
-      Number(item.totalDeductions || 0),Number(item.netSalary || 0),JSON.stringify(item),
-    ]);
-  }
-}
-
-app.post('/api/payroll-runs/:id/status', auth, writeLimiter, async (req, res, next) => {
-  const client = await pool.connect();
-  try {
-    await client.query('BEGIN');
-    const stored = await readLockedNormalizedState(client);
-    const previous = asArray(stored.payrollRuns).find(item => item.id === req.params.id);
-    if (!previous) throw workflowError(404,'PAYROLL_RUN_NOT_FOUND');
-    if (!req.user.company_ids.includes(previous.companyId)) throw workflowError(403,'FORBIDDEN');
-    const status = String(req.body?.status || '');
-    if (status === previous.status) throw workflowError(409,'PAYROLL_STATUS_UNCHANGED');
-    const record = { ...previous,status };
-    if (status === 'APPROVED' && previous.status === 'UNDER_REVIEW') {
-      record.approvedAt = new Date().toISOString();
-      record.approvedBy = req.user.name || req.user.username || req.user.id;
-    } else if (status === 'UNDER_REVIEW' && previous.status === 'APPROVED') {
-      delete record.approvedAt; delete record.approvedBy;
-    } else if (status === 'POSTED' && previous.status === 'APPROVED') {
-      record.postedAt = new Date().toISOString();
-      record.postedBy = req.user.name || req.user.username || req.user.id;
-    } else if (status === 'APPROVED' && previous.status === 'POSTED') {
-      delete record.postedAt; delete record.postedBy;
-    }
-    const nextRuns = asArray(stored.payrollRuns).map(item => item.id === record.id ? record : item);
-    validatePayrollWorkflowChanges(stored.payrollRuns,nextRuns,req.user);
-    validatePayrollCarryForwardState(stored.payrollRuns,nextRuns);
-    const payload = clone(record); delete payload.items; delete payload.paymentBatches;
-    await client.query(`UPDATE ${q('payroll_runs')} SET status=$2,approved_at=NULLIF($3,'')::timestamptz,posted_at=NULLIF($4,'')::timestamptz,payload=$5::jsonb,updated_at=now() WHERE id=$1`, [record.id,record.status,record.approvedAt || '',record.postedAt || '',JSON.stringify(payload)]);
-    const updated = await commitPayrollCommandState(client,stored,record,req.user,'PAYROLL_STATUS_TRANSITION');
-    await client.query('COMMIT');
-    broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at,
-      companyIds:[record.companyId],changes:[{ collection:'payrollRuns',operation:'upsert',records:[record] }] });
-    res.json({ record,created:false,version:Number(updated.rows[0].version),updated_at:updated.rows[0].updated_at });
-  } catch (e) {
-    try { await client.query('ROLLBACK'); } catch {}
-    if (Number.isInteger(e?.status) && e.status >= 400 && e.status < 500) return res.status(e.status).json({ error:e.message });
-    next(e);
-  } finally { client.release(); }
-});
-
-app.post('/api/payroll-runs/:id/payment-batches', auth, writeLimiter, async (req, res, next) => {
-  const client = await pool.connect();
-  try {
-    await client.query('BEGIN');
-    const stored = await readLockedNormalizedState(client);
-    const previous = asArray(stored.payrollRuns).find(item => item.id === req.params.id);
-    if (!previous) throw workflowError(404,'PAYROLL_RUN_NOT_FOUND');
-    if (!req.user.company_ids.includes(previous.companyId)) throw workflowError(403,'FORBIDDEN');
-    const batch = req.body || {};
-    if (typeof batch.id !== 'string' || !batch.id || batch.payrollRunId !== previous.id || batch.companyId !== previous.companyId
-      || batch.status !== 'SCHEDULED' || !['WPS','BANK_TRANSFER','CASH'].includes(batch.method)
-      || !Array.isArray(batch.employeeIds) || !batch.employeeIds.length || !(Number(batch.totalAmount) > 0)
-      || !validIsoDate(batch.scheduledDate)) throw workflowError(400,'INVALID_PAYMENT_BATCH');
-    const record = { ...previous,paymentBatches:[...asArray(previous.paymentBatches),batch] };
-    const nextRuns = asArray(stored.payrollRuns).map(item => item.id === record.id ? record : item);
-    validatePayrollWorkflowChanges(stored.payrollRuns,nextRuns,req.user);
-    validatePayrollCarryForwardState(stored.payrollRuns,nextRuns);
-    const payload = clone(batch); delete payload.employeeIds;
-    const sortOrder = Number((await client.query(`SELECT COALESCE(max(sort_order),-1)+1 AS sort_order FROM ${q('payroll_payment_batches')} WHERE payroll_run_id=$1`, [previous.id])).rows[0]?.sort_order || 0);
-    await client.query(`INSERT INTO ${q('payroll_payment_batches')} (id,payroll_run_id,company_id,batch_number,status,method,total_amount,scheduled_date,payment_date,payload,sort_order)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8::date,NULLIF($9,'')::date,$10::jsonb,$11)`, [batch.id,previous.id,batch.companyId,batch.batchNumber || '',batch.status,batch.method,Number(batch.totalAmount),batch.scheduledDate,batch.paymentDate || '',JSON.stringify(payload),sortOrder]);
-    await client.query(`INSERT INTO ${q('payroll_payment_batch_items')} (payment_batch_id,employee_id,sort_order)
-      SELECT $1,employee_id,(ordinality-1)::integer FROM jsonb_array_elements_text($2::jsonb) WITH ORDINALITY AS ids(employee_id,ordinality)`, [batch.id,JSON.stringify(batch.employeeIds)]);
-    const updated = await commitPayrollCommandState(client,stored,record,req.user,'CREATE_PAYMENT_BATCH');
-    await client.query('COMMIT');
-    broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at,
-      companyIds:[record.companyId],changes:[{ collection:'payrollRuns',operation:'upsert',records:[record] }] });
-    res.json({ record,created:false,version:Number(updated.rows[0].version),updated_at:updated.rows[0].updated_at });
-  } catch (e) {
-    try { await client.query('ROLLBACK'); } catch {}
-    if (Number.isInteger(e?.status) && e.status >= 400 && e.status < 500) return res.status(e.status).json({ error:e.message });
-    if (e?.code === '23505') return res.status(409).json({ error:'PAYMENT_BATCH_DUPLICATE',detail:e.constraint });
-    next(e);
-  } finally { client.release(); }
-});
-
-app.patch('/api/payroll-runs/:id/payment-batches/:batchId/status', auth, writeLimiter, async (req, res, next) => {
-  const client = await pool.connect();
-  try {
-    await client.query('BEGIN');
-    const stored = await readLockedNormalizedState(client);
-    const previous = asArray(stored.payrollRuns).find(item => item.id === req.params.id);
-    if (!previous) throw workflowError(404,'PAYROLL_RUN_NOT_FOUND');
-    if (!req.user.company_ids.includes(previous.companyId)) throw workflowError(403,'FORBIDDEN');
-    const oldBatch = asArray(previous.paymentBatches).find(item => item.id === req.params.batchId);
-    if (!oldBatch) throw workflowError(404,'PAYMENT_BATCH_NOT_FOUND');
-    const status = String(req.body?.status || '');
-    let nextBatch = { ...oldBatch,status };
-    if (oldBatch.status === 'SCHEDULED' && status === 'PAID') {
-      nextBatch.paymentDate = validIsoDate(req.body?.paymentDate) ? req.body.paymentDate : new Date().toISOString().slice(0,10);
-    } else if (oldBatch.status === 'PAID' && status === 'SCHEDULED') {
-      nextBatch = { ...nextBatch,reversedPaymentDate:oldBatch.paymentDate,paymentDate:undefined,paymentReversalReason:String(req.body?.paymentReversalReason || '').trim() };
-    }
-    const record = { ...previous,paymentBatches:asArray(previous.paymentBatches).map(item => item.id === nextBatch.id ? nextBatch : item) };
-    const affectedPayrollRuns = oldBatch.status === 'SCHEDULED' && status === 'PAID'
-      ? reconcilePaidPayrollCarryForward({ runs:stored.payrollRuns,employees:stored.employees,sourceRun:record,paidBatch:nextBatch })
-      : oldBatch.status === 'SCHEDULED' && ['CANCELLED','FAILED'].includes(status)
-        ? reconcileReleasedPayrollCarryForward({ runs:stored.payrollRuns,sourceRun:record,releasedBatch:nextBatch })
-        : [];
-    const affectedById = new Map(affectedPayrollRuns.map(item => [item.id,item]));
-    const nextRuns = asArray(stored.payrollRuns).map(item => item.id === record.id ? record : (affectedById.get(item.id) || item));
-    validatePayrollWorkflowChanges(stored.payrollRuns,nextRuns,req.user);
-    validatePayrollCarryForwardState(stored.payrollRuns,nextRuns);
-    nextBatch = record.paymentBatches.find(item => item.id === nextBatch.id);
-    const payload = clone(nextBatch); delete payload.employeeIds;
-    await client.query(`UPDATE ${q('payroll_payment_batches')} SET status=$3,payment_date=NULLIF($4,'')::date,payload=$5::jsonb,updated_at=now() WHERE id=$1 AND payroll_run_id=$2`, [nextBatch.id,previous.id,nextBatch.status,nextBatch.paymentDate || '',JSON.stringify(payload)]);
-    for (const affectedRun of affectedPayrollRuns) await persistReconciledPayrollRun(client,affectedRun);
-    const updated = await commitPayrollCommandState(client,stored,record,req.user,'PAYMENT_BATCH_STATUS_TRANSITION',affectedPayrollRuns);
-    await client.query('COMMIT');
-    broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at,
-      companyIds:[record.companyId],changes:[{ collection:'payrollRuns',operation:'upsert',records:[record,...affectedPayrollRuns] }] });
-    res.json({ record,affectedPayrollRuns,created:false,version:Number(updated.rows[0].version),updated_at:updated.rows[0].updated_at });
-  } catch (e) {
-    try { await client.query('ROLLBACK'); } catch {}
-    if (Number.isInteger(e?.status) && e.status >= 400 && e.status < 500) return res.status(e.status).json({ error:e.message });
-    next(e);
-  } finally { client.release(); }
-});
-
-app.put('/api/payroll-runs/:id', auth, writeLimiter, async (req, res, next) => {
-  const client = await pool.connect();
-  try {
-    if (!can(req.user,'MANAGE_PAYROLL')) return res.status(403).json({ error:'FORBIDDEN' });
-    const record = req.body || {};
-    if (record.id !== req.params.id || typeof record.companyId !== 'string' || !req.user.company_ids.includes(record.companyId)
-      || !validPeriodMonth(record.periodMonth) || !['DRAFT','UNDER_REVIEW','APPROVED','POSTED'].includes(record.status)
-      || !Array.isArray(record.items) || !Array.isArray(record.paymentBatches || [])) {
-      return res.status(400).json({ error:'INVALID_PAYROLL_RUN' });
-    }
-    await client.query('BEGIN');
-    const stored = await readLockedNormalizedState(client);
-    const existingRecord = asArray(stored.payrollRuns).find(item => item.id === record.id);
-    if (existingRecord && existingRecord.companyId !== record.companyId) throw workflowError(409, 'PAYROLL_COMPANY_IMMUTABLE');
-    if (existingRecord && (existingRecord.status !== record.status || !sameJson(existingRecord.paymentBatches,record.paymentBatches))) {
-      throw workflowError(409,'PAYROLL_COMMAND_ENDPOINT_REQUIRED');
-    }
-    const nextRuns = existingRecord
-      ? asArray(stored.payrollRuns).map(item => item.id === record.id ? record : item)
-      : [record,...asArray(stored.payrollRuns)];
-    validatePayrollWorkflowChanges(stored.payrollRuns,nextRuns,req.user);
-    validatePayrollCarryForwardState(stored.payrollRuns,nextRuns);
-    const nextState = { ...stored,payrollRuns:nextRuns };
-    await appendPayrollFinancialAudit(client,q,{ stored,next:nextState,user:req.user });
-
-    const existing = await client.query(`SELECT company_id,sort_order FROM ${q('payroll_runs')} WHERE id=$1 FOR UPDATE`, [record.id]);
-    const sortOrder = existing.rowCount ? existing.rows[0].sort_order : Number((await client.query(`SELECT COALESCE(min(sort_order),0)-1 AS sort_order FROM ${q('payroll_runs')} WHERE company_id=$1`, [record.companyId])).rows[0]?.sort_order || 0);
-    const runPayload = clone(record);
-    delete runPayload.items;
-    delete runPayload.paymentBatches;
-    await client.query(`INSERT INTO ${q('payroll_runs')} (
-      id,company_id,period_month,status,employees_count,total_gross_salaries,total_deductions,total_net_salaries,total_company_cost,
-      created_at,calculated_at,approved_at,posted_at,payload,sort_order,updated_at
-    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NULLIF($10,'')::timestamptz,NULLIF($11,'')::timestamptz,NULLIF($12,'')::timestamptz,NULLIF($13,'')::timestamptz,$14::jsonb,$15,now())
-    ON CONFLICT (id) DO UPDATE SET period_month=EXCLUDED.period_month,status=EXCLUDED.status,employees_count=EXCLUDED.employees_count,
-      total_gross_salaries=EXCLUDED.total_gross_salaries,total_deductions=EXCLUDED.total_deductions,total_net_salaries=EXCLUDED.total_net_salaries,
-      total_company_cost=EXCLUDED.total_company_cost,calculated_at=EXCLUDED.calculated_at,approved_at=EXCLUDED.approved_at,
-      posted_at=EXCLUDED.posted_at,payload=EXCLUDED.payload,updated_at=now()`, [
-      record.id,record.companyId,record.periodMonth,record.status,Number(record.employeesCount || record.items.length),
-      Number(record.totalGrossSalaries || 0),Number(record.totalDeductions || 0),Number(record.totalNetSalaries || 0),Number(record.totalCompanyCost || 0),
-      record.createdAt || '',record.calculatedAt || '',record.approvedAt || '',record.postedAt || '',JSON.stringify(runPayload),sortOrder
-    ]);
-
-    await client.query(`DELETE FROM ${q('payroll_payment_batch_items')} WHERE payment_batch_id IN (SELECT id FROM ${q('payroll_payment_batches')} WHERE payroll_run_id=$1)`, [record.id]);
-    await client.query(`DELETE FROM ${q('payroll_payment_batches')} WHERE payroll_run_id=$1`, [record.id]);
-    await client.query(`DELETE FROM ${q('payroll_run_items')} WHERE payroll_run_id=$1`, [record.id]);
-    await client.query(`INSERT INTO ${q('payroll_run_items')} (
-      payroll_run_id,id,employee_id,employee_no,employee_name,entitlement_status,entitlement_reason,base_salary,total_gross_salary,total_deductions,net_salary,payload,sort_order
-    ) SELECT $1,item->>'id',item->>'employeeId',COALESCE(item->>'employeeNo',''),COALESCE(item->>'employeeName',''),
-      COALESCE(item->>'entitlementStatus','PAYABLE'),NULLIF(item->>'entitlementReason',''),COALESCE(NULLIF(item->>'baseSalary','')::numeric,0),
-      COALESCE(NULLIF(item->>'totalGrossSalary','')::numeric,0),COALESCE(NULLIF(item->>'totalDeductions','')::numeric,0),
-      COALESCE(NULLIF(item->>'netSalary','')::numeric,0),item,(ordinality-1)::integer
-      FROM jsonb_array_elements($2::jsonb) WITH ORDINALITY AS source(item,ordinality)`, [record.id,JSON.stringify(record.items)]);
-    await client.query(`INSERT INTO ${q('payroll_payment_batches')} (
-      id,payroll_run_id,company_id,batch_number,status,method,total_amount,scheduled_date,payment_date,payload,sort_order
-    ) SELECT batch->>'id',$1,batch->>'companyId',COALESCE(batch->>'batchNumber',''),COALESCE(batch->>'status','SCHEDULED'),
-      COALESCE(batch->>'method','BANK_TRANSFER'),COALESCE(NULLIF(batch->>'totalAmount','')::numeric,0),NULLIF(batch->>'scheduledDate','')::date,
-      NULLIF(batch->>'paymentDate','')::date,batch-'employeeIds',(ordinality-1)::integer
-      FROM jsonb_array_elements($2::jsonb) WITH ORDINALITY AS source(batch,ordinality)`, [record.id,JSON.stringify(record.paymentBatches || [])]);
-    await client.query(`INSERT INTO ${q('payroll_payment_batch_items')} (payment_batch_id,employee_id,sort_order)
-      SELECT batch->>'id',employee_id,(employee_ordinality-1)::integer
-      FROM jsonb_array_elements($1::jsonb) AS source(batch)
-      CROSS JOIN LATERAL jsonb_array_elements_text(COALESCE(batch->'employeeIds','[]'::jsonb)) WITH ORDINALITY AS employee_ids(employee_id,employee_ordinality)`, [JSON.stringify(record.paymentBatches || [])]);
-
-    const updated = await bumpStateVersion(client,req.user.id);
-    await appendStateAudit(client,q,{ companyIds:req.user.company_ids,user:req.user,action:existing.rowCount ? 'UPDATE_PAYROLL_RUN' : 'CREATE_PAYROLL_RUN',version:updated.rows[0].version });
-    await client.query('COMMIT');
-    broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at,
-      companyIds:[record.companyId],changes:[{ collection:'payrollRuns',operation:'upsert',records:[record] }] });
-    res.json({ record,created:!existing.rowCount,version:Number(updated.rows[0].version),updated_at:updated.rows[0].updated_at });
-  } catch (e) {
-    try { await client.query('ROLLBACK'); } catch {}
-    if (Number.isInteger(e?.status) && e.status >= 400 && e.status < 500) return res.status(e.status).json({ error:e.message });
-    if (e?.code === '23505') return res.status(409).json({ error:'PAYROLL_RUN_DUPLICATE',detail:e.constraint });
-    next(e);
-  } finally { client.release(); }
-});
-
-function validateSettlementRecord(record, user) {
-  if (!record || typeof record !== 'object' || typeof record.id !== 'string' || !record.id
-    || typeof record.companyId !== 'string' || !user.company_ids.includes(record.companyId)
-    || typeof record.employeeId !== 'string' || !record.employeeId
-    || typeof record.employeeNo !== 'string' || typeof record.employeeName !== 'string'
-    || !validPeriodMonth(record.periodMonth) || !validIsoDate(record.periodStart) || !validIsoDate(record.periodEnd)
-    || record.periodEnd < record.periodStart || !(Number(record.amount) > 0)
-    || !['HELD_PAYROLL','RETROACTIVE_EMPLOYEE','PAYROLL_DIFFERENCE'].includes(record.reason)
-    || typeof record.dedupeKey !== 'string' || !record.dedupeKey
-    || record.status !== 'PAID' || !['WPS','BANK_TRANSFER','CASH'].includes(record.paymentMethod)
-    || !validIsoDate(record.paymentDate) || Number.isNaN(Date.parse(record.createdAt)) || Number.isNaN(Date.parse(record.paidAt))) {
-    throw workflowError(400,'INVALID_PAYROLL_SETTLEMENT');
-  }
-  const sourceRunId = String(record.sourcePayrollRunId || '');
-  const sourceItemId = String(record.sourcePayrollItemId || '');
-  if (sourceItemId && !sourceRunId) throw workflowError(400,'INVALID_SETTLEMENT_SOURCE');
-}
-
-function settlementSourceRun(stored, record, entitlementStatus, entitlementReason) {
-  if (!record.sourcePayrollRunId || !record.sourcePayrollItemId) return null;
-  const run = asArray(stored.payrollRuns).find(item => item.id === record.sourcePayrollRunId);
-  const item = asArray(run?.items).find(candidate => candidate.id === record.sourcePayrollItemId);
-  if (!run || run.companyId !== record.companyId || !item || item.employeeId !== record.employeeId) {
-    throw workflowError(400,'INVALID_SETTLEMENT_SOURCE');
-  }
-  if (entitlementStatus === 'SETTLED') {
-    const releasedAfterClosedBatch = item.entitlementStatus === 'PAYABLE' && asArray(run.paymentBatches).some(batch =>
-      ['SCHEDULED','PAID'].includes(batch.status) && !asArray(batch.employeeIds).includes(item.employeeId)
-    );
-    if (!['HELD','UNDER_SETTLEMENT'].includes(item.entitlementStatus) && !releasedAfterClosedBatch) {
-      throw workflowError(409,'SETTLEMENT_SOURCE_NOT_HELD');
-    }
-  }
-  if (entitlementStatus === 'HELD' && item.entitlementStatus !== 'SETTLED') {
-    throw workflowError(409,'SETTLEMENT_SOURCE_NOT_SETTLED');
-  }
-  return {
-    ...run,
-    items:run.items.map(candidate => candidate.id === item.id ? {
-      ...candidate,entitlementStatus,
-      entitlementReason:entitlementStatus === 'SETTLED' ? (candidate.entitlementReason || entitlementReason) : entitlementReason,
-      entitlementUpdatedAt:new Date().toISOString(),
-    } : candidate),
-  };
-}
-
-app.post('/api/payroll-settlements', auth, writeLimiter, async (req, res, next) => {
-  const client = await pool.connect();
-  try {
-    if (!can(req.user,'MANAGE_PAYROLL')) return res.status(403).json({ error:'FORBIDDEN' });
-    const record = req.body || {};
-    validateSettlementRecord(record,req.user);
-    await client.query('BEGIN');
-    await lockStateVersion(client);
-    const stored = await readNormalizedApplicationState(client);
-    const employee = await client.query(`SELECT company_id,payload FROM ${q('employees')} WHERE id=$1 AND is_archived=false`, [record.employeeId]);
-    if (!employee.rowCount || employee.rows[0].company_id !== record.companyId) throw workflowError(400,'INVALID_SETTLEMENT_EMPLOYEE');
-    if (record.paymentMethod !== 'CASH' && !String(employee.rows[0].payload?.bankIban || '').startsWith('SA')) {
-      throw workflowError(400,'SETTLEMENT_BANK_IBAN_REQUIRED');
-    }
-    const payrollRun = settlementSourceRun(stored,record,'SETTLED','SETTLED_VIA_PAYROLL_SETTLEMENT');
-    const sortOrder = Number((await client.query(`SELECT COALESCE(min(sort_order),0)-1 AS sort_order FROM ${q('payroll_settlements')} WHERE company_id=$1`, [record.companyId])).rows[0]?.sort_order || 0);
-    await client.query(`INSERT INTO ${q('payroll_settlements')} (
-        id,company_id,employee_id,period_month,period_start,period_end,amount,reason,source_payroll_run_id,
-        source_payroll_item_id,dedupe_key,status,payment_method,payment_date,payment_reference,created_at,paid_at,payload,sort_order
-      ) VALUES ($1,$2,$3,$4,$5::date,$6::date,$7,$8,NULLIF($9,''),NULLIF($10,''),$11,'PAID',$12,$13::date,NULLIF($14,''),$15::timestamptz,$16::timestamptz,$17::jsonb,$18)`, [
-      record.id,record.companyId,record.employeeId,record.periodMonth,record.periodStart,record.periodEnd,Number(record.amount),record.reason,
-      record.sourcePayrollRunId || '',record.sourcePayrollItemId || '',record.dedupeKey,record.paymentMethod,record.paymentDate,
-      record.paymentReference || '',record.createdAt,record.paidAt,JSON.stringify(record),sortOrder
-    ]);
-    if (payrollRun) {
-      const item = payrollRun.items.find(candidate => candidate.id === record.sourcePayrollItemId);
-      await client.query(`UPDATE ${q('payroll_run_items')} SET entitlement_status=$3,entitlement_reason=$4,payload=$5::jsonb,updated_at=now()
-        WHERE payroll_run_id=$1 AND id=$2`, [payrollRun.id,item.id,item.entitlementStatus,item.entitlementReason,JSON.stringify(item)]);
-    }
-    const updated = await bumpStateVersion(client,req.user.id);
-    await appendStateAudit(client,q,{ companyIds:req.user.company_ids,user:req.user,action:'CREATE_PAYROLL_SETTLEMENT',version:updated.rows[0].version });
-    await client.query('COMMIT');
-    broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at,
-      companyIds:[record.companyId],changes:[
-        { collection:'payrollSettlements',operation:'upsert',records:[record] },
-        ...(payrollRun ? [{ collection:'payrollRuns',operation:'upsert',records:[payrollRun] }] : []),
-      ] });
-    res.status(201).json({ record,payrollRun,version:Number(updated.rows[0].version),updated_at:updated.rows[0].updated_at });
-  } catch (e) {
-    try { await client.query('ROLLBACK'); } catch {}
-    if (Number.isInteger(e?.status) && e.status >= 400 && e.status < 500) return res.status(e.status).json({ error:e.message });
-    if (e?.code === '23505') return res.status(409).json({ error:'DUPLICATE_PAYROLL_SETTLEMENT' });
-    next(e);
-  } finally { client.release(); }
-});
-
-app.post('/api/payroll-settlements/:id/reverse', auth, writeLimiter, async (req, res, next) => {
-  const client = await pool.connect();
-  try {
-    if (!can(req.user,'MANAGE_PAYROLL')) return res.status(403).json({ error:'FORBIDDEN' });
-    const reversalReason = String(req.body?.reversalReason || '').trim();
-    if (reversalReason.length < 5) return res.status(400).json({ error:'SETTLEMENT_REVERSAL_REASON_REQUIRED' });
-    await client.query('BEGIN');
-    await lockStateVersion(client);
-    const existing = await client.query(`SELECT company_id,status,payload FROM ${q('payroll_settlements')} WHERE id=$1 FOR UPDATE`, [req.params.id]);
-    if (!existing.rowCount) throw workflowError(404,'PAYROLL_SETTLEMENT_NOT_FOUND');
-    if (!req.user.company_ids.includes(existing.rows[0].company_id)) throw workflowError(403,'FORBIDDEN');
-    if (existing.rows[0].status === 'REVERSED') throw workflowError(409,'REVERSED_SETTLEMENT_LOCKED');
-    if (existing.rows[0].status !== 'PAID') throw workflowError(409,'SETTLEMENT_NOT_PAID');
-    const record = { ...existing.rows[0].payload,status:'REVERSED',reversedAt:new Date().toISOString(),reversalReason };
-    const stored = await readNormalizedApplicationState(client);
-    const payrollRun = settlementSourceRun(stored,record,'HELD','SETTLEMENT_REVERSED');
-    await client.query(`UPDATE ${q('payroll_settlements')} SET status='REVERSED',reversed_at=$2::timestamptz,
-      reversal_reason=$3,payload=$4::jsonb,updated_at=now() WHERE id=$1`, [record.id,record.reversedAt,reversalReason,JSON.stringify(record)]);
-    if (payrollRun) {
-      const item = payrollRun.items.find(candidate => candidate.id === record.sourcePayrollItemId);
-      await client.query(`UPDATE ${q('payroll_run_items')} SET entitlement_status=$3,entitlement_reason=$4,payload=$5::jsonb,updated_at=now()
-        WHERE payroll_run_id=$1 AND id=$2`, [payrollRun.id,item.id,item.entitlementStatus,item.entitlementReason,JSON.stringify(item)]);
-    }
-    const updated = await bumpStateVersion(client,req.user.id);
-    await appendStateAudit(client,q,{ companyIds:req.user.company_ids,user:req.user,action:'REVERSE_PAYROLL_SETTLEMENT',version:updated.rows[0].version });
-    await client.query('COMMIT');
-    broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at,
-      companyIds:[record.companyId],changes:[
-        { collection:'payrollSettlements',operation:'upsert',records:[record] },
-        ...(payrollRun ? [{ collection:'payrollRuns',operation:'upsert',records:[payrollRun] }] : []),
-      ] });
-    res.json({ record,payrollRun,version:Number(updated.rows[0].version),updated_at:updated.rows[0].updated_at });
-  } catch (e) {
-    try { await client.query('ROLLBACK'); } catch {}
-    if (Number.isInteger(e?.status) && e.status >= 400 && e.status < 500) return res.status(e.status).json({ error:e.message });
-    next(e);
-  } finally { client.release(); }
-});
-
-app.put('/api/journals/:id', auth, writeLimiter, async (req, res, next) => {
-  const client = await pool.connect();
-  try {
-    if (!can(req.user,'MANAGE_JOURNALS')) return res.status(403).json({ error:'FORBIDDEN' });
-    const record = req.body || {};
-    if (record.id !== req.params.id) return res.status(400).json({ error:'INVALID_JOURNAL_RECORD' });
-    validateJournalRecord(record,req.user);
-    await client.query('BEGIN');
-    const existed = await upsertJournalAggregate(client,record);
-    const updated = await bumpStateVersion(client,req.user.id);
-    await appendStateAudit(client,q,{ companyIds:req.user.company_ids,user:req.user,action:existed ? 'UPDATE_JOURNAL' : 'CREATE_JOURNAL',version:updated.rows[0].version });
-    await client.query('COMMIT');
-    broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at,
-      companyIds:[record.companyId],changes:[{ collection:'journals',operation:'upsert',records:[record] }] });
-    res.json({ record,created:!existed,version:Number(updated.rows[0].version),updated_at:updated.rows[0].updated_at });
-  } catch (e) {
-    try { await client.query('ROLLBACK'); } catch {}
-    if (Number.isInteger(e?.status) && e.status >= 400 && e.status < 500) return res.status(e.status).json({ error:e.message });
-    if (e?.code === '23505') return res.status(409).json({ error:'JOURNAL_DUPLICATE',detail:e.constraint });
-    next(e);
-  } finally { client.release(); }
-});
-
-app.delete('/api/journals/:id', auth, writeLimiter, async (req, res, next) => {
-  const client = await pool.connect();
-  try {
-    if (!can(req.user,'MANAGE_JOURNALS')) return res.status(403).json({ error:'FORBIDDEN' });
-    await client.query('BEGIN');
-    const row = await client.query(`SELECT company_id,status FROM ${q('journal_batches')} WHERE id=$1 FOR UPDATE`, [req.params.id]);
-    if (!row.rowCount) throw workflowError(404,'JOURNAL_NOT_FOUND');
-    if (!req.user.company_ids.includes(row.rows[0].company_id)) throw workflowError(403,'FORBIDDEN');
-    if (row.rows[0].status === 'POSTED') throw workflowError(409,'POSTED_JOURNAL_IMMUTABLE');
-    await client.query(`DELETE FROM ${q('journal_batches')} WHERE id=$1`, [req.params.id]);
-    const updated = await bumpStateVersion(client,req.user.id);
-    await appendStateAudit(client,q,{ companyIds:req.user.company_ids,user:req.user,action:'DELETE_JOURNAL',version:updated.rows[0].version });
-    await client.query('COMMIT');
-    broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at,
-      companyIds:[row.rows[0].company_id],changes:[{ collection:'journals',operation:'delete',ids:[req.params.id] }] });
-    res.json({ deleted:true,version:Number(updated.rows[0].version),updated_at:updated.rows[0].updated_at });
-  } catch (e) {
-    try { await client.query('ROLLBACK'); } catch {}
-    if (Number.isInteger(e?.status) && e.status >= 400 && e.status < 500) return res.status(e.status).json({ error:e.message });
-    next(e);
-  } finally { client.release(); }
-});
-
-function validImportedEmployee(employee, user) {
-  const salary = employee?.salaryPackage || {};
-  const dates = ['hireDate','salaryStartDate','terminationDate','suspensionStartDate','suspensionEndDate'];
-  return employee && typeof employee === 'object' && typeof employee.id === 'string' && Boolean(employee.id)
-    && typeof employee.companyId === 'string' && user.company_ids.includes(employee.companyId)
-    && typeof employee.employeeNo === 'string' && Boolean(employee.employeeNo.trim())
-    && typeof employee.firstNameAr === 'string' && Boolean(employee.firstNameAr.trim())
-    && typeof employee.lastNameAr === 'string' && Boolean(employee.lastNameAr.trim())
-    && ['ACTIVE','SUSPENDED','ON_LEAVE','TERMINATED','ABSCONDED','ONBOARDING'].includes(employee.status || 'ACTIVE')
-    && dates.every(key => !employee[key] || validIsoDate(employee[key]))
-    && ['baseSalary','housingAllowance','transportAllowance','otherFixedAllowances']
-      .every(key => Number.isFinite(Number(salary[key] || 0)) && Number(salary[key] || 0) >= 0);
-}
-
-app.post('/api/employees/import', auth, writeLimiter, async (req, res, next) => {
-  const client = await pool.connect();
-  try {
-    if (!can(req.user,'MANAGE_EMPLOYEES')) return res.status(403).json({ error:'FORBIDDEN' });
-    const employees = req.body?.employees;
-    if (!Array.isArray(employees) || !employees.length || employees.length > 2500
-      || employees.some(employee => !validImportedEmployee(employee,req.user))) {
-      return res.status(400).json({ error:'INVALID_EMPLOYEE_IMPORT' });
-    }
-    const ids = employees.map(employee => employee.id);
-    const employeeNumbers = employees.map(employee => employee.employeeNo.trim());
-    const companyIds = new Set(employees.map(employee => employee.companyId));
-    if (new Set(ids).size !== ids.length || new Set(employeeNumbers).size !== employeeNumbers.length || companyIds.size !== 1) {
-      return res.status(400).json({ error:'INVALID_EMPLOYEE_IMPORT' });
-    }
-    const companyId = employees[0].companyId;
-    await client.query('BEGIN');
-    const existing = await client.query(`SELECT id,company_id FROM ${q('employees')} WHERE id=ANY($1::text[]) FOR UPDATE`, [ids]);
-    if (existing.rows.some(row => row.company_id !== companyId)) throw workflowError(409,'EMPLOYEE_COMPANY_IMMUTABLE');
-    const startOrder = Number((await client.query(`SELECT COALESCE(max(sort_order),-1)+1 AS sort_order FROM ${q('employees')} WHERE company_id=$1`, [companyId])).rows[0]?.sort_order || 0);
-    await client.query(`INSERT INTO ${q('employees')} (
-        id,company_id,employee_no,national_id_or_iqama,status,first_name_ar,last_name_ar,first_name_en,last_name_en,
-        department,job_title,hire_date,salary_start_date,termination_date,suspension_start_date,suspension_end_date,
-        base_salary,housing_allowance,transport_allowance,other_fixed_allowances,bank_iban,payload,sort_order,is_archived,updated_at
-      ) SELECT employee->>'id',employee->>'companyId',employee->>'employeeNo',COALESCE(employee->>'nationalIdOrIqama',''),
-        COALESCE(NULLIF(employee->>'status',''),'ACTIVE'),employee->>'firstNameAr',employee->>'lastNameAr',
-        COALESCE(employee->>'firstNameEn',''),COALESCE(employee->>'lastNameEn',''),COALESCE(employee->>'department',''),
-        COALESCE(employee->>'jobTitle',''),NULLIF(employee->>'hireDate','')::date,NULLIF(employee->>'salaryStartDate','')::date,
-        NULLIF(employee->>'terminationDate','')::date,NULLIF(employee->>'suspensionStartDate','')::date,NULLIF(employee->>'suspensionEndDate','')::date,
-        COALESCE(NULLIF(employee->'salaryPackage'->>'baseSalary','')::numeric,0),
-        COALESCE(NULLIF(employee->'salaryPackage'->>'housingAllowance','')::numeric,0),
-        COALESCE(NULLIF(employee->'salaryPackage'->>'transportAllowance','')::numeric,0),
-        COALESCE(NULLIF(employee->'salaryPackage'->>'otherFixedAllowances','')::numeric,0),COALESCE(employee->>'bankIban',''),
-        employee,$2+(ordinality-1)::integer,false,now()
-      FROM jsonb_array_elements($1::jsonb) WITH ORDINALITY AS source(employee,ordinality)
-      ON CONFLICT (id) DO UPDATE SET employee_no=EXCLUDED.employee_no,national_id_or_iqama=EXCLUDED.national_id_or_iqama,
-        status=EXCLUDED.status,first_name_ar=EXCLUDED.first_name_ar,last_name_ar=EXCLUDED.last_name_ar,
-        first_name_en=EXCLUDED.first_name_en,last_name_en=EXCLUDED.last_name_en,department=EXCLUDED.department,
-        job_title=EXCLUDED.job_title,hire_date=EXCLUDED.hire_date,salary_start_date=EXCLUDED.salary_start_date,
-        termination_date=EXCLUDED.termination_date,suspension_start_date=EXCLUDED.suspension_start_date,
-        suspension_end_date=EXCLUDED.suspension_end_date,base_salary=EXCLUDED.base_salary,housing_allowance=EXCLUDED.housing_allowance,
-        transport_allowance=EXCLUDED.transport_allowance,other_fixed_allowances=EXCLUDED.other_fixed_allowances,
-        bank_iban=EXCLUDED.bank_iban,payload=EXCLUDED.payload,is_archived=false,updated_at=now()`, [JSON.stringify(employees),startOrder]);
-    const updated = await bumpStateVersion(client,req.user.id);
-    await appendStateAudit(client,q,{ companyIds:[companyId],user:req.user,action:`IMPORT_EMPLOYEES:${employees.length}`,version:updated.rows[0].version });
-    await client.query(`INSERT INTO ${q('audit_log')} (user_id,action,ip) VALUES ($1,$2,$3)`, [req.user.id,`IMPORT_EMPLOYEES:${employees.length}`,req.ip]);
-    await client.query('COMMIT');
-    broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at,
-      companyIds:[companyId],changes:[{ collection:'employees',operation:'upsert',records:employees }] });
-    res.status(201).json({ employees,version:Number(updated.rows[0].version),updated_at:updated.rows[0].updated_at });
-  } catch (e) {
-    try { await client.query('ROLLBACK'); } catch {}
-    if (Number.isInteger(e?.status) && e.status >= 400 && e.status < 500) return res.status(e.status).json({ error:e.message });
-    if (e?.code === '23505') return res.status(409).json({ error:'EMPLOYEE_NUMBER_EXISTS' });
-    next(e);
-  } finally { client.release(); }
-});
-
-app.put('/api/employees/:id', auth, writeLimiter, async (req, res, next) => {
-  const client = await pool.connect();
-  try {
-    if (!can(req.user,'MANAGE_EMPLOYEES')) return res.status(403).json({ error:'FORBIDDEN' });
-    const employee = req.body || {};
-    if (!employee || typeof employee !== 'object' || employee.id !== req.params.id
-      || typeof employee.companyId !== 'string' || !req.user.company_ids.includes(employee.companyId)
-      || typeof employee.employeeNo !== 'string' || !employee.employeeNo.trim()
-      || typeof employee.firstNameAr !== 'string' || !employee.firstNameAr.trim()
-      || typeof employee.lastNameAr !== 'string' || !employee.lastNameAr.trim()) {
-      return res.status(400).json({ error:'INVALID_EMPLOYEE' });
-    }
-    const allowedStatuses = new Set(['ACTIVE','SUSPENDED','ON_LEAVE','TERMINATED','ABSCONDED','ONBOARDING']);
-    if (!allowedStatuses.has(employee.status || 'ACTIVE')) return res.status(400).json({ error:'INVALID_EMPLOYEE_STATUS' });
-
-    await client.query('BEGIN');
-    const existing = await client.query(`SELECT id,company_id,sort_order FROM ${q('employees')} WHERE id=$1 FOR UPDATE`, [employee.id]);
-    if (existing.rowCount && existing.rows[0].company_id !== employee.companyId) {
-      await client.query('ROLLBACK');
-      return res.status(409).json({ error:'EMPLOYEE_COMPANY_IMMUTABLE' });
-    }
-    const orderResult = existing.rowCount
-      ? { rows:[{ sort_order:existing.rows[0].sort_order }] }
-      : await client.query(`SELECT COALESCE(max(sort_order),-1)+1 AS sort_order FROM ${q('employees')} WHERE company_id=$1`, [employee.companyId]);
-    const sortOrder = Number(orderResult.rows[0]?.sort_order || 0);
-    const salary = employee.salaryPackage || {};
-
-    await client.query(`INSERT INTO ${q('employees')} (
-      id,company_id,employee_no,national_id_or_iqama,status,first_name_ar,last_name_ar,first_name_en,last_name_en,
-      department,job_title,hire_date,salary_start_date,termination_date,suspension_start_date,suspension_end_date,
-      base_salary,housing_allowance,transport_allowance,other_fixed_allowances,bank_iban,payload,sort_order,is_archived,updated_at
-    ) VALUES (
-      $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,NULLIF($12,'')::date,NULLIF($13,'')::date,NULLIF($14,'')::date,
-      NULLIF($15,'')::date,NULLIF($16,'')::date,$17,$18,$19,$20,$21,$22::jsonb,$23,false,now()
-    ) ON CONFLICT (id) DO UPDATE SET
-      employee_no=EXCLUDED.employee_no,national_id_or_iqama=EXCLUDED.national_id_or_iqama,status=EXCLUDED.status,
-      first_name_ar=EXCLUDED.first_name_ar,last_name_ar=EXCLUDED.last_name_ar,first_name_en=EXCLUDED.first_name_en,last_name_en=EXCLUDED.last_name_en,
-      department=EXCLUDED.department,job_title=EXCLUDED.job_title,hire_date=EXCLUDED.hire_date,salary_start_date=EXCLUDED.salary_start_date,
-      termination_date=EXCLUDED.termination_date,suspension_start_date=EXCLUDED.suspension_start_date,suspension_end_date=EXCLUDED.suspension_end_date,
-      base_salary=EXCLUDED.base_salary,housing_allowance=EXCLUDED.housing_allowance,transport_allowance=EXCLUDED.transport_allowance,
-      other_fixed_allowances=EXCLUDED.other_fixed_allowances,bank_iban=EXCLUDED.bank_iban,payload=EXCLUDED.payload,is_archived=false,updated_at=now()`, [
-      employee.id, employee.companyId, employee.employeeNo.trim(), employee.nationalIdOrIqama || '', employee.status || 'ACTIVE',
-      employee.firstNameAr.trim(), employee.lastNameAr.trim(), employee.firstNameEn || '', employee.lastNameEn || '',
-      employee.department || '', employee.jobTitle || '', employee.hireDate || '', employee.salaryStartDate || '', employee.terminationDate || '',
-      employee.suspensionStartDate || '', employee.suspensionEndDate || '', Number(salary.baseSalary || 0), Number(salary.housingAllowance || 0),
-      Number(salary.transportAllowance || 0), Number(salary.otherFixedAllowances || 0), employee.bankIban || '', JSON.stringify(employee), sortOrder
-    ]);
-
-    const updated = await bumpStateVersion(client,req.user.id);
-
-    const auditId = 'employee-save-' + crypto.randomUUID();
-    const action = existing.rowCount ? 'UPDATE_EMPLOYEE' : 'CREATE_EMPLOYEE';
-    await client.query(`INSERT INTO ${q('audit_log')} (user_id,action,ip) VALUES ($1,$2,$3)`, [req.user.id, action + ':' + employee.id, req.ip]);
-    await client.query(`INSERT INTO ${q('application_audit_logs')}
-      (id,company_id,user_id,user_name,user_role,action,entity_type,entity_id,occurred_at,details,payload,sort_order)
-      VALUES ($1,$2,$3,$4,$5,$6,'EMPLOYEE',$7,now(),$8,$9::jsonb,
-        COALESCE((SELECT max(sort_order)+1 FROM ${q('application_audit_logs')}),0))`, [
-      auditId, employee.companyId, req.user.id, req.user.name || req.user.username || '', req.user.role,
-      existing.rowCount ? 'تعديل بيانات موظف' : 'إضافة موظف جديد', employee.id,
-      `${employee.firstNameAr} ${employee.lastNameAr} (${employee.employeeNo})`, JSON.stringify({ id:auditId, companyId:employee.companyId, userId:req.user.id, userName:req.user.name || req.user.username || '', userRole:req.user.role, action:existing.rowCount ? 'تعديل بيانات موظف' : 'إضافة موظف جديد', entityType:'EMPLOYEE', entityId:employee.id, timestamp:new Date().toISOString(), details:`${employee.firstNameAr} ${employee.lastNameAr} (${employee.employeeNo})` })
-    ]);
-
-    await client.query('COMMIT');
-    if (updated.rowCount) broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at,
-      companyIds:[employee.companyId],changes:[{ collection:'employees',operation:'upsert',records:[employee] }] });
-    res.json({ employee, created:!existing.rowCount, version:Number(updated.rows[0]?.version || 0), updated_at:updated.rows[0]?.updated_at || new Date().toISOString() });
-  } catch (e) {
-    try { await client.query('ROLLBACK'); } catch {}
-    if (e?.code === '23505') return res.status(409).json({ error:'EMPLOYEE_NUMBER_EXISTS' });
-    next(e);
-  } finally { client.release(); }
-});
-
-app.delete('/api/employees/:id', auth, writeLimiter, async (req, res, next) => {
-  const client = await pool.connect();
-  try {
-    if (!can(req.user,'MANAGE_EMPLOYEES')) return res.status(403).json({ error:'FORBIDDEN' });
-    await client.query('BEGIN');
-    const employee = await client.query(`SELECT id,company_id FROM ${q('employees')} WHERE id=$1 AND is_archived=false FOR UPDATE`, [req.params.id]);
-    if (!employee.rowCount) {
-      await client.query('ROLLBACK');
-      return res.status(404).json({ error:'EMPLOYEE_NOT_FOUND' });
-    }
-    if (!req.user.company_ids.includes(employee.rows[0].company_id)) {
-      await client.query('ROLLBACK');
-      return res.status(403).json({ error:'FORBIDDEN' });
-    }
-    const references = await client.query(`SELECT
-      (SELECT count(*) FROM ${q('attendance_records')} WHERE employee_id=$1)
-      +(SELECT count(*) FROM ${q('leave_requests')} WHERE employee_id=$1)
-      +(SELECT count(*) FROM ${q('loans')} WHERE employee_id=$1)
-      +(SELECT count(*) FROM ${q('penalties')} WHERE employee_id=$1)
-      +(SELECT count(*) FROM ${q('temporary_earnings')} WHERE employee_id=$1)
-      +(SELECT count(*) FROM ${q('payroll_settlements')} WHERE employee_id=$1)
-      +(SELECT count(*) FROM ${q('payroll_run_items')} WHERE employee_id=$1) AS count`, [req.params.id]);
-    const archived = Number(references.rows[0]?.count || 0) > 0;
-    if (archived) {
-      await client.query(`UPDATE ${q('employees')} SET is_archived=true,updated_at=now() WHERE id=$1`, [req.params.id]);
-    } else {
-      await client.query(`DELETE FROM ${q('employees')} WHERE id=$1`, [req.params.id]);
-    }
-    const updated = await bumpStateVersion(client,req.user.id);
-    await client.query(`INSERT INTO ${q('audit_log')} (user_id,action,ip) VALUES ($1,$2,$3)`,
-      [req.user.id,`${archived ? 'ARCHIVE' : 'DELETE'}_EMPLOYEE:${req.params.id}`,req.ip]);
-    const deleteAuditId = 'employee-delete-' + crypto.randomUUID();
-    await client.query(`INSERT INTO ${q('application_audit_logs')}
-      (id,company_id,user_id,user_name,user_role,action,entity_type,entity_id,occurred_at,details,payload,sort_order)
-      VALUES ($1,$2,$3,$4,$5,$6,'EMPLOYEE',$7,now(),$8,$9::jsonb,
-        COALESCE((SELECT max(sort_order)+1 FROM ${q('application_audit_logs')}),0))`, [
-      deleteAuditId, employee.rows[0].company_id, req.user.id, req.user.name || req.user.username || '', req.user.role,
-      archived ? 'أرشفة موظف' : 'حذف موظف', req.params.id,
-      archived ? 'تمت أرشفة الموظف لوجود حركات مرتبطة' : 'تم حذف الموظف نهائيًا',
-      JSON.stringify({ id:deleteAuditId, companyId:employee.rows[0].company_id, userId:req.user.id, userName:req.user.name || req.user.username || '', userRole:req.user.role, action:archived ? 'أرشفة موظف' : 'حذف موظف', entityType:'EMPLOYEE', entityId:req.params.id, timestamp:new Date().toISOString(), details:archived ? 'تمت أرشفة الموظف لوجود حركات مرتبطة' : 'تم حذف الموظف نهائيًا' })
-    ]);
-    await client.query('COMMIT');
-    if (updated.rowCount) broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at,
-      companyIds:[employee.rows[0].company_id],changes:[{ collection:'employees',operation:'delete',ids:[req.params.id] }] });
-    res.json({ deleted:!archived,archived });
-  } catch (e) {
-    try { await client.query('ROLLBACK'); } catch {}
-    next(e);
-  } finally { client.release(); }
-});
-
-app.post('/api/companies/:id/employees/archive', auth, writeLimiter, async (req, res, next) => {
-  const client = await pool.connect();
-  try {
-    if (!can(req.user,'MANAGE_EMPLOYEES') || !req.user.company_ids.includes(req.params.id)) {
-      return res.status(403).json({ error:'FORBIDDEN' });
-    }
-    await client.query('BEGIN');
-    const company = await client.query(`SELECT id FROM ${q('companies')} WHERE id=$1 AND is_archived=false FOR UPDATE`, [req.params.id]);
-    if (!company.rowCount) throw workflowError(404,'COMPANY_NOT_FOUND');
-    const employees = await client.query(`SELECT id FROM ${q('employees')} WHERE company_id=$1 AND is_archived=false FOR UPDATE`, [req.params.id]);
-    const employeeIds = employees.rows.map(row => row.id);
-    if (!employeeIds.length) {
-      const current = await client.query(`SELECT version,updated_at FROM ${q('app_state')} WHERE id=1`);
-      await client.query('COMMIT');
-      return res.json({ employeeIds:[],archivedCount:0,version:Number(current.rows[0]?.version || 0),updated_at:current.rows[0]?.updated_at || new Date().toISOString() });
-    }
-    await client.query(`UPDATE ${q('employees')} SET is_archived=true,updated_at=now()
-      WHERE company_id=$1 AND id=ANY($2::text[])`, [req.params.id,employeeIds]);
-    const updated = await bumpStateVersion(client,req.user.id);
-    await appendStateAudit(client,q,{ companyIds:[req.params.id],user:req.user,action:`ARCHIVE_COMPANY_EMPLOYEES:${employeeIds.length}`,version:updated.rows[0].version });
-    await client.query(`INSERT INTO ${q('audit_log')} (user_id,action,ip) VALUES ($1,$2,$3)`, [req.user.id,`ARCHIVE_COMPANY_EMPLOYEES:${employeeIds.length}`,req.ip]);
-    await client.query('COMMIT');
-    broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at,
-      companyIds:[req.params.id],changes:[{ collection:'employees',operation:'delete',ids:employeeIds }] });
-    res.json({ employeeIds,archivedCount:employeeIds.length,version:Number(updated.rows[0].version),updated_at:updated.rows[0].updated_at });
-  } catch (e) {
-    try { await client.query('ROLLBACK'); } catch {}
-    if (Number.isInteger(e?.status) && e.status >= 400 && e.status < 500) return res.status(e.status).json({ error:e.message });
-    next(e);
-  } finally { client.release(); }
-});
 
 app.put('/api/users/:id', auth, writeLimiter, async (req, res, next) => {
   let client;
@@ -3081,69 +2040,6 @@ app.delete('/api/users/:id', auth, writeLimiter, async (req, res, next) => {
     if (Number.isInteger(e?.status) && e.status >= 400 && e.status < 500) return res.status(e.status).json({ error:e.message });
     next(e);
   } finally { client?.release(); }
-});
-
-app.put('/api/integrations/qoyod/config', auth, writeLimiter, async (req, res, next) => {
-  const client = await pool.connect();
-  try {
-    if (!can(req.user,'MANAGE_JOURNALS')) return res.status(403).json({ error:'FORBIDDEN' });
-    const companyId = String(req.body?.companyId || '');
-    const config = validateQoyodConfig(companyId,req.body?.config,req.user);
-    const { apiKey,apiKeyConfigured:_ignored,...publicConfig } = config;
-    await client.query('BEGIN');
-    const saved = await client.query(`INSERT INTO ${q('integration_configs')} (company_id,provider,public_config,secret_value,updated_at)
-      VALUES ($1,'QOYOD',$2::jsonb,$3,now())
-      ON CONFLICT (company_id,provider) DO UPDATE SET public_config=EXCLUDED.public_config,
-        secret_value=CASE WHEN EXCLUDED.secret_value <> '' THEN EXCLUDED.secret_value ELSE ${q('integration_configs')}.secret_value END,
-        updated_at=now()
-      RETURNING public_config,(secret_value <> '') AS api_key_configured`, [companyId,JSON.stringify(publicConfig),apiKey.trim()]);
-    const record = { ...saved.rows[0].public_config,apiKey:'',apiKeyConfigured:saved.rows[0].api_key_configured };
-    const updated = await bumpStateVersion(client,req.user.id);
-    await appendStateAudit(client,q,{ companyIds:[companyId],user:req.user,action:'UPDATE_QOYOD_CONFIG',version:updated.rows[0].version });
-    await client.query('COMMIT');
-    broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at });
-    res.json({ record,version:Number(updated.rows[0].version),updated_at:updated.rows[0].updated_at });
-  } catch (e) {
-    try { await client.query('ROLLBACK'); } catch {}
-    if (Number.isInteger(e?.status) && e.status >= 400 && e.status < 500) return res.status(e.status).json({ error:e.message });
-    next(e);
-  } finally { client.release(); }
-});
-
-app.post('/api/integrations/qoyod/journal', auth, writeLimiter, async (req, res, next) => {
-  try {
-    if (!can(req.user, 'MANAGE_JOURNALS')) return res.status(403).json({ error:'FORBIDDEN' });
-    const companyId = String(req.body?.companyId || '');
-    if (!companyId || !req.user.company_ids.includes(companyId)) {
-      return res.status(403).json({ error:'FORBIDDEN' });
-    }
-    const configResult = await pool.query(`SELECT public_config,secret_value FROM ${q('integration_configs')} WHERE company_id=$1 AND provider='QOYOD'`, [companyId]);
-    const config = configResult.rows[0]?.public_config || {};
-    const apiKey = String(configResult.rows[0]?.secret_value || '').trim();
-    if (apiKey.length < 5) return res.status(400).json({ error:'QOYOD_NOT_CONFIGURED' });
-    const baseUrl = new URL(String(config.baseUrl || 'https://api.qoyod.com/2.0'));
-    if (baseUrl.protocol !== 'https:' || baseUrl.hostname !== 'api.qoyod.com') {
-      return res.status(400).json({ error:'INVALID_QOYOD_URL' });
-    }
-    const payload = req.body?.payload;
-    if (!payload?.journal_entry || !Array.isArray(payload.journal_entry.debit_amounts) || !Array.isArray(payload.journal_entry.credit_amounts)) {
-      return res.status(400).json({ error:'INVALID_QOYOD_PAYLOAD' });
-    }
-    const response = await fetch(`${baseUrl.toString().replace(/\/+$/, '')}/journal_entries`, {
-      method: 'POST',
-      headers: { 'Content-Type':'application/json', 'API-KEY':apiKey },
-      body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(20_000),
-    });
-    const text = await response.text();
-    let data;
-    try { data = text ? JSON.parse(text) : {}; } catch { data = { message:text.slice(0, 500) }; }
-    await pool.query(`INSERT INTO ${q('audit_log')} (user_id,action,ip) VALUES ($1,$2,$3)`, [
-      req.user.id, response.ok ? `QOYOD_JOURNAL_SYNC:${companyId}` : `QOYOD_JOURNAL_FAILED:${companyId}:${response.status}`, req.ip,
-    ]);
-    if (!response.ok) return res.status(502).json({ error:'QOYOD_REQUEST_FAILED', upstreamStatus:response.status, message:data?.message || data?.error || 'Qoyod rejected the request' });
-    res.json(data);
-  } catch (e) { next(e); }
 });
 
 app.use(express.static(root, { index: false, maxAge: '1h', immutable: false }));

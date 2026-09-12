@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
+import { serverSource as server } from './test-server-source.mjs';
 
-const server = fs.readFileSync('server/index.mjs', 'utf8');
 const api = fs.readFileSync('src/utils/api.ts', 'utf8');
 const app = fs.readFileSync('src/App.tsx', 'utf8');
 

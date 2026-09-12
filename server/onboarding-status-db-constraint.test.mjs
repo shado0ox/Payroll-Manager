@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
+import { serverSource as source } from './test-server-source.mjs';
 
-const source = fs.readFileSync(new URL('./index.mjs', import.meta.url), 'utf8');
 
 test('employees database constraint accepts ONBOARDING status', () => {
   assert.match(source, /CHECK \(status IN \('ONBOARDING','ACTIVE','SUSPENDED','ON_LEAVE','TERMINATED','ABSCONDED'\)\)/);

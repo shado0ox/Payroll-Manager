@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
+import { serverSource as source } from './test-server-source.mjs';
 
-const source = fs.readFileSync(new URL('./index.mjs', import.meta.url), 'utf8');
 
 function routeBlock(method, route, nextRouteMarker) {
   const startMarker = `app.${method}('${route}'`;
