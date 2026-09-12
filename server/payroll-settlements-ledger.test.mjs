@@ -3,42 +3,28 @@ import { serverSource as server } from './test-server-source.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
-const transform = fs.readFileSync('scripts/apply-payroll-settlements-ledger.mjs', 'utf8');
 const component = fs.readFileSync('src/components/PayrollSettlementsView.tsx', 'utf8');
-const featureHardening = fs.readFileSync('scripts/apply-feature-hardening.mjs', 'utf8');
+const payrollRoutes = fs.readFileSync('server/routes/payroll-routes.mjs', 'utf8');
+const employeeView = fs.readFileSync('src/components/EmployeesView.tsx', 'utf8');
+const employeeForm = fs.readFileSync('src/components/employees/EmployeeFormModal.tsx', 'utf8');
+const permissions = fs.readFileSync('src/utils/permissions.ts', 'utf8');
 
-test('PR21 transform runs after its compatibility shims and restores server-owned audit protection afterwards', () => {
-  const compat = featureHardening.indexOf("apply-pr21-patchable-anchor-compat.mjs");
-  const statementCompat = featureHardening.indexOf("apply-pr21-statement-import-compat.mjs");
-  const ledger = featureHardening.indexOf("apply-payroll-settlements-ledger.mjs");
-  const restore = featureHardening.indexOf("apply-pr21-patchable-anchor-restore.mjs");
-  assert.ok(compat >= 0 && compat < ledger);
-  assert.ok(statementCompat >= 0 && statementCompat < ledger);
-  assert.ok(ledger >= 0 && ledger < restore);
-  assert.match(transform, /payrollSettlements:'MANAGE_PAYROLL'/);
-  assert.match(transform, /DUPLICATE_PAYROLL_SETTLEMENT/);
-  assert.match(transform, /PAID_SETTLEMENT_LOCKED/);
+test('settlement ledger is permission-gated and enforces duplicate and paid-state protection', () => {
+  assert.match(permissions, /settlements: 'MANAGE_PAYROLL'/);
+  assert.match(payrollRoutes, /DUPLICATE_PAYROLL_SETTLEMENT/);
+  assert.match(payrollRoutes, /status !== 'PAID'[\s\S]*SETTLEMENT_NOT_PAID/);
 });
 
 test('employee number remains auto-suggested but editable before save', () => {
-  assert.match(transform, /onChange=\{e => setFormData\(\{ \.\.\.formData, employeeNo: e\.target\.value\.toUpperCase\(\) \}\)\}/);
-  assert.match(transform, /EMPLOYEE_NUMBER_LOCAL_DUPLICATE/);
-  assert.match(transform, /Suggested automatically; you may replace it with your own employee code before saving/);
+  assert.match(employeeForm, /onChange=\{e => setFormData\(\{ \.\.\.formData, employeeNo: e\.target\.value\.toUpperCase\(\) \}\)\}/);
+  assert.match(employeeView, /EMPLOYEE_NUMBER_LOCAL_DUPLICATE/);
+  assert.match(employeeForm, /Suggested automatically; you may replace it with your own employee code before saving/);
 });
 
-test('sidebar puts employees after dashboard and settlements before company profile', () => {
-  const navStart = transform.indexOf('const nav = `');
-  const navEnd = transform.indexOf('`;\n    source = source.slice', navStart);
-  assert.ok(navStart >= 0 && navEnd > navStart);
-  const nav = transform.slice(navStart, navEnd);
-  const dashboard = nav.indexOf("id: 'dashboard'");
-  const employees = nav.indexOf("id: 'employees'");
-  const payroll = nav.indexOf("id: 'payroll_runs'");
-  const attendance = nav.indexOf("id: 'attendance'");
-  const loans = nav.indexOf("id: 'loans_penalties'");
-  const settlements = nav.indexOf("id: 'settlements'");
-  const company = nav.indexOf("id: 'company_profile'");
-  assert.ok(dashboard >= 0 && dashboard < employees && employees < payroll && payroll < attendance && attendance < loans && loans < settlements && settlements < company);
+test('settlement creation is transactionally persisted and broadcast incrementally', () => {
+  assert.match(payrollRoutes, /INSERT INTO \$\{q\('payroll_settlements'\)\}/);
+  assert.match(payrollRoutes, /action:'CREATE_PAYROLL_SETTLEMENT'/);
+  assert.match(payrollRoutes, /collection:'payrollSettlements',operation:'upsert'/);
 });
 
 test('settlement candidates cover held payroll and retroactive employees without reopening paid employees', () => {

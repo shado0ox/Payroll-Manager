@@ -4,8 +4,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 const view = fs.readFileSync('src/components/PayrollSettlementsView.tsx', 'utf8');
-const hardening = fs.readFileSync('scripts/apply-feature-hardening.mjs', 'utf8');
-const reversalTransform = fs.readFileSync('scripts/apply-settlement-reversal-audit.mjs', 'utf8');
+const payrollRoutes = fs.readFileSync('server/routes/payroll-routes.mjs', 'utf8');
 
 test('retroactive settlement scans every elapsed month from salary start date', () => {
   assert.match(view, /enumerateMonths\(salaryStartMonth, lastClosedMonth\)/);
@@ -24,13 +23,12 @@ test('settlement reversal is soft-delete with mandatory audit reason', () => {
   assert.match(view, /reversalReason: reason/);
   assert.match(view, /reason\.length < 5/);
   assert.match(server, /settlementSourceRun\(stored,record,'HELD','SETTLEMENT_REVERSED'\)/);
-  assert.match(reversalTransform, /SETTLEMENT_REVERSAL_REASON_REQUIRED/);
-  assert.match(reversalTransform, /REVERSED_SETTLEMENT_LOCKED/);
+  assert.match(payrollRoutes, /SETTLEMENT_REVERSAL_REASON_REQUIRED/);
+  assert.match(payrollRoutes, /REVERSED_SETTLEMENT_LOCKED/);
 });
 
-test('settlement reversal hardening runs after PR21 settlement transforms', () => {
-  const ledger = hardening.indexOf("./apply-payroll-settlements-ledger.mjs");
-  const restore = hardening.indexOf("./apply-pr21-patchable-anchor-restore.mjs");
-  const reversal = hardening.indexOf("./apply-settlement-reversal-audit.mjs");
-  assert.ok(ledger >= 0 && restore > ledger && reversal > restore);
+test('settlement reversal is transactionally persisted and audited', () => {
+  assert.match(payrollRoutes, /SELECT company_id,status,payload[\s\S]*FOR UPDATE/);
+  assert.match(payrollRoutes, /action:'REVERSE_PAYROLL_SETTLEMENT'/);
+  assert.match(payrollRoutes, /await client\.query\('COMMIT'\)[\s\S]*broadcastStateUpdate/);
 });
