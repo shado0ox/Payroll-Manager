@@ -1,9 +1,9 @@
 import test from 'node:test';
+import { serverSource as server } from './test-server-source.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 const view = fs.readFileSync('src/components/PayrollSettlementsView.tsx', 'utf8');
-const server = fs.readFileSync('server/index.mjs','utf8');
 const hardening = fs.readFileSync('scripts/apply-feature-hardening.mjs', 'utf8');
 const reversalTransform = fs.readFileSync('scripts/apply-settlement-reversal-audit.mjs', 'utf8');
 
