@@ -24,6 +24,28 @@ export type PayrollRepairIssue = {
   periodMonth:string;
   status:string;
   findings:Array<'CARRY_FORWARD_MISMATCH' | 'AUTOMATIC_HOLD_STALE' | 'RUN_TOTAL_MISMATCH'>;
+  details:{
+    carryMismatches:Array<{
+      employeeId:string;
+      employeeNo:string;
+      employeeName:string;
+      sourcePeriodMonth:string;
+      recordedNet:number;
+      expectedNet:number;
+      difference:number;
+    }>;
+    holdMismatches:Array<{
+      employeeId:string;
+      employeeNo:string;
+      employeeName:string;
+    }>;
+    totalMismatches:Array<{
+      metric:'employeesCount' | 'totalGrossSalaries' | 'totalDeductions' | 'totalNetSalaries' | 'totalCompanyCost';
+      stored:number;
+      computed:number;
+      difference:number;
+    }>;
+  };
   repairable:boolean;
   blockedReason:string | null;
 };

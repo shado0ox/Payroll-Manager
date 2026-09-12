@@ -95,6 +95,19 @@ export const DatabaseStatusModal: React.FC<DatabaseStatusModalProps> = ({
     RUN_TOTAL_MISMATCH:tr('اختلاف في إجماليات المسير', 'Payroll total mismatch'),
   })[finding];
 
+  const repairTotalLabel = (metric:PayrollRepairIssue['details']['totalMismatches'][number]['metric']) => ({
+    employeesCount:tr('عدد الموظفين', 'Employees count'),
+    totalGrossSalaries:tr('إجمالي الاستحقاقات', 'Gross salaries'),
+    totalDeductions:tr('إجمالي الاستقطاعات', 'Deductions'),
+    totalNetSalaries:tr('صافي الرواتب', 'Net salaries'),
+    totalCompanyCost:tr('إجمالي تكلفة المنشأة', 'Company cost'),
+  })[metric];
+
+  const formatRepairAmount = (value:number,metric?:PayrollRepairIssue['details']['totalMismatches'][number]['metric']) =>
+    metric === 'employeesCount'
+      ? new Intl.NumberFormat('en-US',{ maximumFractionDigits:0 }).format(value)
+      : `${new Intl.NumberFormat('en-US',{ minimumFractionDigits:2,maximumFractionDigits:2 }).format(value)} ${tr('ر.س', 'SAR')}`;
+
   const handleImportBackup = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -287,6 +300,29 @@ export const DatabaseStatusModal: React.FC<DatabaseStatusModalProps> = ({
                 <div className="min-w-0 flex-1">
                   <div className="text-xs font-black text-slate-900">{tr('مسير', 'Payroll')} {issue.periodMonth} · {issue.runId}</div>
                   <div className="mt-1 flex flex-wrap gap-1">{issue.findings.map(finding => <span key={finding} className="rounded-md bg-violet-100 px-2 py-0.5 text-[10px] font-bold text-violet-800">{repairFindingLabel(finding)}</span>)}</div>
+                  {issue.details?.carryMismatches?.length > 0 && <div className="mt-3 overflow-x-auto rounded-lg border border-violet-100 bg-white">
+                    <div className="border-b border-violet-100 px-3 py-2 text-[10px] font-black text-violet-900">{tr('تفاصيل اختلاف الرصيد المرحّل', 'Carry-forward difference details')}</div>
+                    <table className="w-full min-w-[620px] text-[10px]">
+                      <thead className="bg-slate-50 text-slate-500"><tr>
+                        <th className="px-2 py-2 text-start">{tr('الموظف', 'Employee')}</th><th className="px-2 py-2 text-start">{tr('الرقم', 'Number')}</th><th className="px-2 py-2 text-start">{tr('الشهر المصدر', 'Source month')}</th><th className="px-2 py-2 text-end">{tr('المسجل', 'Recorded')}</th><th className="px-2 py-2 text-end">{tr('المتوقع', 'Expected')}</th><th className="px-2 py-2 text-end">{tr('الفرق', 'Difference')}</th>
+                      </tr></thead>
+                      <tbody>{issue.details.carryMismatches.map((detail,index) => <tr key={`${detail.employeeId}-${detail.sourcePeriodMonth}-${index}`} className="border-t border-slate-100 text-slate-700">
+                        <td className="px-2 py-2 font-bold">{detail.employeeName || tr('غير مسجل', 'Not recorded')}</td><td className="px-2 py-2 font-mono">{detail.employeeNo || '—'}</td><td className="px-2 py-2 font-mono">{detail.sourcePeriodMonth}</td><td className="px-2 py-2 text-end">{formatRepairAmount(detail.recordedNet)}</td><td className="px-2 py-2 text-end">{formatRepairAmount(detail.expectedNet)}</td><td className={`px-2 py-2 text-end font-black ${detail.difference < 0 ? 'text-rose-700' : 'text-emerald-700'}`}>{formatRepairAmount(detail.difference)}</td>
+                      </tr>)}</tbody>
+                    </table>
+                  </div>}
+                  {issue.details?.holdMismatches?.length > 0 && <div className="mt-2 rounded-lg border border-violet-100 bg-white px-3 py-2 text-[10px] text-slate-700">
+                    <span className="font-black text-violet-900">{tr('الموظفون ذوو التعليق الآلي المنتهي:', 'Employees with stale automatic hold:')}</span>{' '}
+                    {issue.details.holdMismatches.map(employee => `${employee.employeeName || tr('غير مسجل', 'Not recorded')} (${employee.employeeNo || '—'})`).join('، ')}
+                  </div>}
+                  {issue.details?.totalMismatches?.length > 0 && <div className="mt-3 overflow-x-auto rounded-lg border border-violet-100 bg-white">
+                    <div className="border-b border-violet-100 px-3 py-2 text-[10px] font-black text-violet-900">{tr('تفاصيل اختلاف إجماليات المسير', 'Payroll total difference details')}</div>
+                    <table className="w-full min-w-[500px] text-[10px]">
+                      <thead className="bg-slate-50 text-slate-500"><tr><th className="px-2 py-2 text-start">{tr('الإجمالي', 'Total')}</th><th className="px-2 py-2 text-end">{tr('المسجل', 'Stored')}</th><th className="px-2 py-2 text-end">{tr('المحسوب من الموظفين', 'Computed from employees')}</th><th className="px-2 py-2 text-end">{tr('الفرق', 'Difference')}</th></tr></thead>
+                      <tbody>{issue.details.totalMismatches.map(detail => <tr key={detail.metric} className="border-t border-slate-100 text-slate-700"><td className="px-2 py-2 font-bold">{repairTotalLabel(detail.metric)}</td><td className="px-2 py-2 text-end">{formatRepairAmount(detail.stored,detail.metric)}</td><td className="px-2 py-2 text-end">{formatRepairAmount(detail.computed,detail.metric)}</td><td className={`px-2 py-2 text-end font-black ${detail.difference < 0 ? 'text-rose-700' : 'text-emerald-700'}`}>{formatRepairAmount(detail.difference,detail.metric)}</td></tr>)}</tbody>
+                    </table>
+                    {issue.details.carryMismatches.length === 0 && <div className="border-t border-slate-100 px-3 py-2 text-[10px] text-slate-500">{tr('هذا اختلاف في إجمالي المسير المخزن مقابل مجموع بنود الموظفين، ولا يمكن نسبته إلى موظف واحد.', 'This is a stored run-total difference versus the sum of employee items and cannot be attributed to one employee.')}</div>}
+                  </div>}
                   {!issue.repairable && <div className="mt-1 text-[10px] font-bold text-amber-800">{tr('للمراجعة فقط: المسير معتمد أو مرحّل ولا يتم تعديله آليًا.', 'Review only: approved or posted payroll is never auto-modified.')}</div>}
                 </div>
               </label>

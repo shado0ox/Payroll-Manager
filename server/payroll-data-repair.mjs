@@ -50,6 +50,37 @@ const aggregateRun = run => ({
   totalCompanyCost:roundAmount(asArray(run.items).reduce((sum,item) => sum + Number(item.totalCompanyBurden || 0),0)),
 });
 
+const employeeIdentity = (employee,item) => ({
+  employeeId:String(item?.employeeId || employee?.id || ''),
+  employeeNo:String(employee?.employeeNo || item?.employeeNo || ''),
+  employeeName:String(
+    [employee?.firstNameAr,employee?.lastNameAr].filter(Boolean).join(' ')
+    || item?.employeeName
+    || item?.employeeNameEn
+    || ''
+  ).trim(),
+});
+
+const carryDifferenceDetails = (employee,item,currentDetails,expectedDetails) => {
+  const currentByMonth = new Map(currentDetails.map(detail => [detail.periodMonth,detail]));
+  const expectedByMonth = new Map(expectedDetails.map(detail => [detail.periodMonth,detail]));
+  const months = [...new Set([...currentByMonth.keys(),...expectedByMonth.keys()])].sort();
+  const identity = employeeIdentity(employee,item);
+  return months.flatMap(sourcePeriodMonth => {
+    const recordedNet = roundAmount(currentByMonth.get(sourcePeriodMonth)?.net);
+    const expectedNet = roundAmount(expectedByMonth.get(sourcePeriodMonth)?.net);
+    if (recordedNet === expectedNet) return [];
+    return [{ ...identity,sourcePeriodMonth,recordedNet,expectedNet,difference:roundAmount(expectedNet - recordedNet) }];
+  });
+};
+
+const totalDifferenceDetails = (storedTotals,expectedTotals) => Object.keys(expectedTotals).flatMap(metric => {
+  const stored = Number(storedTotals[metric] || 0);
+  const computed = Number(expectedTotals[metric] || 0);
+  if (stored === computed) return [];
+  return [{ metric,stored,computed,difference:roundAmount(computed - stored) }];
+});
+
 export function buildPayrollRepairPlan(state,companyIds = []) {
   const allowed = new Set(asArray(companyIds));
   const runs = asArray(state?.payrollRuns).filter(run => !allowed.size || allowed.has(run.companyId));
@@ -62,6 +93,8 @@ export function buildPayrollRepairPlan(state,companyIds = []) {
     const repairable = ['DRAFT','UNDER_REVIEW'].includes(String(originalRun.status || 'DRAFT'));
     let carryChanged = false;
     let holdChanged = false;
+    const carryMismatches = [];
+    const holdMismatches = [];
     const items = asArray(originalRun.items).map(originalItem => {
       if (employeeLockedInRun(originalRun,originalItem.employeeId)) return originalItem;
       // Approved and posted payroll runs are immutable historical snapshots.
@@ -71,12 +104,14 @@ export function buildPayrollRepairPlan(state,companyIds = []) {
       // employee carry or entitlement state from current payment coverage.
       if (!repairable) return originalItem;
       let item = { ...originalItem };
+      const employee = employeesById.get(originalItem.employeeId);
       const expectedDetails = canonicalCarryDetails(runs,originalRun,originalItem.employeeId);
       const currentDetails = asArray(originalItem.priorPeriodDetails).map(detail => ({
         periodMonth:String(detail?.periodMonth || ''),gross:roundAmount(detail?.gross),deductions:roundAmount(detail?.deductions),net:roundAmount(detail?.net),
       })).filter(detail => detail.periodMonth).sort((a,b) => a.periodMonth.localeCompare(b.periodMonth));
       if (!sameJson(currentDetails,expectedDetails)) {
         carryChanged = true;
+        carryMismatches.push(...carryDifferenceDetails(employee,originalItem,currentDetails,expectedDetails));
         const baseNet = roundAmount(Number(originalItem.netSalary || 0) - Number(originalItem.priorPeriodNet || 0));
         const baseBurden = roundAmount(Number(originalItem.totalCompanyBurden || 0) - Number(originalItem.priorPeriodNet || 0));
         const priorPeriodGross = roundAmount(expectedDetails.reduce((sum,detail) => sum + detail.gross,0));
@@ -85,7 +120,6 @@ export function buildPayrollRepairPlan(state,companyIds = []) {
         item = { ...item,priorPeriodDetails:expectedDetails,priorPeriodGross,priorPeriodDeductions,priorPeriodNet,
           netSalary:roundAmount(baseNet + priorPeriodNet),totalCompanyBurden:roundAmount(baseBurden + priorPeriodNet) };
       }
-      const employee = employeesById.get(originalItem.employeeId);
       const staleBankHold = item.entitlementStatus === 'HELD' && item.entitlementReason === 'MISSING_BANK_ACCOUNT' && validReadyBank(employee);
       const earlierSalaryWasPaid = runs.some(sourceRun => sourceRun.companyId === originalRun.companyId
         && sourceRun.periodMonth < originalRun.periodMonth
@@ -103,6 +137,7 @@ export function buildPayrollRepairPlan(state,companyIds = []) {
         && employee?.status !== 'SUSPENDED';
       if (staleBankHold || staleSuspensionHold || legacyPaidHold) {
         holdChanged = true;
+        holdMismatches.push(employeeIdentity(employee,originalItem));
         item = { ...item,entitlementStatus:'PAYABLE',isSuspended:false,entitlementUpdatedAt:new Date().toISOString() };
         delete item.entitlementReason;
         delete item.entitlementDocumentRef;
@@ -120,12 +155,14 @@ export function buildPayrollRepairPlan(state,companyIds = []) {
       totalDeductions:roundAmount(originalRun.totalDeductions),totalNetSalaries:roundAmount(originalRun.totalNetSalaries),
       totalCompanyCost:roundAmount(originalRun.totalCompanyCost),
     };
+    const totalMismatches = totalDifferenceDetails(storedTotals,expectedTotals);
     if (!sameJson(storedTotals,currentTotals) || !sameJson(currentTotals,expectedTotals)) findings.push('RUN_TOTAL_MISMATCH');
     proposed = { ...proposed,...expectedTotals };
     if (!findings.length) continue;
     const id = `payroll-run:${originalRun.id}`;
     issues.push({ id,type:'PAYROLL_RUN_INCONSISTENCY',companyId:originalRun.companyId,runId:originalRun.id,
       periodMonth:originalRun.periodMonth,status:originalRun.status,findings,repairable,
+      details:{ carryMismatches,holdMismatches,totalMismatches },
       blockedReason:repairable ? null : 'LOCKED_PAYROLL_RUN' });
     if (repairable) proposedRuns.set(id,proposed);
   }
