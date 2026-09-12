@@ -94,7 +94,7 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
     bankName: '',
     bankIban: '',
     bankSwiftCode: '',
-    gosiEnabled: false,
+    gosiEnabled: true,
     gosiEmployeeRate: company.calculationRules?.saudiGosiEmployeeRate ?? 0.0975,
     gosiEmployerRate: company.calculationRules?.saudiGosiEmployerRate ?? 0.1175,
     saudiGosiPaymentMode: 'SHARED',
@@ -188,7 +188,7 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
       bankName: '',
       bankIban: '',
       bankSwiftCode: '',
-      gosiEnabled: false,
+      gosiEnabled: true,
       gosiEmployeeRate: company.calculationRules?.saudiGosiEmployeeRate ?? 0.0975,
       gosiEmployerRate: company.calculationRules?.saudiGosiEmployerRate ?? 0.1175,
       saudiGosiPaymentMode: 'SHARED',
@@ -214,6 +214,7 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
     }
     setEditingEmployee(emp);
     const empCopy = JSON.parse(JSON.stringify(emp));
+    if (empCopy.nationality === 'NON_SAUDI') empCopy.gosiEnabled = true;
     const legacyIdentity = String(empCopy.nationalIdOrIqama || '').trim();
     const explicitNewArrival = empCopy.nationality === 'NON_SAUDI' && Boolean(empCopy.entryNumber) && empCopy.iqamaIssueStatus !== 'ISSUED';
     if (empCopy.nationality === 'NON_SAUDI' && legacyIdentity && !explicitNewArrival) {
@@ -250,6 +251,7 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
     empCopy.bankCode = '';
     empCopy.bankName = '';
     empCopy.bankSwiftCode = '';
+    empCopy.gosiEnabled = true;
     setNonSaudiEntryMode('IQAMA_HOLDER');
     setEditingEmployee(emp);
     setIsCompletingOnboarding(true);

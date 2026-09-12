@@ -95,7 +95,7 @@ export const EmployeeFormModal = React.memo<EmployeeFormModalProps>(({
                       <div className="font-black text-sm text-slate-900">{language === 'ar' ? 'موظف سعودي' : 'Saudi employee'}</div>
                       <div className="text-[10px] text-slate-500 mt-1">{language === 'ar' ? 'هوية وطنية + بيانات العقد والتأمينات' : 'National ID + contract and GOSI details'}</div>
                     </button>
-                    <button type="button" onClick={() => { setFormData({ ...formData, nationality: 'NON_SAUDI', country: '', gosiEnabled: false, contractStartDate: '', contractEndDate: '', nationalIdOrIqama: '' }); setNonSaudiEntryMode(''); }} className={`p-4 rounded-xl border text-start transition-all ${formData.nationality === 'NON_SAUDI' ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-500/10' : 'border-slate-200 bg-white hover:border-blue-300'}`}>
+                    <button type="button" onClick={() => { setFormData({ ...formData, nationality: 'NON_SAUDI', country: '', gosiEnabled: true, contractStartDate: '', contractEndDate: '', nationalIdOrIqama: '' }); setNonSaudiEntryMode(''); }} className={`p-4 rounded-xl border text-start transition-all ${formData.nationality === 'NON_SAUDI' ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-500/10' : 'border-slate-200 bg-white hover:border-blue-300'}`}>
                       <div className="font-black text-sm text-slate-900">{language === 'ar' ? 'موظف غير سعودي' : 'Non-Saudi employee'}</div>
                       <div className="text-[10px] text-slate-500 mt-1">{language === 'ar' ? 'قادم جديد أو موظف لديه إقامة' : 'New arrival or existing iqama holder'}</div>
                     </button>
