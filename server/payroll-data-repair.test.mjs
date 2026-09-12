@@ -49,6 +49,38 @@ test('active prior-entitlement reservation prevents a false missing-carry repair
   assert.equal(buildPayrollRepairPlan({ employees:[bankPendingEmployee],payrollRuns:[august,september] },['company-1']).issues.length,0);
 });
 
+test('a cumulative later payment prevents false carry and totals findings after recalculation', () => {
+  const may = run('may','2026-05','POSTED',item('may-item'));
+  const august = run('august','2026-08','POSTED',item('august-item',{
+    priorPeriodGross:1000,priorPeriodDeductions:100,priorPeriodNet:900,
+    priorPeriodDetails:[{ periodMonth:'2026-05',gross:1000,deductions:100,net:900 }],
+    netSalary:1800,totalCompanyBurden:1820,
+  }),{
+    totalGrossSalaries:2000,totalDeductions:200,totalNetSalaries:1800,totalCompanyCost:1820,
+    paymentBatches:[{ id:'paid-cumulative',status:'PAID',employeeIds:['employee-1'],totalAmount:1800 }],
+  });
+  const september = run('september','2026-09','DRAFT',item('september-item'));
+  const plan = buildPayrollRepairPlan({ employees:[employee],payrollRuns:[may,august,september] },['company-1']);
+  assert.equal(plan.issues.length,0);
+});
+
+test('a cancelled cumulative payment does not hide an unpaid source month from repair', () => {
+  const may = run('may','2026-05','POSTED',item('may-item'));
+  const august = run('august','2026-08','POSTED',item('august-item',{
+    priorPeriodGross:1000,priorPeriodDeductions:100,priorPeriodNet:900,
+    priorPeriodDetails:[{ periodMonth:'2026-05',gross:1000,deductions:100,net:900 }],
+    netSalary:1800,totalCompanyBurden:1820,
+  }),{
+    totalGrossSalaries:2000,totalDeductions:200,totalNetSalaries:1800,totalCompanyCost:1820,
+    paymentBatches:[{ id:'cancelled-cumulative',status:'CANCELLED',employeeIds:['employee-1'],totalAmount:1800 }],
+  });
+  const september = run('september','2026-09','DRAFT',item('september-item'));
+  const plan = buildPayrollRepairPlan({ employees:[employee],payrollRuns:[may,august,september] },['company-1']);
+  const repaired = plan.proposedRuns.get('payroll-run:september');
+  assert.deepEqual(repaired.priorPeriodDetails,undefined);
+  assert.deepEqual(repaired.items[0].priorPeriodDetails.map(detail => detail.periodMonth),['2026-05','2026-08']);
+});
+
 test('company scope excludes unassigned tenant payroll', () => {
   const foreign = { ...run('foreign','2026-09','DRAFT',item('foreign-item'),{ totalNetSalaries:1 }),companyId:'company-2' };
   assert.equal(buildPayrollRepairPlan({ employees:[employee],payrollRuns:[foreign] },['company-1']).issues.length,0);
