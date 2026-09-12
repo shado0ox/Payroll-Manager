@@ -162,19 +162,6 @@ router.delete('/journals/:id', auth, writeLimiter, async (req, res, next) => {
   } finally { client.release(); }
 });
 
-app.use('/api', createEmployeeRouter({
-  auth,
-  writeLimiter,
-  pool,
-  q,
-  can,
-  validIsoDate,
-  workflowError,
-  bumpStateVersion,
-  appendStateAudit,
-  broadcastStateUpdate,
-}));
-
 router.put('/integrations/qoyod/config', auth, writeLimiter, async (req, res, next) => {
   const client = await pool.connect();
   try {
