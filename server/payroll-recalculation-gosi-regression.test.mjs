@@ -11,6 +11,7 @@ const employeesView = [
   fs.readFileSync(new URL('../src/components/employees/EmployeeFormModal.tsx', import.meta.url), 'utf8'),
 ].join('\n');
 const payrollEngine = fs.readFileSync(new URL('../src/utils/payrollEngine.ts', import.meta.url), 'utf8');
+const employeePayrollTotals = fs.readFileSync(new URL('../src/components/employees/EmployeePayrollTotals.tsx', import.meta.url), 'utf8');
 const heldEntitlementsTransform = fs.readFileSync(new URL('../scripts/apply-held-payroll-entitlements.mjs', import.meta.url), 'utf8');
 
 test('recalculation never reuses a payroll run from a different period', () => {
@@ -33,4 +34,16 @@ test('occupational hazards insurance defaults to enabled when adding or editing 
   assert.match(employeesView, /empCopy\.nationality === 'NON_SAUDI'\) empCopy\.gosiEnabled = true/);
   assert.match(employeesView, /handleCompleteOnboarding[\s\S]{0,900}empCopy\.gosiEnabled = true/);
   assert.doesNotMatch(employeesView, /nationality: 'NON_SAUDI', country: '', gosiEnabled: false/);
+});
+
+test('employee register totals follow filtered employees and separate GOSI ownership', () => {
+  assert.match(employeesView, /employees=\{filteredEmployees\}/);
+  assert.match(employeePayrollTotals, /data-employee-payroll-totals/);
+  assert.match(employeePayrollTotals, /employee\.status === 'ACTIVE'/);
+  assert.match(employeePayrollTotals, /employee\.status === 'ABSCONDED'/);
+  assert.match(employeePayrollTotals, /employee\.status === 'ON_LEAVE'/);
+  assert.match(employeePayrollTotals, /employee\.status === 'SUSPENDED'/);
+  assert.match(employeePayrollTotals, /nonSaudiGosiEmployerHazardRate \?\? 0\.02/);
+  assert.match(employeePayrollTotals, /summary\.employeeGosi/);
+  assert.match(employeePayrollTotals, /summary\.employerGosi/);
 });

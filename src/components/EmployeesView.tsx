@@ -11,6 +11,7 @@ import { EmployeeImportPreviewModal } from './employees/EmployeeImportPreviewMod
 import { EmployeesTable } from './employees/EmployeesTable';
 import { EmployeeFormModal } from './employees/EmployeeFormModal';
 import { EmployeesToolbar } from './employees/EmployeesToolbar';
+import { EmployeePayrollTotals } from './employees/EmployeePayrollTotals';
 import { useEmployeeImport } from './employees/useEmployeeImport';
 
 interface EmployeesViewProps {
@@ -445,6 +446,12 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
         setSelectedDept={setSelectedDept}
         setSelectedNationality={setSelectedNationality}
         setSelectedStatus={setSelectedStatus}
+      />
+
+      <EmployeePayrollTotals
+        language={language}
+        company={company}
+        employees={filteredEmployees}
       />
 
       <EmployeesTable
