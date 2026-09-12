@@ -14,7 +14,12 @@ const employeeLockedInRun = (run,employeeId) => asArray(run.paymentBatches).some
 
 const sourceReserved = (runs,sourceRun,sourceItem) => asArray(runs).some(run => asArray(run.paymentBatches).some(batch => {
   if (!activeBatch(batch)) return false;
-  if (run.id === sourceRun.id && asArray(batch.employeeIds).includes(sourceItem.employeeId)) return true;
+  const employeeIncluded = asArray(batch.employeeIds).includes(sourceItem.employeeId);
+  if (run.id === sourceRun.id && employeeIncluded) return true;
+  if (employeeIncluded) {
+    const paymentItem = asArray(run.items).find(item => item.employeeId === sourceItem.employeeId);
+    if (asArray(paymentItem?.priorPeriodDetails).some(detail => detail?.periodMonth === sourceRun.periodMonth)) return true;
+  }
   return asArray(batch.priorEntitlements).some(ref =>
     ref?.sourcePayrollRunId === sourceRun.id && ref?.sourcePayrollItemId === sourceItem.id
   );
