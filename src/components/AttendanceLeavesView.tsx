@@ -16,6 +16,7 @@ import {
 import { Company, Employee, AttendanceRecord, LeaveRequest, UserRole } from '../types';
 import { SearchableEmployeeSelect } from './SearchableEmployeeSelect';
 import { useLanguage } from '../i18n/LanguageContext';
+import { AttendanceImportPanel } from './attendance/AttendanceImportPanel';
 
 interface AttendanceLeavesViewProps {
   company: Company;
@@ -47,7 +48,7 @@ export const AttendanceLeavesView: React.FC<AttendanceLeavesViewProps> = ({
   const today = new Date().toISOString().slice(0, 10);
   const currentPeriod = today.slice(0, 7);
   const [selectedPeriod, setSelectedPeriod] = useState(currentPeriod);
-  const [activeSubTab, setActiveSubTab] = useState<'attendance' | 'leaves'>('attendance');
+  const [activeSubTab, setActiveSubTab] = useState<'attendance' | 'analysis' | 'leaves'>('attendance');
   const [searchTerm, setSearchTerm] = useState('');
 
   // Attendance Modal
@@ -191,6 +192,17 @@ export const AttendanceLeavesView: React.FC<AttendanceLeavesViewProps> = ({
         </button>
 
         <button
+          onClick={() => setActiveSubTab('analysis')}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+            activeSubTab === 'analysis'
+              ? 'bg-emerald-600 text-white shadow-xs'
+              : 'text-slate-600 hover:bg-slate-100'
+          }`}
+        >
+          {tr('تحليل ملف الحضور', 'Attendance file analysis')}
+        </button>
+
+        <button
           onClick={() => setActiveSubTab('leaves')}
           className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
             activeSubTab === 'leaves'
@@ -203,7 +215,16 @@ export const AttendanceLeavesView: React.FC<AttendanceLeavesViewProps> = ({
       </div>
 
       {/* Attendance Records Table */}
-      {activeSubTab === 'attendance' ? (
+      {activeSubTab === 'analysis' ? (
+        <AttendanceImportPanel
+          company={company}
+          employees={companyEmployees}
+          attendance={attendance}
+          leaves={companyLeaves}
+          selectedPeriod={selectedPeriod}
+          onImport={onBulkImportAttendance}
+        />
+      ) : activeSubTab === 'attendance' ? (
         <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden w-full">
           <table className="w-full text-right text-xs table-fixed divide-y divide-slate-100">
             <thead>
@@ -232,10 +253,10 @@ export const AttendanceLeavesView: React.FC<AttendanceLeavesViewProps> = ({
                     <tr key={rec.id} className="hover:bg-slate-50/80 transition-colors">
                       <td className="py-2.5 px-3 overflow-hidden">
                         <div className="font-bold text-slate-900 truncate">
-                          {employeeName(emp)}
+                          {rec.attendanceOnlyName || employeeName(emp)}
                         </div>
                         <div className="text-[10px] text-slate-400 font-mono truncate">
-                          {emp?.employeeNo} - {emp?.department}
+                          {rec.attendanceOnlyNo || emp?.employeeNo || '-'} - {emp?.department || tr('موظف حضور فقط', 'Attendance-only worker')}
                         </div>
                       </td>
 
