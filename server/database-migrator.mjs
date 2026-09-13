@@ -1,4 +1,4 @@
-export function createDatabaseMigrator({ pool,q,bcrypt,replaceNormalizedPayrollData,replaceNormalizedOperationsData,replaceNormalizedCoreData }) {
+export function createDatabaseMigrator({ pool,q,schema,bcrypt,replaceNormalizedPayrollData,replaceNormalizedOperationsData,replaceNormalizedCoreData }) {
 async function migrate() {
   await pool.query(`CREATE SCHEMA IF NOT EXISTS "${schema}"`);
   await pool.query(`CREATE TABLE IF NOT EXISTS ${q('companies')} (
@@ -438,4 +438,3 @@ async function migrate() {
 
   return migrate;
 }
-

@@ -4,6 +4,7 @@ import { createCompanyRouter } from './routes/company-routes.mjs';
 import { createUserRouter } from './routes/user-routes.mjs';
 import { createStateRouter } from './routes/state-routes.mjs';
 import { createStateRuntime } from './state-runtime.mjs';
+import { createDatabaseMigrator } from './database-migrator.mjs';
 
 const middleware = (_req, _res, next) => next();
 const registeredRoutes = router => router.stack
@@ -46,4 +47,17 @@ test('state runtime scopes incremental changes and disconnects only the requeste
   runtime.disconnectStateEventClients('a');
   assert.equal(endedA,true);
   assert.equal(endedB,false);
+});
+
+test('database migrator receives the validated schema from bootstrap', () => {
+  const queries = [];
+  const migrate = createDatabaseMigrator({
+    schema:'test_schema',
+    pool:{ query:sql => { queries.push(sql); throw new Error('STOP_AFTER_SCHEMA'); } },
+  });
+  return assert.rejects(migrate(), error => {
+    assert.equal(error.message,'STOP_AFTER_SCHEMA');
+    assert.equal(queries[0],'CREATE SCHEMA IF NOT EXISTS "test_schema"');
+    return true;
+  });
 });

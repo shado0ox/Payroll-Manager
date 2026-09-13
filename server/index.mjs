@@ -139,7 +139,7 @@ const {
   readNormalizedApplicationState,
 } = createNormalizedStateStore({ q,clone,subscriptionState });
 const migrate = createDatabaseMigrator({
-  pool,q,bcrypt,replaceNormalizedPayrollData,replaceNormalizedOperationsData,replaceNormalizedCoreData,
+  pool,q,schema,bcrypt,replaceNormalizedPayrollData,replaceNormalizedOperationsData,replaceNormalizedCoreData,
 });
 const { addStateEventClient,disconnectStateEventClients,broadcastStateUpdate,bumpStateVersion,readLockedNormalizedState } = createStateRuntime({
   q,buildId,workflowError,readNormalizedApplicationState,
