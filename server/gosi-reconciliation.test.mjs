@@ -9,6 +9,7 @@ const parser=fs.readFileSync(new URL('../src/utils/gosiInvoiceImport.ts',import.
 const view=fs.readFileSync(new URL('../src/components/GosiReconciliationView.tsx',import.meta.url),'utf8');
 const companyGosi=fs.readFileSync(new URL('../src/components/company/CompanyGosiAccountsTab.tsx',import.meta.url),'utf8');
 const companyProfile=fs.readFileSync(new URL('../src/components/CompanyProfileView.tsx',import.meta.url),'utf8');
+const excelExport=fs.readFileSync(new URL('../src/utils/gosiExcelExport.ts',import.meta.url),'utf8');
 
 test('GOSI storage supports multiple company registrations and effective-dated employee assignments',()=>{
   assert.match(server,/CREATE TABLE IF NOT EXISTS \$\{q\('gosi_accounts'\)\}/);
@@ -66,6 +67,10 @@ test('GOSI comparison uses identity, selected payroll period, account assignment
   assert.match(view,/الاختلافات فقط/);
   assert.match(view,/حصة الموظف بالفاتورة/);
   assert.match(view,/مصدر الربط/);
+  assert.match(view,/exportGosiComparisonXlsx/);
+  assert.match(excelExport,/ملخص المقارنة/);
+  assert.match(excelExport,/تفاصيل الموظفين/);
+  assert.match(excelExport,/\.xlsx/);
   for(const status of ['INVOICE_ONLY','PAYROLL_ONLY','UNASSIGNED_ACCOUNT','WRONG_ACCOUNT','MISSING_IN_PAYROLL','DIFFERENT']) assert.match(routes,new RegExp(status));
 });
 
