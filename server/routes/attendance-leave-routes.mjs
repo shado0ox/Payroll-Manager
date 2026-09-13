@@ -19,6 +19,12 @@ export function createAttendanceLeaveRouter({
   const router = express.Router();
 
 function validateAttendanceRecord(record, user) {
+  const attendanceOnlyValid = record?.attendanceOnlyWorker === true
+    ? typeof record.employeeId === 'string' && typeof record.companyId === 'string'
+      && record.employeeId.startsWith(`attendance-only-${record.companyId}-`)
+      && typeof record.attendanceOnlyName === 'string' && record.attendanceOnlyName.trim().length >= 2
+      && record.attendanceOnlyName.length <= 160
+    : record?.attendanceOnlyWorker !== true;
   return record && typeof record === 'object' && typeof record.id === 'string' && Boolean(record.id)
     && typeof record.companyId === 'string' && user.company_ids.includes(record.companyId)
     && typeof record.employeeId === 'string' && Boolean(record.employeeId)
@@ -27,7 +33,8 @@ function validateAttendanceRecord(record, user) {
     && Number.isInteger(Number(record.daysCount ?? 1)) && Number(record.daysCount ?? 1) >= 0
     && Number.isInteger(Number(record.delayMinutes ?? 0)) && Number(record.delayMinutes ?? 0) >= 0
     && Number.isFinite(Number(record.overtimeHours ?? 0)) && Number(record.overtimeHours ?? 0) >= 0
-    && ['STANDARD','WEEKEND'].includes(record.overtimeType || 'STANDARD');
+    && ['STANDARD','WEEKEND'].includes(record.overtimeType || 'STANDARD')
+    && attendanceOnlyValid;
 }
 
 router.put('/attendance/:id', auth, writeLimiter, async (req, res, next) => {
@@ -44,8 +51,10 @@ router.put('/attendance/:id', auth, writeLimiter, async (req, res, next) => {
     if ((existingRecord && payrollSourceLocked(stored,'attendance',existingRecord)) || payrollSourceLocked(stored,'attendance',record)) {
       throw workflowError(409, 'PAYROLL_SOURCE_ENTRY_LOCKED');
     }
-    const employee = await client.query(`SELECT company_id FROM ${q('employees')} WHERE id=$1 AND is_archived=false`, [record.employeeId]);
-    if (!employee.rowCount || employee.rows[0].company_id !== record.companyId) throw workflowError(400, 'INVALID_ATTENDANCE_EMPLOYEE');
+    if (!record.attendanceOnlyWorker) {
+      const employee = await client.query(`SELECT company_id FROM ${q('employees')} WHERE id=$1 AND is_archived=false`, [record.employeeId]);
+      if (!employee.rowCount || employee.rows[0].company_id !== record.companyId) throw workflowError(400, 'INVALID_ATTENDANCE_EMPLOYEE');
+    }
     const existing = await client.query(`SELECT company_id,sort_order FROM ${q('attendance_records')} WHERE id=$1 FOR UPDATE`, [record.id]);
     if (existing.rowCount && existing.rows[0].company_id !== record.companyId) throw workflowError(409, 'ATTENDANCE_COMPANY_IMMUTABLE');
     const sortOrder = existing.rowCount ? existing.rows[0].sort_order : Number((await client.query(`SELECT COALESCE(min(sort_order),0)-1 AS sort_order FROM ${q('attendance_records')} WHERE company_id=$1`, [record.companyId])).rows[0]?.sort_order || 0);
@@ -93,9 +102,10 @@ router.post('/attendance/import', auth, writeLimiter, async (req, res, next) => 
       || payrollSourceLocked(stored,'attendance',record))) {
       throw workflowError(409,'PAYROLL_SOURCE_ENTRY_LOCKED');
     }
-    const employees = await client.query(`SELECT id,company_id FROM ${q('employees')} WHERE id=ANY($1::text[]) AND is_archived=false`, [[...new Set(records.map(record => record.employeeId))]]);
+    const registeredRecords = records.filter(record => !record.attendanceOnlyWorker);
+    const employees = await client.query(`SELECT id,company_id FROM ${q('employees')} WHERE id=ANY($1::text[]) AND is_archived=false`, [[...new Set(registeredRecords.map(record => record.employeeId))]]);
     const employeeCompanies = new Map(employees.rows.map(row => [row.id,row.company_id]));
-    if (records.some(record => employeeCompanies.get(record.employeeId) !== companyId)) throw workflowError(400,'INVALID_ATTENDANCE_EMPLOYEE');
+    if (registeredRecords.some(record => employeeCompanies.get(record.employeeId) !== companyId)) throw workflowError(400,'INVALID_ATTENDANCE_EMPLOYEE');
     const existing = await client.query(`SELECT id,company_id FROM ${q('attendance_records')} WHERE id=ANY($1::text[]) FOR UPDATE`, [ids]);
     if (existing.rows.some(row => row.company_id !== companyId)) throw workflowError(409,'ATTENDANCE_COMPANY_IMMUTABLE');
     const startOrder = Number((await client.query(`SELECT COALESCE(max(sort_order),-1)+1 AS sort_order FROM ${q('attendance_records')} WHERE company_id=$1`, [companyId])).rows[0]?.sort_order || 0);
@@ -232,4 +242,3 @@ router.patch('/leaves/:id/status', auth, writeLimiter, async (req, res, next) =>
 
   return router;
 }
-
