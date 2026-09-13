@@ -19,6 +19,8 @@ test('GOSI storage supports multiple company registrations and effective-dated e
   assert.match(routes,/effective_to=\$2::date-1/);
   assert.match(server,/gosi_department_assignments/);
   assert.match(routes,/GOSI_DEPARTMENT_ASSIGNMENT_OVERLAP/);
+  assert.match(routes,/for\(const previous of overlaps\.rows\)/);
+  assert.match(routes,/previousStart===record\.effectiveFrom/);
 });
 
 test('GOSI accounts live in company profile and departments provide the default assignment',()=>{
@@ -29,6 +31,7 @@ test('GOSI accounts live in company profile and departments provide the default 
   assert.match(companyGosi,/حفظ التعديل/);
   assert.match(companyGosi,/old\.effectiveFrom===effectiveFrom/);
   assert.match(companyGosi,/يوجد ربط آخر للقسم خلال الشهر المحدد/);
+  assert.match(companyGosi,/\]\.reverse\(\)\.map/);
   assert.match(routes,/END_GOSI_DEPARTMENT_ASSIGNMENT/);
   assert.match(routes,/effective_to=\$2::date-1/);
   assert.match(view,/استخدام ربط القسم/);
@@ -52,6 +55,7 @@ test('GOSI invoice import is tenant scoped, bounded, atomic, and audited',()=>{
   assert.match(view,/تابعون للحساب المختار/);
   assert.match(view,/غير مربوطين/);
   assert.match(view,/activeDepartmentAssignments/);
+  assert.match(view,/departmentAssignments\.filter[\s\S]*?\]\.reverse\(\)\.map/);
   assert.match(routes,/DELETE FROM \$\{q\('gosi_invoices'\)\} WHERE id=\$1 AND company_id=\$2/);
   assert.match(routes,/DELETE_GOSI_INVOICE/);
   assert.match(view,/deleteGosiInvoice/);
