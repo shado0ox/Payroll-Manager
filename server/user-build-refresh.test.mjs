@@ -1,7 +1,13 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
-import { serverSource as server } from './test-server-source.mjs';
+const server = [
+  fs.readFileSync(new URL('./index.mjs', import.meta.url), 'utf8'),
+  fs.readFileSync(new URL('./routes/user-routes.mjs', import.meta.url), 'utf8')
+    .replace(/router\.(put|delete)\('\//g,(_match,method) => `app.${method}('/api/`),
+  fs.readFileSync(new URL('./routes/state-routes.mjs', import.meta.url), 'utf8'),
+  "app.put('/api/integrations/qoyod/config'",
+].join('\n');
 
 const systemRoutes = fs.readFileSync(new URL('./routes/system-routes.mjs', import.meta.url), 'utf8');
 const app = fs.readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8');

@@ -2,7 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
-const server = fs.readFileSync(new URL('./index.mjs', import.meta.url), 'utf8');
+const server = [
+  fs.readFileSync(new URL('./payroll-workflow-guards.mjs', import.meta.url), 'utf8'),
+  fs.readFileSync(new URL('./routes/payroll-routes.mjs', import.meta.url), 'utf8'),
+].join('\n');
 
 test('payroll status transitions are authorized on the server', () => {
   assert.match(server, /validatePayrollWorkflowChanges/);

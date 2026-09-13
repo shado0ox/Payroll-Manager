@@ -2,7 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
-const server = fs.readFileSync(new URL('./index.mjs', import.meta.url), 'utf8');
+const server = [
+  fs.readFileSync(new URL('./database-migrator.mjs', import.meta.url), 'utf8'),
+  fs.readFileSync(new URL('./routes/user-routes.mjs', import.meta.url), 'utf8'),
+].join('\n');
 
 test('startup checks for duplicate user emails before creating the unique email index', () => {
   assert.match(server, /duplicateUserEmails/);
