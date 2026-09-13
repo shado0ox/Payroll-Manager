@@ -62,8 +62,10 @@ export function createGosiRouter({ auth,writeLimiter,pool,q,can,workflowError,bu
     const client=await pool.connect();
     try {
       const companyId=text(req.query.companyId,100); requireAccess(req,companyId); await client.query('BEGIN');
-      const used=await client.query(`SELECT 1 FROM ${q('gosi_invoices')} WHERE account_id=$1 LIMIT 1`,[req.params.id]);
-      if (used.rowCount) throw workflowError(409,'GOSI_ACCOUNT_HAS_INVOICES');
+      const used=await client.query(`SELECT 1 FROM ${q('gosi_invoices')} WHERE account_id=$1 UNION ALL
+        SELECT 1 FROM ${q('gosi_employee_assignments')} WHERE account_id=$1 UNION ALL
+        SELECT 1 FROM ${q('gosi_department_assignments')} WHERE account_id=$1 LIMIT 1`,[req.params.id]);
+      if (used.rowCount) throw workflowError(409,'GOSI_ACCOUNT_IN_USE');
       const result=await client.query(`UPDATE ${q('gosi_accounts')} SET is_active=false,is_default=false,updated_at=now()
         WHERE id=$1 AND company_id=$2 AND is_active=true RETURNING id`,[req.params.id,companyId]);
       if (!result.rowCount) throw workflowError(404,'GOSI_ACCOUNT_NOT_FOUND');
@@ -181,6 +183,8 @@ export function createGosiRouter({ auth,writeLimiter,pool,q,can,workflowError,bu
       await client.query('BEGIN');
       const account=await client.query(`SELECT 1 FROM ${q('gosi_accounts')} WHERE id=$1 AND company_id=$2 AND is_active=true FOR UPDATE`,[body.accountId,body.companyId]);
       if (!account.rowCount) throw workflowError(400,'INVALID_GOSI_ACCOUNT');
+      const duplicate=await client.query(`SELECT 1 FROM ${q('gosi_invoices')} WHERE account_id=$1 AND invoice_month=$2 LIMIT 1`,[body.accountId,body.invoiceMonth]);
+      if(duplicate.rowCount) throw workflowError(409,'GOSI_INVOICE_ALREADY_EXISTS');
       const totals=normalized.reduce((sum,row)=>({ subjectWage:money(sum.subjectWage+row.subjectWage),employerShare:money(sum.employerShare+row.employerShare),employeeShare:money(sum.employeeShare+row.employeeShare),total:money(sum.total+row.total) }),{subjectWage:0,employerShare:0,employeeShare:0,total:0});
       await client.query(`INSERT INTO ${q('gosi_invoices')} (id,company_id,account_id,invoice_month,payroll_month,source_file_name,detected_month,items_count,total_subject_wage,total_employer_share,total_employee_share,total_amount,created_by)
         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,[body.id,body.companyId,body.accountId,body.invoiceMonth,body.payrollMonth,text(body.sourceFileName,200),validMonth(body.detectedMonth)?body.detectedMonth:null,normalized.length,totals.subjectWage,totals.employerShare,totals.employeeShare,totals.total,req.user.id]);
