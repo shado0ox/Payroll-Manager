@@ -83,7 +83,7 @@ export function createGosiRouter({ auth,writeLimiter,pool,q,can,workflowError,bu
   router.get('/gosi/assignments',auth,async (req,res,next) => {
     try {
       const companyId=text(req.query.companyId,100); requireAccess(req,companyId);
-      const result=await pool.query(`SELECT a.id,a.employee_id,a.account_id,a.effective_from,a.effective_to
+      const result=await pool.query(`SELECT a.id,a.employee_id,a.account_id,a.effective_from::text effective_from,a.effective_to::text effective_to
         FROM ${q('gosi_employee_assignments')} a JOIN ${q('gosi_accounts')} g ON g.id=a.account_id
         WHERE g.company_id=$1 ORDER BY a.effective_from DESC,a.id`,[companyId]);
       res.json({ records:result.rows.map(row=>({ id:row.id,employeeId:row.employee_id,accountId:row.account_id,
@@ -112,7 +112,7 @@ export function createGosiRouter({ auth,writeLimiter,pool,q,can,workflowError,bu
       const scope=await client.query(`SELECT e.company_id employee_company,g.company_id account_company FROM ${q('employees')} e
         JOIN ${q('gosi_accounts')} g ON g.id=$2 AND g.is_active=true WHERE e.id=$1 AND e.is_archived=false`,[record.employeeId,record.accountId]);
       if (!scope.rowCount || scope.rows[0].employee_company!==record.companyId || scope.rows[0].account_company!==record.companyId) throw workflowError(400,'INVALID_GOSI_ASSIGNMENT_SCOPE');
-      const overlap=await client.query(`SELECT id,effective_from,effective_to FROM ${q('gosi_employee_assignments')} WHERE employee_id=$1 AND id<>$2
+      const overlap=await client.query(`SELECT id,effective_from::text effective_from,effective_to::text effective_to FROM ${q('gosi_employee_assignments')} WHERE employee_id=$1 AND id<>$2
         AND daterange(effective_from,COALESCE(effective_to,'infinity'::date),'[]') && daterange($3::date,COALESCE(NULLIF($4,'')::date,'infinity'::date),'[]') LIMIT 1`,
         [record.employeeId,record.id,record.effectiveFrom,record.effectiveTo || '']);
       if (overlap.rowCount) {
@@ -143,7 +143,7 @@ export function createGosiRouter({ auth,writeLimiter,pool,q,can,workflowError,bu
 
   router.get('/gosi/department-assignments',auth,async(req,res,next)=>{
     try { const companyId=text(req.query.companyId,100); requireAccess(req,companyId);
-      const result=await pool.query(`SELECT id,department_name,account_id,effective_from,effective_to FROM ${q('gosi_department_assignments')}
+      const result=await pool.query(`SELECT id,department_name,account_id,effective_from::text effective_from,effective_to::text effective_to FROM ${q('gosi_department_assignments')}
         WHERE company_id=$1 ORDER BY effective_from DESC,id`,[companyId]);
       res.json({records:result.rows.map(row=>({id:row.id,departmentName:row.department_name,accountId:row.account_id,effectiveFrom:String(row.effective_from).slice(0,10),effectiveTo:row.effective_to?String(row.effective_to).slice(0,10):null}))});
     } catch(e){next(e);}
@@ -158,7 +158,7 @@ export function createGosiRouter({ auth,writeLimiter,pool,q,can,workflowError,bu
       const account=await client.query(`SELECT 1 FROM ${q('gosi_accounts')} WHERE id=$1 AND company_id=$2 AND is_active=true`,[record.accountId,record.companyId]);
       if(!account.rowCount) throw workflowError(400,'INVALID_GOSI_ACCOUNT');
       let effectiveTo=record.effectiveTo||'';
-      const overlaps=await client.query(`SELECT id,effective_from,effective_to FROM ${q('gosi_department_assignments')} WHERE company_id=$1 AND department_name=$2 AND id<>$3
+      const overlaps=await client.query(`SELECT id,effective_from::text effective_from,effective_to::text effective_to FROM ${q('gosi_department_assignments')} WHERE company_id=$1 AND department_name=$2 AND id<>$3
         AND daterange(effective_from,COALESCE(effective_to,'infinity'::date),'[]') && daterange($4::date,COALESCE(NULLIF($5,'')::date,'infinity'::date),'[]') ORDER BY effective_from FOR UPDATE`,[record.companyId,text(record.departmentName),record.id,record.effectiveFrom,record.effectiveTo||'']);
       for(const previous of overlaps.rows){const previousStart=String(previous.effective_from).slice(0,10);if(previousStart===record.effectiveFrom) await client.query(`DELETE FROM ${q('gosi_department_assignments')} WHERE id=$1`,[previous.id]);else if(previousStart<record.effectiveFrom) await client.query(`UPDATE ${q('gosi_department_assignments')} SET effective_to=$2::date-1,updated_at=now() WHERE id=$1`,[previous.id,record.effectiveFrom]);else{effectiveTo=previousDay(previousStart);break;}}
       await client.query(`INSERT INTO ${q('gosi_department_assignments')} (id,company_id,department_name,account_id,effective_from,effective_to,updated_at)
@@ -176,7 +176,7 @@ export function createGosiRouter({ auth,writeLimiter,pool,q,can,workflowError,bu
     const client=await pool.connect();
     try { const companyId=text(req.query.companyId,100),effectiveMonth=text(req.query.effectiveMonth,7);requireAccess(req,companyId);
       if(!validMonth(effectiveMonth)) throw workflowError(400,'INVALID_GOSI_EFFECTIVE_MONTH');await client.query('BEGIN');
-      const current=await client.query(`SELECT effective_from FROM ${q('gosi_department_assignments')} WHERE id=$1 AND company_id=$2 FOR UPDATE`,[req.params.id,companyId]);
+      const current=await client.query(`SELECT effective_from::text effective_from FROM ${q('gosi_department_assignments')} WHERE id=$1 AND company_id=$2 FOR UPDATE`,[req.params.id,companyId]);
       if(!current.rowCount) throw workflowError(404,'GOSI_DEPARTMENT_ASSIGNMENT_NOT_FOUND');
       const effectiveFrom=String(current.rows[0].effective_from).slice(0,10),start=monthStart(effectiveMonth);
       if(effectiveFrom<start) await client.query(`UPDATE ${q('gosi_department_assignments')} SET effective_to=$2::date-1,updated_at=now() WHERE id=$1`,[req.params.id,start]);
