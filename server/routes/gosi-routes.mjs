@@ -91,6 +91,17 @@ export function createGosiRouter({ auth,writeLimiter,pool,q,can,workflowError,bu
     } catch(e) { next(e); }
   });
 
+  router.delete('/gosi/assignments',auth,writeLimiter,async(req,res,next)=>{
+    const client=await pool.connect();
+    try{const companyId=text(req.query.companyId,100),confirmation=text(req.query.confirmation,50);requireAccess(req,companyId);
+      if(confirmation!=='CLEAR_ALL_EMPLOYEE_OVERRIDES')throw workflowError(400,'GOSI_OVERRIDE_CLEAR_CONFIRMATION_REQUIRED');await client.query('BEGIN');
+      const deleted=await client.query(`DELETE FROM ${q('gosi_employee_assignments')} a USING ${q('employees')} e WHERE a.employee_id=e.id AND e.company_id=$1 RETURNING a.id`,[companyId]);
+      const updated=await finishWrite(client,req,companyId,'CLEAR_GOSI_EMPLOYEE_OVERRIDES');await client.query('COMMIT');
+      broadcastStateUpdate({version:updated.version,updatedBy:req.user.id,updatedAt:updated.updated_at,companyIds:[companyId],changes:[]});
+      res.json({deletedCount:deleted.rowCount,version:Number(updated.version),updated_at:updated.updated_at});
+    }catch(e){try{await client.query('ROLLBACK');}catch{}next(e);}finally{client.release();}
+  });
+
   router.put('/gosi/assignments/:id',auth,writeLimiter,async (req,res,next) => {
     const client=await pool.connect();
     try {
