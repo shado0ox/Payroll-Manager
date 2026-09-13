@@ -188,6 +188,17 @@ export function createGosiRouter({ auth,writeLimiter,pool,q,can,workflowError,bu
     } catch(e){ next(e); }
   });
 
+  router.delete('/gosi/invoices/:id',auth,writeLimiter,async(req,res,next)=>{
+    const client=await pool.connect();
+    try { const companyId=text(req.query.companyId,100);requireAccess(req,companyId);await client.query('BEGIN');
+      const deleted=await client.query(`DELETE FROM ${q('gosi_invoices')} WHERE id=$1 AND company_id=$2 RETURNING id`,[req.params.id,companyId]);
+      if(!deleted.rowCount) throw workflowError(404,'GOSI_INVOICE_NOT_FOUND');
+      const updated=await finishWrite(client,req,companyId,'DELETE_GOSI_INVOICE');await client.query('COMMIT');
+      broadcastStateUpdate({version:updated.version,updatedBy:req.user.id,updatedAt:updated.updated_at,companyIds:[companyId],changes:[]});
+      res.json({deleted:true,version:Number(updated.version),updated_at:updated.updated_at});
+    }catch(e){try{await client.query('ROLLBACK');}catch{}next(e);}finally{client.release();}
+  });
+
   router.get('/gosi/invoices/:id/comparison',auth,async(req,res,next)=>{
     try {
       const invoiceResult=await pool.query(`SELECT i.*,g.name account_name,g.registration_number FROM ${q('gosi_invoices')} i JOIN ${q('gosi_accounts')} g ON g.id=i.account_id WHERE i.id=$1`,[req.params.id]);
