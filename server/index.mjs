@@ -23,6 +23,7 @@ import { createAttendanceLeaveRouter } from './routes/attendance-leave-routes.mj
 import { createLoanPenaltyRouter } from './routes/loan-penalty-routes.mjs';
 import { createPayrollRouter } from './routes/payroll-routes.mjs';
 import { createJournalQoyodRouter } from './routes/journal-qoyod-routes.mjs';
+import { createGosiRouter } from './routes/gosi-routes.mjs';
 import { createPayrollRunPersistence } from './payroll-run-persistence.mjs';
 import { createOperationalAlertSender, createOperationalLogger, requestContextMiddleware, startDatabaseHealthMonitor } from './operational-monitoring.mjs';
 
@@ -40,10 +41,10 @@ const schema = process.env.DB_SCHEMA || 'masar_payroll';
 if (!/^[a-z_][a-z0-9_]*$/.test(schema)) throw new Error('DB_SCHEMA is invalid');
 if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL is required');
 const ALLOWED_ROLES = new Set(['ADMIN', 'COMPANY_MANAGER', 'OPERATIONS_MANAGER']);
-const ALL_PERMISSIONS = new Set(['VIEW_DASHBOARD','MANAGE_COMPANY_PROFILE','MANAGE_COMPANIES','MANAGE_EMPLOYEES','MANAGE_ATTENDANCE','MANAGE_LOANS_PENALTIES','MANAGE_PAYROLL','APPROVE_PAYROLL','REVERSE_PAYROLL_APPROVAL','POST_PAYROLL','CONFIRM_PAYROLL_PAYMENT','REVERSE_PAYROLL_PAYMENT','MANAGE_JOURNALS','VIEW_REPORTS','MANAGE_USERS','RECEIVE_HR_EXPIRY_EMAILS','VIEW_AUDIT_LOGS']);
+const ALL_PERMISSIONS = new Set(['VIEW_DASHBOARD','MANAGE_COMPANY_PROFILE','MANAGE_COMPANIES','MANAGE_EMPLOYEES','MANAGE_ATTENDANCE','MANAGE_LOANS_PENALTIES','MANAGE_PAYROLL','MANAGE_GOSI','APPROVE_PAYROLL','REVERSE_PAYROLL_APPROVAL','POST_PAYROLL','CONFIRM_PAYROLL_PAYMENT','REVERSE_PAYROLL_PAYMENT','MANAGE_JOURNALS','VIEW_REPORTS','MANAGE_USERS','RECEIVE_HR_EXPIRY_EMAILS','VIEW_AUDIT_LOGS']);
 const DEFAULT_PERMISSIONS = {
   COMPANY_MANAGER: [...ALL_PERMISSIONS].filter(value => value !== 'MANAGE_COMPANIES'),
-  OPERATIONS_MANAGER: ['VIEW_DASHBOARD','MANAGE_EMPLOYEES','MANAGE_ATTENDANCE','MANAGE_LOANS_PENALTIES','MANAGE_PAYROLL','POST_PAYROLL','CONFIRM_PAYROLL_PAYMENT','VIEW_REPORTS'],
+  OPERATIONS_MANAGER: ['VIEW_DASHBOARD','MANAGE_EMPLOYEES','MANAGE_ATTENDANCE','MANAGE_LOANS_PENALTIES','MANAGE_PAYROLL','MANAGE_GOSI','POST_PAYROLL','CONFIRM_PAYROLL_PAYMENT','VIEW_REPORTS'],
 };
 const trialDays = Math.max(1, Math.min(90, Number(process.env.TRIAL_DAYS || 14)));
 const publicRegistrationEnabled = process.env.ALLOW_PUBLIC_REGISTRATION === 'true';
@@ -1079,6 +1080,39 @@ async function migrate() {
     provider text PRIMARY KEY, public_config jsonb NOT NULL DEFAULT '{}'::jsonb, secret_value text NOT NULL DEFAULT '',
     updated_at timestamptz NOT NULL DEFAULT now(), CHECK (provider IN ('QOYOD'))
   )`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS ${q('gosi_accounts')} (
+    id text PRIMARY KEY, company_id text NOT NULL REFERENCES ${q('companies')}(id) ON DELETE RESTRICT,
+    registration_number text NOT NULL, name text NOT NULL, branch_name text NOT NULL DEFAULT '',
+    is_default boolean NOT NULL DEFAULT false, is_active boolean NOT NULL DEFAULT true,
+    created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
+    UNIQUE(company_id,registration_number)
+  )`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS gosi_accounts_one_default_idx ON ${q('gosi_accounts')}(company_id) WHERE is_default=true AND is_active=true`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS ${q('gosi_employee_assignments')} (
+    id text PRIMARY KEY, employee_id text NOT NULL REFERENCES ${q('employees')}(id) ON DELETE CASCADE,
+    account_id text NOT NULL REFERENCES ${q('gosi_accounts')}(id) ON DELETE RESTRICT,
+    effective_from date NOT NULL, effective_to date, created_at timestamptz NOT NULL DEFAULT now(),updated_at timestamptz NOT NULL DEFAULT now(),
+    CHECK(effective_to IS NULL OR effective_to>=effective_from)
+  )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS gosi_assignments_employee_dates_idx ON ${q('gosi_employee_assignments')}(employee_id,effective_from,effective_to)`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS ${q('gosi_invoices')} (
+    id text PRIMARY KEY,company_id text NOT NULL REFERENCES ${q('companies')}(id) ON DELETE RESTRICT,
+    account_id text NOT NULL REFERENCES ${q('gosi_accounts')}(id) ON DELETE RESTRICT,
+    invoice_month text NOT NULL,payroll_month text NOT NULL,detected_month text,source_file_name text NOT NULL,
+    items_count integer NOT NULL,total_subject_wage numeric(16,2) NOT NULL,total_employer_share numeric(16,2) NOT NULL,
+    total_employee_share numeric(16,2) NOT NULL,total_amount numeric(16,2) NOT NULL,created_by text NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now(),CHECK(invoice_month ~ '^[0-9]{4}-(0[1-9]|1[0-2])$'),CHECK(payroll_month ~ '^[0-9]{4}-(0[1-9]|1[0-2])$')
+  )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS gosi_invoices_company_month_idx ON ${q('gosi_invoices')}(company_id,invoice_month DESC)`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS ${q('gosi_invoice_items')} (
+    invoice_id text NOT NULL REFERENCES ${q('gosi_invoices')}(id) ON DELETE CASCADE,id text NOT NULL,
+    identity_number text NOT NULL,subscriber_name text NOT NULL,nationality text NOT NULL DEFAULT '',
+    subject_wage numeric(16,2) NOT NULL,employer_share numeric(16,2) NOT NULL,employee_share numeric(16,2) NOT NULL,total_amount numeric(16,2) NOT NULL,
+    sort_order integer NOT NULL DEFAULT 0,PRIMARY KEY(invoice_id,id),UNIQUE(invoice_id,identity_number)
+  )`);
+  await pool.query(`UPDATE ${q('users')} SET permissions=permissions || '["MANAGE_GOSI"]'::jsonb,updated_at=now()
+    WHERE role IN ('COMPANY_MANAGER','OPERATIONS_MANAGER') AND permissions IS NOT NULL
+      AND permissions @> '["MANAGE_PAYROLL"]'::jsonb AND NOT permissions @> '["MANAGE_GOSI"]'::jsonb`);
   await pool.query(`ALTER TABLE ${q('integration_configs')} ADD COLUMN IF NOT EXISTS company_id text`);
   await pool.query(`UPDATE ${q('integration_configs')} SET company_id=$1 WHERE company_id IS NULL`, [process.env.COMPANY_ID]);
   await pool.query(`ALTER TABLE ${q('integration_configs')} ALTER COLUMN company_id SET NOT NULL`);
@@ -1507,6 +1541,8 @@ app.use('/api/auth', createAuthPasswordResetRouter({
 
 app.use('/api/auth', createAuthLoginRouter({ loginLimiter, pool, q, sha256, permissionsFor }));
 app.use('/api/auth', createAuthSessionRouter({ auth, pool, q, cookieValue, sha256, permissionsFor }));
+
+app.use('/api',createGosiRouter({ auth,writeLimiter,pool,q,can,workflowError,bumpStateVersion,appendStateAudit,broadcastStateUpdate }));
 
 app.use('/api/admin', createAdminDatabaseRouter({
   auth,
