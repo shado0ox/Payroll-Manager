@@ -1110,9 +1110,9 @@ async function migrate() {
     subject_wage numeric(16,2) NOT NULL,employer_share numeric(16,2) NOT NULL,employee_share numeric(16,2) NOT NULL,total_amount numeric(16,2) NOT NULL,
     sort_order integer NOT NULL DEFAULT 0,PRIMARY KEY(invoice_id,id),UNIQUE(invoice_id,identity_number)
   )`);
-  await pool.query(`UPDATE ${q('users')} SET permissions=array_append(permissions,'MANAGE_GOSI'),updated_at=now()
+  await pool.query(`UPDATE ${q('users')} SET permissions=permissions || '["MANAGE_GOSI"]'::jsonb,updated_at=now()
     WHERE role IN ('COMPANY_MANAGER','OPERATIONS_MANAGER') AND permissions IS NOT NULL
-      AND 'MANAGE_PAYROLL'=ANY(permissions) AND NOT ('MANAGE_GOSI'=ANY(permissions))`);
+      AND permissions @> '["MANAGE_PAYROLL"]'::jsonb AND NOT permissions @> '["MANAGE_GOSI"]'::jsonb`);
   await pool.query(`ALTER TABLE ${q('integration_configs')} ADD COLUMN IF NOT EXISTS company_id text`);
   await pool.query(`UPDATE ${q('integration_configs')} SET company_id=$1 WHERE company_id IS NULL`, [process.env.COMPANY_ID]);
   await pool.query(`ALTER TABLE ${q('integration_configs')} ALTER COLUMN company_id SET NOT NULL`);
