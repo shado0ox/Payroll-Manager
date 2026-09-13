@@ -234,6 +234,21 @@ export interface AttendanceRecord {
   overtimeHours: number;
   overtimeType: 'STANDARD' | 'WEEKEND';
   notes?: string;
+  sourceType?: 'MANUAL' | 'MOQOOT_IMPORT';
+  sourceFileName?: string;
+  importedAt?: string;
+  attendanceOnlyWorker?: boolean;
+  attendanceOnlyName?: string;
+  attendanceOnlyNo?: string;
+  scheduledStart?: string;
+  scheduledEnd?: string;
+  actualCheckIn?: string;
+  actualCheckOut?: string;
+  graceMinutes?: number;
+  calculatedDelayMinutes?: number;
+  workday?: boolean;
+  attendanceStatus?: 'PRESENT' | 'LATE' | 'ABSENT' | 'LEAVE' | 'OFF' | 'MISSING_IN' | 'MISSING_OUT' | 'REVIEW';
+  payrollApproved?: boolean;
 }
 
 export interface LeaveRequest {
