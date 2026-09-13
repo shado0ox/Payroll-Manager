@@ -10,6 +10,7 @@ import {
   Settings, 
   Building2,
   ShieldAlert,
+  ShieldCheck,
   UserCheck,
   LogOut
 } from 'lucide-react';
@@ -49,6 +50,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { id: 'dashboard', label: t('dashboard'), icon: LayoutDashboard },
     { id: 'employees', label: `${t('employees')} (${employeesCount})`, icon: Users },
     { id: 'payroll_runs', label: t('payrollRuns'), icon: Banknote },
+    { id: 'gosi', label: language === 'ar' ? 'التأمينات' : 'GOSI', icon: ShieldCheck },
     { id: 'attendance', label: t('attendance'), icon: Clock },
     { id: 'loans_penalties', label: t('loans'), icon: Receipt },
     { id: 'company_profile', label: t('companyProfile'), icon: Building2, managementOnly: true },

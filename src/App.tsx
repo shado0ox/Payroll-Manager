@@ -53,6 +53,7 @@ const UserManagementView = lazy(() => import('./components/UserManagementView').
 const DashboardView = lazy(() => import('./components/DashboardView').then(module => ({ default:module.DashboardView })));
 const EmployeesView = lazy(() => import('./components/EmployeesView').then(module => ({ default:module.EmployeesView })));
 const PayrollRunsView = lazy(() => import('./components/PayrollRunsView').then(module => ({ default:module.PayrollRunsView })));
+const GosiReconciliationView = lazy(() => import('./components/GosiReconciliationView').then(module => ({ default:module.GosiReconciliationView })));
 const PayrollSettlementsView = lazy(() => import('./components/PayrollSettlementsView').then(module => ({ default:module.PayrollSettlementsView })));
 const AttendanceLeavesView = lazy(() => import('./components/AttendanceLeavesView').then(module => ({ default:module.AttendanceLeavesView })));
 const LoansPenaltiesView = lazy(() => import('./components/LoansPenaltiesView').then(module => ({ default:module.LoansPenaltiesView })));
@@ -73,6 +74,7 @@ const TAB_PATHS: Record<NavigationTab, string> = {
   company_profile: '/company',
   employees: '/employees',
   payroll_runs: '/payroll',
+  gosi: '/gosi',
   settlements: '/settlements',
   attendance: '/attendance',
   loans_penalties: '/loans-penalties',
@@ -1336,6 +1338,10 @@ export const App: React.FC = () => {
                 onViewEmployeeStatement={openEmployeeStatement}
                 onOpenQoyodModal={() => setIsQoyodModalOpen(true)}
               />
+            )}
+
+            {activeTab === 'gosi' && hasPermission(state.currentUser, 'MANAGE_GOSI') && (
+              <GosiReconciliationView company={activeCompany} employees={state.employees} />
             )}
 
             {activeTab === 'attendance' && hasPermission(state.currentUser, 'MANAGE_ATTENDANCE') && (

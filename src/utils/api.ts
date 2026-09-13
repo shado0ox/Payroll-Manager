@@ -50,6 +50,9 @@ export type PayrollRepairIssue = {
   blockedReason:string | null;
 };
 
+export type GosiAccount={id:string;companyId:string;registrationNumber:string;name:string;branchName:string;isDefault:boolean;isActive:boolean};
+export type GosiAssignment={id:string;employeeId:string;accountId:string;effectiveFrom:string;effectiveTo:string|null};
+
 class ApiError extends Error {
   constructor(message: string, public status: number) { super(message); this.name = 'ApiError'; }
 }
@@ -125,6 +128,14 @@ function classifyPayrollCommand(previous: any, next: any) {
 }
 
 export const api = {
+  listGosiAccounts:(companyId:string)=>request<{records:GosiAccount[]}>(`/api/gosi/accounts?companyId=${encodeURIComponent(companyId)}`),
+  saveGosiAccount:(record:GosiAccount)=>request<{record:GosiAccount;version:number}>(`/api/gosi/accounts/${encodeURIComponent(record.id)}`,{method:'PUT',body:JSON.stringify(record)}),
+  deleteGosiAccount:(companyId:string,id:string)=>request<{archived:boolean;version:number}>(`/api/gosi/accounts/${encodeURIComponent(id)}?companyId=${encodeURIComponent(companyId)}`,{method:'DELETE'}),
+  listGosiAssignments:(companyId:string)=>request<{records:GosiAssignment[]}>(`/api/gosi/assignments?companyId=${encodeURIComponent(companyId)}`),
+  saveGosiAssignment:(record:GosiAssignment&{companyId:string})=>request<{record:GosiAssignment;version:number}>(`/api/gosi/assignments/${encodeURIComponent(record.id)}`,{method:'PUT',body:JSON.stringify(record)}),
+  listGosiInvoices:(companyId:string)=>request<{records:any[]}>(`/api/gosi/invoices?companyId=${encodeURIComponent(companyId)}`),
+  importGosiInvoice:(record:any)=>request<{invoiceId:string;totals:any;itemsCount:number;version:number}>('/api/gosi/invoices',{method:'POST',body:JSON.stringify(record)}),
+  compareGosiInvoice:(id:string,payrollMonth:string)=>request<any>(`/api/gosi/invoices/${encodeURIComponent(id)}/comparison?payrollMonth=${encodeURIComponent(payrollMonth)}`),
   publicConfig: () => request<{registrationEnabled:boolean; trialDays:number; developerContactPhone:string}>('/api/public/config'),
   startRegistration: (data: Record<string, unknown>) => request<{requestId:string; maskedEmail:string; expiresInSeconds:number}>('/api/auth/register/start', { method:'POST', body:JSON.stringify(data) }),
   verifyRegistration: (requestId: string, code: string) => request<{companyCode:string; username:string; trialEndsAt:string; trialDays:number}>('/api/auth/register/verify', { method:'POST', body:JSON.stringify({requestId,code}) }),
