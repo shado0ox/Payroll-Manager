@@ -4,7 +4,7 @@ import test from 'node:test';
 
 const app = fs.readFileSync('src/App.tsx','utf8');
 const api = fs.readFileSync('src/utils/api.ts','utf8');
-const server = fs.readFileSync('server/index.mjs','utf8');
+const server = fs.readFileSync('server/routes/state-routes.mjs','utf8');
 const modal = fs.readFileSync('src/components/DatabaseStatusModal.tsx','utf8');
 const navbar = fs.readFileSync('src/components/Navbar.tsx','utf8');
 
@@ -16,8 +16,8 @@ test('normal React state updates never trigger a full-state persistence effect',
 });
 
 test('full-state replacement requires an explicit developer restore', () => {
-  const start = server.indexOf("app.put('/api/state'");
-  const end = server.indexOf('async function bumpStateVersion',start);
+  const start = server.indexOf("router.put('/state'");
+  const end = server.indexOf('return router',start);
   assert.ok(start >= 0 && end > start);
   const route = server.slice(start,end);
   assert.match(route,/req\.user\.id !== 'user-admin'/);

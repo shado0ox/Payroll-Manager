@@ -1,7 +1,20 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
-import { serverSource as source } from './test-server-source.mjs';
+const stateRoutes = fs.readFileSync(new URL('./routes/state-routes.mjs', import.meta.url), 'utf8')
+  .replace(/router\.(get|put)\('\//g,(_match,method) => `app.${method}('/api/`);
+const qoyodRoutes = fs.readFileSync(new URL('./routes/journal-qoyod-routes.mjs', import.meta.url), 'utf8')
+  .replace(/router\.(get|post|put|delete)\('\//g,(_match,method) => `app.${method}('/api/`);
+const source = [
+  fs.readFileSync(new URL('./state-access.mjs', import.meta.url), 'utf8'),
+  fs.readFileSync(new URL('./database-migrator.mjs', import.meta.url), 'utf8'),
+  fs.readFileSync(new URL('./normalized-state-store.mjs', import.meta.url), 'utf8'),
+  fs.readFileSync(new URL('./routes/user-routes.mjs', import.meta.url), 'utf8'),
+  stateRoutes,
+  qoyodRoutes,
+  'async function bumpStateVersion',
+  'app.use(express.static',
+].join('\n');
 
 
 function routeBlock(method, route, nextRouteMarker) {
@@ -14,7 +27,8 @@ function routeBlock(method, route, nextRouteMarker) {
 }
 
 test('runtime state writers are tenant scoped', () => {
-  assert.match(source, /createTenantScopedClient, scopeStateForCompanies/);
+  assert.match(source, /createTenantScopedClient/);
+  assert.match(source, /scopeStateForCompanies/);
 
   const putBlock = routeBlock('put', '/api/state', 'async function bumpStateVersion');
 
@@ -34,7 +48,7 @@ test('the generic state patch surface is removed and audit history stays server 
 test('state writes append server-owned audit events inside the transaction', () => {
   assert.match(source, /appendStateAudit/);
   const putBlock = routeBlock('put', '/api/state', 'async function bumpStateVersion');
-  assert.match(putBlock, /appendStateAudit\(client, q, \{ companyIds:req\.user\.company_ids, user:req\.user, action:'STATE_REPLACE', version:r\.rows\[0\]\.version \}\);\s*await client\.query\('COMMIT'\)/);
+  assert.match(putBlock, /appendStateAudit\(client, q, \{\s*companyIds:req\.user\.company_ids,\s*user:req\.user,\s*action:'STATE_REPLACE',\s*version:r\.rows\[0\]\.version\s*\}\);\s*await client\.query\('COMMIT'\)/);
 });
 
 test('state user listing is limited to users in assigned companies', () => {

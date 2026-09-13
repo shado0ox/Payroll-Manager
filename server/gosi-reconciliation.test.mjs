@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import test from 'node:test';
 import {createGosiRouter} from './routes/gosi-routes.mjs';
 
-const server=fs.readFileSync(new URL('./index.mjs',import.meta.url),'utf8');
+const server=fs.readFileSync(new URL('./database-migrator.mjs',import.meta.url),'utf8');
 const routes=fs.readFileSync(new URL('./routes/gosi-routes.mjs',import.meta.url),'utf8');
 const parser=fs.readFileSync(new URL('../src/utils/gosiInvoiceImport.ts',import.meta.url),'utf8');
 const view=fs.readFileSync(new URL('../src/components/GosiReconciliationView.tsx',import.meta.url),'utf8');

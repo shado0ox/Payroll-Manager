@@ -4,7 +4,7 @@ import fs from 'node:fs';
 
 const payroll = fs.readFileSync('src/components/PayrollRunsView.tsx', 'utf8');
 const app = fs.readFileSync('src/App.tsx', 'utf8');
-const server = fs.readFileSync('server/index.mjs', 'utf8');
+const server = fs.readFileSync('server/payroll-workflow-guards.mjs', 'utf8');
 const sidebar = fs.readFileSync('src/components/Sidebar.tsx', 'utf8');
 const types = fs.readFileSync('src/types/index.ts', 'utf8');
 const paymentCoverage = fs.readFileSync('src/utils/payrollPaymentCoverage.ts', 'utf8');

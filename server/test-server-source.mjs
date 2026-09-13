@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 
 const read = path => fs.readFileSync(new URL(path,import.meta.url),'utf8');
+export const readServerModule = path => read(path);
 const asMountedApiRoutes = source => source.replace(
   /router\.(get|post|put|patch|delete)\('\//g,
   (_match,method) => `app.${method}('/api/`,
@@ -8,6 +9,14 @@ const asMountedApiRoutes = source => source.replace(
 
 export const serverSource = [
   read('./index.mjs'),
+  read('./access-control.mjs'),
+  read('./database-migrator.mjs'),
+  read('./normalized-state-store.mjs'),
+  read('./payroll-workflow-guards.mjs'),
+  read('./state-access.mjs'),
+  read('./state-runtime.mjs'),
+  asMountedApiRoutes(read('./routes/state-routes.mjs')),
+  asMountedApiRoutes(read('./routes/company-routes.mjs')),
   // Preserve the old monolith's logical route ordering for source-level
   // security assertions while the runtime uses isolated Express routers.
   asMountedApiRoutes(read('./routes/journal-qoyod-routes.mjs')),
@@ -17,6 +26,6 @@ export const serverSource = [
   // Settlement tests use the first journal route as the following boundary.
   asMountedApiRoutes(read('./routes/journal-qoyod-routes.mjs')),
   asMountedApiRoutes(read('./routes/employee-routes.mjs')),
-  "app.put('/api/users/:id'",
+  asMountedApiRoutes(read('./routes/user-routes.mjs')),
   "app.use(express.static",
 ].join('\n');
