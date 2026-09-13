@@ -1,6 +1,3 @@
-Warning: truncated output (original token count: 34560)
-Total output lines: 2111
-
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -878,7 +875,230 @@ async function migrate() {
     attempts integer NOT NULL DEFAULT 0 CHECK (attempts >= 0 AND attempts <= 10),
     expires_at timestamptz NOT NULL, created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now()
   )`);
-…4560 tokens truncated…etected_month text,source_file_name text NOT NULL,
+  await pool.query(`DELETE FROM ${q('registration_requests')} WHERE expires_at < now()-interval '1 day'`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS ${q('password_reset_tokens')} (
+    id text PRIMARY KEY, user_id text NOT NULL REFERENCES ${q('users')}(id) ON DELETE CASCADE,
+    token_hash text NOT NULL UNIQUE, expires_at timestamptz NOT NULL, used_at timestamptz, created_at timestamptz NOT NULL DEFAULT now()
+  )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS password_reset_tokens_user_idx ON ${q('password_reset_tokens')}(user_id,expires_at)`);
+  const duplicateUserEmails = await pool.query(`SELECT lower(email) AS email_key,count(*)::integer AS duplicate_count
+    FROM ${q('users')} WHERE email IS NOT NULL AND btrim(email) <> ''
+    GROUP BY lower(email) HAVING count(*) > 1 LIMIT 1`);
+  if (!duplicateUserEmails.rowCount) {
+    await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS users_email_ci_unique ON ${q('users')} (lower(email)) WHERE email IS NOT NULL AND btrim(email) <> ''`);
+  } else {
+    console.warn('Skipping users_email_ci_unique because duplicate user emails already exist; resolve duplicates before enforcing the index.');
+  }
+
+  await pool.query(`CREATE TABLE IF NOT EXISTS ${q('sessions')} (
+    token_hash text PRIMARY KEY, user_id text NOT NULL REFERENCES ${q('users')}(id) ON DELETE CASCADE,
+    expires_at timestamptz NOT NULL, created_at timestamptz NOT NULL DEFAULT now()
+  )`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS ${q('hr_lifecycle_alert_deliveries')} (
+    event_key text PRIMARY KEY, company_id text NOT NULL, employee_id text NOT NULL, alert_type text NOT NULL,
+    due_date date, recipients jsonb NOT NULL DEFAULT '[]', sent_at timestamptz NOT NULL DEFAULT now()
+  )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS hr_lifecycle_alert_deliveries_company_idx
+    ON ${q('hr_lifecycle_alert_deliveries')}(company_id,sent_at DESC)`);
+
+  await pool.query(`CREATE TABLE IF NOT EXISTS ${q('app_state')} (
+    id smallint PRIMARY KEY DEFAULT 1 CHECK (id = 1), state jsonb NOT NULL DEFAULT '{}',
+    version bigint NOT NULL DEFAULT 1, updated_by text, updated_at timestamptz NOT NULL DEFAULT now()
+  )`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS ${q('app_state_migration_backups')} (
+    id bigserial PRIMARY KEY, source_version bigint NOT NULL UNIQUE, state jsonb NOT NULL,
+    reason text NOT NULL, created_at timestamptz NOT NULL DEFAULT now()
+  )`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS ${q('app_state_restore_snapshots')} (
+    id bigserial PRIMARY KEY, source_version bigint NOT NULL, state jsonb NOT NULL,
+    created_by text, reason text NOT NULL, created_at timestamptz NOT NULL DEFAULT now()
+  )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS app_state_restore_snapshots_created_idx
+    ON ${q('app_state_restore_snapshots')}(created_at DESC)`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS ${q('schema_migrations')} (
+    version text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now()
+  )`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS ${q('employees')} (
+    id text PRIMARY KEY, company_id text NOT NULL REFERENCES ${q('companies')}(id) ON DELETE RESTRICT,
+    employee_no text NOT NULL, national_id_or_iqama text NOT NULL DEFAULT '', status text NOT NULL,
+    first_name_ar text NOT NULL DEFAULT '', last_name_ar text NOT NULL DEFAULT '', first_name_en text NOT NULL DEFAULT '', last_name_en text NOT NULL DEFAULT '',
+    department text NOT NULL DEFAULT '', job_title text NOT NULL DEFAULT '', hire_date date, salary_start_date date, termination_date date,
+    suspension_start_date date, suspension_end_date date, base_salary numeric(14,2) NOT NULL DEFAULT 0,
+    housing_allowance numeric(14,2) NOT NULL DEFAULT 0, transport_allowance numeric(14,2) NOT NULL DEFAULT 0,
+    other_fixed_allowances numeric(14,2) NOT NULL DEFAULT 0, bank_iban text NOT NULL DEFAULT '', payload jsonb NOT NULL,
+    sort_order integer NOT NULL DEFAULT 0, is_archived boolean NOT NULL DEFAULT false,
+    created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
+    CHECK (status IN ('ONBOARDING','ACTIVE','SUSPENDED','ON_LEAVE','TERMINATED','ABSCONDED'))
+  )`);
+  await pool.query(`ALTER TABLE ${q('employees')} ADD COLUMN IF NOT EXISTS is_archived boolean NOT NULL DEFAULT false`);
+  await pool.query(`ALTER TABLE ${q('employees')} DROP CONSTRAINT IF EXISTS employees_status_check`);
+  await pool.query(`ALTER TABLE ${q('employees')} ADD CONSTRAINT employees_status_check CHECK (status IN ('ONBOARDING','ACTIVE','SUSPENDED','ON_LEAVE','TERMINATED','ABSCONDED'))`);
+
+  // LEGACY_EMPLOYEE_IDENTITY_COMPAT: records created before the lifecycle wizard already
+  // have a valid national ID/iqama. Never reinterpret them as new arrivals solely because
+  // lifecycle fields did not exist at the time. No expiry date is invented.
+  await pool.query(`UPDATE ${q('employees')}
+    SET payload = jsonb_set(
+      jsonb_set(
+        jsonb_set(payload, '{iqamaNumber}', to_jsonb(national_id_or_iqama), true),
+        '{iqamaIssueStatus}', '"ISSUED"'::jsonb, true
+      ),
+      '{onboardingStatus}', to_jsonb(CASE WHEN COALESCE(bank_iban,'') <> '' THEN 'COMPLETE' ELSE 'WAITING_BANK' END::text), true
+    ), updated_at=now()
+    WHERE is_archived=false
+      AND payload->>'nationality'='NON_SAUDI'
+      AND COALESCE(national_id_or_iqama,'') <> ''
+      AND COALESCE(payload->>'iqamaNumber','')=''
+      AND COALESCE(payload->>'entryNumber','')=''`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS ${q('payroll_runs')} (
+    id text PRIMARY KEY, company_id text NOT NULL REFERENCES ${q('companies')}(id) ON DELETE RESTRICT,
+    period_month text NOT NULL CHECK (period_month ~ '^[0-9]{4}-(0[1-9]|1[0-2])$'), status text NOT NULL,
+    employees_count integer NOT NULL DEFAULT 0, total_gross_salaries numeric(16,2) NOT NULL DEFAULT 0,
+    total_deductions numeric(16,2) NOT NULL DEFAULT 0, total_net_salaries numeric(16,2) NOT NULL DEFAULT 0,
+    total_company_cost numeric(16,2) NOT NULL DEFAULT 0, created_at timestamptz, calculated_at timestamptz,
+    approved_at timestamptz, posted_at timestamptz, payload jsonb NOT NULL, sort_order integer NOT NULL DEFAULT 0,
+    updated_at timestamptz NOT NULL DEFAULT now(), UNIQUE (company_id,period_month),
+    CHECK (status IN ('DRAFT','UNDER_REVIEW','APPROVED','POSTED'))
+  )`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS ${q('payroll_run_items')} (
+    payroll_run_id text NOT NULL REFERENCES ${q('payroll_runs')}(id) ON DELETE CASCADE, id text NOT NULL,
+    employee_id text NOT NULL, employee_no text NOT NULL DEFAULT '', employee_name text NOT NULL DEFAULT '',
+    entitlement_status text NOT NULL DEFAULT 'PAYABLE', entitlement_reason text,
+    base_salary numeric(14,2) NOT NULL DEFAULT 0, total_gross_salary numeric(14,2) NOT NULL DEFAULT 0,
+    total_deductions numeric(14,2) NOT NULL DEFAULT 0, net_salary numeric(14,2) NOT NULL DEFAULT 0,
+    payload jsonb NOT NULL, sort_order integer NOT NULL DEFAULT 0, updated_at timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (payroll_run_id,id), UNIQUE (payroll_run_id,employee_id),
+    CHECK (entitlement_status IN ('PAYABLE','HELD','UNDER_SETTLEMENT','SETTLED','CANCELLED_WITH_DOCUMENT'))
+  )`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS ${q('payroll_payment_batches')} (
+    id text PRIMARY KEY, payroll_run_id text NOT NULL REFERENCES ${q('payroll_runs')}(id) ON DELETE CASCADE,
+    company_id text NOT NULL REFERENCES ${q('companies')}(id) ON DELETE RESTRICT, batch_number text NOT NULL,
+    status text NOT NULL, method text NOT NULL, total_amount numeric(14,2) NOT NULL DEFAULT 0,
+    scheduled_date date, payment_date date, payload jsonb NOT NULL, sort_order integer NOT NULL DEFAULT 0,
+    updated_at timestamptz NOT NULL DEFAULT now(), UNIQUE (company_id,batch_number),
+    CHECK (status IN ('SCHEDULED','PAID','FAILED','CANCELLED')),
+    CHECK (method IN ('WPS','BANK_TRANSFER','CASH'))
+  )`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS ${q('payroll_payment_batch_items')} (
+    payment_batch_id text NOT NULL REFERENCES ${q('payroll_payment_batches')}(id) ON DELETE CASCADE,
+    employee_id text NOT NULL, sort_order integer NOT NULL DEFAULT 0, PRIMARY KEY (payment_batch_id,employee_id)
+  )`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS ${q('payroll_settlements')} (
+    id text PRIMARY KEY, company_id text NOT NULL REFERENCES ${q('companies')}(id) ON DELETE RESTRICT,
+    employee_id text NOT NULL REFERENCES ${q('employees')}(id) ON DELETE RESTRICT,
+    period_month text NOT NULL, period_start date NOT NULL, period_end date NOT NULL, amount numeric(14,2) NOT NULL CHECK (amount > 0),
+    reason text NOT NULL, source_payroll_run_id text, source_payroll_item_id text, dedupe_key text NOT NULL,
+    status text NOT NULL, payment_method text, payment_date date, payment_reference text, created_at timestamptz NOT NULL,
+    paid_at timestamptz, reversed_at timestamptz, reversal_reason text, payload jsonb NOT NULL,
+    sort_order integer NOT NULL DEFAULT 0, updated_at timestamptz NOT NULL DEFAULT now(),
+    CHECK (period_month ~ '^[0-9]{4}-(0[1-9]|1[0-2])$'), CHECK (period_end >= period_start),
+    CHECK (reason IN ('HELD_PAYROLL','RETROACTIVE_EMPLOYEE','PAYROLL_DIFFERENCE')),
+    CHECK (status IN ('PENDING','PAID','REVERSED')),
+    CHECK (payment_method IS NULL OR payment_method IN ('WPS','BANK_TRANSFER','CASH'))
+  )`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS ${q('attendance_records')} (
+    id text PRIMARY KEY, company_id text NOT NULL REFERENCES ${q('companies')}(id) ON DELETE RESTRICT,
+    employee_id text NOT NULL REFERENCES ${q('employees')}(id) ON DELETE CASCADE,
+    period_month text NOT NULL CHECK (period_month ~ '^[0-9]{4}-(0[1-9]|1[0-2])$'), record_date date NOT NULL,
+    end_date date, days_count integer NOT NULL DEFAULT 1 CHECK (days_count >= 0), delay_minutes integer NOT NULL DEFAULT 0 CHECK (delay_minutes >= 0),
+    absence boolean NOT NULL DEFAULT false, unpaid_leave boolean NOT NULL DEFAULT false,
+    overtime_hours numeric(10,2) NOT NULL DEFAULT 0 CHECK (overtime_hours >= 0), overtime_type text NOT NULL,
+    notes text, payload jsonb NOT NULL, sort_order integer NOT NULL DEFAULT 0, updated_at timestamptz NOT NULL DEFAULT now(),
+    CHECK (overtime_type IN ('STANDARD','WEEKEND'))
+  )`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS ${q('leave_requests')} (
+    id text PRIMARY KEY, company_id text NOT NULL REFERENCES ${q('companies')}(id) ON DELETE RESTRICT,
+    employee_id text NOT NULL REFERENCES ${q('employees')}(id) ON DELETE CASCADE,
+    leave_type text NOT NULL, start_date date NOT NULL, end_date date NOT NULL, days_count integer NOT NULL CHECK (days_count >= 0),
+    status text NOT NULL, is_paid boolean NOT NULL DEFAULT false, reason text, payload jsonb NOT NULL,
+    sort_order integer NOT NULL DEFAULT 0, updated_at timestamptz NOT NULL DEFAULT now(),
+    CHECK (leave_type IN ('ANNUAL','SICK','UNPAID','EMERGENCY','MATERNITY')),
+    CHECK (status IN ('PENDING','APPROVED','REJECTED')), CHECK (end_date >= start_date)
+  )`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS ${q('loans')} (
+    id text PRIMARY KEY, company_id text NOT NULL REFERENCES ${q('companies')}(id) ON DELETE RESTRICT,
+    employee_id text NOT NULL REFERENCES ${q('employees')}(id) ON DELETE RESTRICT,
+    total_amount numeric(14,2) NOT NULL CHECK (total_amount >= 0), monthly_installment numeric(14,2) NOT NULL CHECK (monthly_installment >= 0),
+    total_installments integer NOT NULL CHECK (total_installments >= 0), remaining_installments integer NOT NULL CHECK (remaining_installments >= 0),
+    remaining_amount numeric(14,2) NOT NULL CHECK (remaining_amount >= 0), start_month text NOT NULL,
+    status text NOT NULL, reason text NOT NULL DEFAULT '', payload jsonb NOT NULL, sort_order integer NOT NULL DEFAULT 0,
+    updated_at timestamptz NOT NULL DEFAULT now(), CHECK (start_month ~ '^[0-9]{4}-(0[1-9]|1[0-2])$'),
+    CHECK (status IN ('ACTIVE','COMPLETED','PAUSED'))
+  )`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS ${q('penalties')} (
+    id text PRIMARY KEY, company_id text NOT NULL REFERENCES ${q('companies')}(id) ON DELETE RESTRICT,
+    employee_id text NOT NULL REFERENCES ${q('employees')}(id) ON DELETE RESTRICT,
+    period_month text NOT NULL, record_date date NOT NULL, reason text NOT NULL DEFAULT '', amount numeric(14,2) NOT NULL CHECK (amount >= 0),
+    applied_in_payroll boolean NOT NULL DEFAULT false, payload jsonb NOT NULL, sort_order integer NOT NULL DEFAULT 0,
+    updated_at timestamptz NOT NULL DEFAULT now(), CHECK (period_month ~ '^[0-9]{4}-(0[1-9]|1[0-2])$')
+  )`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS ${q('temporary_earnings')} (
+    id text PRIMARY KEY, company_id text NOT NULL REFERENCES ${q('companies')}(id) ON DELETE RESTRICT,
+    employee_id text NOT NULL REFERENCES ${q('employees')}(id) ON DELETE RESTRICT,
+    period_month text NOT NULL, record_date date NOT NULL, earning_type text NOT NULL,
+    amount numeric(14,2) NOT NULL CHECK (amount >= 0), reason text NOT NULL DEFAULT '', applied_in_payroll boolean NOT NULL DEFAULT false,
+    payload jsonb NOT NULL, sort_order integer NOT NULL DEFAULT 0, updated_at timestamptz NOT NULL DEFAULT now(),
+    CHECK (period_month ~ '^[0-9]{4}-(0[1-9]|1[0-2])$'), CHECK (earning_type IN ('COMMISSION','BONUS','INCENTIVE','OTHER'))
+  )`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS ${q('company_departments')} (
+    company_id text NOT NULL REFERENCES ${q('companies')}(id) ON DELETE CASCADE, id text NOT NULL, code text NOT NULL DEFAULT '',
+    name_ar text NOT NULL DEFAULT '', name_en text NOT NULL DEFAULT '', payload jsonb NOT NULL, sort_order integer NOT NULL DEFAULT 0,
+    PRIMARY KEY (company_id,id)
+  )`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS ${q('cost_centers')} (
+    company_id text NOT NULL REFERENCES ${q('companies')}(id) ON DELETE CASCADE, id text NOT NULL, code text NOT NULL DEFAULT '',
+    name_ar text NOT NULL DEFAULT '', name_en text NOT NULL DEFAULT '', payload jsonb NOT NULL, sort_order integer NOT NULL DEFAULT 0,
+    PRIMARY KEY (company_id,id)
+  )`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS ${q('company_bank_definitions')} (
+    company_id text NOT NULL REFERENCES ${q('companies')}(id) ON DELETE CASCADE, iban_bank_code text NOT NULL,
+    name_ar text NOT NULL DEFAULT '', name_en text NOT NULL DEFAULT '', swift_code text NOT NULL DEFAULT '', is_active boolean NOT NULL DEFAULT true,
+    payload jsonb NOT NULL, sort_order integer NOT NULL DEFAULT 0, PRIMARY KEY (company_id,iban_bank_code)
+  )`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS ${q('journal_batches')} (
+    id text PRIMARY KEY, company_id text NOT NULL REFERENCES ${q('companies')}(id) ON DELETE RESTRICT,
+    payroll_run_id text NOT NULL, period_month text NOT NULL, batch_number text NOT NULL, journal_date date NOT NULL,
+    description text NOT NULL DEFAULT '', status text NOT NULL, total_debit numeric(16,2) NOT NULL DEFAULT 0,
+    total_credit numeric(16,2) NOT NULL DEFAULT 0, payload jsonb NOT NULL, sort_order integer NOT NULL DEFAULT 0,
+    updated_at timestamptz NOT NULL DEFAULT now(), UNIQUE (company_id,batch_number),
+    CHECK (period_month ~ '^[0-9]{4}-(0[1-9]|1[0-2])$'), CHECK (status IN ('DRAFT','EXPORTED_TO_QOYOD','POSTED')),
+    CHECK (abs(total_debit-total_credit) < 0.01)
+  )`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS ${q('journal_lines')} (
+    journal_batch_id text NOT NULL REFERENCES ${q('journal_batches')}(id) ON DELETE CASCADE, id text NOT NULL,
+    account_code text NOT NULL, account_name_ar text NOT NULL DEFAULT '', description_ar text NOT NULL DEFAULT '',
+    debit numeric(16,2) NOT NULL DEFAULT 0 CHECK (debit >= 0), credit numeric(16,2) NOT NULL DEFAULT 0 CHECK (credit >= 0),
+    cost_center_code text, payload jsonb NOT NULL, sort_order integer NOT NULL DEFAULT 0,
+    PRIMARY KEY (journal_batch_id,id), CHECK (NOT (debit > 0 AND credit > 0))
+  )`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS ${q('application_audit_logs')} (
+    id text PRIMARY KEY, company_id text, user_id text, user_name text NOT NULL DEFAULT '', user_role text NOT NULL,
+    action text NOT NULL DEFAULT '', entity_type text, entity_id text NOT NULL DEFAULT '', occurred_at timestamptz NOT NULL,
+    details text, payload jsonb NOT NULL, sort_order integer NOT NULL DEFAULT 0
+  )`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS ${q('integration_configs')} (
+    provider text PRIMARY KEY, public_config jsonb NOT NULL DEFAULT '{}'::jsonb, secret_value text NOT NULL DEFAULT '',
+    updated_at timestamptz NOT NULL DEFAULT now(), CHECK (provider IN ('QOYOD'))
+  )`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS ${q('gosi_accounts')} (
+    id text PRIMARY KEY, company_id text NOT NULL REFERENCES ${q('companies')}(id) ON DELETE RESTRICT,
+    registration_number text NOT NULL, name text NOT NULL, branch_name text NOT NULL DEFAULT '',
+    is_default boolean NOT NULL DEFAULT false, is_active boolean NOT NULL DEFAULT true,
+    created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
+    UNIQUE(company_id,registration_number)
+  )`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS gosi_accounts_one_default_idx ON ${q('gosi_accounts')}(company_id) WHERE is_default=true AND is_active=true`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS ${q('gosi_employee_assignments')} (
+    id text PRIMARY KEY, employee_id text NOT NULL REFERENCES ${q('employees')}(id) ON DELETE CASCADE,
+    account_id text NOT NULL REFERENCES ${q('gosi_accounts')}(id) ON DELETE RESTRICT,
+    effective_from date NOT NULL, effective_to date, created_at timestamptz NOT NULL DEFAULT now(),updated_at timestamptz NOT NULL DEFAULT now(),
+    CHECK(effective_to IS NULL OR effective_to>=effective_from)
+  )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS gosi_assignments_employee_dates_idx ON ${q('gosi_employee_assignments')}(employee_id,effective_from,effective_to)`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS ${q('gosi_invoices')} (
+    id text PRIMARY KEY,company_id text NOT NULL REFERENCES ${q('companies')}(id) ON DELETE RESTRICT,
+    account_id text NOT NULL REFERENCES ${q('gosi_accounts')}(id) ON DELETE RESTRICT,
+    invoice_month text NOT NULL,payroll_month text NOT NULL,detected_month text,source_file_name text NOT NULL,
     items_count integer NOT NULL,total_subject_wage numeric(16,2) NOT NULL,total_employer_share numeric(16,2) NOT NULL,
     total_employee_share numeric(16,2) NOT NULL,total_amount numeric(16,2) NOT NULL,created_by text NOT NULL,
     created_at timestamptz NOT NULL DEFAULT now(),CHECK(invoice_month ~ '^[0-9]{4}-(0[1-9]|1[0-2])$'),CHECK(payroll_month ~ '^[0-9]{4}-(0[1-9]|1[0-2])$')
