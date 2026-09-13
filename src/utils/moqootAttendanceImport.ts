@@ -7,6 +7,14 @@ export interface DailySchedule {
   end: string;
 }
 
+export type DayOverrideMode = 'DEFAULT' | 'WORKDAY' | 'OFF' | 'LEAVE' | 'HOLIDAY' | 'MISSION' | 'IGNORE';
+export interface DayScheduleOverride {
+  date: string;
+  mode: DayOverrideMode;
+  start?: string;
+  end?: string;
+}
+
 export interface MoqootImportOptions {
   companyId: string;
   employeeId: string;
@@ -16,6 +24,7 @@ export interface MoqootImportOptions {
   periodMonth: string;
   graceMinutes: number;
   schedule: DailySchedule[];
+  dayOverrides?: DayScheduleOverride[];
   sourceFileName: string;
   leaves: LeaveRequest[];
 }
@@ -86,9 +95,23 @@ export function parseMoqootAttendance(text: string, options: MoqootImportOptions
     byDate.set(date, current);
   }
 
+  const [year, month] = options.periodMonth.split('-').map(Number);
+  const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  for (let day = 1; day <= daysInMonth; day += 1) {
+    const date = `${options.periodMonth}-${String(day).padStart(2, '0')}`;
+    if (!byDate.has(date)) byDate.set(date, { ins: [], outs: [], absent: false });
+  }
+
   return [...byDate.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([date, day]) => {
     const weekday = new Date(`${date}T12:00:00Z`).getUTCDay();
-    const schedule = options.schedule.find(item => item.weekday === weekday) || { weekday, enabled: false, start: '09:00', end: '17:00' };
+    const weekly = options.schedule.find(item => item.weekday === weekday) || { weekday, enabled: false, start: '09:00', end: '17:00' };
+    const override = options.dayOverrides?.find(item => item.date === date && item.mode !== 'DEFAULT');
+    const schedule = {
+      ...weekly,
+      enabled: override?.mode === 'WORKDAY' ? true : override ? false : weekly.enabled,
+      start: override?.start || weekly.start,
+      end: override?.end || weekly.end,
+    };
     const scheduledStart = parseTime(schedule.start) ?? 0;
     const firstIn = day.ins.length ? Math.min(...day.ins) : null;
     const lastOut = day.outs.length ? Math.max(...day.outs) : null;
@@ -96,7 +119,11 @@ export function parseMoqootAttendance(text: string, options: MoqootImportOptions
     let status: AttendanceRecord['attendanceStatus'] = 'PRESENT';
     let note = '';
     let calculatedDelayMinutes = 0;
-    if (!schedule.enabled) status = 'OFF';
+    if (override?.mode === 'IGNORE' || date > new Date().toISOString().slice(0, 10)) status = 'IGNORED';
+    else if (override?.mode === 'HOLIDAY') status = 'HOLIDAY';
+    else if (override?.mode === 'MISSION') status = 'MISSION';
+    else if (override?.mode === 'LEAVE') status = 'LEAVE';
+    else if (!schedule.enabled) status = 'OFF';
     else if (approvedLeave) status = 'LEAVE';
     else if (firstIn === null && lastOut === null) status = 'ABSENT';
     else if (firstIn === null) status = 'MISSING_IN';

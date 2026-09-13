@@ -247,7 +247,7 @@ export interface AttendanceRecord {
   graceMinutes?: number;
   calculatedDelayMinutes?: number;
   workday?: boolean;
-  attendanceStatus?: 'PRESENT' | 'LATE' | 'ABSENT' | 'LEAVE' | 'OFF' | 'MISSING_IN' | 'MISSING_OUT' | 'REVIEW';
+  attendanceStatus?: 'PRESENT' | 'LATE' | 'ABSENT' | 'LEAVE' | 'OFF' | 'HOLIDAY' | 'MISSION' | 'IGNORED' | 'MISSING_IN' | 'MISSING_OUT' | 'REVIEW';
   payrollApproved?: boolean;
 }
 
