@@ -30,6 +30,10 @@ test('GOSI accounts live in company profile and departments provide the default 
   assert.match(companyGosi,/ربط الأقسام بفروع التأمينات/);
   assert.match(companyGosi,/saveGosiDepartmentAssignment/);
   assert.match(companyGosi,/deleteGosiDepartmentAssignment/);
+  assert.match(companyGosi,/clearGosiEmployeeOverrides/);
+  assert.match(companyGosi,/مسح استثناءات الموظفين/);
+  assert.match(routes,/CLEAR_GOSI_EMPLOYEE_OVERRIDES/);
+  assert.match(routes,/GOSI_OVERRIDE_CLEAR_CONFIRMATION_REQUIRED/);
   assert.match(companyGosi,/حفظ التعديل/);
   assert.match(companyGosi,/old\.effectiveFrom===effectiveFrom/);
   assert.match(companyGosi,/يوجد ربط آخر للقسم خلال الشهر المحدد/);

@@ -135,6 +135,7 @@ export const api = {
   listGosiAssignments:(companyId:string)=>request<{records:GosiAssignment[]}>(`/api/gosi/assignments?companyId=${encodeURIComponent(companyId)}`),
   saveGosiAssignment:(record:GosiAssignment&{companyId:string})=>request<{record:GosiAssignment;version:number}>(`/api/gosi/assignments/${encodeURIComponent(record.id)}`,{method:'PUT',body:JSON.stringify(record)}),
   deleteGosiAssignment:(companyId:string,id:string)=>request<{deleted:boolean;version:number}>(`/api/gosi/assignments/${encodeURIComponent(id)}?companyId=${encodeURIComponent(companyId)}`,{method:'DELETE'}),
+  clearGosiEmployeeOverrides:(companyId:string)=>request<{deletedCount:number;version:number}>(`/api/gosi/assignments?companyId=${encodeURIComponent(companyId)}&confirmation=CLEAR_ALL_EMPLOYEE_OVERRIDES`,{method:'DELETE'}),
   listGosiDepartmentAssignments:(companyId:string)=>request<{records:GosiDepartmentAssignment[]}>(`/api/gosi/department-assignments?companyId=${encodeURIComponent(companyId)}`),
   saveGosiDepartmentAssignment:(record:GosiDepartmentAssignment&{companyId:string})=>request<{record:GosiDepartmentAssignment;version:number}>(`/api/gosi/department-assignments/${encodeURIComponent(record.id)}`,{method:'PUT',body:JSON.stringify(record)}),
   deleteGosiDepartmentAssignment:(companyId:string,id:string,effectiveMonth:string)=>request<{ended:boolean;version:number}>(`/api/gosi/department-assignments/${encodeURIComponent(id)}?companyId=${encodeURIComponent(companyId)}&effectiveMonth=${encodeURIComponent(effectiveMonth)}`,{method:'DELETE'}),
