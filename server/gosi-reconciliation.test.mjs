@@ -27,6 +27,8 @@ test('GOSI accounts live in company profile and departments provide the default 
   assert.match(companyGosi,/saveGosiDepartmentAssignment/);
   assert.match(companyGosi,/deleteGosiDepartmentAssignment/);
   assert.match(companyGosi,/حفظ التعديل/);
+  assert.match(companyGosi,/old\.effectiveFrom===effectiveFrom/);
+  assert.match(companyGosi,/يوجد ربط آخر للقسم خلال الشهر المحدد/);
   assert.match(routes,/END_GOSI_DEPARTMENT_ASSIGNMENT/);
   assert.match(routes,/effective_to=\$2::date-1/);
   assert.match(view,/استخدام ربط القسم/);
