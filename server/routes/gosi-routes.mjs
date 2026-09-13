@@ -152,6 +152,21 @@ export function createGosiRouter({ auth,writeLimiter,pool,q,can,workflowError,bu
     }catch(e){try{await client.query('ROLLBACK');}catch{}next(e);}finally{client.release();}
   });
 
+  router.delete('/gosi/department-assignments/:id',auth,writeLimiter,async(req,res,next)=>{
+    const client=await pool.connect();
+    try { const companyId=text(req.query.companyId,100),effectiveMonth=text(req.query.effectiveMonth,7);requireAccess(req,companyId);
+      if(!validMonth(effectiveMonth)) throw workflowError(400,'INVALID_GOSI_EFFECTIVE_MONTH');await client.query('BEGIN');
+      const current=await client.query(`SELECT effective_from FROM ${q('gosi_department_assignments')} WHERE id=$1 AND company_id=$2 FOR UPDATE`,[req.params.id,companyId]);
+      if(!current.rowCount) throw workflowError(404,'GOSI_DEPARTMENT_ASSIGNMENT_NOT_FOUND');
+      const effectiveFrom=String(current.rows[0].effective_from).slice(0,10),start=monthStart(effectiveMonth);
+      if(effectiveFrom<start) await client.query(`UPDATE ${q('gosi_department_assignments')} SET effective_to=$2::date-1,updated_at=now() WHERE id=$1`,[req.params.id,start]);
+      else await client.query(`DELETE FROM ${q('gosi_department_assignments')} WHERE id=$1`,[req.params.id]);
+      const updated=await finishWrite(client,req,companyId,'END_GOSI_DEPARTMENT_ASSIGNMENT');await client.query('COMMIT');
+      broadcastStateUpdate({version:updated.version,updatedBy:req.user.id,updatedAt:updated.updated_at,companyIds:[companyId],changes:[]});
+      res.json({ended:true,version:Number(updated.version),updated_at:updated.updated_at});
+    }catch(e){try{await client.query('ROLLBACK');}catch{}next(e);}finally{client.release();}
+  });
+
   router.post('/gosi/invoices',auth,writeLimiter,async (req,res,next) => {
     const client=await pool.connect();
     try {
