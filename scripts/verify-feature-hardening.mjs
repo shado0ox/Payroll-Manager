@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 
 const requirements = {
-  'server/index.mjs': [
+  'server/database-migrator.mjs': [
     'LEGACY_EMPLOYEE_IDENTITY_COMPAT',
     'attendance_company_period_idx',
     'penalties_company_period_idx',
