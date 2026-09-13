@@ -138,6 +138,7 @@ export const api = {
   listGosiDepartmentAssignments:(companyId:string)=>request<{records:GosiDepartmentAssignment[]}>(`/api/gosi/department-assignments?companyId=${encodeURIComponent(companyId)}`),
   saveGosiDepartmentAssignment:(record:GosiDepartmentAssignment&{companyId:string})=>request<{record:GosiDepartmentAssignment;version:number}>(`/api/gosi/department-assignments/${encodeURIComponent(record.id)}`,{method:'PUT',body:JSON.stringify(record)}),
   listGosiInvoices:(companyId:string)=>request<{records:any[]}>(`/api/gosi/invoices?companyId=${encodeURIComponent(companyId)}`),
+  deleteGosiInvoice:(companyId:string,id:string)=>request<{deleted:boolean;version:number}>(`/api/gosi/invoices/${encodeURIComponent(id)}?companyId=${encodeURIComponent(companyId)}`,{method:'DELETE'}),
   importGosiInvoice:(record:any)=>request<{invoiceId:string;totals:any;itemsCount:number;version:number}>('/api/gosi/invoices',{method:'POST',body:JSON.stringify(record)}),
   compareGosiInvoice:(id:string,payrollMonth:string)=>request<any>(`/api/gosi/invoices/${encodeURIComponent(id)}/comparison?payrollMonth=${encodeURIComponent(payrollMonth)}`),
   publicConfig: () => request<{registrationEnabled:boolean; trialDays:number; developerContactPhone:string}>('/api/public/config'),

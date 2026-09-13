@@ -33,6 +33,9 @@ test('GOSI invoice import is tenant scoped, bounded, atomic, and audited',()=>{
   assert.match(routes,/body\.rows\.length>2500/);
   assert.match(routes,/await client\.query\('BEGIN'\)/);
   assert.match(routes,/IMPORT_GOSI_INVOICE/);
+  assert.match(routes,/DELETE FROM \$\{q\('gosi_invoices'\)\} WHERE id=\$1 AND company_id=\$2/);
+  assert.match(routes,/DELETE_GOSI_INVOICE/);
+  assert.match(view,/deleteGosiInvoice/);
   assert.match(routes,/await client\.query\('COMMIT'\)/);
   assert.match(routes,/req\.user\.company_ids\.includes\(companyId\)/);
 });
