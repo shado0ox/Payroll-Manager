@@ -44,6 +44,9 @@ test('GOSI invoice import is tenant scoped, bounded, atomic, and audited',()=>{
   assert.match(routes,/gosi_department_assignments/);
   assert.match(view,/توجد فاتورة محفوظة لهذا الحساب والشهر/);
   assert.match(view,/الخاضعون للتأمينات/);
+  assert.match(view,/معاينة إجماليات الفاتورة قبل الحفظ/);
+  assert.match(view,/previewTotals/);
+  assert.match(view,/setPreviewRows\(parsed\.rows\)/);
   assert.match(view,/تابعون للحساب المختار/);
   assert.match(view,/غير مربوطين/);
   assert.match(view,/activeDepartmentAssignments/);
