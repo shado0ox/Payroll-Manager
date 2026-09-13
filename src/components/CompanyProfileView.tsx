@@ -64,6 +64,7 @@ import { CompanyDepartmentsTab } from './company/CompanyDepartmentsTab';
 import { CompanyCostCentersTab } from './company/CompanyCostCentersTab';
 import { CompanyPayrollPoliciesTab } from './company/CompanyPayrollPoliciesTab';
 import { CompanyAccountsTab } from './company/CompanyAccountsTab';
+import { CompanyGosiAccountsTab } from './company/CompanyGosiAccountsTab';
 import { CompanyDangerZoneTab } from './company/CompanyDangerZoneTab';
 import { hasPermission } from '../utils/permissions';
 
@@ -334,6 +335,9 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
           }}
           tr={tr}
         />
+      )}
+      {activeSubTab === 'gosi_accounts' && hasPermission(currentUser, 'MANAGE_GOSI') && (
+        <CompanyGosiAccountsTab company={formData} departments={departmentsList} employees={companyEmployees} tr={tr} />
       )}
       {/* SUB-TAB 3: Company Users Management */}
       {activeSubTab === 'users' && hasPermission(currentUser, 'MANAGE_USERS') && (

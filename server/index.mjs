@@ -1095,6 +1095,13 @@ async function migrate() {
     CHECK(effective_to IS NULL OR effective_to>=effective_from)
   )`);
   await pool.query(`CREATE INDEX IF NOT EXISTS gosi_assignments_employee_dates_idx ON ${q('gosi_employee_assignments')}(employee_id,effective_from,effective_to)`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS ${q('gosi_department_assignments')} (
+    id text PRIMARY KEY,company_id text NOT NULL REFERENCES ${q('companies')}(id) ON DELETE RESTRICT,
+    department_name text NOT NULL,account_id text NOT NULL REFERENCES ${q('gosi_accounts')}(id) ON DELETE RESTRICT,
+    effective_from date NOT NULL,effective_to date,created_at timestamptz NOT NULL DEFAULT now(),updated_at timestamptz NOT NULL DEFAULT now(),
+    CHECK(effective_to IS NULL OR effective_to>=effective_from)
+  )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS gosi_department_dates_idx ON ${q('gosi_department_assignments')}(company_id,department_name,effective_from,effective_to)`);
   await pool.query(`CREATE TABLE IF NOT EXISTS ${q('gosi_invoices')} (
     id text PRIMARY KEY,company_id text NOT NULL REFERENCES ${q('companies')}(id) ON DELETE RESTRICT,
     account_id text NOT NULL REFERENCES ${q('gosi_accounts')}(id) ON DELETE RESTRICT,
