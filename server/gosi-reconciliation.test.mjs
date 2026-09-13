@@ -24,6 +24,10 @@ test('GOSI accounts live in company profile and departments provide the default 
   assert.match(companyProfile,/CompanyGosiAccountsTab/);
   assert.match(companyGosi,/ربط الأقسام بفروع التأمينات/);
   assert.match(companyGosi,/saveGosiDepartmentAssignment/);
+  assert.match(companyGosi,/deleteGosiDepartmentAssignment/);
+  assert.match(companyGosi,/حفظ التعديل/);
+  assert.match(routes,/END_GOSI_DEPARTMENT_ASSIGNMENT/);
+  assert.match(routes,/effective_to=\$2::date-1/);
   assert.match(view,/استخدام ربط القسم/);
   assert.doesNotMatch(view,/حسابات التأمينات<\/h3>/);
 });
