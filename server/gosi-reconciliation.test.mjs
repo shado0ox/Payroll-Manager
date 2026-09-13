@@ -7,6 +7,8 @@ const server=fs.readFileSync(new URL('./index.mjs',import.meta.url),'utf8');
 const routes=fs.readFileSync(new URL('./routes/gosi-routes.mjs',import.meta.url),'utf8');
 const parser=fs.readFileSync(new URL('../src/utils/gosiInvoiceImport.ts',import.meta.url),'utf8');
 const view=fs.readFileSync(new URL('../src/components/GosiReconciliationView.tsx',import.meta.url),'utf8');
+const companyGosi=fs.readFileSync(new URL('../src/components/company/CompanyGosiAccountsTab.tsx',import.meta.url),'utf8');
+const companyProfile=fs.readFileSync(new URL('../src/components/CompanyProfileView.tsx',import.meta.url),'utf8');
 
 test('GOSI storage supports multiple company registrations and effective-dated employee assignments',()=>{
   assert.match(server,/CREATE TABLE IF NOT EXISTS \$\{q\('gosi_accounts'\)\}/);
@@ -14,6 +16,16 @@ test('GOSI storage supports multiple company registrations and effective-dated e
   assert.match(server,/gosi_employee_assignments/);
   assert.match(routes,/daterange\(effective_from/);
   assert.match(routes,/effective_to=\$2::date-1/);
+  assert.match(server,/gosi_department_assignments/);
+  assert.match(routes,/GOSI_DEPARTMENT_ASSIGNMENT_OVERLAP/);
+});
+
+test('GOSI accounts live in company profile and departments provide the default assignment',()=>{
+  assert.match(companyProfile,/CompanyGosiAccountsTab/);
+  assert.match(companyGosi,/ربط الأقسام بفروع التأمينات/);
+  assert.match(companyGosi,/saveGosiDepartmentAssignment/);
+  assert.match(view,/استخدام ربط القسم/);
+  assert.doesNotMatch(view,/حسابات التأمينات<\/h3>/);
 });
 
 test('GOSI invoice import is tenant scoped, bounded, atomic, and audited',()=>{
@@ -31,6 +43,8 @@ test('GOSI comparison uses identity, selected payroll period, account assignment
   assert.match(routes,/gosiSubjectAmount/);
   assert.match(routes,/gosiEmployerShare/);
   assert.match(routes,/gosiEmployeeShare/);
+  assert.match(routes,/assignmentByDepartment/);
+  assert.match(routes,/employeeOverride\?'EMPLOYEE':'DEPARTMENT'/);
   for(const status of ['INVOICE_ONLY','PAYROLL_ONLY','UNASSIGNED_ACCOUNT','WRONG_ACCOUNT','MISSING_IN_PAYROLL','DIFFERENT']) assert.match(routes,new RegExp(status));
 });
 

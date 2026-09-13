@@ -52,6 +52,7 @@ export type PayrollRepairIssue = {
 
 export type GosiAccount={id:string;companyId:string;registrationNumber:string;name:string;branchName:string;isDefault:boolean;isActive:boolean};
 export type GosiAssignment={id:string;employeeId:string;accountId:string;effectiveFrom:string;effectiveTo:string|null};
+export type GosiDepartmentAssignment={id:string;departmentName:string;accountId:string;effectiveFrom:string;effectiveTo:string|null};
 
 class ApiError extends Error {
   constructor(message: string, public status: number) { super(message); this.name = 'ApiError'; }
@@ -133,6 +134,9 @@ export const api = {
   deleteGosiAccount:(companyId:string,id:string)=>request<{archived:boolean;version:number}>(`/api/gosi/accounts/${encodeURIComponent(id)}?companyId=${encodeURIComponent(companyId)}`,{method:'DELETE'}),
   listGosiAssignments:(companyId:string)=>request<{records:GosiAssignment[]}>(`/api/gosi/assignments?companyId=${encodeURIComponent(companyId)}`),
   saveGosiAssignment:(record:GosiAssignment&{companyId:string})=>request<{record:GosiAssignment;version:number}>(`/api/gosi/assignments/${encodeURIComponent(record.id)}`,{method:'PUT',body:JSON.stringify(record)}),
+  deleteGosiAssignment:(companyId:string,id:string)=>request<{deleted:boolean;version:number}>(`/api/gosi/assignments/${encodeURIComponent(id)}?companyId=${encodeURIComponent(companyId)}`,{method:'DELETE'}),
+  listGosiDepartmentAssignments:(companyId:string)=>request<{records:GosiDepartmentAssignment[]}>(`/api/gosi/department-assignments?companyId=${encodeURIComponent(companyId)}`),
+  saveGosiDepartmentAssignment:(record:GosiDepartmentAssignment&{companyId:string})=>request<{record:GosiDepartmentAssignment;version:number}>(`/api/gosi/department-assignments/${encodeURIComponent(record.id)}`,{method:'PUT',body:JSON.stringify(record)}),
   listGosiInvoices:(companyId:string)=>request<{records:any[]}>(`/api/gosi/invoices?companyId=${encodeURIComponent(companyId)}`),
   importGosiInvoice:(record:any)=>request<{invoiceId:string;totals:any;itemsCount:number;version:number}>('/api/gosi/invoices',{method:'POST',body:JSON.stringify(record)}),
   compareGosiInvoice:(id:string,payrollMonth:string)=>request<any>(`/api/gosi/invoices/${encodeURIComponent(id)}/comparison?payrollMonth=${encodeURIComponent(payrollMonth)}`),

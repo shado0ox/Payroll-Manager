@@ -113,6 +113,45 @@ export function createGosiRouter({ auth,writeLimiter,pool,q,can,workflowError,bu
     } catch(e) { try { await client.query('ROLLBACK'); } catch {} next(e); } finally { client.release(); }
   });
 
+  router.delete('/gosi/assignments/:id',auth,writeLimiter,async(req,res,next)=>{
+    const client=await pool.connect();
+    try{const companyId=text(req.query.companyId,100);requireAccess(req,companyId);await client.query('BEGIN');
+      const deleted=await client.query(`DELETE FROM ${q('gosi_employee_assignments')} a USING ${q('employees')} e
+        WHERE a.id=$1 AND a.employee_id=e.id AND e.company_id=$2 RETURNING a.id`,[req.params.id,companyId]);
+      if(!deleted.rowCount)throw workflowError(404,'GOSI_ASSIGNMENT_NOT_FOUND');const updated=await finishWrite(client,req,companyId,'DELETE_GOSI_EMPLOYEE_OVERRIDE');await client.query('COMMIT');
+      broadcastStateUpdate({version:updated.version,updatedBy:req.user.id,updatedAt:updated.updated_at,companyIds:[companyId],changes:[]});res.json({deleted:true,version:Number(updated.version)});
+    }catch(e){try{await client.query('ROLLBACK');}catch{}next(e);}finally{client.release();}
+  });
+
+  router.get('/gosi/department-assignments',auth,async(req,res,next)=>{
+    try { const companyId=text(req.query.companyId,100); requireAccess(req,companyId);
+      const result=await pool.query(`SELECT id,department_name,account_id,effective_from,effective_to FROM ${q('gosi_department_assignments')}
+        WHERE company_id=$1 ORDER BY effective_from DESC,id`,[companyId]);
+      res.json({records:result.rows.map(row=>({id:row.id,departmentName:row.department_name,accountId:row.account_id,effectiveFrom:String(row.effective_from).slice(0,10),effectiveTo:row.effective_to?String(row.effective_to).slice(0,10):null}))});
+    } catch(e){next(e);}
+  });
+
+  router.put('/gosi/department-assignments/:id',auth,writeLimiter,async(req,res,next)=>{
+    const client=await pool.connect();
+    try { const record=req.body||{};requireAccess(req,record.companyId);
+      if(record.id!==req.params.id||!text(record.departmentName)||!record.accountId||!validDate(record.effectiveFrom)
+        ||(record.effectiveTo&&(!validDate(record.effectiveTo)||record.effectiveTo<record.effectiveFrom))) throw workflowError(400,'INVALID_GOSI_DEPARTMENT_ASSIGNMENT');
+      await client.query('BEGIN');
+      const account=await client.query(`SELECT 1 FROM ${q('gosi_accounts')} WHERE id=$1 AND company_id=$2 AND is_active=true`,[record.accountId,record.companyId]);
+      if(!account.rowCount) throw workflowError(400,'INVALID_GOSI_ACCOUNT');
+      const overlap=await client.query(`SELECT id,effective_from,effective_to FROM ${q('gosi_department_assignments')} WHERE company_id=$1 AND department_name=$2 AND id<>$3
+        AND daterange(effective_from,COALESCE(effective_to,'infinity'::date),'[]') && daterange($4::date,COALESCE(NULLIF($5,'')::date,'infinity'::date),'[]') LIMIT 1`,[record.companyId,text(record.departmentName),record.id,record.effectiveFrom,record.effectiveTo||'']);
+      if(overlap.rowCount){const previous=overlap.rows[0];if(previous.effective_to==null&&String(previous.effective_from).slice(0,10)<record.effectiveFrom) await client.query(`UPDATE ${q('gosi_department_assignments')} SET effective_to=$2::date-1,updated_at=now() WHERE id=$1`,[previous.id,record.effectiveFrom]);else throw workflowError(409,'GOSI_DEPARTMENT_ASSIGNMENT_OVERLAP');}
+      await client.query(`INSERT INTO ${q('gosi_department_assignments')} (id,company_id,department_name,account_id,effective_from,effective_to,updated_at)
+        VALUES($1,$2,$3,$4,$5::date,NULLIF($6,'')::date,now()) ON CONFLICT(id) DO UPDATE SET department_name=EXCLUDED.department_name,
+        account_id=EXCLUDED.account_id,effective_from=EXCLUDED.effective_from,effective_to=EXCLUDED.effective_to,updated_at=now()
+        WHERE ${q('gosi_department_assignments')}.company_id=EXCLUDED.company_id`,[record.id,record.companyId,text(record.departmentName),record.accountId,record.effectiveFrom,record.effectiveTo||'']);
+      const updated=await finishWrite(client,req,record.companyId,'UPSERT_GOSI_DEPARTMENT_ASSIGNMENT');await client.query('COMMIT');
+      broadcastStateUpdate({version:updated.version,updatedBy:req.user.id,updatedAt:updated.updated_at,companyIds:[record.companyId],changes:[]});
+      res.json({record,version:Number(updated.version),updated_at:updated.updated_at});
+    }catch(e){try{await client.query('ROLLBACK');}catch{}next(e);}finally{client.release();}
+  });
+
   router.post('/gosi/invoices',auth,writeLimiter,async (req,res,next) => {
     const client=await pool.connect();
     try {
@@ -155,30 +194,34 @@ export function createGosiRouter({ auth,writeLimiter,pool,q,can,workflowError,bu
       if(!invoiceResult.rowCount) throw workflowError(404,'GOSI_INVOICE_NOT_FOUND');
       const invoice=invoiceResult.rows[0]; requireAccess(req,invoice.company_id);
       const payrollMonth=validMonth(req.query.payrollMonth) ? String(req.query.payrollMonth) : invoice.payroll_month;
-      const [itemsResult,employeesResult,runResult,assignmentsResult]=await Promise.all([
+      const [itemsResult,employeesResult,runResult,assignmentsResult,departmentAssignmentsResult]=await Promise.all([
         pool.query(`SELECT * FROM ${q('gosi_invoice_items')} WHERE invoice_id=$1 ORDER BY sort_order,id`,[invoice.id]),
         pool.query(`SELECT id,employee_no,payload FROM ${q('employees')} WHERE company_id=$1 AND is_archived=false`,[invoice.company_id]),
         pool.query(`SELECT id,status FROM ${q('payroll_runs')} WHERE company_id=$1 AND period_month=$2`,[invoice.company_id,payrollMonth]),
         pool.query(`SELECT employee_id,account_id FROM ${q('gosi_employee_assignments')} a JOIN ${q('gosi_accounts')} g ON g.id=a.account_id
-          WHERE g.company_id=$1 AND a.effective_from<=$2::date AND (a.effective_to IS NULL OR a.effective_to>=$3::date)`,[invoice.company_id,monthEnd(invoice.invoice_month),monthStart(invoice.invoice_month)])
+          WHERE g.company_id=$1 AND a.effective_from<=$2::date AND (a.effective_to IS NULL OR a.effective_to>=$3::date)`,[invoice.company_id,monthEnd(invoice.invoice_month),monthStart(invoice.invoice_month)]),
+        pool.query(`SELECT department_name,account_id FROM ${q('gosi_department_assignments')} WHERE company_id=$1
+          AND effective_from<=$2::date AND (effective_to IS NULL OR effective_to>=$3::date)`,[invoice.company_id,monthEnd(invoice.invoice_month),monthStart(invoice.invoice_month)])
       ]);
       const employees=employeesResult.rows; const byIdentity=new Map();
       for(const employee of employees){ const p=employee.payload || {}; for(const value of [p.nationalIdOrIqama,p.iqamaNumber,p.entryNumber]){ const key=identityKey(value); if(key && !byIdentity.has(key)) byIdentity.set(key,employee); } }
       const assignmentByEmployee=new Map(assignmentsResult.rows.map(row=>[row.employee_id,row.account_id]));
+      const assignmentByDepartment=new Map(departmentAssignmentsResult.rows.map(row=>[row.department_name,row.account_id]));
       let payrollItems=[]; if(runResult.rowCount) payrollItems=(await pool.query(`SELECT employee_id,payload FROM ${q('payroll_run_items')} WHERE payroll_run_id=$1`,[runResult.rows[0].id])).rows;
       const payrollByEmployee=new Map(payrollItems.map(row=>[row.employee_id,row.payload || {}])); const invoiceEmployeeIds=new Set();
       const comparisons=itemsResult.rows.map(item=>{
         const employee=byIdentity.get(identityKey(item.identity_number)); const payrollItem=employee ? payrollByEmployee.get(employee.id) : null;
-        if(employee) invoiceEmployeeIds.add(employee.id); const assignedAccountId=employee ? assignmentByEmployee.get(employee.id) : null;
+        if(employee) invoiceEmployeeIds.add(employee.id); const employeeOverride=employee ? assignmentByEmployee.get(employee.id) : null;
+        const assignedAccountId=employee ? (employeeOverride || assignmentByDepartment.get(payrollItem?.department || employee.payload?.department)) : null;
         const actual={ subjectWage:Number(item.subject_wage),employerShare:Number(item.employer_share),employeeShare:Number(item.employee_share),total:Number(item.total_amount) };
         const expected={ subjectWage:money(payrollItem?.gosiSubjectAmount || 0),employerShare:money(payrollItem?.gosiEmployerShare || 0),employeeShare:money(payrollItem?.gosiEmployeeShare || 0),total:money((payrollItem?.gosiEmployerShare || 0)+(payrollItem?.gosiEmployeeShare || 0)) };
         let status='MATCHED'; if(!employee) status='INVOICE_ONLY'; else if(!assignedAccountId) status='UNASSIGNED_ACCOUNT'; else if(assignedAccountId!==invoice.account_id) status='WRONG_ACCOUNT'; else if(!payrollItem) status='MISSING_IN_PAYROLL'; else if(Object.keys(actual).some(key=>Math.abs(actual[key]-expected[key])>0.01)) status='DIFFERENT';
-        return { identity:item.identity_number,subscriberName:item.subscriber_name,nationality:item.nationality,employeeId:employee?.id || null,employeeNo:employee?.employee_no || '',employeeName:employee ? text(`${employee.payload?.firstNameAr || ''} ${employee.payload?.lastNameAr || ''}`) : '',assignedAccountId:assignedAccountId || null,status,actual,expected,
+        return { identity:item.identity_number,subscriberName:item.subscriber_name,nationality:item.nationality,employeeId:employee?.id || null,employeeNo:employee?.employee_no || '',employeeName:employee ? text(`${employee.payload?.firstNameAr || ''} ${employee.payload?.lastNameAr || ''}`) : '',assignedAccountId:assignedAccountId || null,assignmentSource:employeeOverride?'EMPLOYEE':(assignedAccountId?'DEPARTMENT':null),status,actual,expected,
           difference:{ subjectWage:money(actual.subjectWage-expected.subjectWage),employerShare:money(actual.employerShare-expected.employerShare),employeeShare:money(actual.employeeShare-expected.employeeShare),total:money(actual.total-expected.total) } };
       });
-      for(const [employeeId,accountId] of assignmentByEmployee){ if(accountId!==invoice.account_id || invoiceEmployeeIds.has(employeeId)) continue; const employee=employees.find(row=>row.id===employeeId); const payrollItem=payrollByEmployee.get(employeeId); if(!employee || !payrollItem) continue;
+      for(const employee of employees){const employeeId=employee.id,payrollItem=payrollByEmployee.get(employeeId),employeeOverride=assignmentByEmployee.get(employeeId),accountId=employeeOverride||assignmentByDepartment.get(payrollItem?.department||employee.payload?.department);if(accountId!==invoice.account_id||invoiceEmployeeIds.has(employeeId)||!payrollItem)continue;
         const expected={subjectWage:money(payrollItem.gosiSubjectAmount||0),employerShare:money(payrollItem.gosiEmployerShare||0),employeeShare:money(payrollItem.gosiEmployeeShare||0),total:money((payrollItem.gosiEmployerShare||0)+(payrollItem.gosiEmployeeShare||0))};
-        comparisons.push({identity:employee.payload?.nationalIdOrIqama || employee.payload?.iqamaNumber || employee.payload?.entryNumber || '',subscriberName:'',nationality:employee.payload?.country || '',employeeId,employeeNo:employee.employee_no,employeeName:text(`${employee.payload?.firstNameAr||''} ${employee.payload?.lastNameAr||''}`),assignedAccountId:accountId,status:'PAYROLL_ONLY',actual:{subjectWage:0,employerShare:0,employeeShare:0,total:0},expected,difference:{subjectWage:-expected.subjectWage,employerShare:-expected.employerShare,employeeShare:-expected.employeeShare,total:-expected.total}});
+        comparisons.push({identity:employee.payload?.nationalIdOrIqama || employee.payload?.iqamaNumber || employee.payload?.entryNumber || '',subscriberName:'',nationality:employee.payload?.country || '',employeeId,employeeNo:employee.employee_no,employeeName:text(`${employee.payload?.firstNameAr||''} ${employee.payload?.lastNameAr||''}`),assignedAccountId:accountId,assignmentSource:employeeOverride?'EMPLOYEE':'DEPARTMENT',status:'PAYROLL_ONLY',actual:{subjectWage:0,employerShare:0,employeeShare:0,total:0},expected,difference:{subjectWage:-expected.subjectWage,employerShare:-expected.employerShare,employeeShare:-expected.employeeShare,total:-expected.total}});
       }
       const summary=comparisons.reduce((s,row)=>{ s[row.status]=(s[row.status]||0)+1; for(const key of ['subjectWage','employerShare','employeeShare','total']){s.actual[key]=money(s.actual[key]+row.actual[key]);s.expected[key]=money(s.expected[key]+row.expected[key]);s.difference[key]=money(s.actual[key]-s.expected[key]);} return s; },{actual:{subjectWage:0,employerShare:0,employeeShare:0,total:0},expected:{subjectWage:0,employerShare:0,employeeShare:0,total:0},difference:{subjectWage:0,employerShare:0,employeeShare:0,total:0}});
       res.json({ invoice:{ id:invoice.id,companyId:invoice.company_id,accountId:invoice.account_id,invoiceMonth:invoice.invoice_month,payrollMonth,detectedMonth:invoice.detected_month,sourceFileName:invoice.source_file_name },payrollRun:runResult.rows[0] || null,monthMismatch:invoice.invoice_month!==payrollMonth,summary,comparisons });

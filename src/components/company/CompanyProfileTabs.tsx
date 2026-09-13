@@ -1,9 +1,9 @@
 import React from 'react';
-import { AlertCircle, Building2, CreditCard, FolderTree, Layers, Settings2, Sliders, Sparkles, Users } from 'lucide-react';
+import { AlertCircle, Building2, CreditCard, FolderTree, Layers, Settings2, ShieldCheck, Sliders, Sparkles, Users } from 'lucide-react';
 import type { UserAccount } from '../../types';
 import { hasPermission } from '../../utils/permissions';
 
-export type ProfileSubTab = 'details' | 'banking' | 'qoyod' | 'users' | 'departments' | 'cost_centers' | 'policies' | 'accounts' | 'danger';
+export type ProfileSubTab = 'details' | 'banking' | 'qoyod' | 'gosi_accounts' | 'users' | 'departments' | 'cost_centers' | 'policies' | 'accounts' | 'danger';
 
 interface Props {
   activeTab: ProfileSubTab;
@@ -20,6 +20,7 @@ export const CompanyProfileTabs = React.memo(function CompanyProfileTabs({ activ
     ['details', Building2, tr('البيانات الأساسية والحكومية', 'Company & government details')],
     ['banking', CreditCard, tr('الحساب البنكي والسويفت (WPS)', 'Banking & SWIFT (WPS)')],
     ...(hasPermission(currentUser, 'MANAGE_JOURNALS') ? [['qoyod', Sparkles, tr('تكامل برنامج قيود (Qoyod API)', 'Qoyod integration (API)')]] : []),
+    ...(hasPermission(currentUser, 'MANAGE_GOSI') ? [['gosi_accounts', ShieldCheck, tr('حسابات وفروع التأمينات', 'GOSI accounts & branches')]] : []),
     ...(hasPermission(currentUser, 'MANAGE_USERS') ? [['users', Users, tr('المستخدمون المفوضون', 'Authorized users') + ' (' + userCount + ')']] : []),
     ['departments', FolderTree, tr('الأقسام الإدارية', 'Departments') + ' (' + departmentCount + ')'],
     ['cost_centers', Layers, tr('مراكز التكلفة', 'Cost centers') + ' (' + costCenterCount + ')'],
