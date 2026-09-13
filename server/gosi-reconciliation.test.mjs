@@ -18,9 +18,11 @@ test('GOSI storage supports multiple company registrations and effective-dated e
   assert.match(routes,/daterange\(effective_from/);
   assert.match(routes,/effective_to=\$2::date-1/);
   assert.match(server,/gosi_department_assignments/);
-  assert.match(routes,/GOSI_DEPARTMENT_ASSIGNMENT_OVERLAP/);
+  assert.doesNotMatch(routes,/GOSI_DEPARTMENT_ASSIGNMENT_OVERLAP/);
   assert.match(routes,/for\(const previous of overlaps\.rows\)/);
   assert.match(routes,/previousStart===record\.effectiveFrom/);
+  assert.match(routes,/effectiveTo=previousDay\(previousStart\)/);
+  assert.match(routes,/record:savedRecord/);
 });
 
 test('GOSI accounts live in company profile and departments provide the default assignment',()=>{

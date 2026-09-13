@@ -11,6 +11,11 @@ const monthEnd = month => {
   const [year,monthNumber] = month.split('-').map(Number);
   return new Date(Date.UTC(year,monthNumber,0)).toISOString().slice(0,10);
 };
+const previousDay = date => {
+  const value=new Date(`${date}T00:00:00Z`);
+  value.setUTCDate(value.getUTCDate()-1);
+  return value.toISOString().slice(0,10);
+};
 
 export function createGosiRouter({ auth,writeLimiter,pool,q,can,workflowError,bumpStateVersion,appendStateAudit,broadcastStateUpdate }) {
   const router = express.Router();
@@ -141,16 +146,18 @@ export function createGosiRouter({ auth,writeLimiter,pool,q,can,workflowError,bu
       await client.query('BEGIN');
       const account=await client.query(`SELECT 1 FROM ${q('gosi_accounts')} WHERE id=$1 AND company_id=$2 AND is_active=true`,[record.accountId,record.companyId]);
       if(!account.rowCount) throw workflowError(400,'INVALID_GOSI_ACCOUNT');
+      let effectiveTo=record.effectiveTo||'';
       const overlaps=await client.query(`SELECT id,effective_from,effective_to FROM ${q('gosi_department_assignments')} WHERE company_id=$1 AND department_name=$2 AND id<>$3
         AND daterange(effective_from,COALESCE(effective_to,'infinity'::date),'[]') && daterange($4::date,COALESCE(NULLIF($5,'')::date,'infinity'::date),'[]') ORDER BY effective_from FOR UPDATE`,[record.companyId,text(record.departmentName),record.id,record.effectiveFrom,record.effectiveTo||'']);
-      for(const previous of overlaps.rows){const previousStart=String(previous.effective_from).slice(0,10);if(previousStart===record.effectiveFrom) await client.query(`DELETE FROM ${q('gosi_department_assignments')} WHERE id=$1`,[previous.id]);else if(previousStart<record.effectiveFrom) await client.query(`UPDATE ${q('gosi_department_assignments')} SET effective_to=$2::date-1,updated_at=now() WHERE id=$1`,[previous.id,record.effectiveFrom]);else throw workflowError(409,'GOSI_DEPARTMENT_ASSIGNMENT_OVERLAP');}
+      for(const previous of overlaps.rows){const previousStart=String(previous.effective_from).slice(0,10);if(previousStart===record.effectiveFrom) await client.query(`DELETE FROM ${q('gosi_department_assignments')} WHERE id=$1`,[previous.id]);else if(previousStart<record.effectiveFrom) await client.query(`UPDATE ${q('gosi_department_assignments')} SET effective_to=$2::date-1,updated_at=now() WHERE id=$1`,[previous.id,record.effectiveFrom]);else{effectiveTo=previousDay(previousStart);break;}}
       await client.query(`INSERT INTO ${q('gosi_department_assignments')} (id,company_id,department_name,account_id,effective_from,effective_to,updated_at)
         VALUES($1,$2,$3,$4,$5::date,NULLIF($6,'')::date,now()) ON CONFLICT(id) DO UPDATE SET department_name=EXCLUDED.department_name,
         account_id=EXCLUDED.account_id,effective_from=EXCLUDED.effective_from,effective_to=EXCLUDED.effective_to,updated_at=now()
-        WHERE ${q('gosi_department_assignments')}.company_id=EXCLUDED.company_id`,[record.id,record.companyId,text(record.departmentName),record.accountId,record.effectiveFrom,record.effectiveTo||'']);
+        WHERE ${q('gosi_department_assignments')}.company_id=EXCLUDED.company_id`,[record.id,record.companyId,text(record.departmentName),record.accountId,record.effectiveFrom,effectiveTo]);
+      const savedRecord={...record,effectiveTo:effectiveTo||null};
       const updated=await finishWrite(client,req,record.companyId,'UPSERT_GOSI_DEPARTMENT_ASSIGNMENT');await client.query('COMMIT');
       broadcastStateUpdate({version:updated.version,updatedBy:req.user.id,updatedAt:updated.updated_at,companyIds:[record.companyId],changes:[]});
-      res.json({record,version:Number(updated.version),updated_at:updated.updated_at});
+      res.json({record:savedRecord,version:Number(updated.version),updated_at:updated.updated_at});
     }catch(e){try{await client.query('ROLLBACK');}catch{}next(e);}finally{client.release();}
   });
 
