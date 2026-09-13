@@ -22,6 +22,7 @@ test('GOSI storage supports multiple company registrations and effective-dated e
   assert.match(routes,/for\(const previous of overlaps\.rows\)/);
   assert.match(routes,/previousStart===record\.effectiveFrom/);
   assert.match(routes,/effectiveTo=previousDay\(previousStart\)/);
+  assert.match(routes,/effective_from::text effective_from/);
   assert.match(routes,/record:savedRecord/);
 });
 
