@@ -68,6 +68,12 @@ test('GOSI comparison uses identity, selected payroll period, account assignment
   assert.match(routes,/period_month=\$2/);
   assert.match(routes,/gosiSubjectAmount/);
   assert.match(routes,/gosiEmployerShare/);
+  assert.match(routes,/const payrollGosi=payrollItem/);
+  assert.match(routes,/subjectWage\*Number\(payrollItem\?\.gosiEmployeeRate/);
+  assert.match(routes,/companyCoveredEmployeeShare/);
+  assert.match(view,/حصة الموظف النظامية بالمسير/);
+  assert.match(view,/إجمالي تحمل الشركة/);
+  assert.match(excelExport,/الشركة تتحمل كامل الاشتراك/);
   assert.match(routes,/gosiEmployeeShare/);
   assert.match(routes,/assignmentByDepartment/);
   assert.match(routes,/employeeOverride\?'EMPLOYEE':'DEPARTMENT'/);
