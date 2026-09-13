@@ -45,6 +45,11 @@ test('GOSI comparison uses identity, selected payroll period, account assignment
   assert.match(routes,/gosiEmployeeShare/);
   assert.match(routes,/assignmentByDepartment/);
   assert.match(routes,/employeeOverride\?'EMPLOYEE':'DEPARTMENT'/);
+  assert.match(routes,/accountName:invoice\.account_name/);
+  assert.match(routes,/department:employee/);
+  assert.match(view,/الاختلافات فقط/);
+  assert.match(view,/حصة الموظف بالفاتورة/);
+  assert.match(view,/مصدر الربط/);
   for(const status of ['INVOICE_ONLY','PAYROLL_ONLY','UNASSIGNED_ACCOUNT','WRONG_ACCOUNT','MISSING_IN_PAYROLL','DIFFERENT']) assert.match(routes,new RegExp(status));
 });
 
