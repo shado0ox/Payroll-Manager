@@ -91,7 +91,7 @@ const asArray = value => Array.isArray(value) ? value : [];
 const { sameJson,isAppendOnlyLoanAdjustment,payrollSourceLocked,validateClosedPayrollInputs,validatePayrollWorkflowChanges } = createPayrollWorkflowGuards({ can,asArray,workflowError });
 const { publicStateForUser,mergeStateForUser } = createStateAccessService({
   clone,can,allowedCompanyIds,itemCompanyId,companyScopedKeys:COMPANY_SCOPED_KEYS,operationsMutableKeys:OPERATIONS_MUTABLE_KEYS,
-  validateClosedPayrollInputs,validatePayrollWorkflowChanges,workflowError,
+  asArray,sameJson,validateClosedPayrollInputs,validatePayrollWorkflowChanges,validatePayrollCarryForwardState,workflowError,
 });
 
 const app = express();

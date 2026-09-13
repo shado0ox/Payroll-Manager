@@ -5,6 +5,7 @@ import { createUserRouter } from './routes/user-routes.mjs';
 import { createStateRouter } from './routes/state-routes.mjs';
 import { createStateRuntime } from './state-runtime.mjs';
 import { createDatabaseMigrator } from './database-migrator.mjs';
+import { createStateAccessService } from './state-access.mjs';
 
 const middleware = (_req, _res, next) => next();
 const registeredRoutes = router => router.stack
@@ -60,4 +61,26 @@ test('database migrator receives the validated schema from bootstrap', () => {
     assert.equal(queries[0],'CREATE SCHEMA IF NOT EXISTS "test_schema"');
     return true;
   });
+});
+
+test('state access uses only its injected scope and validation dependencies', () => {
+  const companyScopedKeys = ['employees','payrollRuns','payrollSettlements'];
+  const service = createStateAccessService({
+    clone:structuredClone,
+    can:() => true,
+    allowedCompanyIds:user => new Set(user.company_ids),
+    itemCompanyId:item => item?.companyId || '',
+    companyScopedKeys,
+    operationsMutableKeys:new Set(companyScopedKeys),
+    asArray:value => Array.isArray(value) ? value : [],
+    sameJson:(a,b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null),
+    validateClosedPayrollInputs:() => {},
+    validatePayrollWorkflowChanges:() => {},
+    validatePayrollCarryForwardState:() => {},
+    workflowError:(status,code) => Object.assign(new Error(code),{ status }),
+  });
+  const user = { id:'admin',role:'ADMIN',company_ids:['company-a'] };
+  const state = { companies:[{ id:'company-a',nameAr:'أ' },{ id:'company-b',nameAr:'ب' }],employees:[{ id:'a',companyId:'company-a' },{ id:'b',companyId:'company-b' }] };
+  assert.deepEqual(service.publicStateForUser(state,user).employees,[{ id:'a',companyId:'company-a' }]);
+  assert.deepEqual(service.mergeStateForUser(state,state,user).employees,[state.employees[1],state.employees[0]]);
 });

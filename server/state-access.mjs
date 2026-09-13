@@ -1,6 +1,6 @@
 export function createStateAccessService({
-  clone,can,allowedCompanyIds,itemCompanyId,companyScopedKeys,operationsMutableKeys,
-  validateClosedPayrollInputs,validatePayrollWorkflowChanges,workflowError,
+  clone,can,allowedCompanyIds,itemCompanyId,companyScopedKeys,operationsMutableKeys,asArray,sameJson,
+  validateClosedPayrollInputs,validatePayrollWorkflowChanges,validatePayrollCarryForwardState,workflowError,
 }) {
 function publicStateForUser(rawState, user) {
   const state = clone(rawState || {});
@@ -18,7 +18,7 @@ function publicStateForUser(rawState, user) {
     // The developer can administer tenant identity and subscriptions, but payroll,
     // employee, banking and operational records are never returned for tenant companies.
     if (Array.isArray(state.companies)) state.companies = state.companies.map(item => assigned.has(item.id) ? item : sanitizeCompany(item));
-    for (const key of COMPANY_SCOPED_KEYS) {
+    for (const key of companyScopedKeys) {
       if (Array.isArray(state[key])) state[key] = state[key].filter(item => assigned.has(itemCompanyId(item)));
     }
     if (Array.isArray(state.auditLogs)) state.auditLogs = state.auditLogs.filter(item => item.companyId && assigned.has(item.companyId));
@@ -27,7 +27,7 @@ function publicStateForUser(rawState, user) {
   } else {
     const allowed = allowedCompanyIds(user);
     if (Array.isArray(state.companies)) state.companies = state.companies.filter(item => allowed.has(item.id));
-    for (const key of COMPANY_SCOPED_KEYS) {
+    for (const key of companyScopedKeys) {
       if (Array.isArray(state[key])) state[key] = state[key].filter(item => allowed.has(itemCompanyId(item)));
     }
     if (Array.isArray(state.users)) {
@@ -92,7 +92,7 @@ function mergeStateForUser(stored, incoming, user) {
   if (user.role === 'ADMIN') {
     const next = clone(stored || {});
     const assigned = new Set(Array.isArray(user.company_ids) ? user.company_ids : []);
-    for (const key of COMPANY_SCOPED_KEYS) next[key] = mergeCompanyScoped(stored?.[key],incoming?.[key],assigned);
+    for (const key of companyScopedKeys) next[key] = mergeCompanyScoped(stored?.[key],incoming?.[key],assigned);
     const oldCompanies = asArray(stored?.companies);
     const incomingById = new Map(asArray(incoming?.companies).filter(item => assigned.has(item.id)).map(item => [item.id,item]));
     next.companies = oldCompanies.map(item => assigned.has(item.id) && incomingById.has(item.id) ? incomingById.get(item.id) : item);
@@ -108,7 +108,7 @@ function mergeStateForUser(stored, incoming, user) {
     employees:'MANAGE_EMPLOYEES', attendance:'MANAGE_ATTENDANCE', leaves:'MANAGE_ATTENDANCE',
     loans:'MANAGE_LOANS_PENALTIES', penalties:'MANAGE_LOANS_PENALTIES', temporaryEarnings:'MANAGE_LOANS_PENALTIES', payrollRuns:'MANAGE_PAYROLL', payrollSettlements:'MANAGE_PAYROLL', journals:'MANAGE_JOURNALS',
   };
-  const roleKeys = user.role === 'OPERATIONS_MANAGER' ? OPERATIONS_MUTABLE_KEYS : new Set(COMPANY_SCOPED_KEYS);
+  const roleKeys = user.role === 'OPERATIONS_MANAGER' ? operationsMutableKeys : new Set(companyScopedKeys);
   const mutableKeys = [...roleKeys].filter(key => can(user, keyPermissions[key]));
   for (const key of mutableKeys) next[key] = mergeCompanyScoped(stored?.[key], incoming?.[key], allowed);
 
@@ -140,4 +140,3 @@ function mergeStateForUser(stored, incoming, user) {
 
   return { publicStateForUser,mergeStateForUser };
 }
-
