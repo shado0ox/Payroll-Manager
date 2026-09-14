@@ -10,6 +10,7 @@ const asMountedApiRoutes = source => source.replace(
 export const serverSource = [
   read('./index.mjs'),
   read('./access-control.mjs'),
+  read('./authorization-service.mjs'),
   read('./database-schema.mjs'),
   read('./numbered-state-migrations.mjs'),
   read('./database-migrator.mjs'),
