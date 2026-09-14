@@ -4,6 +4,7 @@ import fs from 'node:fs';
 
 const server = [
   fs.readFileSync(new URL('./database-schema.mjs', import.meta.url), 'utf8'),
+  fs.readFileSync(new URL('./user-record-policy.mjs', import.meta.url), 'utf8'),
   fs.readFileSync(new URL('./routes/user-routes.mjs', import.meta.url), 'utf8'),
 ].join('\n');
 
@@ -14,7 +15,7 @@ test('startup checks for duplicate user emails before creating the unique email 
 });
 
 test('user writes reject duplicate emails case-insensitively with a dedicated error', () => {
-  assert.match(server, /const normalizedEmail = String\(u\.email \|\| ''\)\.trim\(\)\.toLowerCase\(\)/);
+  assert.match(server, /const normalizedEmail = String\(user\.email \|\| ''\)\.trim\(\)\.toLowerCase\(\)/);
   assert.match(server, /lower\(email\)=lower\(\$1\) AND id<>\$2/);
   assert.match(server, /USER_EMAIL_EXISTS/);
 });

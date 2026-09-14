@@ -1,22 +1,20 @@
 import express from 'express';
 import bcrypt from 'bcryptjs';
+import { createUserRecordPolicy } from '../user-record-policy.mjs';
 
 export function createUserRouter({ auth,writeLimiter,pool,q,can,allowedRoles,allPermissions,defaultPermissions,permissionsFor,isStrongPassword,workflowError,appendStateAudit,broadcastStateUpdate,disconnectStateEventClients }) {
   const router = express.Router();
+  const { prepareUserRecord,assertExistingUserScope } = createUserRecordPolicy({
+    can,allowedRoles,allPermissions,defaultPermissions,permissionsFor,workflowError,
+  });
 
   router.put('/users/:id', auth, writeLimiter, async (req, res, next) => {
     let client;
     try {
       if (!can(req.user, 'MANAGE_USERS')) return res.status(403).json({ error:'FORBIDDEN' });
       if (req.params.id === 'user-admin') return res.status(403).json({ error:'SYSTEM_ADMIN_IMMUTABLE' });
-      const u = req.body || {};
-      if (!u.username || !u.name || !u.role || !Array.isArray(u.companyIds)) return res.status(400).json({ error:'INVALID_USER' });
-      if (!allowedRoles.has(u.role) || u.role === 'ADMIN') return res.status(400).json({ error:'INVALID_ROLE' });
-      if (req.user.role === 'ADMIN' && u.companyIds.some(id => !req.user.company_ids.includes(id))) return res.status(403).json({ error:'TENANT_DATA_IS_PRIVATE' });
-      const permissions = Array.isArray(u.permissions) ? [...new Set(u.permissions)].filter(value => allPermissions.has(value) && value !== 'MANAGE_COMPANIES') : defaultPermissions[u.role];
-      if (req.user.role !== 'ADMIN' && (u.role !== 'OPERATIONS_MANAGER' || u.companyIds.some(id => !req.user.company_ids.includes(id)))) return res.status(403).json({ error:'FORBIDDEN' });
-      if (req.user.role !== 'ADMIN' && permissions.some(permission => !permissionsFor(req.user).includes(permission))) return res.status(403).json({ error:'CANNOT_GRANT_UNOWNED_PERMISSION' });
-      const normalizedEmail = String(u.email || '').trim().toLowerCase();
+      const { user:u,permissions,normalizedEmail } = prepareUserRecord(req.user, req.body);
+
       client = await pool.connect();
       await client.query('BEGIN');
       if (normalizedEmail) {
@@ -24,11 +22,7 @@ export function createUserRouter({ auth,writeLimiter,pool,q,can,allowedRoles,all
         if (duplicateEmail.rowCount) throw workflowError(409,'USER_EMAIL_EXISTS');
       }
       const existing = await client.query(`SELECT id,password_hash,company_ids,role FROM ${q('users')} WHERE id=$1 FOR UPDATE`, [req.params.id]);
-      if (existing.rowCount) {
-        const existingCompanyIds = Array.isArray(existing.rows[0].company_ids) ? existing.rows[0].company_ids : [];
-        const targetOutsideScope = existingCompanyIds.some(id => !req.user.company_ids.includes(id));
-        if (targetOutsideScope || (req.user.role !== 'ADMIN' && existing.rows[0].role !== 'OPERATIONS_MANAGER')) throw workflowError(403,'FORBIDDEN');
-      }
+      if (existing.rowCount) assertExistingUserScope(existing.rows[0], req.user);
       if ((!existing.rowCount || u.password) && !isStrongPassword(u.password)) throw workflowError(400,'PASSWORD_POLICY_FAILED');
       const passwordHash = u.password ? await bcrypt.hash(u.password, 12) : existing.rows[0]?.password_hash;
       const r = await client.query(`INSERT INTO ${q('users')} (id,username,password_hash,name,email,phone,role,company_ids,permissions,is_active)

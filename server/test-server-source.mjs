@@ -11,6 +11,8 @@ export const serverSource = [
   read('./index.mjs'),
   read('./access-control.mjs'),
   read('./authorization-service.mjs'),
+  read('./company-record-service.mjs'),
+  read('./user-record-policy.mjs'),
   read('./database-schema.mjs'),
   read('./numbered-state-migrations.mjs'),
   read('./database-migrator.mjs'),

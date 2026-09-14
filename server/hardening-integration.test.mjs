@@ -11,6 +11,7 @@ const source = [
   fs.readFileSync(new URL('./numbered-state-migrations.mjs', import.meta.url), 'utf8'),
   fs.readFileSync(new URL('./normalized-state-store.mjs', import.meta.url), 'utf8'),
   fs.readFileSync(new URL('./normalized-state-reader.mjs', import.meta.url), 'utf8'),
+  fs.readFileSync(new URL('./user-record-policy.mjs', import.meta.url), 'utf8'),
   fs.readFileSync(new URL('./routes/user-routes.mjs', import.meta.url), 'utf8'),
   stateRoutes,
   qoyodRoutes,
