@@ -1,13 +1,11 @@
 import express from 'express';
 import { createCompanyRecordService } from '../company-record-service.mjs';
 
-export function createCompanyRouter({ auth,writeLimiter,pool,q,can,workflowError,asArray,clone,subscriptionState,bumpStateVersion,apconst { validateCompanyRecord,updateCompanyAggregate } = createCompanyRecordService({
+export function createCompanyRouter({ auth,writeLimiter,pool,q,can,workflowError,asArray,clone,subscriptionState,bumpStateVersion,appendStateAudit,broadcastStateUpdate }) {
+  const router = express.Router();
+const { validateCompanyRecord,updateCompanyAggregate } = createCompanyRecordService({
   q,asArray,clone,subscriptionState,workflowError,
 });
-
-ption_ends_at?.toISOString?.() || row.subscription_ends_at || null,
-  };
-}
 
 router.put('/companies/:id', auth, writeLimiter, async (req, res, next) => {
   const client = await pool.connect();
