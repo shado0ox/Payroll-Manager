@@ -21,4 +21,4 @@
 
 ## Delivery
 
-Implementation is applied as the last feature-hardening transform so future build transforms cannot silently restore the previous workflow. Regression tests cover sidebar order, editable employee numbers, payment locking, duplicate prevention, and settlement persistence.
+Implementation now lives in the maintained payroll modules and routers. Read-only source verification and regression tests cover sidebar order, editable employee numbers, payment locking, duplicate prevention, and settlement persistence without rewriting files during the build.
