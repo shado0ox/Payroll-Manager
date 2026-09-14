@@ -10,7 +10,7 @@ const verifier = fs.readFileSync('scripts/verify-feature-hardening.mjs', 'utf8')
 // still enforce it whenever the file is present (e.g. actual GitHub Actions runs).
 const workflowPath = '.github/workflows/payroll-workflow-ci.yml';
 const payrollWorkflow = fs.existsSync(workflowPath) ? fs.readFileSync(workflowPath, 'utf8') : null;
-const legacyApplyScripts = fs.readdirSync('scripts').filter(name => /^apply-.*\.mjs$/.test(name));
+const legacyMutationArtifacts = fs.readdirSync('scripts').filter(name => /^apply-.*\.mjs$/.test(name) || /\.snippet\.txt$/.test(name));
 
 test('build preparation validates source without applying mutation scripts', () => {
   assert.equal(packageJson.scripts['prepare:security'], 'node scripts/verify-feature-hardening.mjs');
@@ -18,5 +18,5 @@ test('build preparation validates source without applying mutation scripts', () 
     assert.doesNotMatch(payrollWorkflow, /node scripts\/apply-[^\s]+\.mjs/);
   }
   assert.doesNotMatch(verifier, /writeFileSync|appendFileSync|renameSync|rmSync/);
-  assert.deepEqual(legacyApplyScripts, [], 'historical apply scripts must not return to the build workflow');
+  assert.deepEqual(legacyMutationArtifacts, [], 'historical apply scripts and patch snippets must not return to the build workflow');
 });
