@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
-import { serverSource as server } from './test-server-source.mjs';
+const companyRoutes = fs.readFileSync('server/routes/company-routes.mjs','utf8');
+const companyService = fs.readFileSync('server/company-record-service.mjs','utf8');
+const server = companyService + '\n' + companyRoutes;
 
 const api = fs.readFileSync('src/utils/api.ts','utf8');
 const app = fs.readFileSync('src/App.tsx','utf8');
@@ -9,8 +11,8 @@ const companyProfile = fs.readFileSync('src/components/CompanyProfileView.tsx','
 const settings = fs.readFileSync('src/components/SettingsView.tsx','utf8');
 
 test('company settings update only one company aggregate', () => {
-  const start = server.indexOf("app.put('/api/companies/:id'");
-  const end = server.indexOf('function validateJournalRecord',start);
+  const start = server.indexOf("router.put('/companies/:id'");
+  const end = server.indexOf("router.post('/companies'",start);
   assert.ok(start >= 0 && end > start,'company update route must exist');
   const route = server.slice(start,end);
   assert.match(route,/updateCompanyAggregate\(client,record\)/);
@@ -48,8 +50,8 @@ test('subscription changes do not resubmit the company profile', () => {
 });
 
 test('company creation inserts one aggregate and assigns it to the creator', () => {
-  const start = server.indexOf("app.post('/api/companies'");
-  const end = server.indexOf("app.delete('/api/companies/:id'",start);
+  const start = server.indexOf("router.post('/companies'");
+  const end = server.indexOf("router.delete('/companies/:id'",start);
   assert.ok(start >= 0 && end > start,'company creation route must exist');
   const route = server.slice(start,end);
   assert.match(route,/req\.user\.role !== 'ADMIN'/);
@@ -61,8 +63,8 @@ test('company creation inserts one aggregate and assigns it to the creator', () 
 });
 
 test('company deletion is a reversible-data archive, not cascading deletion', () => {
-  const start = server.indexOf("app.delete('/api/companies/:id'");
-  const end = server.indexOf('function validateJournalRecord',start);
+  const start = server.indexOf("router.delete('/companies/:id'");
+  const end = server.indexOf("router.put('/admin/companies/:id/subscription'",start);
   assert.ok(start >= 0 && end > start,'company archive route must exist');
   const route = server.slice(start,end);
   assert.match(route,/ONLY_MANAGED_COMPANY/);
