@@ -1,0 +1,45 @@
+export function subscriptionState(company, now = Date.now()) {
+  const status = String(company?.subscription_status || 'ACTIVE');
+  const trialEndsAt = company?.trial_ends_at ? new Date(company.trial_ends_at) : null;
+  const subscriptionEndsAt = company?.subscription_ends_at ? new Date(company.subscription_ends_at) : null;
+  const expired = status === 'EXPIRED' || status === 'SUSPENDED'
+    || (status === 'TRIAL' && trialEndsAt && trialEndsAt.getTime() <= now)
+    || (status === 'ACTIVE' && subscriptionEndsAt && subscriptionEndsAt.getTime() <= now);
+  return {
+    status: expired ? 'EXPIRED' : status,
+    trialEndsAt: trialEndsAt?.toISOString() || null,
+    subscriptionEndsAt: subscriptionEndsAt?.toISOString() || null,
+    expired,
+  };
+}
+
+export function createAuthorizationService({ pool,q,cookieValue,sha256,developerContactPhone }) {
+  async function auth(req, res, next) {
+    try {
+      const token = cookieValue(req, 'masar_session');
+      if (!token) return res.status(401).json({ error:'AUTH_REQUIRED' });
+      const tokenHash = sha256(token);
+      const result = await pool.query(`SELECT u.id,u.username,u.name,u.email,u.phone,u.role,u.company_ids,u.permissions,u.is_active
+        FROM ${q('sessions')} s JOIN ${q('users')} u ON u.id=s.user_id
+        WHERE s.token_hash=$1 AND s.expires_at > now() AND u.is_active=true`, [tokenHash]);
+      if (!result.rowCount) return res.status(401).json({ error:'SESSION_EXPIRED' });
+      await pool.query(`UPDATE ${q('sessions')} SET expires_at=now()+interval '1 hour' WHERE token_hash=$1`, [tokenHash]);
+      req.user = result.rows[0];
+      if (req.user.role !== 'ADMIN') {
+        const company = await pool.query(`SELECT subscription_status,trial_ends_at,subscription_ends_at
+          FROM ${q('companies')} WHERE id=ANY($1::text[]) AND is_archived=false
+          ORDER BY created_at LIMIT 1`, [req.user.company_ids]);
+        const subscription = subscriptionState(company.rows[0]);
+        req.subscription = subscription;
+        const allowedWhileExpired = req.path === '/api/state' || req.path === '/api/auth/session'
+          || req.path === '/api/auth/logout' || req.path === '/api/subscription/status';
+        if (subscription.expired && !allowedWhileExpired) {
+          return res.status(402).json({ error:'SUBSCRIPTION_EXPIRED', subscription, developerContactPhone });
+        }
+      }
+      next();
+    } catch (error) { next(error); }
+  }
+
+  return { auth };
+}
