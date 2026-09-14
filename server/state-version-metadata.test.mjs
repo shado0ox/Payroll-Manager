@@ -2,7 +2,10 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
 const runtime = fs.readFileSync(new URL('./state-runtime.mjs', import.meta.url), 'utf8');
-const migration = fs.readFileSync(new URL('./database-migrator.mjs', import.meta.url), 'utf8');
+const migration = [
+  fs.readFileSync(new URL('./database-schema.mjs', import.meta.url), 'utf8'),
+  fs.readFileSync(new URL('./numbered-state-migrations.mjs', import.meta.url), 'utf8'),
+].join('\n');
 const stateRoutes = fs.readFileSync(new URL('./routes/state-routes.mjs', import.meta.url), 'utf8');
 const routeSources = fs.readdirSync(new URL('./routes', import.meta.url))
   .filter(name => name.endsWith('-routes.mjs'))
