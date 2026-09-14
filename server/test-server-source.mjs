@@ -18,6 +18,8 @@ export const serverSource = [
   read('./normalized-state-store.mjs'),
   read('./payroll-workflow-guards.mjs'),
   read('./state-access.mjs'),
+  read('./state-event-bus.mjs'),
+  read('./state-version-service.mjs'),
   read('./state-runtime.mjs'),
   asMountedApiRoutes(read('./routes/state-routes.mjs')),
   asMountedApiRoutes(read('./routes/company-routes.mjs')),
