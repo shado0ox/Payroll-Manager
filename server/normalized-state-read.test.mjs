@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
 
-const indexSource = fs.readFileSync('server/index.mjs', 'utf8');
+const hrLifecycleAlertService = fs.readFileSync('server/hr-lifecycle-alert-service.mjs', 'utf8');
 const stateRoutes = fs.readFileSync('server/routes/state-routes.mjs', 'utf8').replace(/router\./g,'app.');
 const stateReader = fs.readFileSync('server/normalized-state-reader.mjs', 'utf8');
 
@@ -27,7 +27,7 @@ test('normalized application reader starts from an empty shell', () => {
 });
 
 test('HR lifecycle processing also reads normalized tables without app_state data', () => {
-  const scheduler = block(indexSource, 'async function runHrLifecycleAlerts', 'async function sendVerificationEmail');
+  const scheduler = block(hrLifecycleAlertService, 'const run = async () => {', 'return { run };');
   assert.match(scheduler, /readNormalizedApplicationState\(pool\)/);
   assert.doesNotMatch(scheduler, /SELECT state FROM|rows\[0\]\.state/);
 });
