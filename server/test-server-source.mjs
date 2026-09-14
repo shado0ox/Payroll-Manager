@@ -13,6 +13,7 @@ export const serverSource = [
   read('./database-schema.mjs'),
   read('./numbered-state-migrations.mjs'),
   read('./database-migrator.mjs'),
+  read('./normalized-state-reader.mjs'),
   read('./normalized-state-store.mjs'),
   read('./payroll-workflow-guards.mjs'),
   read('./state-access.mjs'),
