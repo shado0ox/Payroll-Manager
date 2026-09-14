@@ -13,7 +13,8 @@ export function createUserRecordPolicy({ can,allowedRoles,allPermissions,default
     if (actor.role !== 'ADMIN' && permissions.some(permission => !permissionsFor(actor).includes(permission))) {
       throw workflowError(403, 'CANNOT_GRANT_UNOWNED_PERMISSION');
     }
-    return { user,permissions,normalizedEmail:String(user.email || '').trim().toLowerCase() };
+    const normalizedEmail = String(user.email || '').trim().toLowerCase();
+    return { user,permissions,normalizedEmail };
   }
 
   function assertExistingUserScope(existing, actor) {
