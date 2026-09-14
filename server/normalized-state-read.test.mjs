@@ -4,7 +4,7 @@ import test from 'node:test';
 
 const indexSource = fs.readFileSync('server/index.mjs', 'utf8');
 const stateRoutes = fs.readFileSync('server/routes/state-routes.mjs', 'utf8').replace(/router\./g,'app.');
-const stateStore = fs.readFileSync('server/normalized-state-store.mjs', 'utf8');
+const stateReader = fs.readFileSync('server/normalized-state-reader.mjs', 'utf8');
 
 function block(source, startMarker, endMarker) {
   const start = source.indexOf(startMarker);
@@ -21,8 +21,8 @@ test('normal state reads are assembled without using the compatibility JSON payl
 });
 
 test('normalized application reader starts from an empty shell', () => {
-  const reader = block(stateStore, 'async function readNormalizedApplicationState', 'return {');
-  assert.match(reader, /hydrateNormalizedStateData\(client, \{\}\)/);
+  const reader = block(stateReader, 'async function readNormalizedApplicationState', 'return {');
+  assert.match(reader, /hydrateNormalizedPayrollData\(client, \{\}\)/);
   assert.doesNotMatch(reader, /app_state/);
 });
 

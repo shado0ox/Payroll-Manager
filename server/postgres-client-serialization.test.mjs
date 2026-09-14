@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
 
-const server = fs.readFileSync('server/normalized-state-store.mjs','utf8');
+const server = fs.readFileSync('server/normalized-state-reader.mjs','utf8');
 const workflow = fs.readFileSync('.github/workflows/payroll-workflow-ci.yml','utf8');
 
 test('a checked-out PostgreSQL client never receives concurrent queries', () => {
