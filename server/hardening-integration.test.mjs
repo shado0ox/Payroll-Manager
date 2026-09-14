@@ -7,7 +7,8 @@ const qoyodRoutes = fs.readFileSync(new URL('./routes/journal-qoyod-routes.mjs',
   .replace(/router\.(get|post|put|delete)\('\//g,(_match,method) => `app.${method}('/api/`);
 const source = [
   fs.readFileSync(new URL('./state-access.mjs', import.meta.url), 'utf8'),
-  fs.readFileSync(new URL('./database-migrator.mjs', import.meta.url), 'utf8'),
+  fs.readFileSync(new URL('./database-schema.mjs', import.meta.url), 'utf8'),
+  fs.readFileSync(new URL('./numbered-state-migrations.mjs', import.meta.url), 'utf8'),
   fs.readFileSync(new URL('./normalized-state-store.mjs', import.meta.url), 'utf8'),
   fs.readFileSync(new URL('./routes/user-routes.mjs', import.meta.url), 'utf8'),
   stateRoutes,
