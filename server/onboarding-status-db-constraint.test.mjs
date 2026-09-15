@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
-import { serverSource as source } from './test-server-source.mjs';
+const source = [
+  fs.readFileSync(new URL('./database-schema.mjs',import.meta.url),'utf8'),
+  fs.readFileSync(new URL('./numbered-state-migrations.mjs',import.meta.url),'utf8'),
+  fs.readFileSync(new URL('./routes/employee-routes.mjs',import.meta.url),'utf8'),
+].join('\n');
 
 
 test('employees database constraint accepts ONBOARDING status', () => {
@@ -11,8 +15,8 @@ test('employees database constraint accepts ONBOARDING status', () => {
 });
 
 test('direct employee save route accepts ONBOARDING status', () => {
-  const start = source.indexOf("app.put('/api/employees/:id'");
-  const end = source.indexOf("app.delete('/api/employees/:id'", start);
+  const start = source.indexOf("router.put('/employees/:id'");
+  const end = source.indexOf("router.delete('/employees/:id'", start);
   assert.notEqual(start, -1);
   assert.notEqual(end, -1);
   const route = source.slice(start, end);
