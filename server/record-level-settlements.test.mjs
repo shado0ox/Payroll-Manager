@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
-import { serverSource as server } from './test-server-source.mjs';
+const server = [
+  fs.readFileSync('server/database-schema.mjs','utf8'),
+  fs.readFileSync('server/numbered-state-migrations.mjs','utf8'),
+  fs.readFileSync('server/routes/payroll-routes.mjs','utf8'),
+  'END_OF_SOURCES',
+].join('\n');
 
 const tenantStorage = fs.readFileSync('server/tenant-storage.mjs','utf8');
 const api = fs.readFileSync('src/utils/api.ts','utf8');
@@ -9,7 +14,7 @@ const app = fs.readFileSync('src/App.tsx','utf8');
 const view = fs.readFileSync('src/components/PayrollSettlementsView.tsx','utf8');
 
 function routeBlock(method,path,nextMarker) {
-  const start = server.indexOf(`app.${method}('${path}'`);
+  const start = server.indexOf(`router.${method}('${path}'`);
   const end = server.indexOf(nextMarker,start + 1);
   assert.ok(start >= 0,`${method.toUpperCase()} ${path} route must exist`);
   assert.ok(end > start,`${method.toUpperCase()} ${path} route must have a boundary`);
@@ -31,7 +36,7 @@ test('legacy settlement migration concatenates extracted text instead of coercin
 });
 
 test('settlement creation is one atomic command with its source entitlement', () => {
-  const create = routeBlock('post','/api/payroll-settlements',"app.post('/api/payroll-settlements/:id/reverse'");
+  const create = routeBlock('post','/payroll-settlements',"router.post('/payroll-settlements/:id/reverse'");
   assert.match(create,/INSERT INTO.*payroll_settlements/);
   assert.match(create,/UPDATE.*payroll_run_items/);
   assert.match(create,/readNormalizedApplicationState\(client\)/);
@@ -42,7 +47,7 @@ test('settlement creation is one atomic command with its source entitlement', ()
 });
 
 test('settlement reversal is server-stamped and reopens its source atomically', () => {
-  const reverse = routeBlock('post','/api/payroll-settlements/:id/reverse',"app.put('/api/journals/:id'");
+  const reverse = routeBlock('post','/payroll-settlements/:id/reverse','END_OF_SOURCES');
   assert.match(reverse,/reversedAt:new Date\(\)\.toISOString\(\)/);
   assert.match(reverse,/SETTLEMENT_REVERSED/);
   assert.match(reverse,/REVERSED_SETTLEMENT_LOCKED/);

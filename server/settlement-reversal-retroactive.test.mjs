@@ -1,5 +1,4 @@
 import test from 'node:test';
-import { serverSource as server } from './test-server-source.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
@@ -22,7 +21,7 @@ test('settlement reversal is soft-delete with mandatory audit reason', () => {
   assert.match(view, /status: 'REVERSED'/);
   assert.match(view, /reversalReason: reason/);
   assert.match(view, /reason\.length < 5/);
-  assert.match(server, /settlementSourceRun\(stored,record,'HELD','SETTLEMENT_REVERSED'\)/);
+  assert.match(payrollRoutes, /settlementSourceRun\(stored,record,'HELD','SETTLEMENT_REVERSED'\)/);
   assert.match(payrollRoutes, /SETTLEMENT_REVERSAL_REASON_REQUIRED/);
   assert.match(payrollRoutes, /REVERSED_SETTLEMENT_LOCKED/);
 });

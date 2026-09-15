@@ -1,7 +1,16 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
-import { serverSource as server } from './test-server-source.mjs';
+const server = [
+  'server/state-event-bus.mjs',
+  'server/routes/state-routes.mjs',
+  'server/routes/user-routes.mjs',
+  'server/routes/employee-routes.mjs',
+  'server/routes/attendance-leave-routes.mjs',
+  'server/routes/loan-penalty-routes.mjs',
+  'server/routes/payroll-routes.mjs',
+  'server/routes/journal-qoyod-routes.mjs',
+].map(path => fs.readFileSync(path,'utf8')).join('\n');
 
 const api = fs.readFileSync('src/utils/api.ts','utf8');
 const app = fs.readFileSync('src/App.tsx','utf8');
