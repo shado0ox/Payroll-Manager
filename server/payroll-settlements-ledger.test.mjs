@@ -1,5 +1,4 @@
 import test from 'node:test';
-import { serverSource as server } from './test-server-source.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
@@ -47,5 +46,5 @@ test('settlement payment stores period separately from payment date and method',
   assert.match(component, /paymentMethod: method/);
   assert.match(component, /paymentDate/);
   assert.match(component, /paymentReference/);
-  assert.match(server, /settlementSourceRun\(stored,record,'SETTLED','SETTLED_VIA_PAYROLL_SETTLEMENT'\)/);
+  assert.match(payrollRoutes, /settlementSourceRun\(stored,record,'SETTLED','SETTLED_VIA_PAYROLL_SETTLEMENT'\)/);
 });
