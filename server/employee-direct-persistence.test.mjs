@@ -1,14 +1,14 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
-import { serverSource as serverSource } from './test-server-source.mjs';
+const serverSource = fs.readFileSync(new URL('./routes/employee-routes.mjs',import.meta.url),'utf8') + '\nEND_OF_ROUTER';
 
 const appSource = fs.readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8');
 const apiSource = fs.readFileSync(new URL('../src/utils/api.ts', import.meta.url), 'utf8');
 const employeesViewSource = fs.readFileSync(new URL('../src/components/EmployeesView.tsx', import.meta.url), 'utf8');
 
 function routeBlock(method, route, nextRouteMarker) {
-  const startMarker = `app.${method}('${route}'`;
+  const startMarker = `router.${method}('${route}'`;
   const start = serverSource.indexOf(startMarker);
   assert.notEqual(start, -1, `Missing route ${method.toUpperCase()} ${route}`);
   const end = serverSource.indexOf(nextRouteMarker, start + startMarker.length);
@@ -25,7 +25,7 @@ test('employee save uses a dedicated server endpoint and committed response', ()
 });
 
 test('employee PUT writes the normalized employee and version metadata in one transaction', () => {
-  const block = routeBlock('put', '/api/employees/:id', "app.delete('/api/employees/:id'");
+  const block = routeBlock('put', '/employees/:id', "router.delete('/employees/:id'");
   assert.match(block, /await client\.query\('BEGIN'\)/);
   assert.match(block, /INSERT INTO .*employees/s);
   assert.match(block, /ON CONFLICT \(id\) DO UPDATE SET/s);
@@ -36,7 +36,7 @@ test('employee PUT writes the normalized employee and version metadata in one tr
 });
 
 test('employee DELETE mutates PostgreSQL and version metadata transactionally', () => {
-  const block = routeBlock('delete', '/api/employees/:id', "app.put('/api/users/:id'");
+  const block = routeBlock('delete', '/employees/:id', "router.post('/companies/:id/employees/archive'");
   assert.match(block, /SELECT id,company_id FROM .*employees.*FOR UPDATE/s);
   assert.match(block, /DELETE FROM .*employees.*WHERE id=\$1/s);
   assert.match(block, /UPDATE .*employees.*SET is_archived=true/s);
