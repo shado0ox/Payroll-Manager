@@ -1,14 +1,14 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
-import { serverSource as server } from './test-server-source.mjs';
+const server = fs.readFileSync('server/routes/attendance-leave-routes.mjs','utf8') + '\nEND_OF_ROUTER';
 
 const api = fs.readFileSync('src/utils/api.ts','utf8');
 const app = fs.readFileSync('src/App.tsx','utf8');
 const view = fs.readFileSync('src/components/AttendanceLeavesView.tsx','utf8');
 
 function routeBlock(method,path,nextMarker) {
-  const start = server.indexOf(`app.${method}('${path}'`);
+  const start = server.indexOf(`router.${method}('${path}'`);
   const end = server.indexOf(nextMarker,start + 1);
   assert.ok(start >= 0,`${method.toUpperCase()} ${path} route must exist`);
   assert.ok(end > start,`${method.toUpperCase()} ${path} route must have a boundary`);
@@ -16,7 +16,7 @@ function routeBlock(method,path,nextMarker) {
 }
 
 test('leave request creation and editing upsert only one row', () => {
-  const put = routeBlock('put','/api/leaves/:id',"app.patch('/api/leaves/:id/status'");
+  const put = routeBlock('put','/leaves/:id',"router.patch('/leaves/:id/status'");
   assert.match(put,/INSERT INTO.*leave_requests[\s\S]*ON CONFLICT \(id\) DO UPDATE/);
   assert.match(put,/INVALID_LEAVE_EMPLOYEE/);
   assert.match(put,/LEAVE_STATUS_ENDPOINT_REQUIRED/);
@@ -24,7 +24,7 @@ test('leave request creation and editing upsert only one row', () => {
 });
 
 test('leave decisions use a dedicated status command', () => {
-  const patch = routeBlock('patch','/api/leaves/:id/status',"app.put('/api/penalties/:id'");
+  const patch = routeBlock('patch','/leaves/:id/status','END_OF_ROUTER');
   assert.match(patch,/UPDATE.*leave_requests.*SET status=\$2/);
   assert.match(patch,/LEAVE_STATUS_TRANSITION/);
   assert.match(patch,/bumpStateVersion\(client,req\.user\.id\)/);
