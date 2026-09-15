@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
-import { serverSource as serverSource } from './test-server-source.mjs';
+const serverSource = [
+  fs.readFileSync(new URL('./routes/employee-routes.mjs',import.meta.url),'utf8'),
+  fs.readFileSync(new URL('./database-schema.mjs',import.meta.url),'utf8'),
+  fs.readFileSync(new URL('./numbered-state-migrations.mjs',import.meta.url),'utf8'),
+].join('\n');
 
 const apiSource = fs.readFileSync(new URL('../src/utils/api.ts', import.meta.url), 'utf8');
 const appSource = fs.readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8');

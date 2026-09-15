@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
-import { serverSource as server } from './test-server-source.mjs';
+const server = fs.readFileSync(new URL('./routes/employee-routes.mjs',import.meta.url),'utf8') + '\nEND_OF_ROUTER';
 
 const api = fs.readFileSync(new URL('../src/utils/api.ts',import.meta.url),'utf8');
 const app = fs.readFileSync(new URL('../src/App.tsx',import.meta.url),'utf8');
@@ -9,8 +9,8 @@ const profile = fs.readFileSync(new URL('../src/components/CompanyProfileView.ts
 const dangerZone = fs.readFileSync(new URL('../src/components/company/CompanyDangerZoneTab.tsx',import.meta.url),'utf8');
 
 test('bulk employee action archives active rows and preserves company history', () => {
-  const start = server.indexOf("app.post('/api/companies/:id/employees/archive'");
-  const end = server.indexOf("app.put('/api/users/:id'",start);
+  const start = server.indexOf("router.post('/companies/:id/employees/archive'");
+  const end = server.indexOf("END_OF_ROUTER",start);
   assert.ok(start >= 0 && end > start,'bulk employee archive route must exist');
   const route = server.slice(start,end);
   assert.match(route,/can\(req\.user,'MANAGE_EMPLOYEES'\)/);
