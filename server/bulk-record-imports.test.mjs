@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
-import { serverSource as server } from './test-server-source.mjs';
+const server = [
+  fs.readFileSync(new URL('./routes/employee-routes.mjs',import.meta.url),'utf8'),
+  fs.readFileSync(new URL('./routes/attendance-leave-routes.mjs',import.meta.url),'utf8'),
+].join('\n');
 
 const api = fs.readFileSync(new URL('../src/utils/api.ts',import.meta.url),'utf8');
 const app = fs.readFileSync(new URL('../src/App.tsx',import.meta.url),'utf8');
@@ -18,7 +21,7 @@ function route(startMarker,endMarker) {
 }
 
 test('employee spreadsheet import is one atomic record-level transaction', () => {
-  const source = route("app.post('/api/employees/import'","app.put('/api/employees/:id'");
+  const source = route("router.post('/employees/import'","router.put('/employees/:id'");
   assert.match(source,/employees\.length > 2500/);
   assert.match(source,/jsonb_array_elements\(\$1::jsonb\).*WITH ORDINALITY/s);
   assert.match(source,/ON CONFLICT \(id\) DO UPDATE/);
@@ -28,7 +31,7 @@ test('employee spreadsheet import is one atomic record-level transaction', () =>
 });
 
 test('attendance import validates payroll locks and upserts one batch', () => {
-  const source = route("app.post('/api/attendance/import'","app.delete('/api/attendance/:id'");
+  const source = route("router.post('/attendance/import'","router.delete('/attendance/:id'");
   assert.match(source,/records\.length > 2500/);
   assert.match(source,/payrollSourceLocked/);
   assert.match(source,/jsonb_array_elements\(\$1::jsonb\).*WITH ORDINALITY/s);
