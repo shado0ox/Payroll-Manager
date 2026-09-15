@@ -21,7 +21,7 @@ const normalizeArabicNumbers = (val: string): string => {
 
 export const LoginView: React.FC<LoginViewProps> = ({ defaultCompanyCode = '101', onLogin }) => {
   const { language, toggleLanguage, t } = useLanguage();
-  const [forgotOpen, setForgotOpen] = useState(false);
+  const [recoveryMode, setRecoveryMode] = useState<'PASSWORD'|'USERNAME'|'COMPANY_CODE'|null>(null);
   const [forgotEmail, setForgotEmail] = useState('');
   const [forgotMessage, setForgotMessage] = useState('');
   const [resetPassword, setResetPassword] = useState('');
@@ -35,6 +35,32 @@ export const LoginView: React.FC<LoginViewProps> = ({ defaultCompanyCode = '101'
     try {
       await api.passwordResetRequest(forgotEmail.trim());
       setForgotMessage(language === 'ar' ? 'إذا كان البريد مسجلًا، تم إرسال رابط إعادة تعيين كلمة المرور.' : 'If the email is registered, a password reset link has been sent.');
+    } catch {
+      setForgotMessage(language === 'ar' ? 'تعذر إرسال الطلب الآن. حاول مرة أخرى.' : 'Could not submit the request. Please try again.');
+    } finally { setResetBusy(false); }
+  };
+
+  const usernameRecoveryRequest = async () => {
+    if (!forgotEmail.trim()) return;
+    setResetBusy(true);
+    try {
+      await api.usernameRecoveryRequest(forgotEmail.trim(), language);
+      setForgotMessage(language === 'ar'
+        ? 'إذا تطابقت البيانات، تم إرسال اسم المستخدم إلى بريدك الإلكتروني.'
+        : 'If the details match, the username has been sent to your email.');
+    } catch {
+      setForgotMessage(language === 'ar' ? 'تعذر إرسال الطلب الآن. حاول مرة أخرى.' : 'Could not submit the request. Please try again.');
+    } finally { setResetBusy(false); }
+  };
+
+  const companyCodeRecoveryRequest = async () => {
+    if (!forgotEmail.trim()) return;
+    setResetBusy(true);
+    try {
+      await api.companyCodeRecoveryRequest(forgotEmail.trim(), language);
+      setForgotMessage(language === 'ar'
+        ? 'إذا كان البريد مسجلًا، تم إرسال رموز المنشآت المتاحة إلى بريدك الإلكتروني.'
+        : 'If the email is registered, the available company codes have been sent.');
     } catch {
       setForgotMessage(language === 'ar' ? 'تعذر إرسال الطلب الآن. حاول مرة أخرى.' : 'Could not submit the request. Please try again.');
     } finally { setResetBusy(false); }
@@ -167,7 +193,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ defaultCompanyCode = '101'
               {error && <div className="mb-5 flex items-start gap-2.5 rounded-2xl border border-rose-500/25 bg-rose-500/10 p-3.5 text-xs leading-relaxed text-rose-200"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-rose-400" />{error}</div>}
               {mode === 'LOGIN' && <form onSubmit={handleSubmit} className="space-y-5">
                 <LoginField label={t('companyCodeLabel')} icon={<Hash className="h-4 w-4" />}><input type="text" value={companyInput} onChange={e => setCompanyInput(e.target.value)} placeholder={t('companyCodePlaceholder')} required className={inputClass} dir="ltr" autoComplete="organization" /></LoginField>
-                <LoginField label={t('username')} icon={<UserIcon className="h-4 w-4" />}><input type="text" value={username} onChange={e => setUsername(e.target.value)} placeholder={t('username')} required className={inputClass} dir="ltr" autoComplete="username" /></LoginField>
+                <LoginField label={isArabic ? 'اسم المستخدم أو البريد الإلكتروني' : 'Username or email'} icon={<UserIcon className="h-4 w-4" />}><input type="text" value={username} onChange={e => setUsername(e.target.value)} placeholder={isArabic ? 'اسم المستخدم أو البريد الإلكتروني' : 'Username or email'} required className={inputClass} dir="ltr" autoComplete="username" /></LoginField>
                 <LoginField label={t('password')} icon={<Lock className="h-4 w-4" />}>
                   <input type={showPassword ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)} placeholder={t('password')} required className={`${inputClass} pe-11`} dir="ltr" autoComplete="current-password" />
                   <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute end-4 top-1/2 -translate-y-1/2 text-slate-500 transition hover:text-slate-200" tabIndex={-1} aria-label={showPassword ? 'Hide password' : 'Show password'}>{showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}</button>
@@ -187,10 +213,23 @@ export const LoginView: React.FC<LoginViewProps> = ({ defaultCompanyCode = '101'
                 </div>
               ) : mode === 'LOGIN' && (
                 <div className="mt-3">
-                  <button type="button" onClick={() => setForgotOpen(v => !v)} className="w-full text-center text-xs font-bold text-emerald-300 hover:text-emerald-200">{isArabic ? 'نسيت كلمة المرور؟' : 'Forgot password?'}</button>
-                  {forgotOpen && <div className="mt-3 rounded-xl border border-white/10 bg-white/5 p-3 space-y-2">
+                  <div className="flex flex-wrap justify-center gap-x-4 gap-y-2">
+                    <button type="button" onClick={() => { setForgotMessage(''); setRecoveryMode(value => value === 'PASSWORD' ? null : 'PASSWORD'); }} className="text-xs font-bold text-emerald-300 hover:text-emerald-200">{isArabic ? 'نسيت كلمة المرور؟' : 'Forgot password?'}</button>
+                    <button type="button" onClick={() => { setForgotMessage(''); setRecoveryMode(value => value === 'USERNAME' ? null : 'USERNAME'); }} className="text-xs font-bold text-emerald-300 hover:text-emerald-200">{isArabic ? 'نسيت اسم المستخدم؟' : 'Forgot username?'}</button>
+                    <button type="button" onClick={() => { setForgotMessage(''); setRecoveryMode(value => value === 'COMPANY_CODE' ? null : 'COMPANY_CODE'); }} className="text-xs font-bold text-emerald-300 hover:text-emerald-200">{isArabic ? 'نسيت رمز المنشأة؟' : 'Forgot company code?'}</button>
+                  </div>
+                  {recoveryMode && <div className="mt-3 rounded-xl border border-white/10 bg-white/5 p-3 space-y-2">
                     <input type="email" value={forgotEmail} onChange={e => setForgotEmail(e.target.value)} placeholder={isArabic ? 'البريد الإلكتروني المسجل' : 'Registered email'} className={inputClass} />
-                    <button type="button" disabled={resetBusy || !forgotEmail.trim()} onClick={passwordResetRequest} className="w-full h-11 rounded-xl bg-slate-100 text-slate-900 font-black disabled:opacity-50">{isArabic ? 'إرسال رابط إعادة التعيين' : 'Send reset link'}</button>
+                    <button
+                      type="button"
+                      disabled={resetBusy || !forgotEmail.trim()}
+                      onClick={recoveryMode === 'PASSWORD' ? passwordResetRequest : recoveryMode === 'USERNAME' ? usernameRecoveryRequest : companyCodeRecoveryRequest}
+                      className="w-full h-11 rounded-xl bg-slate-100 text-slate-900 font-black disabled:opacity-50"
+                    >
+                      {recoveryMode === 'PASSWORD'
+                        ? (isArabic ? 'إرسال رابط إعادة التعيين' : 'Send reset link')
+                        : (isArabic ? 'إرسال بيانات الدخول إلى البريد' : 'Send sign-in details')}
+                    </button>
                     {forgotMessage && <p className="text-xs text-slate-300">{forgotMessage}</p>}
                   </div>}
                 </div>
