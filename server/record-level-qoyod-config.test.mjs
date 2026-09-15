@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
-import { serverSource as server } from './test-server-source.mjs';
+const server = fs.readFileSync('server/routes/journal-qoyod-routes.mjs','utf8');
 
 const api = fs.readFileSync('src/utils/api.ts','utf8');
 const app = fs.readFileSync('src/App.tsx','utf8');
@@ -10,8 +10,8 @@ const profileQoyod = fs.readFileSync('src/components/company/CompanyQoyodTab.tsx
 const modal = fs.readFileSync('src/components/QoyodIntegrationModal.tsx','utf8');
 
 function configRoute() {
-  const start = server.indexOf("app.put('/api/integrations/qoyod/config'");
-  const end = server.indexOf("app.post('/api/integrations/qoyod/journal'",start);
+  const start = server.indexOf("router.put('/integrations/qoyod/config'");
+  const end = server.indexOf("router.post('/integrations/qoyod/journal'",start);
   assert.ok(start >= 0 && end > start,'Qoyod config route must exist');
   return server.slice(start,end);
 }
