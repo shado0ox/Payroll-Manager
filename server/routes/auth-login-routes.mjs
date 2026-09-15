@@ -7,11 +7,12 @@ export function createAuthLoginRouter({ loginLimiter, pool, q, sha256, permissio
 
   router.post('/login', loginLimiter, async (req, res, next) => {
     try {
-      const username = String(req.body?.username || '').trim().toLowerCase();
+      const identifier = String(req.body?.username || req.body?.identifier || '').trim().toLowerCase();
       const companyCode = String(req.body?.companyCode || '').trim();
       const password = String(req.body?.password || '');
       const result = await pool.query(`SELECT u.*, c.id company_id FROM ${q('users')} u
-        JOIN ${q('companies')} c ON c.company_code=$2 AND c.is_archived=false WHERE lower(u.username)=$1`, [username, companyCode]);
+        JOIN ${q('companies')} c ON c.company_code=$2 AND c.is_archived=false
+        WHERE (lower(u.username)=$1 OR lower(u.email)=$1)`, [identifier, companyCode]);
       const user = result.rows[0];
       const valid = user && user.is_active && await bcrypt.compare(password, user.password_hash);
       const companyAllowed = valid && user.company_ids.includes(user.company_id);
