@@ -45,6 +45,12 @@ const canonicalCarryDetails = (runs,targetRun,employeeId) => asArray(runs)
 const aggregateRun = run => ({
   employeesCount:asArray(run.items).length,
   totalGrossSalaries:roundAmount(asArray(run.items).reduce((sum,item) => sum + Number(item.totalGrossSalary || 0) + Number(item.priorPeriodGross || 0),0)),
+  totalAbsenceDeductions:roundAmount(asArray(run.items).reduce((sum,item) => sum + Number(item.absenceDeduction || 0) + Number(item.unpaidLeaveDeduction || 0),0)),
+  totalDelayDeductions:roundAmount(asArray(run.items).reduce((sum,item) => sum + Number(item.delayDeduction || 0),0)),
+  totalGosiEmployee:roundAmount(asArray(run.items).reduce((sum,item) => sum + Number(item.gosiEmployeeShare || 0),0)),
+  totalGosiEmployer:roundAmount(asArray(run.items).reduce((sum,item) => sum + Number(item.gosiEmployerShare || 0),0)),
+  totalLoanDeductions:roundAmount(asArray(run.items).reduce((sum,item) => sum + Number(item.loanDeduction || 0),0)),
+  totalPenalties:roundAmount(asArray(run.items).reduce((sum,item) => sum + Number(item.penaltiesDeduction || 0) + Number(item.otherDeductions || 0),0)),
   totalDeductions:roundAmount(asArray(run.items).reduce((sum,item) => sum + Number(item.totalDeductions || 0) + Number(item.priorPeriodDeductions || 0),0)),
   totalNetSalaries:roundAmount(asArray(run.items).reduce((sum,item) => sum + Number(item.netSalary || 0),0)),
   totalCompanyCost:roundAmount(asArray(run.items).reduce((sum,item) => sum + Number(item.totalCompanyBurden || 0),0)),
@@ -152,6 +158,9 @@ export function buildPayrollRepairPlan(state,companyIds = []) {
     const currentTotals = aggregateRun(originalRun);
     const storedTotals = {
       employeesCount:Number(originalRun.employeesCount || 0),totalGrossSalaries:roundAmount(originalRun.totalGrossSalaries),
+      totalAbsenceDeductions:roundAmount(originalRun.totalAbsenceDeductions),totalDelayDeductions:roundAmount(originalRun.totalDelayDeductions),
+      totalGosiEmployee:roundAmount(originalRun.totalGosiEmployee),totalGosiEmployer:roundAmount(originalRun.totalGosiEmployer),
+      totalLoanDeductions:roundAmount(originalRun.totalLoanDeductions),totalPenalties:roundAmount(originalRun.totalPenalties),
       totalDeductions:roundAmount(originalRun.totalDeductions),totalNetSalaries:roundAmount(originalRun.totalNetSalaries),
       totalCompanyCost:roundAmount(originalRun.totalCompanyCost),
     };
