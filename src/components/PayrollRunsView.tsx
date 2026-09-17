@@ -631,6 +631,23 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
             : undefined);
         // Employees already included in an active/paid transfer batch are immutable.
         if (previousItem && committedEmployeeIds.has(emp.id)) return previousItem;
+        // A manual per-employee adjustment (bonus/deduction added via the adjustment modal) must
+        // survive a fresh recalculation for any employee not yet locked in a transfer batch.
+        // Re-apply the stored delta on top of the newly calculated base instead of dropping it.
+        const previousManualAddition = previousItem?.manualAddition || 0;
+        const previousManualDeduction = previousItem?.manualDeduction || 0;
+        const calculatedWithManualAdjustment = (previousManualAddition || previousManualDeduction) ? {
+          ...calculated,
+          bonuses: roundAmount(calculated.bonuses + previousManualAddition),
+          otherDeductions: roundAmount(calculated.otherDeductions + previousManualDeduction),
+          manualAddition: previousManualAddition,
+          manualDeduction: previousManualDeduction,
+          adjustmentNotes: previousItem?.adjustmentNotes,
+          totalGrossSalary: roundAmount(calculated.totalGrossSalary + previousManualAddition),
+          totalDeductions: roundAmount(calculated.totalDeductions + previousManualDeduction),
+          netSalary: roundAmount(Math.max(0, calculated.netSalary + previousManualAddition - previousManualDeduction)),
+          totalCompanyBurden: roundAmount(calculated.totalCompanyBurden + previousManualAddition - previousManualDeduction),
+        } : calculated;
         const previousEntitlementStatus = previousItem?.entitlementStatus || 'PAYABLE';
         const normalizedIban = String(emp.bankIban || '').replace(/\s/g, '').toUpperCase();
         const hasReadyBankAccount = /^SA\d{22}$/.test(normalizedIban) && emp.bankAccountStatus !== 'PENDING';
@@ -651,7 +668,7 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
           ? 'MISSING_BANK_ACCOUNT'
           : (emp.suspensionReason?.trim() || tr('تعليق تلقائي من ملف الموظف', 'Automatically held from employee profile'));
         return previousItem ? {
-          ...calculated,
+          ...calculatedWithManualAdjustment,
           entitlementStatus: shouldApplyAutomaticHold ? 'HELD' : (shouldReleaseAutomaticHold ? 'PAYABLE' : previousItem.entitlementStatus),
           entitlementReason: shouldApplyAutomaticHold
             ? automaticHoldReason
