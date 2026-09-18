@@ -124,6 +124,13 @@ export const LoansPenaltiesView: React.FC<LoansPenaltiesViewProps> = ({
     penalty.periodMonth >= penaltyPeriodFrom && penalty.periodMonth <= penaltyPeriodTo
   ), [companyPenalties, penaltyPeriodFrom, penaltyPeriodTo]);
 
+  const totalFilteredPenaltiesApplied = useMemo(() => filteredPenalties
+    .filter(p => p.appliedInPayroll)
+    .reduce((sum, p) => sum + Number(p.amount || 0), 0), [filteredPenalties]);
+
+  const totalFilteredPenaltiesAll = useMemo(() => filteredPenalties
+    .reduce((sum, p) => sum + Number(p.amount || 0), 0), [filteredPenalties]);
+
   // New Loan Form
   const [loanForm, setLoanForm] = useState({
     employeeId: companyEmployees[0]?.id || '',
@@ -437,6 +444,10 @@ export const LoansPenaltiesView: React.FC<LoansPenaltiesViewProps> = ({
             <div><label className="mb-1 block text-[11px] font-bold text-slate-600">{tr('إلى شهر', 'To month')}</label><input type="month" value={penaltyPeriodTo} min={penaltyPeriodFrom} onChange={event => setPenaltyPeriodTo(event.target.value)} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs" /></div>
             <button type="button" onClick={() => { setPenaltyPeriodFrom(currentPeriod); setPenaltyPeriodTo(currentPeriod); }} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600">{tr('الشهر الحالي', 'Current month')}</button>
             <span className="text-[11px] text-slate-500">{tr('النتائج', 'Results')}: {filteredPenalties.length}</span>
+            <span className="text-[11px] font-bold text-rose-700">{tr('إجمالي الخصومات والجزاءات المطبقة', 'Total applied deductions & penalties')}: {formatSAR(totalFilteredPenaltiesApplied)}</span>
+            {totalFilteredPenaltiesAll !== totalFilteredPenaltiesApplied && (
+              <span className="text-[11px] text-slate-400">({tr('إجمالي شامل الملغى', 'Including cancelled')}: {formatSAR(totalFilteredPenaltiesAll)})</span>
+            )}
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-right text-xs">
