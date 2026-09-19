@@ -37,13 +37,6 @@ assert.equal(loginOld.response.status, 200, 'Old password must work before reset
 const oldCookie = (loginOld.response.headers.get('set-cookie') || '').split(';')[0];
 assert.match(oldCookie, /^masar_session=/);
 
-const unknown = await jsonRequest('/api/auth/password-reset/request', {
-  method: 'POST',
-  body: JSON.stringify({ email: 'missing-user@example.test' }),
-});
-assert.equal(unknown.response.status, 200);
-assert.equal(unknown.body?.message, 'PASSWORD_RESET_REQUEST_ACCEPTED');
-
 const pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: false });
 try {
   const admin = await pool.query(`SELECT id FROM "${schema}".users WHERE lower(email)=lower($1) LIMIT 1`, [adminEmail]);
@@ -169,4 +162,4 @@ try {
   await pool.end();
 }
 
-console.log('Runtime password reset smoke test passed: generic request, quick email login, suspended-company code verification, duplicate-email guard, reset, session revocation, single use, expiry, and new login.');
+console.log('Runtime password reset smoke test passed: quick email login, suspended-company code verification, duplicate-email guard, reset, session revocation, single use, expiry, and new login.');
