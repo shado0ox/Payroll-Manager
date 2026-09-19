@@ -111,12 +111,14 @@ export function calculateEmployeePayrollItem(input: EmployeeCalculationInput): P
   let totalUnpaidLeaveDays = 0;
   let standardOvertimeHours = 0;
   let weekendOvertimeHours = 0;
+  const absenceDates = new Set<string>();
+  const unpaidLeaveDates = new Set<string>();
+  const servicePeriodStart = salaryStart > periodStart ? salaryStart : periodStart;
+  const servicePeriodEnd = salaryEnd && salaryEnd < periodEnd ? salaryEnd : periodEnd;
 
   attendanceRecords.forEach((record) => {
     const recordStart = record.date;
     const recordEnd = record.endDate || record.date;
-    const servicePeriodStart = salaryStart > periodStart ? salaryStart : periodStart;
-    const servicePeriodEnd = salaryEnd && salaryEnd < periodEnd ? salaryEnd : periodEnd;
     const overlapStart = recordStart > servicePeriodStart ? recordStart : servicePeriodStart;
     const overlapEnd = recordEnd < servicePeriodEnd ? recordEnd : servicePeriodEnd;
     const overlappedDays = overlapStart <= overlapEnd
@@ -124,9 +126,9 @@ export function calculateEmployeePayrollItem(input: EmployeeCalculationInput): P
       : 0;
     if (overlappedDays <= 0) return;
     if (record.absence) {
-      totalAbsenceDays += overlappedDays;
+      addDateRangeToSet(absenceDates, overlapStart, overlapEnd);
     } else if (record.unpaidLeave) {
-      totalUnpaidLeaveDays += overlappedDays;
+      addDateRangeToSet(unpaidLeaveDates, overlapStart, overlapEnd);
     } else {
       if (record.delayMinutes > 0) {
         if (record.delayMinutes > rules.delayGracePeriodMinutes) {
@@ -142,6 +144,8 @@ export function calculateEmployeePayrollItem(input: EmployeeCalculationInput): P
       }
     }
   });
+  totalAbsenceDays = absenceDates.size;
+  totalUnpaidLeaveDays = [...unpaidLeaveDates].filter(date => !absenceDates.has(date)).length;
 
   // Overtime Calculation
   const standardOvertimeAmount = standardOvertimeHours * hourlyRate * (rules.overtimeStandardRate || 1.5);
@@ -152,7 +156,22 @@ export function calculateEmployeePayrollItem(input: EmployeeCalculationInput): P
   // Deductions from Attendance
   const delayDeduction = roundAmount(totalDelayMinutes * minuteRate * (rules.delayDeductionMultiplier || 1.0), rules.roundingDecimals);
   const absenceDeduction = roundAmount(totalAbsenceDays * dailyRate * (rules.absenceDayMultiplier || 1.0), rules.roundingDecimals);
-  const unpaidLeaveDeduction = roundAmount(totalUnpaidLeaveDays * dailyRate * (rules.unpaidLeaveMultiplier || 1.0), rules.roundingDecimals);
+  const servicePeriodCalendarDays = servicePeriodStart <= servicePeriodEnd
+    ? daysBetweenInclusive(servicePeriodStart, servicePeriodEnd)
+    : 0;
+  const coversFullServicePeriod = servicePeriodCalendarDays > 0
+    && totalUnpaidLeaveDays === servicePeriodCalendarDays;
+  const maximumUnpaidLeaveDeduction = roundAmount(
+    dailyBaseAmount * salaryProrationFactor,
+    rules.roundingDecimals,
+  );
+  const calculatedUnpaidLeaveDeduction = coversFullServicePeriod
+    ? maximumUnpaidLeaveDeduction
+    : totalUnpaidLeaveDays * dailyRate * (rules.unpaidLeaveMultiplier || 1.0);
+  const unpaidLeaveDeduction = roundAmount(
+    Math.min(calculatedUnpaidLeaveDeduction, maximumUnpaidLeaveDeduction),
+    rules.roundingDecimals,
+  );
 
   // Loans deduction
   let loanDeduction = 0;
@@ -322,6 +341,21 @@ export function calculateEmployeePayrollItem(input: EmployeeCalculationInput): P
 export function roundAmount(val: number, decimals: number = 2): number {
   const factor = Math.pow(10, decimals);
   return Math.round((val + Number.EPSILON) * factor) / factor;
+}
+
+function daysBetweenInclusive(start: string, end: string): number {
+  return Math.floor(
+    (Date.parse(`${end}T00:00:00Z`) - Date.parse(`${start}T00:00:00Z`)) / 86400000,
+  ) + 1;
+}
+
+function addDateRangeToSet(target: Set<string>, start: string, end: string): void {
+  const cursor = new Date(`${start}T00:00:00Z`);
+  const last = new Date(`${end}T00:00:00Z`);
+  while (cursor <= last) {
+    target.add(cursor.toISOString().slice(0, 10));
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
 }
 
 export function formatSAR(val: number): string {
