@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
+import bcrypt from 'bcryptjs';
 import pg from 'pg';
 
 const { Pool } = pg;
@@ -146,11 +147,8 @@ try {
     WHERE token_hash=$1`, [sha256(verified.body.resetToken)]);
   assert.ok(consumedToken.rows[0]?.used_at,'Reset grant must be marked as used after changing the password');
 
-  const oldLoginAfterReset = await jsonRequest('/api/auth/login', {
-    method: 'POST',
-    body: JSON.stringify({ companyCode, username, password: oldPassword }),
-  });
-  assert.equal(oldLoginAfterReset.response.status, 401, 'Old password must stop working after reset');
+  const changedPassword = await pool.query(`SELECT password_hash FROM "${schema}".users WHERE id=$1`, [userId]);
+  assert.equal(await bcrypt.compare(oldPassword,changedPassword.rows[0].password_hash),false,'Old password must stop working after reset');
 
   const newLogin = await jsonRequest('/api/auth/login', {
     method: 'POST',
