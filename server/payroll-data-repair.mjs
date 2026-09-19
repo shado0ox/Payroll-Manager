@@ -87,6 +87,82 @@ const totalDifferenceDetails = (storedTotals,expectedTotals) => Object.keys(expe
   return [{ metric,stored,computed,difference:roundAmount(computed - stored) }];
 });
 
+const hasFiniteFields = (record,fields) => fields.every(field => record?.[field] != null && Number.isFinite(Number(record[field])));
+const grossComponentFields = ['baseSalary','housingAllowance','transportAllowance','otherAllowances','overtimeAmount','bonuses'];
+const deductionComponentFields = ['delayDeduction','absenceDeduction','unpaidLeaveDeduction','gosiEmployeeShare','loanDeduction','penaltiesDeduction','otherDeductions'];
+const inspectedFinancialFields = [...grossComponentFields,...deductionComponentFields,'totalGrossSalary','totalDeductions','netSalary','gosiEmployerShare','totalCompanyBurden','priorPeriodNet'];
+
+const itemArithmeticRepair = (employee,originalItem) => {
+  let item={...originalItem};
+  const mismatches=[];
+  const identity=employeeIdentity(employee,originalItem);
+  if(hasFiniteFields(item,grossComponentFields)){
+    const expected=roundAmount(grossComponentFields.reduce((sum,field)=>sum+Number(item[field]||0),0));
+    const recorded=roundAmount(item.totalGrossSalary);
+    if(recorded!==expected){mismatches.push({...identity,metric:'totalGrossSalary',recorded,expected,difference:roundAmount(expected-recorded)});item.totalGrossSalary=expected;}
+  }
+  if(hasFiniteFields(item,deductionComponentFields)){
+    const expected=roundAmount(deductionComponentFields.reduce((sum,field)=>sum+Number(item[field]||0),0));
+    const recorded=roundAmount(item.totalDeductions);
+    if(recorded!==expected){mismatches.push({...identity,metric:'totalDeductions',recorded,expected,difference:roundAmount(expected-recorded)});item.totalDeductions=expected;}
+  }
+  if(hasFiniteFields(item,['totalGrossSalary','totalDeductions','netSalary','priorPeriodNet'])){
+    const expected=roundAmount(Math.max(0,Number(item.totalGrossSalary)-Number(item.totalDeductions))+Number(item.priorPeriodNet||0));
+    const recorded=roundAmount(item.netSalary);
+    if(recorded!==expected){mismatches.push({...identity,metric:'netSalary',recorded,expected,difference:roundAmount(expected-recorded)});item.netSalary=expected;}
+  }
+  if(hasFiniteFields(item,['totalGrossSalary','gosiEmployerShare','totalCompanyBurden','priorPeriodNet'])){
+    const expected=roundAmount(Number(item.totalGrossSalary)+Number(item.gosiEmployerShare||0)+Number(item.priorPeriodNet||0));
+    const recorded=roundAmount(item.totalCompanyBurden);
+    if(recorded!==expected){mismatches.push({...identity,metric:'totalCompanyBurden',recorded,expected,difference:roundAmount(expected-recorded)});item.totalCompanyBurden=expected;}
+  }
+  return { item,mismatches };
+};
+
+const itemRiskDetails = (employee,item) => {
+  const identity=employeeIdentity(employee,item);
+  const negativeAmounts=inspectedFinancialFields.flatMap(field => {
+    const amount=Number(item?.[field]);
+    return Number.isFinite(amount)&&amount<0?[{...identity,field,amount}]:[];
+  });
+  const deductionExcess=Number(item?.totalDeductions||0)>Number(item?.totalGrossSalary||0)
+    ? [{...identity,gross:roundAmount(item.totalGrossSalary),deductions:roundAmount(item.totalDeductions),
+      excess:roundAmount(Number(item.totalDeductions)-Number(item.totalGrossSalary))}]
+    : [];
+  const missingGosiBranch=(Number(item?.gosiEmployeeShare||0)>0||Number(item?.gosiEmployerShare||0)>0)
+    && (!String(item?.gosiBranchId||'').trim()||!String(item?.gosiBranchCode||'').trim())
+    ? [{...identity,employeeShare:roundAmount(item.gosiEmployeeShare),employerShare:roundAmount(item.gosiEmployerShare)}]
+    : [];
+  return { negativeAmounts,deductionExcess,missingGosiBranch };
+};
+
+const paymentBatchDetails = run => asArray(run.paymentBatches).flatMap(batch => {
+  if(!activeBatch(batch))return [];
+  const employeeIds=asArray(batch.employeeIds).map(String);
+  const duplicateEmployeeIds=[...new Set(employeeIds.filter((id,index)=>employeeIds.indexOf(id)!==index))];
+  const missingEmployeeIds=employeeIds.filter(id=>!asArray(run.items).some(item=>String(item.employeeId)===id));
+  const currentAmount=roundAmount(employeeIds.reduce((sum,id)=>{
+    const item=asArray(run.items).find(candidate=>String(candidate.employeeId)===id);
+    return sum+Number(item?.netSalary||0);
+  },0));
+  const priorAmount=roundAmount(asArray(batch.priorEntitlements).reduce((sum,ref)=>sum+Number(ref?.amount||0),0));
+  const expectedTotal=roundAmount(currentAmount+priorAmount);
+  const recordedTotal=roundAmount(batch.totalAmount);
+  const employeesCountMismatch=batch.employeesCount!=null&&Number(batch.employeesCount)!==employeeIds.length;
+  if(!duplicateEmployeeIds.length&&!missingEmployeeIds.length&&!employeesCountMismatch
+    &&(batch.totalAmount==null||recordedTotal===expectedTotal))return [];
+  return [{batchId:String(batch.id||''),batchNumber:String(batch.batchNumber||''),status:String(batch.status||''),
+    duplicateEmployeeIds,missingEmployeeIds,recordedEmployeesCount:batch.employeesCount==null?null:Number(batch.employeesCount),
+    expectedEmployeesCount:employeeIds.length,recordedTotal,expectedTotal,difference:roundAmount(expectedTotal-recordedTotal)}];
+});
+
+const journalAdjustmentDetails = (state,run) => asArray(state?.journals).flatMap(journal => {
+  if(journal?.payrollRunId!==run.id||(journal?.journalType&&journal.journalType!=='PAYROLL_ACCRUAL'))return [];
+  const adjustmentLines=asArray(journal.lines).filter(line=>line?.id==='line-balance-adjustment'||String(line?.accountCode||'')==='9999');
+  return adjustmentLines.map(line=>({journalBatchId:String(journal.id||''),batchNumber:String(journal.batchNumber||''),
+    amount:roundAmount(Number(line.debit||0)-Number(line.credit||0)),qoyodSynced:Boolean(journal.qoyodSyncStatus?.synced)}));
+});
+
 export function buildPayrollRepairPlan(state,companyIds = []) {
   const allowed = new Set(asArray(companyIds));
   const runs = asArray(state?.payrollRuns).filter(run => !allowed.size || allowed.has(run.companyId));
@@ -96,21 +172,46 @@ export function buildPayrollRepairPlan(state,companyIds = []) {
 
   for (const originalRun of runs) {
     const findings = [];
-    const repairable = ['DRAFT','UNDER_REVIEW'].includes(String(originalRun.status || 'DRAFT'));
+    const editable = ['DRAFT','UNDER_REVIEW'].includes(String(originalRun.status || 'DRAFT'));
     let carryChanged = false;
     let holdChanged = false;
+    let itemArithmeticChanged = false;
     const carryMismatches = [];
     const holdMismatches = [];
+    const itemCalculationMismatches = [];
+    const negativeAmounts = [];
+    const deductionExcesses = [];
+    const missingEmployees = [];
+    const missingGosiBranches = [];
+    const employeeIds=asArray(originalRun.items).map(item=>String(item.employeeId||''));
+    const duplicateEmployeeIds=[...new Set(employeeIds.filter((id,index)=>id&&employeeIds.indexOf(id)!==index))];
     const items = asArray(originalRun.items).map(originalItem => {
-      if (employeeLockedInRun(originalRun,originalItem.employeeId)) return originalItem;
+      if (employeeLockedInRun(originalRun,originalItem.employeeId)) {
+        const employee=employeesById.get(originalItem.employeeId);
+        if(!employee)missingEmployees.push(employeeIdentity(employee,originalItem));
+        const arithmetic=itemArithmeticRepair(employee,originalItem);
+        itemCalculationMismatches.push(...arithmetic.mismatches.map(detail=>({...detail,locked:true})));
+        const risks=itemRiskDetails(employee,originalItem);
+        negativeAmounts.push(...risks.negativeAmounts);deductionExcesses.push(...risks.deductionExcess);missingGosiBranches.push(...risks.missingGosiBranch);
+        return originalItem;
+      }
       // Approved and posted payroll runs are immutable historical snapshots.
       // A payment created in a later month can legitimately change today's
       // carry-forward expectation without making the closed snapshot wrong.
       // Only validate their stored aggregates below; never recalculate their
       // employee carry or entitlement state from current payment coverage.
-      if (!repairable) return originalItem;
+      if (!editable) {
+        const employee=employeesById.get(originalItem.employeeId);
+        if(!employee)missingEmployees.push(employeeIdentity(employee,originalItem));
+        const arithmetic=itemArithmeticRepair(employee,originalItem);
+        itemCalculationMismatches.push(...arithmetic.mismatches.map(detail=>({...detail,locked:true})));
+        const risks=itemRiskDetails(employee,originalItem);
+        negativeAmounts.push(...risks.negativeAmounts);deductionExcesses.push(...risks.deductionExcess);missingGosiBranches.push(...risks.missingGosiBranch);
+        return originalItem;
+      }
       let item = { ...originalItem };
       const employee = employeesById.get(originalItem.employeeId);
+      if(!employee)missingEmployees.push(employeeIdentity(employee,originalItem));
       const expectedDetails = canonicalCarryDetails(runs,originalRun,originalItem.employeeId);
       const currentDetails = asArray(originalItem.priorPeriodDetails).map(detail => ({
         periodMonth:String(detail?.periodMonth || ''),gross:roundAmount(detail?.gross),deductions:roundAmount(detail?.deductions),net:roundAmount(detail?.net),
@@ -125,6 +226,16 @@ export function buildPayrollRepairPlan(state,companyIds = []) {
         const priorPeriodNet = roundAmount(expectedDetails.reduce((sum,detail) => sum + detail.net,0));
         item = { ...item,priorPeriodDetails:expectedDetails,priorPeriodGross,priorPeriodDeductions,priorPeriodNet,
           netSalary:roundAmount(baseNet + priorPeriodNet),totalCompanyBurden:roundAmount(baseBurden + priorPeriodNet) };
+      }
+      const expectedCarryGross=roundAmount(expectedDetails.reduce((sum,detail)=>sum+detail.gross,0));
+      const expectedCarryDeductions=roundAmount(expectedDetails.reduce((sum,detail)=>sum+detail.deductions,0));
+      const expectedCarryNet=roundAmount(expectedDetails.reduce((sum,detail)=>sum+detail.net,0));
+      if(roundAmount(item.priorPeriodGross)!==expectedCarryGross||roundAmount(item.priorPeriodDeductions)!==expectedCarryDeductions||roundAmount(item.priorPeriodNet)!==expectedCarryNet){
+        carryChanged=true;
+        const baseNet=roundAmount(Number(item.netSalary||0)-Number(item.priorPeriodNet||0));
+        const baseBurden=roundAmount(Number(item.totalCompanyBurden||0)-Number(item.priorPeriodNet||0));
+        item={...item,priorPeriodGross:expectedCarryGross,priorPeriodDeductions:expectedCarryDeductions,priorPeriodNet:expectedCarryNet,
+          netSalary:roundAmount(baseNet+expectedCarryNet),totalCompanyBurden:roundAmount(baseBurden+expectedCarryNet)};
       }
       const staleBankHold = item.entitlementStatus === 'HELD' && item.entitlementReason === 'MISSING_BANK_ACCOUNT' && validReadyBank(employee);
       const earlierSalaryWasPaid = runs.some(sourceRun => sourceRun.companyId === originalRun.companyId
@@ -149,11 +260,28 @@ export function buildPayrollRepairPlan(state,companyIds = []) {
         delete item.entitlementDocumentRef;
         delete item.entitlementHoldSource;
       }
+      const arithmetic=itemArithmeticRepair(employee,item);
+      if(arithmetic.mismatches.length){
+        itemArithmeticChanged=true;
+        itemCalculationMismatches.push(...arithmetic.mismatches);
+        item=arithmetic.item;
+      }
+      const risks=itemRiskDetails(employee,item);
+      negativeAmounts.push(...risks.negativeAmounts);deductionExcesses.push(...risks.deductionExcess);missingGosiBranches.push(...risks.missingGosiBranch);
       return item;
     });
     let proposed = { ...originalRun,items };
     if (carryChanged) findings.push('CARRY_FORWARD_MISMATCH');
     if (holdChanged) findings.push('AUTOMATIC_HOLD_STALE');
+    if (itemCalculationMismatches.length) findings.push('ITEM_CALCULATION_MISMATCH');
+    if (deductionExcesses.length) findings.push('DEDUCTION_EXCEEDS_GROSS');
+    if (negativeAmounts.length) findings.push('NEGATIVE_PAYROLL_AMOUNT');
+    if (missingEmployees.length||duplicateEmployeeIds.length) findings.push('EMPLOYEE_REFERENCE_MISMATCH');
+    if (missingGosiBranches.length) findings.push('GOSI_BRANCH_MISSING');
+    const paymentBatchMismatches=paymentBatchDetails(originalRun);
+    if(paymentBatchMismatches.length)findings.push('PAYMENT_BATCH_MISMATCH');
+    const journalAdjustments=journalAdjustmentDetails(state,originalRun);
+    if(journalAdjustments.length)findings.push('JOURNAL_BALANCE_ADJUSTMENT');
     const expectedTotals = aggregateRun(proposed);
     const currentTotals = aggregateRun(originalRun);
     const storedTotals = {
@@ -168,12 +296,14 @@ export function buildPayrollRepairPlan(state,companyIds = []) {
     if (!sameJson(storedTotals,currentTotals) || !sameJson(currentTotals,expectedTotals)) findings.push('RUN_TOTAL_MISMATCH');
     proposed = { ...proposed,...expectedTotals };
     if (!findings.length) continue;
+    const hasSafeRepair=editable&&(carryChanged||holdChanged||itemArithmeticChanged||totalMismatches.length>0);
     const id = `payroll-run:${originalRun.id}`;
     issues.push({ id,type:'PAYROLL_RUN_INCONSISTENCY',companyId:originalRun.companyId,runId:originalRun.id,
-      periodMonth:originalRun.periodMonth,status:originalRun.status,findings,repairable,
-      details:{ carryMismatches,holdMismatches,totalMismatches },
-      blockedReason:repairable ? null : 'LOCKED_PAYROLL_RUN' });
-    if (repairable) proposedRuns.set(id,proposed);
+      periodMonth:originalRun.periodMonth,status:originalRun.status,findings,repairable:hasSafeRepair,
+      details:{ carryMismatches,holdMismatches,totalMismatches,itemCalculationMismatches,deductionExcesses,negativeAmounts,
+        missingEmployees,duplicateEmployeeIds,missingGosiBranches,paymentBatchMismatches,journalAdjustments },
+      blockedReason:hasSafeRepair ? null : editable ? 'MANUAL_REVIEW_REQUIRED' : 'LOCKED_PAYROLL_RUN' });
+    if (hasSafeRepair) proposedRuns.set(id,proposed);
   }
   return { issues,proposedRuns };
 }

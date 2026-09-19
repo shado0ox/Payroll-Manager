@@ -152,3 +152,49 @@ test('selected repair releases an unmarked legacy hold after an earlier salary w
   assert.ok(plan.issues.find(issue => issue.runId === 'september')?.findings.includes('AUTOMATIC_HOLD_STALE'));
   assert.equal(repaired.items[0].entitlementStatus,'PAYABLE');
 });
+
+test('scan repairs employee arithmetic from component values in an editable payroll',()=>{
+  const detailedItem=item('detail-item',{
+    baseSalary:1000,housingAllowance:100,transportAllowance:50,otherAllowances:25,overtimeAmount:10,bonuses:15,
+    delayDeduction:10,absenceDeduction:20,unpaidLeaveDeduction:30,gosiEmployeeShare:40,loanDeduction:50,
+    penaltiesDeduction:5,otherDeductions:5,gosiEmployerShare:60,
+    totalGrossSalary:999,totalDeductions:99,netSalary:850,totalCompanyBurden:900,
+  });
+  const september=run('september','2026-09','DRAFT',detailedItem,{
+    totalGrossSalaries:999,totalDeductions:99,totalNetSalaries:850,totalCompanyCost:900,
+  });
+  const plan=buildPayrollRepairPlan({employees:[employee],payrollRuns:[september]},['company-1']);
+  const issue=plan.issues[0];
+  assert.ok(issue.findings.includes('ITEM_CALCULATION_MISMATCH'));
+  assert.deepEqual(issue.details.itemCalculationMismatches.map(detail=>detail.metric),[
+    'totalGrossSalary','totalDeductions','netSalary','totalCompanyBurden',
+  ]);
+  const repaired=plan.proposedRuns.get('payroll-run:september').items[0];
+  assert.equal(repaired.totalGrossSalary,1200);
+  assert.equal(repaired.totalDeductions,160);
+  assert.equal(repaired.netSalary,1040);
+  assert.equal(repaired.totalCompanyBurden,1260);
+});
+
+test('scan reports unsafe deduction, GOSI, payment, employee-reference and journal risks without hiding them',()=>{
+  const riskyItem=item('risky-item',{
+    employeeId:'missing-employee',totalGrossSalary:1000,totalDeductions:1200,netSalary:0,totalCompanyBurden:1000,
+    gosiEmployerShare:20,gosiBranchId:'',gosiBranchCode:'',
+  });
+  const september=run('september','2026-09','DRAFT',riskyItem,{
+    totalGrossSalaries:1000,totalDeductions:1200,totalNetSalaries:0,totalCompanyCost:1000,
+    paymentBatches:[{id:'batch-1',batchNumber:'PAY-1',status:'SCHEDULED',employeeIds:['missing-employee','missing-employee'],employeesCount:1,totalAmount:50}],
+  });
+  const state={employees:[employee],payrollRuns:[september],journals:[{
+    id:'journal-1',payrollRunId:'september',journalType:'PAYROLL_ACCRUAL',batchNumber:'JV-1',
+    lines:[{id:'line-balance-adjustment',accountCode:'9999',debit:200,credit:0}],
+  }]};
+  const issue=buildPayrollRepairPlan(state,['company-1']).issues[0];
+  for(const finding of ['DEDUCTION_EXCEEDS_GROSS','EMPLOYEE_REFERENCE_MISMATCH','GOSI_BRANCH_MISSING','PAYMENT_BATCH_MISMATCH','JOURNAL_BALANCE_ADJUSTMENT']){
+    assert.ok(issue.findings.includes(finding),finding);
+  }
+  assert.equal(issue.details.deductionExcesses[0].excess,200);
+  assert.equal(issue.details.missingEmployees[0].employeeId,'missing-employee');
+  assert.deepEqual(issue.details.paymentBatchMismatches[0].duplicateEmployeeIds,['missing-employee']);
+  assert.equal(issue.details.journalAdjustments[0].amount,200);
+});

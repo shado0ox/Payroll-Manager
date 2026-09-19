@@ -23,7 +23,18 @@ export type PayrollRepairIssue = {
   runId:string;
   periodMonth:string;
   status:string;
-  findings:Array<'CARRY_FORWARD_MISMATCH' | 'AUTOMATIC_HOLD_STALE' | 'RUN_TOTAL_MISMATCH'>;
+  findings:Array<
+    | 'CARRY_FORWARD_MISMATCH'
+    | 'AUTOMATIC_HOLD_STALE'
+    | 'ITEM_CALCULATION_MISMATCH'
+    | 'DEDUCTION_EXCEEDS_GROSS'
+    | 'NEGATIVE_PAYROLL_AMOUNT'
+    | 'EMPLOYEE_REFERENCE_MISMATCH'
+    | 'GOSI_BRANCH_MISSING'
+    | 'PAYMENT_BATCH_MISMATCH'
+    | 'JOURNAL_BALANCE_ADJUSTMENT'
+    | 'RUN_TOTAL_MISMATCH'
+  >;
   details:{
     carryMismatches:Array<{
       employeeId:string;
@@ -40,10 +51,34 @@ export type PayrollRepairIssue = {
       employeeName:string;
     }>;
     totalMismatches:Array<{
-      metric:'employeesCount' | 'totalGrossSalaries' | 'totalDeductions' | 'totalNetSalaries' | 'totalCompanyCost';
+      metric:'employeesCount'|'totalGrossSalaries'|'totalAbsenceDeductions'|'totalDelayDeductions'|'totalGosiEmployee'
+        |'totalGosiEmployer'|'totalLoanDeductions'|'totalPenalties'|'totalDeductions'|'totalNetSalaries'|'totalCompanyCost';
       stored:number;
       computed:number;
       difference:number;
+    }>;
+    itemCalculationMismatches:Array<{
+      employeeId:string;employeeNo:string;employeeName:string;
+      metric:'totalGrossSalary'|'totalDeductions'|'netSalary'|'totalCompanyBurden';
+      recorded:number;expected:number;difference:number;locked?:boolean;
+    }>;
+    deductionExcesses:Array<{
+      employeeId:string;employeeNo:string;employeeName:string;gross:number;deductions:number;excess:number;
+    }>;
+    negativeAmounts:Array<{
+      employeeId:string;employeeNo:string;employeeName:string;field:string;amount:number;
+    }>;
+    missingEmployees:Array<{employeeId:string;employeeNo:string;employeeName:string}>;
+    duplicateEmployeeIds:string[];
+    missingGosiBranches:Array<{
+      employeeId:string;employeeNo:string;employeeName:string;employeeShare:number;employerShare:number;
+    }>;
+    paymentBatchMismatches:Array<{
+      batchId:string;batchNumber:string;status:string;duplicateEmployeeIds:string[];missingEmployeeIds:string[];
+      recordedEmployeesCount:number|null;expectedEmployeesCount:number;recordedTotal:number;expectedTotal:number;difference:number;
+    }>;
+    journalAdjustments:Array<{
+      journalBatchId:string;batchNumber:string;amount:number;qoyodSynced:boolean;
     }>;
   };
   repairable:boolean;

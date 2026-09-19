@@ -92,15 +92,35 @@ export const DatabaseStatusModal: React.FC<DatabaseStatusModalProps> = ({
   const repairFindingLabel = (finding:PayrollRepairIssue['findings'][number]) => ({
     CARRY_FORWARD_MISMATCH:tr('اختلاف في الرصيد المرحّل', 'Carry-forward mismatch'),
     AUTOMATIC_HOLD_STALE:tr('تعليق آلي منتهي السبب', 'Stale automatic hold'),
+    ITEM_CALCULATION_MISMATCH:tr('اختلاف حساب موظف', 'Employee calculation mismatch'),
+    DEDUCTION_EXCEEDS_GROSS:tr('خصومات تتجاوز الاستحقاق', 'Deductions exceed gross'),
+    NEGATIVE_PAYROLL_AMOUNT:tr('قيمة مالية سالبة', 'Negative payroll amount'),
+    EMPLOYEE_REFERENCE_MISMATCH:tr('خلل في مرجع الموظف', 'Employee reference mismatch'),
+    GOSI_BRANCH_MISSING:tr('فرع التأمينات غير محفوظ', 'Missing GOSI branch snapshot'),
+    PAYMENT_BATCH_MISMATCH:tr('اختلاف في دفعة الرواتب', 'Payment batch mismatch'),
+    JOURNAL_BALANCE_ADJUSTMENT:tr('تسوية آلية في القيد 9999', 'Automatic journal adjustment 9999'),
     RUN_TOTAL_MISMATCH:tr('اختلاف في إجماليات المسير', 'Payroll total mismatch'),
   })[finding];
 
   const repairTotalLabel = (metric:PayrollRepairIssue['details']['totalMismatches'][number]['metric']) => ({
     employeesCount:tr('عدد الموظفين', 'Employees count'),
     totalGrossSalaries:tr('إجمالي الاستحقاقات', 'Gross salaries'),
+    totalAbsenceDeductions:tr('خصومات الغياب والإجازة', 'Absence and leave deductions'),
+    totalDelayDeductions:tr('خصومات التأخير', 'Delay deductions'),
+    totalGosiEmployee:tr('حصة الموظفين في التأمينات', 'Employee GOSI'),
+    totalGosiEmployer:tr('حصة المنشأة في التأمينات', 'Employer GOSI'),
+    totalLoanDeductions:tr('استقطاعات السلف', 'Loan deductions'),
+    totalPenalties:tr('الجزاءات والخصومات الأخرى', 'Penalties and other deductions'),
     totalDeductions:tr('إجمالي الاستقطاعات', 'Deductions'),
     totalNetSalaries:tr('صافي الرواتب', 'Net salaries'),
     totalCompanyCost:tr('إجمالي تكلفة المنشأة', 'Company cost'),
+  })[metric];
+
+  const repairItemMetricLabel = (metric:PayrollRepairIssue['details']['itemCalculationMismatches'][number]['metric']) => ({
+    totalGrossSalary:tr('إجمالي استحقاق الموظف','Employee gross'),
+    totalDeductions:tr('إجمالي خصومات الموظف','Employee deductions'),
+    netSalary:tr('صافي الموظف','Employee net'),
+    totalCompanyBurden:tr('تكلفة المنشأة للموظف','Employee company cost'),
   })[metric];
 
   const formatRepairAmount = (value:number,metric?:PayrollRepairIssue['details']['totalMismatches'][number]['metric']) =>
@@ -311,6 +331,36 @@ export const DatabaseStatusModal: React.FC<DatabaseStatusModalProps> = ({
                       </tr>)}</tbody>
                     </table>
                   </div>}
+                  {issue.details?.itemCalculationMismatches?.length > 0 && <div className="mt-3 overflow-x-auto rounded-lg border border-rose-100 bg-white">
+                    <div className="border-b border-rose-100 px-3 py-2 text-[10px] font-black text-rose-900">{tr('تفاصيل اختلاف حساب الموظفين', 'Employee calculation differences')}</div>
+                    <table className="w-full min-w-[680px] text-[10px]">
+                      <thead className="bg-rose-50 text-slate-500"><tr><th className="px-2 py-2 text-start">{tr('الموظف','Employee')}</th><th className="px-2 py-2 text-start">{tr('الرقم','Number')}</th><th className="px-2 py-2 text-start">{tr('البند','Metric')}</th><th className="px-2 py-2 text-end">{tr('المسجل','Recorded')}</th><th className="px-2 py-2 text-end">{tr('المتوقع','Expected')}</th><th className="px-2 py-2 text-end">{tr('الفرق','Difference')}</th></tr></thead>
+                      <tbody>{issue.details.itemCalculationMismatches.map((detail,index)=><tr key={`${detail.employeeId}-${detail.metric}-${index}`} className="border-t border-slate-100 text-slate-700">
+                        <td className="px-2 py-2 font-bold">{detail.employeeName||tr('غير مسجل','Not recorded')}{detail.locked?<span className="ms-1 text-amber-700">({tr('مقفول','Locked')})</span>:null}</td><td className="px-2 py-2 font-mono">{detail.employeeNo||'—'}</td><td className="px-2 py-2">{repairItemMetricLabel(detail.metric)}</td><td className="px-2 py-2 text-end">{formatRepairAmount(detail.recorded)}</td><td className="px-2 py-2 text-end">{formatRepairAmount(detail.expected)}</td><td className={`px-2 py-2 text-end font-black ${detail.difference<0?'text-rose-700':'text-emerald-700'}`}>{formatRepairAmount(detail.difference)}</td>
+                      </tr>)}</tbody>
+                    </table>
+                  </div>}
+                  {issue.details?.deductionExcesses?.length > 0 && <div className="mt-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-[10px] text-rose-900">
+                    <div className="font-black">{tr('خصومات تتجاوز استحقاق الموظف — تحتاج مراجعة مصدر الخصم:', 'Deductions exceed employee gross — deduction source requires review:')}</div>
+                    {issue.details.deductionExcesses.map(detail=><div key={detail.employeeId} className="mt-1">{detail.employeeName} ({detail.employeeNo||'—'}): {tr('الاستحقاق','Gross')} {formatRepairAmount(detail.gross)} · {tr('الخصومات','Deductions')} {formatRepairAmount(detail.deductions)} · {tr('التجاوز','Excess')} {formatRepairAmount(detail.excess)}</div>)}
+                  </div>}
+                  {issue.details?.negativeAmounts?.length > 0 && <div className="mt-2 rounded-lg border border-rose-200 bg-white px-3 py-2 text-[10px] text-rose-800">
+                    <span className="font-black">{tr('قيم سالبة:', 'Negative values:')}</span>{' '}
+                    {issue.details.negativeAmounts.map(detail=>`${detail.employeeName} (${detail.field}: ${formatRepairAmount(detail.amount)})`).join('، ')}
+                  </div>}
+                  {(issue.details?.missingEmployees?.length>0||issue.details?.duplicateEmployeeIds?.length>0)&&<div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[10px] text-amber-900">
+                    {issue.details.missingEmployees.length>0&&<div><span className="font-black">{tr('موظفون غير موجودين في ملف الموظفين:','Employees missing from employee master:')}</span> {issue.details.missingEmployees.map(detail=>`${detail.employeeName||'—'} (${detail.employeeNo||detail.employeeId})`).join('، ')}</div>}
+                    {issue.details.duplicateEmployeeIds.length>0&&<div><span className="font-black">{tr('مراجع موظفين مكررة داخل المسير:','Duplicate employee references in payroll:')}</span> {issue.details.duplicateEmployeeIds.join('، ')}</div>}
+                  </div>}
+                  {issue.details?.missingGosiBranches?.length>0&&<div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[10px] text-amber-900"><span className="font-black">{tr('مبالغ تأمينات بدون لقطة فرع:','GOSI amounts without a branch snapshot:')}</span>{' '}{issue.details.missingGosiBranches.map(detail=>`${detail.employeeName} (${detail.employeeNo||'—'})`).join('، ')}</div>}
+                  {issue.details?.paymentBatchMismatches?.length>0&&<div className="mt-2 rounded-lg border border-rose-200 bg-white px-3 py-2 text-[10px] text-rose-800">
+                    <div className="font-black">{tr('اختلافات دفعات الرواتب:', 'Payment batch differences:')}</div>
+                    {issue.details.paymentBatchMismatches.map(detail=><div key={detail.batchId} className="mt-1">{detail.batchNumber||detail.batchId}: {tr('المسجل','Recorded')} {formatRepairAmount(detail.recordedTotal)} · {tr('المتوقع','Expected')} {formatRepairAmount(detail.expectedTotal)} · {tr('الفرق','Difference')} {formatRepairAmount(detail.difference)}{detail.duplicateEmployeeIds.length? ` · ${tr('موظفون مكررون','Duplicates')}: ${detail.duplicateEmployeeIds.join(', ')}`:''}{detail.missingEmployeeIds.length? ` · ${tr('مراجع مفقودة','Missing')}: ${detail.missingEmployeeIds.join(', ')}`:''}</div>)}
+                  </div>}
+                  {issue.details?.journalAdjustments?.length>0&&<div className="mt-2 rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-[10px] text-orange-900">
+                    <div className="font-black">{tr('قيود تحتوي تسوية 9999 ويجب تحليلها قبل الترحيل:', 'Journals containing account 9999 must be reviewed before posting:')}</div>
+                    {issue.details.journalAdjustments.map(detail=><div key={detail.journalBatchId} className="mt-1">{detail.batchNumber||detail.journalBatchId}: {formatRepairAmount(detail.amount)}{detail.qoyodSynced?` · ${tr('مرحّل إلى قيود — للمراجعة فقط','Posted to Qoyod — review only')}`:''}</div>)}
+                  </div>}
                   {issue.details?.holdMismatches?.length > 0 && <div className="mt-2 rounded-lg border border-violet-100 bg-white px-3 py-2 text-[10px] text-slate-700">
                     <span className="font-black text-violet-900">{tr('الموظفون ذوو التعليق الآلي المنتهي:', 'Employees with stale automatic hold:')}</span>{' '}
                     {issue.details.holdMismatches.map(employee => `${employee.employeeName || tr('غير مسجل', 'Not recorded')} (${employee.employeeNo || '—'})`).join('، ')}
@@ -323,7 +373,9 @@ export const DatabaseStatusModal: React.FC<DatabaseStatusModalProps> = ({
                     </table>
                     {issue.details.carryMismatches.length === 0 && <div className="border-t border-slate-100 px-3 py-2 text-[10px] text-slate-500">{tr('هذا اختلاف في إجمالي المسير المخزن مقابل مجموع بنود الموظفين، ولا يمكن نسبته إلى موظف واحد.', 'This is a stored run-total difference versus the sum of employee items and cannot be attributed to one employee.')}</div>}
                   </div>}
-                  {!issue.repairable && <div className="mt-1 text-[10px] font-bold text-amber-800">{tr('للمراجعة فقط: المسير معتمد أو مرحّل ولا يتم تعديله آليًا.', 'Review only: approved or posted payroll is never auto-modified.')}</div>}
+                  {!issue.repairable && <div className="mt-1 text-[10px] font-bold text-amber-800">{issue.blockedReason==='LOCKED_PAYROLL_RUN'
+                    ? tr('للمراجعة فقط: المسير معتمد أو مرحّل ولا يتم تعديله آليًا.','Review only: approved or posted payroll is never auto-modified.')
+                    : tr('تحتاج مراجعة يدوية: لا يوجد إصلاح آلي آمن لهذه الملاحظة.','Manual review required: there is no safe automatic repair for this finding.')}</div>}
                 </div>
               </label>
             ))}

@@ -1,4 +1,4 @@
-import { Company, PayrollRun, JournalBatch, JournalLine, PayrollPaymentBatch } from '../types';
+import { Company, PayrollRun, JournalBatch, JournalLine, PayrollPaymentBatch, JournalBalanceDiagnostic, PayrollRunItem } from '../types';
 import { roundAmount } from './payrollEngine';
 
 type GosiBranchBucket = {
@@ -15,23 +15,50 @@ const safeBranchCode = (value:string) => String(value || 'UNASSIGNED').replace(/
 
 export function balanceJournalLines(lines:JournalLine[],periodMonth:string):{lines:JournalLine[];totalDebit:number;totalCredit:number} {
   const balancedLines = lines.filter(line => line.id !== 'line-balance-adjustment');
-  let totalDebit = roundAmount(balancedLines.reduce((sum,line) => sum + Number(line.debit || 0),0));
-  let totalCredit = roundAmount(balancedLines.reduce((sum,line) => sum + Number(line.credit || 0),0));
-  const difference = roundAmount(totalDebit-totalCredit);
-  if (Math.abs(difference) >= 0.01) {
-    balancedLines.push({
-      id:'line-balance-adjustment',accountCode:'9999',accountNameAr:'حساب تسوية فروقات القيود',accountNameEn:'Journal balancing adjustments',
-      descriptionAr:`تسوية تلقائية لفارق قيد شهر ${periodMonth}`,descriptionEn:`Automatic balancing adjustment for ${periodMonth}`,
-      debit:difference < 0 ? Math.abs(difference) : 0,credit:difference > 0 ? difference : 0,
-    });
-    totalDebit = roundAmount(balancedLines.reduce((sum,line) => sum + Number(line.debit || 0),0));
-    totalCredit = roundAmount(balancedLines.reduce((sum,line) => sum + Number(line.credit || 0),0));
-  }
+  const totalDebit = roundAmount(balancedLines.reduce((sum,line) => sum + Number(line.debit || 0),0));
+  const totalCredit = roundAmount(balancedLines.reduce((sum,line) => sum + Number(line.credit || 0),0));
   return { lines:balancedLines,totalDebit,totalCredit };
 }
 
 function finishBatch(batch:Omit<JournalBatch,'lines'|'totalDebit'|'totalCredit'>,lines:JournalLine[]):JournalBatch {
   return { ...batch,...balanceJournalLines(lines,batch.periodMonth) };
+}
+
+const currentPeriodNet = (item:PayrollRunItem) => roundAmount(
+  Math.max(0,Number(item.netSalary||0)-Number(item.priorPeriodNet||0)),
+);
+
+function payrollJournalDiagnostics(items:PayrollRunItem[]):JournalBalanceDiagnostic[] {
+  return items.flatMap(item => {
+    const diagnostics:JournalBalanceDiagnostic[]=[];
+    const identity={ employeeId:item.employeeId,employeeNo:item.employeeNo,employeeName:item.employeeName };
+    const priorPeriodNet=roundAmount(item.priorPeriodNet||0);
+    if(priorPeriodNet>0)diagnostics.push({
+      ...identity,code:'PRIOR_PERIOD_BALANCE_EXCLUDED',severity:'INFO',recorded:priorPeriodNet,expected:0,difference:roundAmount(-priorPeriodNet),
+      sourcePeriods:(item.priorPeriodDetails||[]).map(detail=>detail.periodMonth),
+    });
+    const componentGross=roundAmount(Number(item.baseSalary||0)+Number(item.housingAllowance||0)+Number(item.transportAllowance||0)
+      +Number(item.otherAllowances||0)+Number(item.overtimeAmount||0)+Number(item.bonuses||0));
+    const recordedGross=roundAmount(item.totalGrossSalary||0);
+    if(componentGross!==recordedGross)diagnostics.push({
+      ...identity,code:'GROSS_COMPONENT_MISMATCH',severity:'ERROR',recorded:recordedGross,expected:componentGross,difference:roundAmount(componentGross-recordedGross),
+    });
+    const componentDeductions=roundAmount(Number(item.delayDeduction||0)+Number(item.absenceDeduction||0)+Number(item.unpaidLeaveDeduction||0)
+      +Number(item.gosiEmployeeShare||0)+Number(item.loanDeduction||0)+Number(item.penaltiesDeduction||0)+Number(item.otherDeductions||0));
+    const recordedDeductions=roundAmount(item.totalDeductions||0);
+    if(componentDeductions!==recordedDeductions)diagnostics.push({
+      ...identity,code:'DEDUCTION_COMPONENT_MISMATCH',severity:'ERROR',recorded:recordedDeductions,expected:componentDeductions,difference:roundAmount(componentDeductions-recordedDeductions),
+    });
+    const recordedCurrentNet=currentPeriodNet(item);
+    const expectedCurrentNet=roundAmount(Math.max(0,recordedGross-recordedDeductions));
+    if(recordedCurrentNet!==expectedCurrentNet)diagnostics.push({
+      ...identity,code:'CURRENT_NET_MISMATCH',severity:'ERROR',recorded:recordedCurrentNet,expected:expectedCurrentNet,difference:roundAmount(expectedCurrentNet-recordedCurrentNet),
+    });
+    if(recordedDeductions>recordedGross)diagnostics.push({
+      ...identity,code:'DEDUCTIONS_EXCEED_GROSS',severity:'ERROR',recorded:recordedDeductions,expected:recordedGross,difference:roundAmount(recordedGross-recordedDeductions),
+    });
+    return diagnostics;
+  });
 }
 
 export function generatePayrollJournalBatch(company:Company,payrollRun:PayrollRun):JournalBatch {
@@ -63,13 +90,13 @@ export function generatePayrollJournalBatch(company:Company,payrollRun:PayrollRu
         debit:amount,credit:0,costCenterCode:cc.code,costCenterName:cc.nameAr,costCenterNameEn:cc.nameEn||cc.nameAr});}
   }
   const items=payrollRun.items||[];
-  const salariesPayable=roundAmount(items.reduce((sum,item)=>sum+Number(item.netSalary||0)+Number(item.gosiEmployeeShare||0),0));
+  const salariesPayable=roundAmount(items.reduce((sum,item)=>sum+currentPeriodNet(item)+Number(item.gosiEmployeeShare||0),0));
   const loans=roundAmount(items.reduce((sum,item)=>sum+Number(item.loanDeduction||0),0));
   const otherDeductions=roundAmount(items.reduce((sum,item)=>sum+Math.max(0,Number(item.totalDeductions||0)-Number(item.gosiEmployeeShare||0)-Number(item.loanDeduction||0)),0));
   if(salariesPayable>0)lines.push({id:'line-cred-salaries-payable',accountCode:accounts.salariesPayableAccount||'2101',accountNameAr:'مستحقات الرواتب والأجور',accountNameEn:'Salaries and wages payable',descriptionAr:`صافي الرواتب قبل قيد استحقاق التأمينات لشهر ${payrollRun.periodMonth}`,descriptionEn:`Payroll payable before the separate GOSI accrual for ${payrollRun.periodMonth}`,debit:0,credit:salariesPayable});
   if(loans>0)lines.push({id:'line-cred-loans',accountCode:accounts.employeeAdvancesAccount||'1105',accountNameAr:'ذمم وسلف الموظفين المستردة',accountNameEn:'Employee loans and advances recovered',descriptionAr:`استقطاع السلف لشهر ${payrollRun.periodMonth}`,descriptionEn:`Employee loan deductions for ${payrollRun.periodMonth}`,debit:0,credit:loans});
   if(otherDeductions>0)lines.push({id:'line-cred-penalties',accountCode:accounts.penaltiesPayableAccount||'2105',accountNameAr:'أمانات الجزاءات والخصومات الإدارية',accountNameEn:'Penalties and administrative deductions payable',descriptionAr:`خصومات غير التأمينات لشهر ${payrollRun.periodMonth}`,descriptionEn:`Non-GOSI deductions for ${payrollRun.periodMonth}`,debit:0,credit:otherDeductions});
-  return finishBatch({id:`batch-${payrollRun.id}`,companyId:company.id,payrollRunId:payrollRun.id,periodMonth:payrollRun.periodMonth,batchNumber:`JV-${payrollRun.periodMonth.replace('-','')}-${company.crNumber.slice(-4)||'001'}`,date:monthEnd(payrollRun.periodMonth),description:`قيد استحقاق رواتب وأجور موظفي (${company.nameAr}) لشهر ${payrollRun.periodMonth}`,descriptionEn:`Payroll accrual for ${company.nameEn||company.nameAr} - ${payrollRun.periodMonth}`,journalType:'PAYROLL_ACCRUAL',affectedBranches:[],status:journalStatus(payrollRun)},lines);
+  return finishBatch({id:`batch-${payrollRun.id}`,companyId:company.id,payrollRunId:payrollRun.id,periodMonth:payrollRun.periodMonth,batchNumber:`JV-${payrollRun.periodMonth.replace('-','')}-${company.crNumber.slice(-4)||'001'}`,date:monthEnd(payrollRun.periodMonth),description:`قيد استحقاق رواتب وأجور موظفي (${company.nameAr}) لشهر ${payrollRun.periodMonth}`,descriptionEn:`Payroll accrual for ${company.nameEn||company.nameAr} - ${payrollRun.periodMonth}`,journalType:'PAYROLL_ACCRUAL',affectedBranches:[],status:journalStatus(payrollRun),balanceDiagnostics:payrollJournalDiagnostics(items)},lines);
 }
 
 function collectGosiBranches(company:Company,payrollRun:PayrollRun):GosiBranchBucket[] {

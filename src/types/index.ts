@@ -526,6 +526,25 @@ export interface JournalLine {
   contactName?: string;
 }
 
+export type JournalDiagnosticCode =
+  | 'PRIOR_PERIOD_BALANCE_EXCLUDED'
+  | 'GROSS_COMPONENT_MISMATCH'
+  | 'DEDUCTION_COMPONENT_MISMATCH'
+  | 'CURRENT_NET_MISMATCH'
+  | 'DEDUCTIONS_EXCEED_GROSS';
+
+export interface JournalBalanceDiagnostic {
+  code: JournalDiagnosticCode;
+  severity: 'INFO' | 'ERROR';
+  employeeId: string;
+  employeeNo: string;
+  employeeName: string;
+  recorded: number;
+  expected: number;
+  difference: number;
+  sourcePeriods?: string[];
+}
+
 export interface JournalQoyodSnapshot {
   id: string;
   companyId: string;
@@ -574,6 +593,7 @@ export interface JournalBatch {
   customLines?: JournalLine[];
   removedLineIds?: string[];
   changeReason?: string;
+  balanceDiagnostics?: JournalBalanceDiagnostic[];
   lines: JournalLine[];
 }
 

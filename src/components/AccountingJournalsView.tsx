@@ -83,7 +83,14 @@ export const AccountingJournalsView: React.FC<AccountingJournalsViewProps> = ({
   const isLocked=Boolean(persistedBatch?.qoyodSyncStatus?.synced);
   const isBalanced=activeBatch?Math.abs(displayedTotalDebit-displayedTotalCredit)<0.01:false;
 
-  const saveDraft=async()=>{if(!freshBatch||!editingLines||!changeReason.trim())return;setSaving(true);try{await onSaveJournal(buildJournalDraft(freshBatch,editingLines,changeReason.trim()));setEditingLines(null);setChangeReason('');}finally{setSaving(false);}};
+  const saveDraft=async()=>{if(!freshBatch||!editingLines||!changeReason.trim()||!isBalanced)return;setSaving(true);try{await onSaveJournal(buildJournalDraft(freshBatch,editingLines,changeReason.trim()));setEditingLines(null);setChangeReason('');}finally{setSaving(false);}};
+  const diagnosticLabel=(code:NonNullable<JournalBatch['balanceDiagnostics']>[number]['code'])=>({
+    PRIOR_PERIOD_BALANCE_EXCLUDED:ui('رصيد سابق مستبعد من استحقاق الشهر الحالي','Prior balance excluded from current accrual'),
+    GROSS_COMPONENT_MISMATCH:ui('اختلاف مكونات الاستحقاقات','Gross component mismatch'),
+    DEDUCTION_COMPONENT_MISMATCH:ui('اختلاف مكونات الخصومات','Deduction component mismatch'),
+    CURRENT_NET_MISMATCH:ui('اختلاف صافي الشهر الحالي','Current-period net mismatch'),
+    DEDUCTIONS_EXCEED_GROSS:ui('الخصومات تتجاوز استحقاق الشهر','Deductions exceed current gross'),
+  })[code];
 
   // Chart of accounts form state
   const [accountsForm, setAccountsForm] = useState(company.chartOfAccounts);
@@ -144,7 +151,7 @@ export const AccountingJournalsView: React.FC<AccountingJournalsViewProps> = ({
           {activeBatch && (
             <>
               <button
-                disabled={Boolean(editingLines)}
+                disabled={Boolean(editingLines)||!isBalanced}
                 onClick={() => onOpenQoyodModal(activeBatch)}
                 className="px-3.5 py-2 bg-sky-600 hover:bg-sky-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
               >
@@ -153,7 +160,7 @@ export const AccountingJournalsView: React.FC<AccountingJournalsViewProps> = ({
               </button>
 
               <button
-                disabled={Boolean(editingLines)}
+                disabled={Boolean(editingLines)||!isBalanced}
                 onClick={() => exportQoyodJournalCsv(activeBatch, company)}
                 className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
               >
@@ -195,7 +202,7 @@ export const AccountingJournalsView: React.FC<AccountingJournalsViewProps> = ({
             <h3 className="font-bold text-sm text-slate-900">{language === 'en' ? activeBatch.descriptionEn || activeBatch.description : activeBatch.description}</h3>
             <div className="flex flex-wrap items-center gap-2 pt-2">
               {!isLocked&&!editingLines&&<button onClick={()=>{setEditingLines(activeBatch.lines.map(line=>({...line})));setChangeReason('');}} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-bold text-slate-700"><Pencil className="h-3.5 w-3.5"/>{ui('تعديل القيد','Edit journal')}</button>}
-              {editingLines&&<><input value={changeReason} onChange={event=>setChangeReason(event.target.value)} placeholder={ui('سبب التعديل (إلزامي)','Change reason (required)')} className="min-w-64 rounded-lg border border-slate-200 px-3 py-1.5 text-xs"/><button disabled={saving||!changeReason.trim()} onClick={saveDraft} className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white disabled:opacity-50"><Save className="h-3.5 w-3.5"/>{ui('حفظ التعديل','Save changes')}</button><button onClick={()=>{setEditingLines(null);setChangeReason('');}} className="inline-flex items-center gap-1 rounded-lg border px-3 py-1.5 text-xs"><X className="h-3.5 w-3.5"/>{ui('إلغاء','Cancel')}</button></>}
+              {editingLines&&<><input value={changeReason} onChange={event=>setChangeReason(event.target.value)} placeholder={ui('سبب التعديل (إلزامي)','Change reason (required)')} className="min-w-64 rounded-lg border border-slate-200 px-3 py-1.5 text-xs"/><button disabled={saving||!changeReason.trim()||!isBalanced} onClick={saveDraft} className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white disabled:opacity-50"><Save className="h-3.5 w-3.5"/>{ui('حفظ التعديل','Save changes')}</button><button onClick={()=>{setEditingLines(null);setChangeReason('');}} className="inline-flex items-center gap-1 rounded-lg border px-3 py-1.5 text-xs"><X className="h-3.5 w-3.5"/>{ui('إلغاء','Cancel')}</button></>}
               {isLocked&&<span className="text-[11px] text-slate-500">{ui('القيد مقفول ويُعرض من لقطة الترحيل إلى قيود.','Locked and displayed from the Qoyod snapshot.')}</span>}
             </div>
           </div>
@@ -217,11 +224,31 @@ export const AccountingJournalsView: React.FC<AccountingJournalsViewProps> = ({
 
             <div className={`px-3 py-1.5 rounded-xl border flex items-center gap-1.5 text-xs font-bold ${isBalanced?'bg-emerald-50 text-emerald-800 border-emerald-200':'bg-amber-50 text-amber-800 border-amber-200'}`}>
               {isBalanced?<CheckCircle2 className="w-4 h-4 text-emerald-600" />:<AlertCircle className="w-4 h-4"/>}
-              <span>{isBalanced?ui('القيد متوازن تماماً','Journal is balanced'):ui('سيُرحّل الفرق تلقائياً إلى حساب 9999 عند الحفظ','The difference will be posted automatically to account 9999 on save')}</span>
+              <span>{isBalanced?ui('القيد متوازن تماماً','Journal is balanced'):ui(`القيد غير متوازن — فرق ${formatSAR(Math.abs(displayedTotalDebit-displayedTotalCredit))}`,'Journal is unbalanced — difference '+formatSAR(Math.abs(displayedTotalDebit-displayedTotalCredit)))}</span>
             </div>
           </div>
         </div>
       )}
+
+      {activeBatch?.balanceDiagnostics?.length ? <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 shadow-xs">
+        <div className="flex items-start gap-2">
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-700"/>
+          <div>
+            <div className="text-xs font-black text-amber-950">{ui('تحليل فروقات قيد الرواتب','Payroll journal diagnostics')}</div>
+            <p className="mt-1 text-[11px] leading-5 text-amber-800">{ui('الأرصدة المرحلة تظهر للتفسير فقط ولا يعاد إثباتها كمصروف في الشهر الحالي. أخطاء الحساب تمنع الحفظ والتصدير والترحيل حتى تصحيح المسير.','Carried balances are shown for explanation only and are not accrued again in the current month. Calculation errors block saving, export, and posting until payroll is corrected.')}</p>
+          </div>
+        </div>
+        <div className="mt-3 overflow-x-auto rounded-xl border border-amber-200 bg-white">
+          <table className="w-full min-w-[760px] text-[10px]">
+            <thead className="bg-amber-100/70 text-amber-950"><tr><th className="px-3 py-2 text-start">{ui('الموظف','Employee')}</th><th className="px-3 py-2 text-start">{ui('الرقم','Number')}</th><th className="px-3 py-2 text-start">{ui('سبب الملاحظة','Reason')}</th><th className="px-3 py-2 text-start">{ui('الشهر المصدر','Source month')}</th><th className="px-3 py-2 text-end">{ui('المسجل','Recorded')}</th><th className="px-3 py-2 text-end">{ui('المتوقع','Expected')}</th><th className="px-3 py-2 text-end">{ui('الفرق','Difference')}</th></tr></thead>
+            <tbody>{activeBatch.balanceDiagnostics.map((detail,index)=><tr key={`${detail.employeeId}-${detail.code}-${index}`} className="border-t border-amber-100 text-slate-700">
+              <td className="px-3 py-2 font-bold">{detail.employeeName||ui('غير مسجل','Not recorded')}</td><td className="px-3 py-2 font-mono">{detail.employeeNo||'—'}</td>
+              <td className={`px-3 py-2 font-bold ${detail.severity==='ERROR'?'text-rose-700':'text-sky-700'}`}>{diagnosticLabel(detail.code)}</td><td className="px-3 py-2 font-mono">{detail.sourcePeriods?.join('، ')||'—'}</td>
+              <td className="px-3 py-2 text-end">{formatSAR(detail.recorded)}</td><td className="px-3 py-2 text-end">{formatSAR(detail.expected)}</td><td className={`px-3 py-2 text-end font-black ${detail.difference<0?'text-rose-700':'text-emerald-700'}`}>{formatSAR(detail.difference)}</td>
+            </tr>)}</tbody>
+          </table>
+        </div>
+      </div>:null}
 
       {/* Double-Entry Journal Lines Table */}
       {activeBatch && (

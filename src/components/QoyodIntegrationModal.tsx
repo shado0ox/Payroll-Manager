@@ -103,6 +103,10 @@ export const QoyodIntegrationModal: React.FC<QoyodIntegrationModalProps> = ({
       alert(tr('لا يوجد مسير رواتب معتمد للترحيل', 'There is no approved payroll run to post.'));
       return;
     }
+    if (Math.abs(Number(activeBatch.totalDebit||0)-Number(activeBatch.totalCredit||0))>=0.01) {
+      alert(tr('لا يمكن ترحيل قيد غير متوازن. شغّل فحص وإصلاح الرواتب وراجع تفاصيل الفرق أولاً.', 'An unbalanced journal cannot be posted. Run payroll scan and repair, then review the difference details first.'));
+      return;
+    }
 
     if ((!config.apiKey || config.apiKey.trim().length < 5) && !config.apiKeyConfigured) {
       alert(tr('يرجى إدخال مفتاح الـ API-KEY الخاص بقيود أولاً', 'Enter your Qoyod API-KEY first.'));
