@@ -36,6 +36,7 @@ import { createStateAccessService } from './state-access.mjs';
 import { createStateRuntime } from './state-runtime.mjs';
 import { createAuthorizationService, subscriptionState } from './authorization-service.mjs';
 import { createHrLifecycleAlertService } from './hr-lifecycle-alert-service.mjs';
+import { createSubscriptionLifecycleService } from './subscription-lifecycle-service.mjs';
 
 const { Pool } = pg;
 const port = Number(process.env.PORT || 3000);
@@ -132,6 +133,13 @@ const { addStateEventClient,disconnectStateEventClients,broadcastStateUpdate,bum
 });
 const { run:runHrLifecycleAlerts } = createHrLifecycleAlertService({
   pool,q,readNormalizedApplicationState,resendApiKey,emailFrom:verificationEmailFrom,
+});
+const { run:runSubscriptionLifecycle } = createSubscriptionLifecycleService({
+  pool,q,resendApiKey,emailFrom:verificationEmailFrom,developerContactPhone,
+  onStateChanged:async () => {
+    const updated = await bumpStateVersion(pool, null);
+    broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:null,updatedAt:updated.rows[0].updated_at });
+  },
 });
 
 async function sendVerificationEmail(email, code, language = 'ar') {
@@ -377,11 +385,14 @@ const databaseHealthMonitor = startDatabaseHealthMonitor({
 });
 const hrAlertTimer = setInterval(() => { void runHrLifecycleAlerts(); }, 6 * 60 * 60 * 1000);
 setTimeout(() => { void runHrLifecycleAlerts(); }, 60 * 1000);
+const subscriptionLifecycleTimer = setInterval(() => { void runSubscriptionLifecycle(); }, 6 * 60 * 60 * 1000);
+setTimeout(() => { void runSubscriptionLifecycle(); }, 10 * 1000);
 const server = app.listen(port, '0.0.0.0', () => operationalLogger('info', 'server_started', { port }));
 const shutdown = async signal => {
   operationalLogger('info', 'server_shutdown', { signal });
   databaseHealthMonitor.stop();
   clearInterval(hrAlertTimer);
+  clearInterval(subscriptionLifecycleTimer);
   server.close();
   await pool.end();
   process.exit(0);

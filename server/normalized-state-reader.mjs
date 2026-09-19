@@ -51,7 +51,8 @@ export function createNormalizedStateReader({ q,clone,subscriptionState }) {
 
   async function hydrateNormalizedCoreData(client, rawState) {
     const state = clone(rawState || {});
-    const companies = await client.query(`SELECT id,company_code,name_ar,name_en,payload,subscription_status,trial_ends_at,subscription_ends_at
+    const companies = await client.query(`SELECT id,company_code,name_ar,name_en,payload,subscription_status,trial_ends_at,subscription_ends_at,
+      subscription_suspended_at,deletion_scheduled_at
       FROM ${q('companies')} WHERE is_archived=false ORDER BY sort_order,id`);
     const departments = await client.query(`SELECT company_id,payload FROM ${q('company_departments')} ORDER BY company_id,sort_order,id`);
     const costCenters = await client.query(`SELECT company_id,payload FROM ${q('cost_centers')} ORDER BY company_id,sort_order,id`);
@@ -76,19 +77,24 @@ export function createNormalizedStateReader({ q,clone,subscriptionState }) {
     const departmentsByCompany = groupPayloads(departments.rows);
     const costCentersByCompany = groupPayloads(costCenters.rows);
     const bankDefinitionsByCompany = groupPayloads(bankDefinitions.rows);
-    state.companies = companies.rows.map(row => ({
+    state.companies = companies.rows.map(row => {
+      const subscription = subscriptionState(row);
+      return ({
       ...row.payload,
       id:row.id,
       companyCode:row.company_code,
       nameAr:row.name_ar,
       nameEn:row.name_en,
-      subscriptionStatus:subscriptionState(row).status,
+      subscriptionStatus:subscription.status,
       trialEndsAt:row.trial_ends_at?.toISOString?.() || row.trial_ends_at || null,
       subscriptionEndsAt:row.subscription_ends_at?.toISOString?.() || row.subscription_ends_at || null,
+      ...(subscription.suspendedAt !== undefined ? { subscriptionSuspendedAt: subscription.suspendedAt } : {}),
+      ...(subscription.deletionScheduledAt !== undefined ? { deletionScheduledAt: subscription.deletionScheduledAt } : {}),
       departments: departmentsByCompany.get(row.id) || [],
       costCenters: costCentersByCompany.get(row.id) || [],
       bankDefinitions: bankDefinitionsByCompany.get(row.id) || [],
-    }));
+      });
+    });
     state.journals = journals.rows.map(row => ({ ...row.payload, lines: linesByJournal.get(row.id) || [] }));
     state.auditLogs = auditLogs.rows.map(row => row.payload);
     state.qoyodConfigsByCompany = Object.fromEntries(integration.rows

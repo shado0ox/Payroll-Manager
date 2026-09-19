@@ -27,9 +27,30 @@ button stays hidden.
 - Passwords are hashed before temporary registration data is stored.
 - Usernames and verified email addresses are unique.
 - Company managers only receive access to their own company ID.
-- Expired companies may load the subscription screen, but server-side writes
-  and service endpoints return `402 SUBSCRIPTION_EXPIRED`.
+- Expired companies enter a three-month suspended retention period. Users can
+  sign in, reset passwords, read data, and export company backups, employee
+  files, payroll sheets, WPS and GOSI reports. Every server-side write returns
+  `402 SUBSCRIPTION_READ_ONLY`.
 - The immutable developer `ADMIN` account is never blocked by a company trial.
+
+## Expiry, retention, reminders, and deletion
+
+- The lifecycle scheduler converts an expired trial or paid subscription to
+  `SUSPENDED` and records both the suspension time and a deletion date three
+  calendar months later.
+- Active company-manager email addresses receive at most two renewal reminders
+  per calendar month (one in each half of the month). Delivery slots are stored
+  in PostgreSQL, so restarts cannot duplicate a reminder.
+- Each reminder explains that the service is read-only, includes the scheduled
+  deletion date, and asks the manager to contact the developer for renewal.
+- Renewing the company as `ACTIVE` or `TRIAL` clears the suspension and
+  deletion dates immediately.
+- At the scheduled deadline, the server rechecks the status and date inside a
+  database transaction before deleting tenant operational data, users that no
+  longer belong to another company, and tenant data retained in application
+  snapshots. Shared users keep access to their other companies.
+- Infrastructure PostgreSQL backups remain governed by the separate backup
+  retention policy and expire through its normal rotation.
 
 ## Renewing a company
 

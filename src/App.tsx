@@ -9,7 +9,6 @@ import {
   FileSpreadsheet, 
   Settings, 
   History,
-  ShieldAlert,
   UserCheck,
   RefreshCw
 } from 'lucide-react';
@@ -42,6 +41,7 @@ import { Navbar } from './components/Navbar';
 import { hasPermission, isDeveloperAccount, TAB_PERMISSION } from './utils/permissions';
 import { Sidebar } from './components/Sidebar';
 import { LoginView } from './components/LoginView';
+import { SubscriptionSuspendedView } from './components/SubscriptionSuspendedView';
 import { DatabaseStatus } from './utils/databaseService';
 import { api, type StateRecordChange } from './utils/api';
 import { WifiOff, Database, CheckCircle2, X } from 'lucide-react';
@@ -1063,7 +1063,7 @@ export const App: React.FC = () => {
     }
   };
 
-  const handleSubscriptionUpdated = (record: Pick<Company,'id'|'subscriptionStatus'|'trialEndsAt'|'subscriptionEndsAt'>, updatedAt: string) => {
+  const handleSubscriptionUpdated = (record: Pick<Company,'id'|'subscriptionStatus'|'trialEndsAt'|'subscriptionEndsAt'|'subscriptionSuspendedAt'|'deletionScheduledAt'>, updatedAt: string) => {
     setState(prev => {
       const companies = prev.companies.map(company => company.id === record.id ? { ...company,...record } : company);
       const next = { ...prev,companies };
@@ -1198,16 +1198,31 @@ export const App: React.FC = () => {
     : null;
 
   if (subscriptionExpired) {
-    const phone = publicConfig.developerContactPhone;
-    return <>{buildUpdateBanner}<main className="flex min-h-screen items-center justify-center bg-slate-950 p-6 text-white" dir={language === 'ar' ? 'rtl' : 'ltr'}>
-      <section className="w-full max-w-lg rounded-[2rem] border border-amber-400/20 bg-slate-900 p-8 text-center shadow-2xl">
-        <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-amber-400/10 text-amber-300"><ShieldAlert className="h-8 w-8" /></div>
-        <h1 className="mt-6 text-2xl font-black">{tr('انتهت الفترة التجريبية', 'Trial period ended')}</h1>
-        <p className="mt-3 text-sm leading-7 text-slate-400">{tr('تم إيقاف خدمات الشركة مؤقتًا مع الاحتفاظ بجميع بياناتك بأمان. تواصل مع المطور لتجديد الاشتراك وإعادة فتح الخدمات.', 'Company services are temporarily locked while all data remains safely stored. Contact the developer to renew and restore access.')}</p>
-        {phone && <a href={`tel:${phone}`} dir="ltr" className="mt-6 block rounded-2xl border border-emerald-400/25 bg-emerald-400/10 px-5 py-4 font-mono text-lg font-black text-emerald-300">{phone}</a>}
-        <button type="button" onClick={handleLogout} className="mt-6 h-11 w-full rounded-xl bg-white/10 text-sm font-bold text-slate-200 hover:bg-white/15">{tr('تسجيل الخروج', 'Sign out')}</button>
-      </section>
-    </main></>;
+    const companyId = activeCompany.id;
+    const companyEmployees = state.employees.filter(record => record.companyId === companyId);
+    const companyPayrollRuns = state.payrollRuns.filter(record => record.companyId === companyId);
+    const backupData = {
+      company:activeCompany,
+      employees:companyEmployees,
+      attendance:state.attendance.filter(record => record.companyId === companyId),
+      leaves:state.leaves.filter(record => record.companyId === companyId),
+      loans:state.loans.filter(record => record.companyId === companyId),
+      penalties:state.penalties.filter(record => record.companyId === companyId),
+      temporaryEarnings:state.temporaryEarnings.filter(record => record.companyId === companyId),
+      payrollRuns:companyPayrollRuns,
+      payrollSettlements:state.payrollSettlements.filter(record => record.companyId === companyId),
+      journals:state.journals.filter(record => record.companyId === companyId),
+      auditLogs:state.auditLogs.filter(record => record.companyId === companyId),
+    };
+    return <>{buildUpdateBanner}<SubscriptionSuspendedView
+      company={activeCompany}
+      employees={companyEmployees}
+      payrollRuns={companyPayrollRuns}
+      activeRole={state.activeRole}
+      backupData={backupData}
+      developerContactPhone={publicConfig.developerContactPhone}
+      onLogout={handleLogout}
+    /></>;
   }
 
   return (

@@ -96,8 +96,10 @@ router.put('/admin/companies/:id/subscription', auth, writeLimiter, async (req, 
     const result = await pool.query(`UPDATE ${q('companies')} SET subscription_status=$2,
       trial_ends_at=CASE WHEN $2='TRIAL' THEN $3 ELSE trial_ends_at END,
       subscription_ends_at=CASE WHEN $2='ACTIVE' THEN $3 ELSE subscription_ends_at END,
+      subscription_suspended_at=CASE WHEN $2 IN ('EXPIRED','SUSPENDED') THEN COALESCE(subscription_suspended_at,now()) ELSE NULL END,
+      deletion_scheduled_at=CASE WHEN $2 IN ('EXPIRED','SUSPENDED') THEN COALESCE(deletion_scheduled_at,now()+interval '3 months') ELSE NULL END,
       updated_at=now() WHERE id=$1 AND is_archived=false
-      RETURNING id,subscription_status,trial_ends_at,subscription_ends_at`, [req.params.id,status,endsAt?.toISOString() || null]);
+      RETURNING id,subscription_status,trial_ends_at,subscription_ends_at,subscription_suspended_at,deletion_scheduled_at`, [req.params.id,status,endsAt?.toISOString() || null]);
     if (!result.rowCount) return res.status(404).json({ error:'COMPANY_NOT_FOUND' });
     const current = await pool.query(`UPDATE ${q('app_state')} SET version=version+1,updated_by=$1,updated_at=now()
       WHERE id=1 RETURNING version,updated_at`, [req.user.id]);
@@ -105,7 +107,9 @@ router.put('/admin/companies/:id/subscription', auth, writeLimiter, async (req, 
     const row = result.rows[0];
     res.json({ record:{ id:row.id,subscriptionStatus:subscriptionState(row).status,
       trialEndsAt:row.trial_ends_at?.toISOString?.() || row.trial_ends_at || null,
-      subscriptionEndsAt:row.subscription_ends_at?.toISOString?.() || row.subscription_ends_at || null },
+      subscriptionEndsAt:row.subscription_ends_at?.toISOString?.() || row.subscription_ends_at || null,
+      subscriptionSuspendedAt:row.subscription_suspended_at?.toISOString?.() || row.subscription_suspended_at || null,
+      deletionScheduledAt:row.deletion_scheduled_at?.toISOString?.() || row.deletion_scheduled_at || null },
       version:Number(current.rows[0]?.version || 0),updated_at:current.rows[0]?.updated_at || new Date().toISOString() });
   } catch (e) { next(e); }
 });

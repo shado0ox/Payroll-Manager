@@ -2,14 +2,20 @@ export function subscriptionState(company, now = Date.now()) {
   const status = String(company?.subscription_status || 'ACTIVE');
   const trialEndsAt = company?.trial_ends_at ? new Date(company.trial_ends_at) : null;
   const subscriptionEndsAt = company?.subscription_ends_at ? new Date(company.subscription_ends_at) : null;
+  const suspendedAt = company?.subscription_suspended_at ? new Date(company.subscription_suspended_at) : null;
+  const deletionScheduledAt = company?.deletion_scheduled_at ? new Date(company.deletion_scheduled_at) : null;
   const expired = status === 'EXPIRED' || status === 'SUSPENDED'
     || (status === 'TRIAL' && trialEndsAt && trialEndsAt.getTime() <= now)
     || (status === 'ACTIVE' && subscriptionEndsAt && subscriptionEndsAt.getTime() <= now);
   return {
-    status: expired ? 'EXPIRED' : status,
+    status: expired ? 'SUSPENDED' : status,
     trialEndsAt: trialEndsAt?.toISOString() || null,
     subscriptionEndsAt: subscriptionEndsAt?.toISOString() || null,
+    suspendedAt:suspendedAt?.toISOString() || null,
+    deletionScheduledAt:deletionScheduledAt?.toISOString() || null,
     expired,
+    readOnly:expired,
+    deletionDue:Boolean(expired && deletionScheduledAt && deletionScheduledAt.getTime() <= now),
   };
 }
 
@@ -26,15 +32,17 @@ export function createAuthorizationService({ pool,q,cookieValue,sha256,developer
       await pool.query(`UPDATE ${q('sessions')} SET expires_at=now()+interval '1 hour' WHERE token_hash=$1`, [tokenHash]);
       req.user = result.rows[0];
       if (req.user.role !== 'ADMIN') {
-        const company = await pool.query(`SELECT subscription_status,trial_ends_at,subscription_ends_at
+        const company = await pool.query(`SELECT subscription_status,trial_ends_at,subscription_ends_at,
+          subscription_suspended_at,deletion_scheduled_at
           FROM ${q('companies')} WHERE id=ANY($1::text[]) AND is_archived=false
           ORDER BY created_at LIMIT 1`, [req.user.company_ids]);
         const subscription = subscriptionState(company.rows[0]);
         req.subscription = subscription;
-        const allowedWhileExpired = req.path === '/api/state' || req.path === '/api/auth/session'
-          || req.path === '/api/auth/logout' || req.path === '/api/subscription/status';
+        const requestPath = String(req.originalUrl || req.path || '').split('?')[0];
+        const readOnlyMethod = ['GET','HEAD','OPTIONS'].includes(String(req.method || 'GET').toUpperCase());
+        const allowedWhileExpired = readOnlyMethod || requestPath === '/api/auth/logout';
         if (subscription.expired && !allowedWhileExpired) {
-          return res.status(402).json({ error:'SUBSCRIPTION_EXPIRED', subscription, developerContactPhone });
+          return res.status(402).json({ error:'SUBSCRIPTION_READ_ONLY', subscription, developerContactPhone });
         }
       }
       next();

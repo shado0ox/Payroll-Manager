@@ -10,10 +10,14 @@ await pool.query(`ALTER TABLE ${q('companies')} ADD COLUMN IF NOT EXISTS updated
 await pool.query(`ALTER TABLE ${q('companies')} ADD COLUMN IF NOT EXISTS subscription_status text NOT NULL DEFAULT 'ACTIVE'`);
 await pool.query(`ALTER TABLE ${q('companies')} ADD COLUMN IF NOT EXISTS trial_ends_at timestamptz`);
 await pool.query(`ALTER TABLE ${q('companies')} ADD COLUMN IF NOT EXISTS subscription_ends_at timestamptz`);
+await pool.query(`ALTER TABLE ${q('companies')} ADD COLUMN IF NOT EXISTS subscription_suspended_at timestamptz`);
+await pool.query(`ALTER TABLE ${q('companies')} ADD COLUMN IF NOT EXISTS deletion_scheduled_at timestamptz`);
 await pool.query(`DO $$ BEGIN
   ALTER TABLE ${q('companies')} ADD CONSTRAINT companies_subscription_status_check
     CHECK (subscription_status IN ('TRIAL','ACTIVE','EXPIRED','SUSPENDED'));
 EXCEPTION WHEN duplicate_object THEN NULL; END $$`);
+await pool.query(`CREATE INDEX IF NOT EXISTS companies_subscription_lifecycle_idx
+  ON ${q('companies')}(subscription_status,deletion_scheduled_at) WHERE is_archived=false`);
 await pool.query(`CREATE TABLE IF NOT EXISTS ${q('users')} (
   id text PRIMARY KEY, username text NOT NULL UNIQUE, password_hash text NOT NULL, name text NOT NULL,
   email text NOT NULL DEFAULT '', phone text NOT NULL DEFAULT '', role text NOT NULL,
@@ -53,6 +57,12 @@ await pool.query(`CREATE TABLE IF NOT EXISTS ${q('hr_lifecycle_alert_deliveries'
 )`);
 await pool.query(`CREATE INDEX IF NOT EXISTS hr_lifecycle_alert_deliveries_company_idx
   ON ${q('hr_lifecycle_alert_deliveries')}(company_id,sent_at DESC)`);
+await pool.query(`CREATE TABLE IF NOT EXISTS ${q('subscription_notice_deliveries')} (
+  event_key text PRIMARY KEY, company_id text NOT NULL, notice_number integer NOT NULL CHECK (notice_number >= 0),
+  recipients jsonb NOT NULL DEFAULT '[]', sent_at timestamptz NOT NULL DEFAULT now()
+)`);
+await pool.query(`CREATE INDEX IF NOT EXISTS subscription_notice_deliveries_company_idx
+  ON ${q('subscription_notice_deliveries')}(company_id,sent_at DESC)`);
 
 await pool.query(`CREATE TABLE IF NOT EXISTS ${q('app_state')} (
   id smallint PRIMARY KEY DEFAULT 1 CHECK (id = 1), state jsonb NOT NULL DEFAULT '{}',
