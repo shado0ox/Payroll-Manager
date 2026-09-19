@@ -20,14 +20,22 @@ export function createAuthPasswordResetRouter({
   const router = express.Router();
 
   const sendAccountEmail = async ({ to, subject, html }) => {
-    if (!resendApiKey || !verificationEmailFrom) return;
+    if (!resendApiKey || !verificationEmailFrom) return false;
     try {
-      await fetch('https://api.resend.com/emails', {
+      const response = await fetch('https://api.resend.com/emails', {
         method:'POST',
         headers:{ Authorization:`Bearer ${resendApiKey}`, 'Content-Type':'application/json' },
         body:JSON.stringify({ from:verificationEmailFrom,to:[to],subject,html }),
       });
-    } catch {}
+      if (!response.ok) {
+        console.error('Account recovery email failed', response.status, await response.text().catch(() => ''));
+        return false;
+      }
+      return true;
+    } catch (error) {
+      console.error('Account recovery email failed', error?.message || error);
+      return false;
+    }
   };
 
   router.post('/password-reset/request', loginLimiter, async (req, res, next) => {

@@ -147,7 +147,7 @@ export const api = {
   startRegistration: (data: Record<string, unknown>) => request<{requestId:string; maskedEmail:string; expiresInSeconds:number}>('/api/auth/register/start', { method:'POST', body:JSON.stringify(data) }),
   verifyRegistration: (requestId: string, code: string) => request<{companyCode:string; username:string; trialEndsAt:string; trialDays:number}>('/api/auth/register/verify', { method:'POST', body:JSON.stringify({requestId,code}) }),
   updateSubscription: async (companyId:string,status:'TRIAL'|'ACTIVE'|'EXPIRED'|'SUSPENDED',endsAt:string|null) => {
-    const result = await request<{record:Pick<Company,'id'|'subscriptionStatus'|'trialEndsAt'|'subscriptionEndsAt'>;version:number;updated_at:string}>(`/api/admin/companies/${encodeURIComponent(companyId)}/subscription`, { method:'PUT',body:JSON.stringify({status,endsAt}) });
+    const result = await request<{record:Pick<Company,'id'|'subscriptionStatus'|'trialEndsAt'|'subscriptionEndsAt'|'subscriptionSuspendedAt'|'deletionScheduledAt'>;version:number;updated_at:string}>(`/api/admin/companies/${encodeURIComponent(companyId)}/subscription`, { method:'PUT',body:JSON.stringify({status,endsAt}) });
     stateVersion = result.version;
     if (syncedState) {
       const company = (Array.isArray(syncedState.companies) ? syncedState.companies : []).find((item:any) => item?.id === companyId);

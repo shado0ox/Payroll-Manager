@@ -63,6 +63,8 @@ export interface Company {
   subscriptionStatus?: 'TRIAL' | 'ACTIVE' | 'EXPIRED' | 'SUSPENDED';
   trialEndsAt?: string | null;
   subscriptionEndsAt?: string | null;
+  subscriptionSuspendedAt?: string | null;
+  deletionScheduledAt?: string | null;
   crNumber: string; // Commercial Registration
   taxNumber: string; // VAT
   gosiEstablishmentNo: string;

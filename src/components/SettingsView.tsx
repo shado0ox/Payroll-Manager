@@ -50,7 +50,7 @@ interface SettingsViewProps {
   activeRole: UserRole;
   currentUser?: UserAccount | null;
   onUpdateCompany: (company: Company) => Promise<boolean | void> | boolean | void;
-  onSubscriptionUpdated?: (record: Pick<Company,'id'|'subscriptionStatus'|'trialEndsAt'|'subscriptionEndsAt'>, updatedAt: string) => void;
+  onSubscriptionUpdated?: (record: Pick<Company,'id'|'subscriptionStatus'|'trialEndsAt'|'subscriptionEndsAt'|'subscriptionSuspendedAt'|'deletionScheduledAt'>, updatedAt: string) => void;
   onAddCompany: (company: Company) => Promise<boolean | void> | boolean | void;
   onDeleteCompany?: (companyId: string) => Promise<boolean | void> | boolean | void;
   onSaveUser?: (user: UserAccount) => boolean | Promise<boolean>;
@@ -609,6 +609,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     <div className="text-[10px] font-bold text-violet-500">{tr('حالة الاشتراك', 'Subscription status')}</div>
                     <div className="mt-0.5 text-xs font-black text-violet-950">{comp.subscriptionStatus === 'TRIAL' ? tr('فترة تجريبية', 'Free trial') : comp.subscriptionStatus === 'EXPIRED' ? tr('منتهي', 'Expired') : comp.subscriptionStatus === 'SUSPENDED' ? tr('موقوف', 'Suspended') : tr('نشط', 'Active')}</div>
                     <div className="mt-0.5 text-[10px] text-violet-600" dir="ltr">{(comp.subscriptionEndsAt || comp.trialEndsAt || '').slice(0,10) || '—'}</div>
+                    {comp.deletionScheduledAt && <div className="mt-1 text-[10px] font-bold text-rose-700">{tr('حذف البيانات:', 'Data deletion:')} <span dir="ltr">{comp.deletionScheduledAt.slice(0,10)}</span></div>}
                   </div>
                   <button type="button" onClick={() => openSubscription(comp)} className="rounded-lg bg-violet-700 px-3 py-1.5 text-[11px] font-black text-white">{tr('إدارة وتجديد', 'Manage & renew')}</button>
                 </div>

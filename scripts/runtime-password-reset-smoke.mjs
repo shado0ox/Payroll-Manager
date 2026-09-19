@@ -77,6 +77,41 @@ try {
   assert.equal(duplicateUser.response.status, 409, 'Duplicate email must be rejected');
   assert.equal(duplicateUser.body?.error, 'USER_EMAIL_EXISTS');
 
+  const suspendedManagerEmail = 'ci-suspended-manager@example.test';
+  const suspendedManager = await jsonRequest('/api/users/ci-suspended-manager', {
+    method: 'PUT',
+    body: JSON.stringify({
+      id:'ci-suspended-manager',
+      username:'ci-suspended-manager',
+      password:'SuspendedUser1!',
+      name:'Suspended Company Manager',
+      email:suspendedManagerEmail,
+      phone:'',
+      role:'COMPANY_MANAGER',
+      companyIds:[process.env.COMPANY_ID || 'comp-1'],
+      permissions:['VIEW_DASHBOARD','VIEW_REPORTS'],
+      isActive:true,
+    }),
+  }, oldCookie);
+  assert.ok([200,201].includes(suspendedManager.response.status), 'Suspended-company manager fixture must be created');
+  try {
+    await pool.query(`UPDATE "${schema}".companies SET subscription_status='SUSPENDED',
+      subscription_suspended_at=now(),deletion_scheduled_at=now()+interval '3 months'
+      WHERE id=$1`, [process.env.COMPANY_ID || 'comp-1']);
+    const suspendedReset = await jsonRequest('/api/auth/password-reset/request', {
+      method:'POST',
+      body:JSON.stringify({ email:suspendedManagerEmail }),
+    });
+    assert.equal(suspendedReset.response.status, 200, 'Expired-company password reset request must remain available');
+    const suspendedToken = await pool.query(`SELECT count(*)::integer AS count FROM "${schema}".password_reset_tokens
+      WHERE user_id='ci-suspended-manager' AND used_at IS NULL AND expires_at > now()`);
+    assert.equal(suspendedToken.rows[0].count, 1, 'Expired-company manager must receive a reset token');
+  } finally {
+    await pool.query(`UPDATE "${schema}".companies SET subscription_status='ACTIVE',
+      subscription_suspended_at=NULL,deletion_scheduled_at=NULL WHERE id=$1`, [process.env.COMPANY_ID || 'comp-1']);
+    await pool.query(`DELETE FROM "${schema}".users WHERE id='ci-suspended-manager'`);
+  }
+
   const confirmed = await jsonRequest('/api/auth/password-reset/confirm', {
     method: 'POST',
     body: JSON.stringify({ token: knownToken, password: newPassword }),
