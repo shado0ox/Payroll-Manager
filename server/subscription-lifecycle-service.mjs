@@ -142,6 +142,7 @@ export function createSubscriptionLifecycleService({
       for (const table of ['payroll_settlements','attendance_records','leave_requests','loans','penalties','temporary_earnings']) {
         await client.query(`DELETE FROM ${q(table)} WHERE company_id=$1`, [company.id]);
       }
+      await client.query(`DELETE FROM ${q('journal_change_logs')} WHERE company_id=$1`, [company.id]);
       await client.query(`DELETE FROM ${q('journal_batches')} WHERE company_id=$1`, [company.id]);
       await client.query(`DELETE FROM ${q('payroll_runs')} WHERE company_id=$1`, [company.id]);
       await client.query(`DELETE FROM ${q('employees')} WHERE company_id=$1`, [company.id]);

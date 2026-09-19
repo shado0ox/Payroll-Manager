@@ -224,9 +224,12 @@ await pool.query(`CREATE TABLE IF NOT EXISTS ${q('journal_batches')} (
   description text NOT NULL DEFAULT '', status text NOT NULL, total_debit numeric(16,2) NOT NULL DEFAULT 0,
   total_credit numeric(16,2) NOT NULL DEFAULT 0, payload jsonb NOT NULL, sort_order integer NOT NULL DEFAULT 0,
   updated_at timestamptz NOT NULL DEFAULT now(), UNIQUE (company_id,batch_number),
-  CHECK (period_month ~ '^[0-9]{4}-(0[1-9]|1[0-2])$'), CHECK (status IN ('DRAFT','EXPORTED_TO_QOYOD','POSTED')),
+  CHECK (period_month ~ '^[0-9]{4}-(0[1-9]|1[0-2])$'), CHECK (status IN ('DRAFT','UNDER_REVIEW','APPROVED','EXPORTED_TO_QOYOD','POSTED')),
   CHECK (abs(total_debit-total_credit) < 0.01)
 )`);
+await pool.query(`ALTER TABLE ${q('journal_batches')} DROP CONSTRAINT IF EXISTS journal_batches_status_check`);
+await pool.query(`ALTER TABLE ${q('journal_batches')} ADD CONSTRAINT journal_batches_status_check
+  CHECK (status IN ('DRAFT','UNDER_REVIEW','APPROVED','EXPORTED_TO_QOYOD','POSTED'))`);
 await pool.query(`CREATE TABLE IF NOT EXISTS ${q('journal_lines')} (
   journal_batch_id text NOT NULL REFERENCES ${q('journal_batches')}(id) ON DELETE CASCADE, id text NOT NULL,
   account_code text NOT NULL, account_name_ar text NOT NULL DEFAULT '', description_ar text NOT NULL DEFAULT '',
@@ -246,10 +249,18 @@ await pool.query(`CREATE TABLE IF NOT EXISTS ${q('integration_configs')} (
 await pool.query(`CREATE TABLE IF NOT EXISTS ${q('gosi_accounts')} (
   id text PRIMARY KEY, company_id text NOT NULL REFERENCES ${q('companies')}(id) ON DELETE RESTRICT,
   registration_number text NOT NULL, name text NOT NULL, branch_name text NOT NULL DEFAULT '',
+  branch_code text NOT NULL DEFAULT '', gosi_establishment_number text NOT NULL DEFAULT '',
+  gosi_employer_expense_account text NOT NULL DEFAULT '', gosi_payable_account text NOT NULL DEFAULT '',
   is_default boolean NOT NULL DEFAULT false, is_active boolean NOT NULL DEFAULT true,
   created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
   UNIQUE(company_id,registration_number)
 )`);
+await pool.query(`ALTER TABLE ${q('gosi_accounts')} ADD COLUMN IF NOT EXISTS branch_code text NOT NULL DEFAULT ''`);
+await pool.query(`ALTER TABLE ${q('gosi_accounts')} ADD COLUMN IF NOT EXISTS gosi_establishment_number text NOT NULL DEFAULT ''`);
+await pool.query(`ALTER TABLE ${q('gosi_accounts')} ADD COLUMN IF NOT EXISTS gosi_employer_expense_account text NOT NULL DEFAULT ''`);
+await pool.query(`ALTER TABLE ${q('gosi_accounts')} ADD COLUMN IF NOT EXISTS gosi_payable_account text NOT NULL DEFAULT ''`);
+await pool.query(`UPDATE ${q('gosi_accounts')} SET branch_code=registration_number WHERE branch_code=''`);
+await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS gosi_accounts_branch_code_active_idx ON ${q('gosi_accounts')}(company_id,branch_code) WHERE is_active=true`);
 await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS gosi_accounts_one_default_idx ON ${q('gosi_accounts')}(company_id) WHERE is_default=true AND is_active=true`);
 await pool.query(`CREATE TABLE IF NOT EXISTS ${q('gosi_employee_assignments')} (
   id text PRIMARY KEY, employee_id text NOT NULL REFERENCES ${q('employees')}(id) ON DELETE CASCADE,
@@ -258,6 +269,13 @@ await pool.query(`CREATE TABLE IF NOT EXISTS ${q('gosi_employee_assignments')} (
   CHECK(effective_to IS NULL OR effective_to>=effective_from)
 )`);
 await pool.query(`CREATE INDEX IF NOT EXISTS gosi_assignments_employee_dates_idx ON ${q('gosi_employee_assignments')}(employee_id,effective_from,effective_to)`);
+await pool.query(`CREATE TABLE IF NOT EXISTS ${q('journal_change_logs')} (
+  id bigserial PRIMARY KEY, journal_batch_id text NOT NULL, company_id text NOT NULL,
+  change_type text NOT NULL, changed_at timestamptz NOT NULL DEFAULT now(), changed_by text NOT NULL,
+  reason text NOT NULL, previous_snapshot jsonb, new_snapshot jsonb NOT NULL,
+  affected_branches jsonb NOT NULL DEFAULT '[]'::jsonb
+)`);
+await pool.query(`CREATE INDEX IF NOT EXISTS journal_change_logs_batch_changed_idx ON ${q('journal_change_logs')}(journal_batch_id,changed_at DESC)`);
 await pool.query(`CREATE TABLE IF NOT EXISTS ${q('gosi_department_assignments')} (
   id text PRIMARY KEY,company_id text NOT NULL REFERENCES ${q('companies')}(id) ON DELETE RESTRICT,
   department_name text NOT NULL,account_id text NOT NULL REFERENCES ${q('gosi_accounts')}(id) ON DELETE RESTRICT,

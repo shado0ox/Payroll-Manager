@@ -23,6 +23,7 @@ test('normalized reader assembles the complete application state sequentially', 
     company_departments: [{ company_id:'company-1',payload:{ id:'department-1' } }],
     cost_centers: [{ company_id:'company-1',payload:{ id:'cost-1' } }],
     company_bank_definitions: [{ company_id:'company-1',payload:{ ibanBankCode:'80' } }],
+    gosi_accounts: [],
     journal_batches: [{ id:'journal-1',payload:{ id:'journal-1' } }],
     journal_lines: [{ journal_batch_id:'journal-1',payload:{ id:'line-1' } }],
     application_audit_logs: [{ payload:{ id:'audit-1' } }],
@@ -63,7 +64,7 @@ test('normalized reader assembles the complete application state sequentially', 
   assert.deepEqual(state.companies[0], {
     timezone:'Asia/Riyadh',id:'company-1',companyCode:'COMP-1',nameAr:'شركة',nameEn:'Company',
     subscriptionStatus:'TRIAL',trialEndsAt:'2026-09-30T00:00:00.000Z',subscriptionEndsAt:null,
-    departments:[{ id:'department-1' }],costCenters:[{ id:'cost-1' }],bankDefinitions:[{ ibanBankCode:'80' }],
+    departments:[{ id:'department-1' }],costCenters:[{ id:'cost-1' }],bankDefinitions:[{ ibanBankCode:'80' }],gosiBranches:[],
   });
   assert.deepEqual(state.journals, [{ id:'journal-1',lines:[{ id:'line-1' }] }]);
   assert.deepEqual(state.auditLogs, [{ id:'audit-1' }]);

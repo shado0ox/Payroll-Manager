@@ -50,7 +50,19 @@ export type PayrollRepairIssue = {
   blockedReason:string | null;
 };
 
-export type GosiAccount={id:string;companyId:string;registrationNumber:string;name:string;branchName:string;isDefault:boolean;isActive:boolean};
+export type GosiAccount={
+  id:string;
+  companyId:string;
+  registrationNumber:string;
+  name:string;
+  branchName:string;
+  branchCode:string;
+  gosiEstablishmentNumber:string;
+  gosiEmployerExpenseAccount:string;
+  gosiPayableAccount:string;
+  isDefault:boolean;
+  isActive:boolean;
+};
 export type GosiAssignment={id:string;employeeId:string;accountId:string;effectiveFrom:string;effectiveTo:string|null};
 export type GosiDepartmentAssignment={id:string;departmentName:string;accountId:string;effectiveFrom:string;effectiveTo:string|null};
 
@@ -294,8 +306,8 @@ export const api = {
     if (result.payrollRun) updateSyncedCollection('payrollRuns',result.payrollRun);
     return result;
   },
-  deleteJournalRecord: async (id: string) => {
-    const result = await request<{deleted:boolean;version:number;updated_at:string}>(`/api/journals/${encodeURIComponent(id)}`, { method:'DELETE' });
+  deleteJournalRecord: async (id: string,reason: string) => {
+    const result = await request<{deleted:boolean;version:number;updated_at:string}>(`/api/journals/${encodeURIComponent(id)}`, { method:'DELETE',body:JSON.stringify({reason}) });
     stateVersion = result.version;
     removeFromSyncedCollection('journals',id);
     return result;
