@@ -38,7 +38,9 @@ test('accounting engine separates payroll and branch GOSI journals from run item
   assert.doesNotMatch(payrollBlock,/gosiPayableAccount|مصروف التأمينات الاجتماعية/);
   assert.match(engine,/JV-GOSI-\$\{code\}-\$\{payrollRun\.periodMonth\.replace\('-',''\)\}/);
   assert.match(engine,/item\.gosiBranchId\|\|'UNASSIGNED'/);
-  assert.match(engine,/accountCode:'9999'/);
+  assert.doesNotMatch(engine,/accountCode:'9999'/);
+  assert.match(engine,/currentPeriodNet\(item\)/);
+  assert.match(view,/القيد غير متوازن/);
   assert.match(engine,/date:monthEnd\(payrollRun\.periodMonth\)/);
 });
 
@@ -56,5 +58,6 @@ test('GOSI branch accounts and journal change audit are normalized in PostgreSQL
   assert.match(journalRoutes,/JOURNAL_CHANGE_REASON_REQUIRED/);
   assert.match(journalRoutes,/qoyodSyncStatus\?\.synced/);
   assert.match(journalRoutes,/record\.qoyodSnapshot/);
+  assert.match(journalRoutes,/debitTotal-creditTotal/);
   assert.match(payrollRoutes,/snapshotPayrollGosiBranches\(client,q,record\)/);
 });

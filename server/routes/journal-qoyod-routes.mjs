@@ -232,6 +232,11 @@ router.post('/integrations/qoyod/journal', auth, writeLimiter, async (req, res, 
     if (!payload?.journal_entry || !Array.isArray(payload.journal_entry.debit_amounts) || !Array.isArray(payload.journal_entry.credit_amounts)) {
       return res.status(400).json({ error:'INVALID_QOYOD_PAYLOAD' });
     }
+    const debitTotal=payload.journal_entry.debit_amounts.reduce((sum,line)=>sum+Number(line?.amount||0),0);
+    const creditTotal=payload.journal_entry.credit_amounts.reduce((sum,line)=>sum+Number(line?.amount||0),0);
+    if(!Number.isFinite(debitTotal)||!Number.isFinite(creditTotal)||Math.abs(debitTotal-creditTotal)>=0.01){
+      return res.status(400).json({ error:'UNBALANCED_JOURNAL',debitTotal,creditTotal });
+    }
     const response = await fetch(`${baseUrl.toString().replace(/\/+$/, '')}/journal_entries`, {
       method: 'POST',
       headers: { 'Content-Type':'application/json', 'API-KEY':apiKey },
