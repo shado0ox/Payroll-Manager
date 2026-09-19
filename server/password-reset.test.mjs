@@ -9,14 +9,25 @@ const loginRoutes = fs.readFileSync(new URL('./routes/auth-login-routes.mjs', im
 const login = fs.readFileSync(new URL('../src/components/LoginView.tsx', import.meta.url), 'utf8');
 const api = fs.readFileSync(new URL('../src/utils/api.ts', import.meta.url), 'utf8');
 const users = fs.readFileSync(new URL('../src/components/UserManagementView.tsx', import.meta.url), 'utf8');
+const schema = fs.readFileSync(new URL('./database-schema.mjs', import.meta.url), 'utf8');
 
 test('password reset API is exposed without account enumeration', () => {
   assert.match(passwordResetServer, /password-reset\/request/);
+  assert.match(passwordResetServer, /password-reset\/verify/);
   assert.match(passwordResetServer, /password-reset\/confirm/);
   assert.match(passwordResetServer, /PASSWORD_RESET_REQUEST_ACCEPTED/);
+  assert.match(passwordResetRoutes, /requestId/);
 });
 
 test('reset tokens are hashed, expiring, single use, and sessions are revoked', () => {
+  assert.match(schema, /CREATE TABLE IF NOT EXISTS \$\{q\('auth_email_codes'\)\}/);
+  assert.match(schema, /purpose IN \('PASSWORD_RESET','EMAIL_LOGIN'\)/);
+  assert.match(schema, /attempts integer NOT NULL DEFAULT 0 CHECK \(attempts >= 0 AND attempts <= 5\)/);
+  assert.match(passwordResetServer, /auth_email_codes/);
+  assert.match(passwordResetServer, /crypto\.randomInt\(100000,1000000\)/);
+  assert.match(passwordResetServer, /emailCodeHash\(sha256,requestId,code\)/);
+  assert.match(passwordResetServer, /EMAIL_CODE_MAX_ATTEMPTS = 5/);
+  assert.match(passwordResetServer, /expires_at > now\(\)/);
   assert.match(passwordResetServer, /password_reset_tokens/);
   assert.match(passwordResetServer, /token_hash/);
   assert.match(passwordResetServer, /expires_at/);
@@ -27,7 +38,23 @@ test('reset tokens are hashed, expiring, single use, and sessions are revoked', 
 test('login page exposes forgot password flow', () => {
   assert.match(login, /نسيت كلمة المرور/);
   assert.match(login, /passwordResetRequest/);
+  assert.match(login, /passwordResetVerify/);
   assert.match(login, /passwordResetConfirm/);
+  assert.match(login, /recoveryStep === 'CODE'/);
+  assert.match(login, /recoveryStep === 'PASSWORD'/);
+});
+
+test('quick email sign-in issues a one-time code scoped to the selected company', () => {
+  assert.match(passwordResetRoutes, /email-login\/request/);
+  assert.match(passwordResetRoutes, /email-login\/verify/);
+  assert.match(passwordResetRoutes, /purpose:'EMAIL_LOGIN'/);
+  assert.match(passwordResetRoutes, /u\.company_ids \? c\.id/);
+  assert.match(passwordResetRoutes, /LOGIN_EMAIL_CODE/);
+  assert.match(passwordResetRoutes, /SameSite=Strict/);
+  assert.match(api, /emailLoginRequest/);
+  assert.match(api, /emailLoginVerify/);
+  assert.match(login, /دخول سريع بالبريد/);
+  assert.match(login, /onEmailCodeLogin/);
 });
 
 test('login accepts either username or email inside the selected company', () => {

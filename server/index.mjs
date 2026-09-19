@@ -222,6 +222,7 @@ app.use('/api/auth', createAuthPasswordResetRouter({
   q,
   sha256,
   isStrongPassword,
+  permissionsFor,
   resendApiKey,
   verificationEmailFrom,
 }));

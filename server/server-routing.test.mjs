@@ -54,10 +54,11 @@ test('login is delegated with rate limiting, transaction, and secure cookie beha
 test('password reset is delegated while preserving expiry, single use, and session revocation', () => {
   assert.match(server, /app\.use\('\/api\/auth', createAuthPasswordResetRouter/);
   assert.doesNotMatch(server, /app\.post\('\/api\/auth\/password-reset\/(?:request|confirm)'/);
-  assert.match(authPasswordResetRoutes, /router\.post\('\/password-reset\/request', loginLimiter/);
-  assert.match(authPasswordResetRoutes, /router\.post\('\/password-reset\/confirm', loginLimiter/);
+  assert.match(authPasswordResetRoutes, /router\.post\('\/password-reset\/request',\s*loginLimiter/);
+  assert.match(authPasswordResetRoutes, /router\.post\('\/password-reset\/verify',\s*loginLimiter/);
+  assert.match(authPasswordResetRoutes, /router\.post\('\/password-reset\/confirm',\s*loginLimiter/);
   assert.match(authPasswordResetRoutes, /PASSWORD_RESET_REQUEST_ACCEPTED/);
-  assert.match(authPasswordResetRoutes, /now\(\)\+interval '30 minutes'/);
+  assert.match(authPasswordResetRoutes, /now\(\)\+interval '15 minutes'/);
   assert.match(authPasswordResetRoutes, /used_at IS NULL AND expires_at > now\(\) FOR UPDATE/);
   assert.match(authPasswordResetRoutes, /DELETE FROM \$\{q\('sessions'\)\} WHERE user_id=\$1/);
 });

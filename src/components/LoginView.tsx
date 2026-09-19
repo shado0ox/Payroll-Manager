@@ -4,7 +4,11 @@ import { AlertCircle, ArrowRight, Building2, CheckCircle2, Eye, EyeOff, Hash, Ke
 import { api } from '../utils/api';
 import { isStrongPassword, passwordPolicyMessage } from '../utils/passwordPolicy';
 
-interface LoginViewProps { defaultCompanyCode?: string; onLogin: (companyCode: string, username: string, password: string) => Promise<void>; }
+interface LoginViewProps {
+  defaultCompanyCode?: string;
+  onLogin: (companyCode: string,username: string,password: string) => Promise<void>;
+  onEmailCodeLogin: (requestId: string,code: string) => Promise<void>;
+}
 
 const currencies = [
   { symbol: 'SR', ar: 'ريال سعودي', en: 'Saudi Riyal', pos: 'masar-coin-one' },
@@ -19,24 +23,74 @@ const normalizeArabicNumbers = (val: string): string => {
   return (val || '').replace(/[٠-٩]/g, char => String(digits.indexOf(char))).trim().toLowerCase();
 };
 
-export const LoginView: React.FC<LoginViewProps> = ({ defaultCompanyCode = '101', onLogin }) => {
+export const LoginView: React.FC<LoginViewProps> = ({ defaultCompanyCode = '101',onLogin,onEmailCodeLogin }) => {
   const { language, toggleLanguage, t } = useLanguage();
-  const [recoveryMode, setRecoveryMode] = useState<'PASSWORD'|'USERNAME'|'COMPANY_CODE'|null>(null);
+  const [recoveryMode, setRecoveryMode] = useState<'PASSWORD'|'EMAIL_LOGIN'|'USERNAME'|'COMPANY_CODE'|null>(null);
+  const [recoveryStep, setRecoveryStep] = useState<'EMAIL'|'CODE'|'PASSWORD'|'COMPLETE'>('EMAIL');
   const [forgotEmail, setForgotEmail] = useState('');
   const [forgotMessage, setForgotMessage] = useState('');
+  const [recoveryRequestId, setRecoveryRequestId] = useState('');
+  const [emailCode, setEmailCode] = useState('');
+  const [resetGrant, setResetGrant] = useState('');
   const [resetPassword, setResetPassword] = useState('');
   const [resetPasswordConfirm, setResetPasswordConfirm] = useState('');
   const [resetBusy, setResetBusy] = useState(false);
-  const resetToken = new URLSearchParams(window.location.search).get('reset_token') || '';
+
+  const selectRecoveryMode = (selected: 'PASSWORD'|'EMAIL_LOGIN'|'USERNAME'|'COMPANY_CODE') => {
+    setRecoveryMode(value => value === selected ? null : selected);
+    setRecoveryStep('EMAIL');
+    setRecoveryRequestId('');
+    setEmailCode('');
+    setResetGrant('');
+    setForgotMessage('');
+  };
 
   const passwordResetRequest = async () => {
     if (!forgotEmail.trim()) return;
     setResetBusy(true);
     try {
-      await api.passwordResetRequest(forgotEmail.trim());
-      setForgotMessage(language === 'ar' ? 'إذا كان البريد مسجلًا، تم إرسال رابط إعادة تعيين كلمة المرور.' : 'If the email is registered, a password reset link has been sent.');
+      const result = await api.passwordResetRequest(forgotEmail.trim(),language);
+      setRecoveryRequestId(result.requestId);
+      setRecoveryStep('CODE');
+      setForgotMessage(language === 'ar' ? 'إذا كان البريد مسجلًا، تم إرسال رمز من 6 أرقام. الرمز صالح لمدة 10 دقائق.' : 'If the email is registered, a 6-digit code was sent. It expires in 10 minutes.');
     } catch {
       setForgotMessage(language === 'ar' ? 'تعذر إرسال الطلب الآن. حاول مرة أخرى.' : 'Could not submit the request. Please try again.');
+    } finally { setResetBusy(false); }
+  };
+
+  const passwordResetVerify = async () => {
+    if (!recoveryRequestId || !/^\d{6}$/.test(normalizeArabicNumbers(emailCode))) return;
+    setResetBusy(true);
+    try {
+      const result = await api.passwordResetVerify(recoveryRequestId,normalizeArabicNumbers(emailCode));
+      setResetGrant(result.resetToken);
+      setRecoveryStep('PASSWORD');
+      setForgotMessage(language === 'ar' ? 'تم التحقق من الرمز. أدخل كلمة المرور الجديدة.' : 'Code verified. Enter your new password.');
+    } catch {
+      setForgotMessage(language === 'ar' ? 'الرمز غير صحيح أو انتهت صلاحيته.' : 'The code is incorrect or has expired.');
+    } finally { setResetBusy(false); }
+  };
+
+  const emailLoginRequest = async () => {
+    if (!forgotEmail.trim() || !companyInput.trim()) return;
+    setResetBusy(true);
+    try {
+      const result = await api.emailLoginRequest(normalizeArabicNumbers(companyInput),forgotEmail.trim(),language);
+      setRecoveryRequestId(result.requestId);
+      setRecoveryStep('CODE');
+      setForgotMessage(language === 'ar' ? 'إذا تطابقت البيانات، تم إرسال رمز دخول من 6 أرقام إلى بريدك.' : 'If the details match, a 6-digit sign-in code was sent to your email.');
+    } catch {
+      setForgotMessage(language === 'ar' ? 'تعذر إرسال الطلب الآن. حاول مرة أخرى.' : 'Could not submit the request. Please try again.');
+    } finally { setResetBusy(false); }
+  };
+
+  const emailLoginVerify = async () => {
+    if (!recoveryRequestId || !/^\d{6}$/.test(normalizeArabicNumbers(emailCode))) return;
+    setResetBusy(true);
+    try {
+      await onEmailCodeLogin(recoveryRequestId,normalizeArabicNumbers(emailCode));
+    } catch {
+      setForgotMessage(language === 'ar' ? 'رمز الدخول غير صحيح أو انتهت صلاحيته.' : 'The sign-in code is incorrect or has expired.');
     } finally { setResetBusy(false); }
   };
 
@@ -67,19 +121,20 @@ export const LoginView: React.FC<LoginViewProps> = ({ defaultCompanyCode = '101'
   };
 
   const passwordResetConfirm = async () => {
-    if (!resetToken || resetPassword !== resetPasswordConfirm || !isStrongPassword(resetPassword)) {
+    if (!resetGrant || resetPassword !== resetPasswordConfirm || !isStrongPassword(resetPassword)) {
       setForgotMessage(language === 'ar' ? (resetPassword !== resetPasswordConfirm ? 'كلمتا المرور غير متطابقتين.' : passwordPolicyMessage) : 'Passwords must match and meet the password policy.');
       return;
     }
     setResetBusy(true);
     try {
-      await api.passwordResetConfirm(resetToken, resetPassword);
-      window.history.replaceState({}, '', window.location.pathname);
+      await api.passwordResetConfirm(resetGrant,resetPassword);
       setForgotMessage(language === 'ar' ? 'تم تغيير كلمة المرور. يمكنك تسجيل الدخول الآن.' : 'Password changed. You can sign in now.');
       setResetPassword('');
       setResetPasswordConfirm('');
+      setRecoveryStep('COMPLETE');
+      setResetGrant('');
     } catch {
-      setForgotMessage(language === 'ar' ? 'الرابط غير صالح أو منتهي. اطلب رابطًا جديدًا.' : 'The link is invalid or expired. Request a new link.');
+      setForgotMessage(language === 'ar' ? 'جلسة إعادة التعيين غير صالحة أو انتهت. اطلب رمزًا جديدًا.' : 'The reset session is invalid or expired. Request a new code.');
     } finally { setResetBusy(false); }
   };
   const isArabic = language === 'ar';
@@ -203,33 +258,51 @@ export const LoginView: React.FC<LoginViewProps> = ({ defaultCompanyCode = '101'
                 </button>
                 {registrationEnabled && <button type="button" onClick={() => { setError(null); setMode('REGISTER'); }} className="w-full text-center text-xs font-bold text-emerald-300 hover:text-emerald-200">{isArabic ? `شركة جديدة؟ ابدأ تجربة ${trialDays} يومًا` : `New company? Start a ${trialDays}-day trial`}</button>}
               </form>}
-              {resetToken ? (
-                <div className="mt-4 rounded-xl border border-white/10 bg-white/5 p-4 space-y-3">
-                  <div className="text-sm font-bold text-white">{isArabic ? 'تعيين كلمة مرور جديدة' : 'Set a new password'}</div>
-                  <input type="password" value={resetPassword} onChange={e => setResetPassword(e.target.value)} placeholder={isArabic ? 'كلمة المرور الجديدة' : 'New password'} className={inputClass} />
-                  <input type="password" value={resetPasswordConfirm} onChange={e => setResetPasswordConfirm(e.target.value)} placeholder={isArabic ? 'تأكيد كلمة المرور' : 'Confirm password'} className={inputClass} />
-                  <button type="button" disabled={resetBusy} onClick={passwordResetConfirm} className="w-full h-11 rounded-xl bg-emerald-500 text-slate-950 font-black disabled:opacity-50">{isArabic ? 'حفظ كلمة المرور الجديدة' : 'Save new password'}</button>
-                  {forgotMessage && <p className="text-xs text-slate-300">{forgotMessage}</p>}
-                </div>
-              ) : mode === 'LOGIN' && (
+              {mode === 'LOGIN' && (
                 <div className="mt-3">
                   <div className="flex flex-wrap justify-center gap-x-4 gap-y-2">
-                    <button type="button" onClick={() => { setForgotMessage(''); setRecoveryMode(value => value === 'PASSWORD' ? null : 'PASSWORD'); }} className="text-xs font-bold text-emerald-300 hover:text-emerald-200">{isArabic ? 'نسيت كلمة المرور؟' : 'Forgot password?'}</button>
-                    <button type="button" onClick={() => { setForgotMessage(''); setRecoveryMode(value => value === 'USERNAME' ? null : 'USERNAME'); }} className="text-xs font-bold text-emerald-300 hover:text-emerald-200">{isArabic ? 'نسيت اسم المستخدم؟' : 'Forgot username?'}</button>
-                    <button type="button" onClick={() => { setForgotMessage(''); setRecoveryMode(value => value === 'COMPANY_CODE' ? null : 'COMPANY_CODE'); }} className="text-xs font-bold text-emerald-300 hover:text-emerald-200">{isArabic ? 'نسيت رمز المنشأة؟' : 'Forgot company code?'}</button>
+                    <button type="button" onClick={() => selectRecoveryMode('EMAIL_LOGIN')} className="text-xs font-bold text-cyan-300 hover:text-cyan-200">{isArabic ? 'دخول سريع بالبريد' : 'Quick email sign-in'}</button>
+                    <button type="button" onClick={() => selectRecoveryMode('PASSWORD')} className="text-xs font-bold text-emerald-300 hover:text-emerald-200">{isArabic ? 'نسيت كلمة المرور؟' : 'Forgot password?'}</button>
+                    <button type="button" onClick={() => selectRecoveryMode('USERNAME')} className="text-xs font-bold text-emerald-300 hover:text-emerald-200">{isArabic ? 'نسيت اسم المستخدم؟' : 'Forgot username?'}</button>
+                    <button type="button" onClick={() => selectRecoveryMode('COMPANY_CODE')} className="text-xs font-bold text-emerald-300 hover:text-emerald-200">{isArabic ? 'نسيت رمز المنشأة؟' : 'Forgot company code?'}</button>
                   </div>
                   {recoveryMode && <div className="mt-3 rounded-xl border border-white/10 bg-white/5 p-3 space-y-2">
-                    <input type="email" value={forgotEmail} onChange={e => setForgotEmail(e.target.value)} placeholder={isArabic ? 'البريد الإلكتروني المسجل' : 'Registered email'} className={inputClass} />
-                    <button
-                      type="button"
-                      disabled={resetBusy || !forgotEmail.trim()}
-                      onClick={recoveryMode === 'PASSWORD' ? passwordResetRequest : recoveryMode === 'USERNAME' ? usernameRecoveryRequest : companyCodeRecoveryRequest}
-                      className="w-full h-11 rounded-xl bg-slate-100 text-slate-900 font-black disabled:opacity-50"
-                    >
-                      {recoveryMode === 'PASSWORD'
-                        ? (isArabic ? 'إرسال رابط إعادة التعيين' : 'Send reset link')
-                        : (isArabic ? 'إرسال بيانات الدخول إلى البريد' : 'Send sign-in details')}
-                    </button>
+                    <div className="text-sm font-bold text-white">
+                      {recoveryMode === 'EMAIL_LOGIN'
+                        ? (isArabic ? 'الدخول السريع عبر البريد' : 'Quick email sign-in')
+                        : recoveryMode === 'PASSWORD'
+                          ? (isArabic ? 'إعادة تعيين كلمة المرور' : 'Reset password')
+                          : (isArabic ? 'استرجاع بيانات الدخول' : 'Recover sign-in details')}
+                    </div>
+                    {recoveryStep === 'EMAIL' && <>
+                      <input type="email" value={forgotEmail} onChange={e => setForgotEmail(e.target.value)} placeholder={isArabic ? 'البريد الإلكتروني المسجل' : 'Registered email'} className={inputClass} dir="ltr" autoComplete="email" />
+                      {recoveryMode === 'EMAIL_LOGIN' && <p className="text-[11px] text-slate-400">{isArabic ? `سيتم الدخول إلى المنشأة رقم ${companyInput || '—'}.` : `You will sign in to company ${companyInput || '—'}.`}</p>}
+                      <button
+                        type="button"
+                        disabled={resetBusy || !forgotEmail.trim() || (recoveryMode === 'EMAIL_LOGIN' && !companyInput.trim())}
+                        onClick={recoveryMode === 'PASSWORD' ? passwordResetRequest : recoveryMode === 'EMAIL_LOGIN' ? emailLoginRequest : recoveryMode === 'USERNAME' ? usernameRecoveryRequest : companyCodeRecoveryRequest}
+                        className="w-full h-11 rounded-xl bg-slate-100 text-slate-900 font-black disabled:opacity-50"
+                      >
+                        {recoveryMode === 'PASSWORD'
+                          ? (isArabic ? 'إرسال رمز إعادة التعيين' : 'Send reset code')
+                          : recoveryMode === 'EMAIL_LOGIN'
+                            ? (isArabic ? 'إرسال رمز الدخول' : 'Send sign-in code')
+                            : (isArabic ? 'إرسال بيانات الدخول إلى البريد' : 'Send sign-in details')}
+                      </button>
+                    </>}
+                    {recoveryStep === 'CODE' && <>
+                      <input value={emailCode} onChange={e => setEmailCode(e.target.value)} inputMode="numeric" maxLength={6} autoFocus dir="ltr" className="h-16 w-full rounded-2xl border border-white/10 bg-slate-950/50 text-center font-mono text-3xl font-black tracking-[.5em] text-white focus:border-emerald-400 focus:outline-none" placeholder="000000" />
+                      <button type="button" disabled={resetBusy || !/^\d{6}$/.test(normalizeArabicNumbers(emailCode))} onClick={recoveryMode === 'EMAIL_LOGIN' ? emailLoginVerify : passwordResetVerify} className="w-full h-11 rounded-xl bg-emerald-500 text-slate-950 font-black disabled:opacity-50">
+                        {isArabic ? 'تحقق من الرمز' : 'Verify code'}
+                      </button>
+                      <button type="button" onClick={() => { setRecoveryStep('EMAIL');setEmailCode('');setForgotMessage(''); }} className="w-full text-xs font-bold text-slate-400">{isArabic ? 'تغيير البريد أو إعادة الإرسال' : 'Change email or resend'}</button>
+                    </>}
+                    {recoveryMode === 'PASSWORD' && recoveryStep === 'PASSWORD' && <>
+                      <input type="password" value={resetPassword} onChange={e => setResetPassword(e.target.value)} placeholder={isArabic ? 'كلمة المرور الجديدة' : 'New password'} className={inputClass} dir="ltr" autoComplete="new-password" />
+                      <input type="password" value={resetPasswordConfirm} onChange={e => setResetPasswordConfirm(e.target.value)} placeholder={isArabic ? 'تأكيد كلمة المرور' : 'Confirm password'} className={inputClass} dir="ltr" autoComplete="new-password" />
+                      <button type="button" disabled={resetBusy} onClick={passwordResetConfirm} className="w-full h-11 rounded-xl bg-emerald-500 text-slate-950 font-black disabled:opacity-50">{isArabic ? 'حفظ كلمة المرور الجديدة' : 'Save new password'}</button>
+                    </>}
+                    {recoveryStep === 'COMPLETE' && <button type="button" onClick={() => selectRecoveryMode('PASSWORD')} className="w-full h-11 rounded-xl bg-slate-100 text-slate-900 font-black">{isArabic ? 'العودة لتسجيل الدخول' : 'Back to sign in'}</button>}
                     {forgotMessage && <p className="text-xs text-slate-300">{forgotMessage}</p>}
                   </div>}
                 </div>
