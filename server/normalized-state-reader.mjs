@@ -4,6 +4,16 @@ export function createNormalizedStateReader({ q,clone,subscriptionState }) {
     // A checked-out pg PoolClient must execute one query at a time. pg@8 only
     // warns when Promise.all queues concurrent calls; pg@9 will reject them.
     const employeeResult = await client.query(`SELECT payload FROM ${q('employees')} WHERE is_archived=false ORDER BY sort_order,id`);
+    const employeeGosiBranches = await client.query(`SELECT e.id,COALESCE(employee_assignment.account_id,department_assignment.account_id,default_account.id) AS account_id
+      FROM ${q('employees')} e
+      LEFT JOIN LATERAL (SELECT account_id FROM ${q('gosi_employee_assignments')} a WHERE a.employee_id=e.id
+        AND a.effective_from<=current_date AND (a.effective_to IS NULL OR a.effective_to>=current_date)
+        ORDER BY a.effective_from DESC,a.id LIMIT 1) employee_assignment ON true
+      LEFT JOIN LATERAL (SELECT account_id FROM ${q('gosi_department_assignments')} d WHERE d.company_id=e.company_id
+        AND d.department_name=COALESCE(e.payload->>'department','') AND d.effective_from<=current_date
+        AND (d.effective_to IS NULL OR d.effective_to>=current_date) ORDER BY d.effective_from DESC,d.id LIMIT 1) department_assignment ON true
+      LEFT JOIN LATERAL (SELECT id FROM ${q('gosi_accounts')} g WHERE g.company_id=e.company_id AND g.is_active=true AND g.is_default=true LIMIT 1) default_account ON true
+      WHERE e.is_archived=false`);
     const runResult = await client.query(`SELECT id,payload FROM ${q('payroll_runs')} ORDER BY sort_order,id`);
     const itemResult = await client.query(`SELECT payroll_run_id,payload FROM ${q('payroll_run_items')} ORDER BY payroll_run_id,sort_order,id`);
     const batchResult = await client.query(`SELECT id,payroll_run_id,payload FROM ${q('payroll_payment_batches')} ORDER BY payroll_run_id,sort_order,id`);
@@ -24,7 +34,11 @@ export function createNormalizedStateReader({ q,clone,subscriptionState }) {
       if (!batchesByRun.has(row.payroll_run_id)) batchesByRun.set(row.payroll_run_id, []);
       batchesByRun.get(row.payroll_run_id).push({ ...row.payload, employeeIds: employeeIdsByBatch.get(row.id) || [] });
     }
-    state.employees = employeeResult.rows.map(row => row.payload);
+    const currentGosiBranchByEmployee = new Map(employeeGosiBranches.rows.map(row => [row.id,row.account_id]));
+    state.employees = employeeResult.rows.map(row => ({
+      ...row.payload,
+      ...(currentGosiBranchByEmployee.get(row.payload?.id) ? { gosiBranchId:currentGosiBranchByEmployee.get(row.payload.id) } : {}),
+    }));
     state.payrollRuns = runResult.rows.map(row => ({
       ...row.payload,
       items: itemsByRun.get(row.id) || [],
@@ -57,6 +71,9 @@ export function createNormalizedStateReader({ q,clone,subscriptionState }) {
     const departments = await client.query(`SELECT company_id,payload FROM ${q('company_departments')} ORDER BY company_id,sort_order,id`);
     const costCenters = await client.query(`SELECT company_id,payload FROM ${q('cost_centers')} ORDER BY company_id,sort_order,id`);
     const bankDefinitions = await client.query(`SELECT company_id,payload FROM ${q('company_bank_definitions')} ORDER BY company_id,sort_order,iban_bank_code`);
+    const gosiBranches = await client.query(`SELECT id,company_id,registration_number,name,branch_name,branch_code,gosi_establishment_number,
+      gosi_employer_expense_account,gosi_payable_account,is_default,is_active FROM ${q('gosi_accounts')}
+      WHERE is_active=true ORDER BY company_id,is_default DESC,name,id`);
     const journals = await client.query(`SELECT id,payload FROM ${q('journal_batches')} ORDER BY sort_order,id`);
     const journalLines = await client.query(`SELECT journal_batch_id,payload FROM ${q('journal_lines')} ORDER BY journal_batch_id,sort_order,id`);
     const auditLogs = await client.query(`SELECT payload FROM ${q('application_audit_logs')} ORDER BY sort_order,id`);
@@ -77,6 +94,13 @@ export function createNormalizedStateReader({ q,clone,subscriptionState }) {
     const departmentsByCompany = groupPayloads(departments.rows);
     const costCentersByCompany = groupPayloads(costCenters.rows);
     const bankDefinitionsByCompany = groupPayloads(bankDefinitions.rows);
+    const gosiBranchesByCompany = new Map();
+    for(const row of gosiBranches.rows){if(!gosiBranchesByCompany.has(row.company_id))gosiBranchesByCompany.set(row.company_id,[]);gosiBranchesByCompany.get(row.company_id).push({
+      id:row.id,name:row.name,branchName:row.branch_name||'',code:row.branch_code||row.registration_number,number:row.registration_number,
+      gosiEstablishmentNumber:row.gosi_establishment_number||row.registration_number,
+      gosiEmployerExpenseAccount:row.gosi_employer_expense_account||'',gosiPayableAccount:row.gosi_payable_account||'',
+      isDefault:row.is_default,isActive:row.is_active,
+    });}
     state.companies = companies.rows.map(row => {
       const subscription = subscriptionState(row);
       return ({
@@ -93,6 +117,7 @@ export function createNormalizedStateReader({ q,clone,subscriptionState }) {
       departments: departmentsByCompany.get(row.id) || [],
       costCenters: costCentersByCompany.get(row.id) || [],
       bankDefinitions: bankDefinitionsByCompany.get(row.id) || [],
+      gosiBranches: gosiBranchesByCompany.get(row.id) || [],
       });
     });
     state.journals = journals.rows.map(row => ({ ...row.payload, lines: linesByJournal.get(row.id) || [] }));

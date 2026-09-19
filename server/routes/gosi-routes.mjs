@@ -32,10 +32,14 @@ export function createGosiRouter({ auth,writeLimiter,pool,q,can,workflowError,bu
   router.get('/gosi/accounts',auth,async (req,res,next) => {
     try {
       const companyId=text(req.query.companyId,100); requireAccess(req,companyId);
-      const result=await pool.query(`SELECT id,company_id,registration_number,name,branch_name,is_default,is_active,created_at,updated_at
+      const result=await pool.query(`SELECT id,company_id,registration_number,name,branch_name,branch_code,gosi_establishment_number,
+        gosi_employer_expense_account,gosi_payable_account,is_default,is_active,created_at,updated_at
         FROM ${q('gosi_accounts')} WHERE company_id=$1 AND is_active=true ORDER BY is_default DESC,name,id`,[companyId]);
       res.json({ records:result.rows.map(row => ({ id:row.id,companyId:row.company_id,registrationNumber:row.registration_number,
-        name:row.name,branchName:row.branch_name || '',isDefault:row.is_default,isActive:row.is_active,
+        name:row.name,branchName:row.branch_name || '',branchCode:row.branch_code || row.registration_number,
+        gosiEstablishmentNumber:row.gosi_establishment_number || row.registration_number,
+        gosiEmployerExpenseAccount:row.gosi_employer_expense_account || '',gosiPayableAccount:row.gosi_payable_account || '',
+        isDefault:row.is_default,isActive:row.is_active,
         createdAt:row.created_at,updatedAt:row.updated_at })) });
     } catch (e) { next(e); }
   });
@@ -44,16 +48,23 @@ export function createGosiRouter({ auth,writeLimiter,pool,q,can,workflowError,bu
     const client=await pool.connect();
     try {
       const record=req.body || {}; requireAccess(req,record.companyId);
-      if (record.id !== req.params.id || !text(record.name) || !text(record.registrationNumber,100)) throw workflowError(400,'INVALID_GOSI_ACCOUNT');
+      if (record.id !== req.params.id || !text(record.name) || !text(record.registrationNumber,100)
+        || !text(record.branchCode || record.registrationNumber,100)
+        || !text(record.gosiEmployerExpenseAccount,100) || !text(record.gosiPayableAccount,100)) throw workflowError(400,'INVALID_GOSI_ACCOUNT');
       await client.query('BEGIN');
       if (record.isDefault) await client.query(`UPDATE ${q('gosi_accounts')} SET is_default=false WHERE company_id=$1`,[record.companyId]);
       const result=await client.query(`INSERT INTO ${q('gosi_accounts')}
-        (id,company_id,registration_number,name,branch_name,is_default,is_active,updated_at)
-        VALUES ($1,$2,$3,$4,$5,$6,true,now()) ON CONFLICT (id) DO UPDATE SET
-        registration_number=EXCLUDED.registration_number,name=EXCLUDED.name,branch_name=EXCLUDED.branch_name,
+        (id,company_id,registration_number,name,branch_name,branch_code,gosi_establishment_number,
+          gosi_employer_expense_account,gosi_payable_account,is_default,is_active,updated_at)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,true,now()) ON CONFLICT (id) DO UPDATE SET
+        registration_number=EXCLUDED.registration_number,name=EXCLUDED.name,branch_name=EXCLUDED.branch_name,branch_code=EXCLUDED.branch_code,
+        gosi_establishment_number=EXCLUDED.gosi_establishment_number,gosi_employer_expense_account=EXCLUDED.gosi_employer_expense_account,
+        gosi_payable_account=EXCLUDED.gosi_payable_account,
         is_default=EXCLUDED.is_default,is_active=true,updated_at=now()
         WHERE ${q('gosi_accounts')}.company_id=EXCLUDED.company_id RETURNING *`,[
-        record.id,record.companyId,text(record.registrationNumber,100),text(record.name),text(record.branchName),Boolean(record.isDefault)]);
+        record.id,record.companyId,text(record.registrationNumber,100),text(record.name),text(record.branchName),
+        text(record.branchCode || record.registrationNumber,100),text(record.gosiEstablishmentNumber || record.registrationNumber,100),
+        text(record.gosiEmployerExpenseAccount,100),text(record.gosiPayableAccount,100),Boolean(record.isDefault)]);
       if (!result.rowCount) throw workflowError(409,'GOSI_ACCOUNT_COMPANY_IMMUTABLE');
       const updated=await finishWrite(client,req,record.companyId,'UPSERT_GOSI_ACCOUNT');
       await client.query('COMMIT');

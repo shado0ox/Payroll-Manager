@@ -50,8 +50,8 @@ function validateJournalRecord(record, user) {
     || !validPeriodMonth(record.periodMonth) || !validIsoDate(record.date)
     || typeof record.batchNumber !== 'string' || !record.batchNumber.trim()
     || typeof record.description !== 'string' || !record.description.trim()
-    || !['DRAFT','EXPORTED_TO_QOYOD','POSTED'].includes(record.status)
-    || (record.status === 'POSTED' && (!record.qoyodSyncStatus?.synced || !String(record.qoyodSyncStatus?.qoyodJournalId || '').trim()))
+    || !['DRAFT','UNDER_REVIEW','APPROVED','POSTED','EXPORTED_TO_QOYOD'].includes(record.status)
+    || (record.qoyodSyncStatus?.synced && (!String(record.qoyodSyncStatus?.qoyodJournalId || '').trim() || !record.qoyodSnapshot))
     || !Array.isArray(record.lines) || !record.lines.length
     || !Number.isFinite(Number(record.totalDebit)) || !Number.isFinite(Number(record.totalCredit))) {
     throw workflowError(400,'INVALID_JOURNAL_RECORD');
@@ -79,13 +79,23 @@ function validateJournalRecord(record, user) {
     || Math.abs(credit - Number(record.totalCredit)) >= 0.01) {
     throw workflowError(400,'UNBALANCED_JOURNAL');
   }
+  if (record.qoyodSyncStatus?.synced && (!Array.isArray(record.qoyodSnapshot?.lines)
+    || record.qoyodSnapshot.id!==record.id || record.qoyodSnapshot.batchNumber!==record.batchNumber
+    || Number(record.qoyodSnapshot.totalDebit)!==Number(record.totalDebit)
+    || Number(record.qoyodSnapshot.totalCredit)!==Number(record.totalCredit)
+    || !sameJson(record.qoyodSnapshot.lines,record.lines))) throw workflowError(400,'INVALID_QOYOD_SNAPSHOT');
 }
 
 async function upsertJournalAggregate(client, record) {
   const existing = await client.query(`SELECT company_id,status,payload,sort_order FROM ${q('journal_batches')} WHERE id=$1 FOR UPDATE`, [record.id]);
   if (existing.rowCount && existing.rows[0].company_id !== record.companyId) throw workflowError(409,'JOURNAL_COMPANY_IMMUTABLE');
-  if (existing.rows[0]?.status === 'POSTED' && !sameJson(existing.rows[0].payload, { ...record,lines:undefined })) {
+  if (existing.rows[0]?.payload?.qoyodSyncStatus?.synced) {
     throw workflowError(409,'POSTED_JOURNAL_IMMUTABLE');
+  }
+  let previousSnapshot = null;
+  if (existing.rowCount) {
+    const previousLines = await client.query(`SELECT payload FROM ${q('journal_lines')} WHERE journal_batch_id=$1 ORDER BY sort_order,id`,[record.id]);
+    previousSnapshot = { ...existing.rows[0].payload,lines:previousLines.rows.map(row=>row.payload) };
   }
   const run = await client.query(`SELECT company_id,period_month FROM ${q('payroll_runs')} WHERE id=$1`, [record.payrollRunId]);
   if (!run.rowCount || run.rows[0].company_id !== record.companyId || run.rows[0].period_month !== record.periodMonth) {
@@ -112,7 +122,7 @@ async function upsertJournalAggregate(client, record) {
       COALESCE(NULLIF(line->>'debit','')::numeric,0),COALESCE(NULLIF(line->>'credit','')::numeric,0),
       NULLIF(line->>'costCenterCode',''),line,(ordinality-1)::integer
       FROM jsonb_array_elements($2::jsonb) WITH ORDINALITY AS source(line,ordinality)`, [record.id,JSON.stringify(record.lines)]);
-  return existing.rowCount > 0;
+  return { existed:existing.rowCount > 0,previousSnapshot };
 }
 
 
@@ -124,7 +134,15 @@ router.put('/journals/:id', auth, writeLimiter, async (req, res, next) => {
     if (record.id !== req.params.id) return res.status(400).json({ error:'INVALID_JOURNAL_RECORD' });
     validateJournalRecord(record,req.user);
     await client.query('BEGIN');
-    const existed = await upsertJournalAggregate(client,record);
+    const { existed,previousSnapshot } = await upsertJournalAggregate(client,record);
+    const changeType = record.qoyodSyncStatus?.synced ? 'QOYOD_POSTED' : !existed ? 'CREATE' : 'UPDATE';
+    const reason = String(record.changeReason || (changeType === 'QOYOD_POSTED' ? 'QOYOD_POSTING' : changeType === 'CREATE' ? 'INITIAL_GENERATION' : '')).trim();
+    if (changeType === 'UPDATE' && !reason) throw workflowError(400,'JOURNAL_CHANGE_REASON_REQUIRED');
+    await client.query(`INSERT INTO ${q('journal_change_logs')} (journal_batch_id,company_id,change_type,changed_by,reason,previous_snapshot,new_snapshot,affected_branches)
+      VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7::jsonb,$8::jsonb)`,[
+      record.id,record.companyId,changeType,req.user.id,reason,previousSnapshot ? JSON.stringify(previousSnapshot) : null,
+      JSON.stringify(record),JSON.stringify(record.affectedBranches || (record.gosiBranchId ? [record.gosiBranchId] : [])),
+    ]);
     const updated = await bumpStateVersion(client,req.user.id);
     await appendStateAudit(client,q,{ companyIds:req.user.company_ids,user:req.user,action:existed ? 'UPDATE_JOURNAL' : 'CREATE_JOURNAL',version:updated.rows[0].version });
     await client.query('COMMIT');
@@ -144,10 +162,16 @@ router.delete('/journals/:id', auth, writeLimiter, async (req, res, next) => {
   try {
     if (!can(req.user,'MANAGE_JOURNALS')) return res.status(403).json({ error:'FORBIDDEN' });
     await client.query('BEGIN');
-    const row = await client.query(`SELECT company_id,status FROM ${q('journal_batches')} WHERE id=$1 FOR UPDATE`, [req.params.id]);
+    const row = await client.query(`SELECT company_id,status,payload FROM ${q('journal_batches')} WHERE id=$1 FOR UPDATE`, [req.params.id]);
     if (!row.rowCount) throw workflowError(404,'JOURNAL_NOT_FOUND');
     if (!req.user.company_ids.includes(row.rows[0].company_id)) throw workflowError(403,'FORBIDDEN');
-    if (row.rows[0].status === 'POSTED') throw workflowError(409,'POSTED_JOURNAL_IMMUTABLE');
+    if (row.rows[0].payload?.qoyodSyncStatus?.synced) throw workflowError(409,'POSTED_JOURNAL_IMMUTABLE');
+    const reason=String(req.body?.reason||'').trim();
+    if(!reason)throw workflowError(400,'JOURNAL_CHANGE_REASON_REQUIRED');
+    const previousLines=await client.query(`SELECT payload FROM ${q('journal_lines')} WHERE journal_batch_id=$1 ORDER BY sort_order,id`,[req.params.id]);
+    const previousSnapshot={...row.rows[0].payload,lines:previousLines.rows.map(line=>line.payload)};
+    await client.query(`INSERT INTO ${q('journal_change_logs')} (journal_batch_id,company_id,change_type,changed_by,reason,previous_snapshot,new_snapshot,affected_branches)
+      VALUES ($1,$2,'DELETE',$3,$4,$5::jsonb,'{}'::jsonb,$6::jsonb)`,[req.params.id,row.rows[0].company_id,req.user.id,reason,JSON.stringify(previousSnapshot),JSON.stringify(previousSnapshot.affectedBranches||[])]);
     await client.query(`DELETE FROM ${q('journal_batches')} WHERE id=$1`, [req.params.id]);
     const updated = await bumpStateVersion(client,req.user.id);
     await appendStateAudit(client,q,{ companyIds:req.user.company_ids,user:req.user,action:'DELETE_JOURNAL',version:updated.rows[0].version });

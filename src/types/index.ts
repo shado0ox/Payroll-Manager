@@ -80,6 +80,7 @@ export interface Company {
   chamberOfCommerceNo?: string;
   bankPayrollCode?: string;
   bankDefinitions?: CompanyBankDefinition[];
+  gosiBranches?: CompanyGosiBranch[];
   logo?: string;
   currency: string;
   timezone: string;
@@ -94,6 +95,19 @@ export interface Company {
   costCenters: CostCenter[];
   calculationRules: CompanyCalculationRules;
   chartOfAccounts: ChartOfAccountsMap;
+}
+
+export interface CompanyGosiBranch {
+  id:string;
+  name:string;
+  branchName:string;
+  code:string;
+  number:string;
+  gosiEstablishmentNumber?:string;
+  gosiEmployerExpenseAccount:string;
+  gosiPayableAccount:string;
+  isDefault:boolean;
+  isActive:boolean;
 }
 
 export interface CompanyBankDefinition {
@@ -215,6 +229,8 @@ export interface Employee {
   bankIban: string;
   bankSwiftCode?: string;
   gosiEnabled?: boolean;
+  /** Current resolved GOSI branch. Payroll items keep their own immutable monthly snapshot. */
+  gosiBranchId?: string;
   gosiEmployeeRate?: number;
   gosiEmployerRate?: number;
   saudiGosiPaymentMode?: 'SHARED' | 'COMPANY_FULL';
@@ -360,6 +376,12 @@ export interface PayrollRunItem {
   gosiEmployeeRate?: number;
   gosiEmployerRate?: number;
   gosiEnabled?: boolean;
+  gosiBranchId?: string;
+  gosiBranchCode?: string;
+  gosiBranchName?: string;
+  gosiEstablishmentNumber?: string;
+  gosiEmployerExpenseAccount?: string;
+  gosiPayableAccount?: string;
   loanDeduction: number;
   penaltiesDeduction: number;
   otherDeductions: number;
@@ -504,6 +526,25 @@ export interface JournalLine {
   contactName?: string;
 }
 
+export interface JournalQoyodSnapshot {
+  id: string;
+  companyId: string;
+  payrollRunId: string;
+  periodMonth: string;
+  batchNumber: string;
+  date: string;
+  description: string;
+  descriptionEn?: string;
+  totalDebit: number;
+  totalCredit: number;
+  journalType?: 'PAYROLL_ACCRUAL' | 'GOSI_ACCRUAL' | 'PAYROLL_PAYMENT' | 'GOSI_PAYMENT';
+  gosiBranchId?: string;
+  gosiBranchCode?: string;
+  gosiBranchName?: string;
+  affectedBranches?: string[];
+  lines: JournalLine[];
+}
+
 export interface JournalBatch {
   id: string;
   companyId: string;
@@ -515,13 +556,24 @@ export interface JournalBatch {
   descriptionEn?: string;
   totalDebit: number;
   totalCredit: number;
-  status: 'DRAFT' | 'EXPORTED_TO_QOYOD' | 'POSTED';
+  journalType?: 'PAYROLL_ACCRUAL' | 'GOSI_ACCRUAL' | 'PAYROLL_PAYMENT' | 'GOSI_PAYMENT';
+  gosiBranchId?: string;
+  gosiBranchCode?: string;
+  gosiBranchName?: string;
+  affectedBranches?: string[];
+  status: 'DRAFT' | 'UNDER_REVIEW' | 'APPROVED' | 'POSTED' | 'EXPORTED_TO_QOYOD';
   qoyodSyncStatus?: {
     synced: boolean;
     syncedAt?: string;
     qoyodJournalId?: string;
     errorMessage?: string;
   };
+  /** Exact immutable journal sent to Qoyod. */
+  qoyodSnapshot?: JournalQoyodSnapshot;
+  manualLineOverrides?: Record<string, Partial<JournalLine>>;
+  customLines?: JournalLine[];
+  removedLineIds?: string[];
+  changeReason?: string;
   lines: JournalLine[];
 }
 

@@ -1,4 +1,5 @@
 import express from 'express';
+import { snapshotPayrollGosiBranches } from '../gosi-payroll-snapshot.mjs';
 
 export function createPayrollRouter({
   auth,
@@ -158,13 +159,14 @@ router.put('/payroll-runs/:id', auth, writeLimiter, async (req, res, next) => {
   const client = await pool.connect();
   try {
     if (!can(req.user,'MANAGE_PAYROLL')) return res.status(403).json({ error:'FORBIDDEN' });
-    const record = req.body || {};
+    let record = req.body || {};
     if (record.id !== req.params.id || typeof record.companyId !== 'string' || !req.user.company_ids.includes(record.companyId)
       || !validPeriodMonth(record.periodMonth) || !['DRAFT','UNDER_REVIEW','APPROVED','POSTED'].includes(record.status)
       || !Array.isArray(record.items) || !Array.isArray(record.paymentBatches || [])) {
       return res.status(400).json({ error:'INVALID_PAYROLL_RUN' });
     }
     await client.query('BEGIN');
+    record = await snapshotPayrollGosiBranches(client,q,record);
     const stored = await readLockedNormalizedState(client);
     const existingRecord = asArray(stored.payrollRuns).find(item => item.id === record.id);
     if (existingRecord && existingRecord.companyId !== record.companyId) throw workflowError(409, 'PAYROLL_COMPANY_IMMUTABLE');

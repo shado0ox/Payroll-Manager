@@ -1418,6 +1418,7 @@ export const App: React.FC = () => {
                 journals={state.journals}
                 activeRole={state.activeRole}
                 onUpdateCompany={handleUpdateCompany}
+                onSaveJournal={handleSaveJournal}
                 onOpenQoyodModal={(batch) => {
                   setQoyodJournalBatch(batch);
                   setIsQoyodModalOpen(true);

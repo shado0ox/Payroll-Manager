@@ -115,9 +115,17 @@ export const QoyodIntegrationModal: React.FC<QoyodIntegrationModalProps> = ({
     try {
       const res = await sendJournalEntryToQoyod(activeBatch, company, config);
       if (res.success) {
+        const qoyodSnapshot = {
+          id:activeBatch.id,companyId:activeBatch.companyId,payrollRunId:activeBatch.payrollRunId,periodMonth:activeBatch.periodMonth,
+          batchNumber:activeBatch.batchNumber,date:activeBatch.date,description:activeBatch.description,descriptionEn:activeBatch.descriptionEn,
+          totalDebit:activeBatch.totalDebit,totalCredit:activeBatch.totalCredit,journalType:activeBatch.journalType,
+          gosiBranchId:activeBatch.gosiBranchId,gosiBranchCode:activeBatch.gosiBranchCode,gosiBranchName:activeBatch.gosiBranchName,
+          affectedBranches:activeBatch.affectedBranches,lines:activeBatch.lines.map(line=>({...line})),
+        };
         const postedJournal: JournalBatch = {
           ...activeBatch,
-          status: 'POSTED',
+          qoyodSnapshot,
+          changeReason:'QOYOD_POSTING',
           qoyodSyncStatus: {
             synced: true,
             syncedAt: new Date().toISOString(),
