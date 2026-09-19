@@ -384,8 +384,7 @@ export const App: React.FC = () => {
   }, [activeTab, state.currentUser]);
 
   // Auth handlers
-  const handleLogin = async (companyCode: string, username: string, password: string) => {
-    const { user, companyId } = await api.login(companyCode, username, password);
+  const completeLogin = async (user: UserAccount,companyId: string) => {
     const remote = await api.getState();
     setState(prev => {
       const base = remote.state ? { ...prev, ...remote.state } : prev;
@@ -399,6 +398,16 @@ export const App: React.FC = () => {
     });
     sessionStorage.setItem(TAB_SESSION_KEY, 'active');
     sessionStorage.setItem(LAST_ACTIVITY_KEY, String(Date.now()));
+  };
+
+  const handleLogin = async (companyCode: string,username: string,password: string) => {
+    const { user,companyId } = await api.login(companyCode,username,password);
+    await completeLogin(user,companyId);
+  };
+
+  const handleEmailCodeLogin = async (requestId: string,code: string) => {
+    const { user,companyId } = await api.emailLoginVerify(requestId,code);
+    await completeLogin(user,companyId);
   };
 
   const handleLogout = () => {
@@ -1183,7 +1192,7 @@ export const App: React.FC = () => {
   }
 
   if (!state.currentUser) {
-    return <>{buildUpdateBanner}<LoginView defaultCompanyCode={state.companies[0]?.companyCode || '101'} onLogin={handleLogin} /></>;
+    return <>{buildUpdateBanner}<LoginView defaultCompanyCode={state.companies[0]?.companyCode || '101'} onLogin={handleLogin} onEmailCodeLogin={handleEmailCodeLogin} /></>;
   }
 
   const canViewDatabaseTools = isDeveloperAccount(state.currentUser);

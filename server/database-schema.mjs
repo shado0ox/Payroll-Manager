@@ -38,6 +38,16 @@ await pool.query(`CREATE TABLE IF NOT EXISTS ${q('password_reset_tokens')} (
   token_hash text NOT NULL UNIQUE, expires_at timestamptz NOT NULL, used_at timestamptz, created_at timestamptz NOT NULL DEFAULT now()
 )`);
 await pool.query(`CREATE INDEX IF NOT EXISTS password_reset_tokens_user_idx ON ${q('password_reset_tokens')}(user_id,expires_at)`);
+await pool.query(`CREATE TABLE IF NOT EXISTS ${q('auth_email_codes')} (
+  id text PRIMARY KEY, user_id text NOT NULL REFERENCES ${q('users')}(id) ON DELETE CASCADE,
+  company_id text REFERENCES ${q('companies')}(id) ON DELETE CASCADE,
+  purpose text NOT NULL CHECK (purpose IN ('PASSWORD_RESET','EMAIL_LOGIN')),
+  code_hash text NOT NULL, attempts integer NOT NULL DEFAULT 0 CHECK (attempts >= 0 AND attempts <= 5),
+  expires_at timestamptz NOT NULL, used_at timestamptz, created_at timestamptz NOT NULL DEFAULT now()
+)`);
+await pool.query(`CREATE INDEX IF NOT EXISTS auth_email_codes_user_purpose_idx
+  ON ${q('auth_email_codes')}(user_id,purpose,expires_at DESC)`);
+await pool.query(`DELETE FROM ${q('auth_email_codes')} WHERE expires_at < now()-interval '1 day' OR used_at < now()-interval '1 day'`);
 const duplicateUserEmails = await pool.query(`SELECT lower(email) AS email_key,count(*)::integer AS duplicate_count
   FROM ${q('users')} WHERE email IS NOT NULL AND btrim(email) <> ''
   GROUP BY lower(email) HAVING count(*) > 1 LIMIT 1`);
