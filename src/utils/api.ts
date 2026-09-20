@@ -104,6 +104,7 @@ export type EmployeePortalProfile = {
   profile:{
     id:string;employeeNo:string;firstNameAr:string;lastNameAr:string;firstNameEn:string;lastNameEn:string;
     department:string;jobTitle:string;hireDate:string|null;status:string;email:string;phone:string;
+    nationality:string;contractEndDate:string;iqamaExpiryDate:string;bankName:string;bankIban:string;bankSwiftCode:string;bankAccountStatus:string;
   };
   company:{id:string;companyCode:string;nameAr:string;nameEn:string;logo?:string};
   subscription:{status:string;expired:boolean;readOnly:boolean;deletionScheduledAt?:string|null}|null;
@@ -231,6 +232,8 @@ export const api = {
   compareGosiInvoice:(id:string,payrollMonth:string)=>request<any>(`/api/gosi/invoices/${encodeURIComponent(id)}/comparison?payrollMonth=${encodeURIComponent(payrollMonth)}`),
   publicConfig: () => request<{registrationEnabled:boolean; trialDays:number; developerContactPhone:string}>('/api/public/config'),
   startRegistration: (data: Record<string, unknown>) => request<{requestId:string; maskedEmail:string; expiresInSeconds:number}>('/api/auth/register/start', { method:'POST', body:JSON.stringify(data) }),
+  startEmployeeRegistration: (data: Record<string, unknown>) => request<{requestId:string;maskedEmail:string;expiresInSeconds:number}>('/api/auth/employee-register/start',{ method:'POST',body:JSON.stringify(data) }),
+  verifyEmployeeRegistration: (requestId:string,code:string) => request<{companyCode:string;username:string}>('/api/auth/employee-register/verify',{ method:'POST',body:JSON.stringify({requestId,code}) }),
   verifyRegistration: (requestId: string, code: string) => request<{companyCode:string; username:string; trialEndsAt:string; trialDays:number}>('/api/auth/register/verify', { method:'POST', body:JSON.stringify({requestId,code}) }),
   updateSubscription: async (companyId:string,status:'TRIAL'|'ACTIVE'|'EXPIRED'|'SUSPENDED',endsAt:string|null) => {
     const result = await request<{record:Pick<Company,'id'|'subscriptionStatus'|'trialEndsAt'|'subscriptionEndsAt'|'subscriptionSuspendedAt'|'deletionScheduledAt'>;version:number;updated_at:string}>(`/api/admin/companies/${encodeURIComponent(companyId)}/subscription`, { method:'PUT',body:JSON.stringify({status,endsAt}) });

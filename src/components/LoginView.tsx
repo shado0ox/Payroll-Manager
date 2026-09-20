@@ -144,7 +144,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ defaultCompanyCode = '101'
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [mode, setMode] = useState<'LOGIN'|'REGISTER'|'VERIFY'|'CREATED'>('LOGIN');
+  const [mode, setMode] = useState<'LOGIN'|'REGISTER'|'VERIFY'|'CREATED'|'EMPLOYEE_REGISTER'|'EMPLOYEE_VERIFY'|'EMPLOYEE_CREATED'>('LOGIN');
   const [registrationEnabled, setRegistrationEnabled] = useState(false);
   const [trialDays, setTrialDays] = useState(14);
   const [requestId, setRequestId] = useState('');
@@ -155,6 +155,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ defaultCompanyCode = '101'
     companyNameAr:'', companyNameEn:'', crNumber:'', taxNumber:'', phone:'',
     adminName:'', username:'', email:'', password:'',
   });
+  const [employeeRegistration,setEmployeeRegistration] = useState({ identityNumber:'',email:'',username:'',password:'' });
 
   useEffect(() => {
     api.publicConfig().then(config => {
@@ -178,6 +179,9 @@ export const LoginView: React.FC<LoginViewProps> = ({ defaultCompanyCode = '101'
       EMAIL_SERVICE_NOT_CONFIGURED:isArabic ? 'خدمة البريد غير مهيأة بعد.' : 'Email service is not configured yet.',
       INVALID_VERIFICATION_CODE:isArabic ? 'رمز التحقق غير صحيح.' : 'Incorrect verification code.',
       VERIFICATION_EXPIRED:isArabic ? 'انتهت صلاحية الرمز. ابدأ التسجيل مرة أخرى.' : 'The code expired. Start registration again.',
+      INVALID_EMPLOYEE_REGISTRATION:isArabic ? 'راجع رمز المنشأة والهوية والبريد واسم المستخدم وكلمة المرور.' : 'Check the company code, identity, email, username, and password.',
+      EMPLOYEE_ACCOUNT_ALREADY_EXISTS:isArabic ? 'يوجد حساب مرتبط بهذا الموظف أو البريد أو اسم المستخدم بالفعل.' : 'An account already exists for this employee, email, or username.',
+      EMPLOYEE_ACCOUNT_NOT_ELIGIBLE:isArabic ? 'حالة الموظف الحالية لا تسمح بإنشاء حساب.' : 'The employee status is not eligible for account creation.',
     };
     return messages[code] || (isArabic ? 'تعذر إكمال العملية. حاول مرة أخرى.' : 'Could not complete the request. Try again.');
   };
@@ -199,6 +203,23 @@ export const LoginView: React.FC<LoginViewProps> = ({ defaultCompanyCode = '101'
     finally { setIsLoading(false); }
   };
   const updateRegistration = (key: keyof typeof registration, value: string) => setRegistration(prev => ({ ...prev,[key]:value }));
+  const updateEmployeeRegistration = (key:keyof typeof employeeRegistration,value:string) => setEmployeeRegistration(previous => ({ ...previous,[key]:value }));
+  const handleEmployeeRegistration = async (event:React.FormEvent) => {
+    event.preventDefault(); setError(null); setIsLoading(true);
+    try {
+      const result = await api.startEmployeeRegistration({ companyCode:normalizeArabicNumbers(companyInput),identityNumber:normalizeArabicNumbers(employeeRegistration.identityNumber),email:employeeRegistration.email,username:employeeRegistration.username,password:employeeRegistration.password,language });
+      setRequestId(result.requestId); setMaskedEmail(result.maskedEmail); setVerificationCode(''); setMode('EMPLOYEE_VERIFY');
+    } catch (value) { setError(registrationError(value)); }
+    finally { setIsLoading(false); }
+  };
+  const handleEmployeeVerification = async (event:React.FormEvent) => {
+    event.preventDefault(); setError(null); setIsLoading(true);
+    try {
+      const result = await api.verifyEmployeeRegistration(requestId,normalizeArabicNumbers(verificationCode));
+      setCompanyInput(result.companyCode); setUsername(result.username); setPassword(employeeRegistration.password); setMode('EMPLOYEE_CREATED');
+    } catch (value) { setError(registrationError(value)); }
+    finally { setIsLoading(false); }
+  };
   const inputClass = 'w-full h-12 ps-11 pe-4 bg-slate-950/45 border border-white/10 rounded-2xl text-white placeholder:text-slate-500 text-sm focus:outline-none focus:border-emerald-400/70 focus:ring-4 focus:ring-emerald-400/10 transition-all font-mono';
 
   return (
@@ -242,8 +263,8 @@ export const LoginView: React.FC<LoginViewProps> = ({ defaultCompanyCode = '101'
             <div className="masar-login-card w-full min-w-0 rounded-[2rem] border border-white/10 bg-slate-900/60 p-5 shadow-2xl shadow-black/30 backdrop-blur-2xl sm:p-8 xl:p-9">
               <div className="mb-8">
                 <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-2xl border border-emerald-300/20 bg-emerald-400/10 text-emerald-300"><KeyRound className="h-5 w-5" /></div>
-                <h2 className="text-2xl font-black tracking-tight text-white">{mode === 'LOGIN' ? t('loginTitle') : mode === 'VERIFY' ? (isArabic ? 'تحقق من بريدك' : 'Verify your email') : mode === 'CREATED' ? (isArabic ? 'تم إنشاء شركتك' : 'Company created') : (isArabic ? 'ابدأ تجربتك المجانية' : 'Start your free trial')}</h2>
-                <p className="mt-2 text-sm leading-6 text-slate-400">{mode === 'LOGIN' ? t('loginHint') : mode === 'REGISTER' ? (isArabic ? `سجّل بيانات شركتك واحصل على ${trialDays} يومًا مجانًا.` : `Register your company and get a ${trialDays}-day free trial.`) : mode === 'VERIFY' ? (isArabic ? `أرسلنا رمزًا من 6 أرقام إلى ${maskedEmail}` : `We sent a 6-digit code to ${maskedEmail}`) : (isArabic ? 'احتفظ بكود الشركة؛ ستحتاج إليه عند كل تسجيل دخول.' : 'Keep your company code; you need it whenever you sign in.')}</p>
+                <h2 className="text-2xl font-black tracking-tight text-white">{mode === 'LOGIN' ? t('loginTitle') : ['VERIFY','EMPLOYEE_VERIFY'].includes(mode) ? (isArabic ? 'تحقق من بريدك' : 'Verify your email') : mode === 'CREATED' ? (isArabic ? 'تم إنشاء شركتك' : 'Company created') : mode === 'EMPLOYEE_CREATED' ? (isArabic ? 'تم إنشاء حساب الموظف' : 'Employee account created') : mode === 'EMPLOYEE_REGISTER' ? (isArabic ? 'إنشاء حساب موظف' : 'Create employee account') : (isArabic ? 'ابدأ تجربتك المجانية' : 'Start your free trial')}</h2>
+                <p className="mt-2 text-sm leading-6 text-slate-400">{mode === 'LOGIN' ? t('loginHint') : mode === 'REGISTER' ? (isArabic ? `سجّل بيانات شركتك واحصل على ${trialDays} يومًا مجانًا.` : `Register your company and get a ${trialDays}-day free trial.`) : ['VERIFY','EMPLOYEE_VERIFY'].includes(mode) ? (isArabic ? `أرسلنا رمزًا من 6 أرقام إلى ${maskedEmail}` : `We sent a 6-digit code to ${maskedEmail}`) : mode === 'EMPLOYEE_REGISTER' ? (isArabic ? 'استخدم بياناتك المسجلة في ملف الموظف وسيتم الربط تلقائيًا بعد التحقق.' : 'Use the details stored in your employee profile. Linking is automatic after verification.') : (isArabic ? 'يمكنك الآن تسجيل الدخول إلى حسابك.' : 'You can now sign in to your account.')}</p>
               </div>
               {error && <div className="mb-5 flex items-start gap-2.5 rounded-2xl border border-rose-500/25 bg-rose-500/10 p-3.5 text-xs leading-relaxed text-rose-200"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-rose-400" />{error}</div>}
               {mode === 'LOGIN' && <form onSubmit={handleSubmit} className="space-y-5">
@@ -257,6 +278,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ defaultCompanyCode = '101'
                   {isLoading ? <span className="h-5 w-5 animate-spin rounded-full border-2 border-slate-900/25 border-t-slate-900" /> : <><span>{t('signIn')}</span><ArrowRight className={`h-4 w-4 transition-transform ${isArabic ? 'rotate-180' : ''}`} /></>}
                 </button>
                 {registrationEnabled && <button type="button" onClick={() => { setError(null); setMode('REGISTER'); }} className="w-full text-center text-xs font-bold text-emerald-300 hover:text-emerald-200">{isArabic ? `شركة جديدة؟ ابدأ تجربة ${trialDays} يومًا` : `New company? Start a ${trialDays}-day trial`}</button>}
+                <button type="button" onClick={() => { setError(null); setMode('EMPLOYEE_REGISTER'); }} className="w-full text-center text-xs font-bold text-cyan-300 hover:text-cyan-200">{isArabic ? 'موظف؟ أنشئ حسابك من رقم الهوية أو الإقامة' : 'Employee? Create your account using your ID or Iqama'}</button>
               </form>}
               {mode === 'LOGIN' && (
                 <div className="mt-3">
@@ -325,10 +347,25 @@ export const LoginView: React.FC<LoginViewProps> = ({ defaultCompanyCode = '101'
                 <button type="submit" disabled={isLoading} className="flex h-12 w-full items-center justify-center rounded-2xl bg-emerald-500 text-sm font-black text-slate-950 disabled:opacity-50">{isLoading ? '...' : (isArabic ? 'تأكيد وإنشاء الشركة' : 'Verify and create company')}</button>
                 <button type="button" onClick={() => { setError(null); setMode('REGISTER'); }} className="w-full text-xs font-bold text-slate-400">{isArabic ? 'تعديل بيانات التسجيل' : 'Edit registration details'}</button>
               </form>}
+              {mode === 'EMPLOYEE_REGISTER' && <form onSubmit={handleEmployeeRegistration} className="space-y-3">
+                <RegisterInput icon={<Hash className="h-4 w-4" />} placeholder={isArabic ? 'رمز المنشأة' : 'Company code'} value={companyInput} onChange={setCompanyInput} required wide />
+                <RegisterInput icon={<ShieldCheck className="h-4 w-4" />} placeholder={isArabic ? 'رقم الهوية أو الإقامة المسجل' : 'Registered national ID or Iqama'} value={employeeRegistration.identityNumber} onChange={value => updateEmployeeRegistration('identityNumber',value)} required wide />
+                <RegisterInput icon={<Mail className="h-4 w-4" />} placeholder={isArabic ? 'البريد المسجل في ملف الموظف' : 'Email stored in employee profile'} type="email" value={employeeRegistration.email} onChange={value => updateEmployeeRegistration('email',value.toLowerCase())} required wide />
+                <RegisterInput icon={<UserIcon className="h-4 w-4" />} placeholder={isArabic ? 'اسم مستخدم جديد بالإنجليزية' : 'New username'} value={employeeRegistration.username} onChange={value => updateEmployeeRegistration('username',value.toLowerCase())} required wide />
+                <RegisterInput icon={<Lock className="h-4 w-4" />} placeholder={isArabic ? 'كلمة مرور قوية' : 'Strong password'} type="password" value={employeeRegistration.password} onChange={value => updateEmployeeRegistration('password',value)} required wide />
+                <button type="submit" disabled={isLoading} className="flex h-12 w-full items-center justify-center rounded-2xl bg-cyan-400 text-sm font-black text-slate-950 disabled:opacity-50">{isLoading ? '...' : (isArabic ? 'إرسال رمز التحقق' : 'Send verification code')}</button>
+                <button type="button" onClick={() => { setError(null);setMode('LOGIN'); }} className="w-full text-xs font-bold text-slate-400">{isArabic ? 'العودة لتسجيل الدخول' : 'Back to sign in'}</button>
+              </form>}
+              {mode === 'EMPLOYEE_VERIFY' && <form onSubmit={handleEmployeeVerification} className="space-y-4">
+                <input value={verificationCode} onChange={e => setVerificationCode(e.target.value)} inputMode="numeric" maxLength={6} required autoFocus dir="ltr" className="h-16 w-full rounded-2xl border border-white/10 bg-slate-950/50 text-center font-mono text-3xl font-black tracking-[.5em] text-white focus:border-cyan-400 focus:outline-none" placeholder="000000" />
+                <button type="submit" disabled={isLoading} className="flex h-12 w-full items-center justify-center rounded-2xl bg-cyan-400 text-sm font-black text-slate-950 disabled:opacity-50">{isLoading ? '...' : (isArabic ? 'تأكيد وإنشاء الحساب' : 'Verify and create account')}</button>
+                <button type="button" onClick={() => { setError(null);setMode('EMPLOYEE_REGISTER'); }} className="w-full text-xs font-bold text-slate-400">{isArabic ? 'تعديل البيانات' : 'Edit details'}</button>
+              </form>}
               {mode === 'CREATED' && <div className="space-y-5">
                 <div className="rounded-2xl border border-emerald-400/25 bg-emerald-400/10 p-5 text-center"><div className="text-xs text-emerald-200">{isArabic ? 'كود الشركة' : 'Company code'}</div><div className="mt-2 font-mono text-3xl font-black tracking-[.25em] text-white">{createdCompanyCode}</div></div>
                 <button type="button" onClick={() => setMode('LOGIN')} className="flex h-12 w-full items-center justify-center rounded-2xl bg-emerald-500 text-sm font-black text-slate-950">{isArabic ? 'الدخول الآن' : 'Sign in now'}</button>
               </div>}
+              {mode === 'EMPLOYEE_CREATED' && <div className="space-y-5"><div className="rounded-2xl border border-cyan-400/25 bg-cyan-400/10 p-5 text-center text-sm font-bold text-cyan-100">{isArabic ? 'تم ربط الحساب بملفك الوظيفي بنجاح.' : 'Your account was linked to your employee profile.'}</div><button type="button" onClick={() => setMode('LOGIN')} className="flex h-12 w-full items-center justify-center rounded-2xl bg-cyan-400 text-sm font-black text-slate-950">{isArabic ? 'الدخول الآن' : 'Sign in now'}</button></div>}
             </div>
             <div className="mt-7 text-center text-[11px] leading-5 text-slate-600"><p>{t('loginFooter')}</p><p className="mt-1">{t('designedBy')} <span className="font-bold text-slate-500">Shadi Nassef</span></p></div>
           </div>

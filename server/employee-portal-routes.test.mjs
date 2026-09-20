@@ -26,7 +26,7 @@ test('employee portal profile is resolved exclusively from the authenticated emp
       return { rowCount:1,rows:[{
         id:'employee-a',company_id:'company-a',employee_no:'E-1',first_name_ar:'أحمد',last_name_ar:'علي',
         first_name_en:'Ahmed',last_name_en:'Ali',department:'المالية',job_title:'محاسب',hire_date:'2026-01-01',status:'ACTIVE',
-        payload:{ email:'employee@example.com',baseSalary:99999 },company_code:'101',company_name_ar:'شركة',company_name_en:'Company',company_payload:{ taxNumber:'secret' },
+        bank_iban:'SA123',payload:{ email:'employee@example.com',baseSalary:99999,nationality:'SAUDI',contractEndDate:'2027-01-31',bankName:'البنك',bankSwiftCode:'TESTSARI' },company_code:'101',company_name_ar:'شركة',company_name_en:'Company',company_payload:{ taxNumber:'secret' },
       }] };
     } },
   });
@@ -36,6 +36,9 @@ test('employee portal profile is resolved exclusively from the authenticated emp
   assert.deepEqual(queries[0].params,['employee-a',['company-a']]);
   assert.equal(res.body.profile.id,'employee-a');
   assert.equal('baseSalary' in res.body.profile,false);
+  assert.equal(res.body.profile.contractEndDate,'2027-01-31');
+  assert.equal(res.body.profile.iqamaExpiryDate,'');
+  assert.equal(res.body.profile.bankIban,'SA123');
   assert.equal('taxNumber' in res.body.company,false);
 });
 

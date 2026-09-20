@@ -34,11 +34,23 @@ test('registration start and verification are delegated as one bounded workflow'
   assert.doesNotMatch(server, /app\.post\('\/api\/auth\/register\/(?:start|verify)'/);
   assert.match(authRegistrationRoutes, /router\.post\('\/register\/start', registrationLimiter/);
   assert.match(authRegistrationRoutes, /router\.post\('\/register\/verify', registrationLimiter/);
+  assert.match(authRegistrationRoutes, /router\.post\('\/employee-register\/start', registrationLimiter/);
+  assert.match(authRegistrationRoutes, /router\.post\('\/employee-register\/verify', registrationLimiter/);
   assert.match(authRegistrationRoutes, /now\(\)\+interval '15 minutes'/);
   assert.match(authRegistrationRoutes, /row\.attempts >= 5/);
   assert.match(authRegistrationRoutes, /await client\.query\('BEGIN'\)/);
   assert.match(authRegistrationRoutes, /'COMPANY_MANAGER'/);
   assert.match(authRegistrationRoutes, /await client\.query\('COMMIT'\)/);
+});
+
+test('employee self-registration verifies stored identity and email before creating a least-privilege linked account', () => {
+  assert.match(authRegistrationRoutes,/e\.national_id_or_iqama=\$2 OR e\.payload->>'iqamaNumber'=\$2/);
+  assert.match(authRegistrationRoutes,/lower\(COALESCE\(e\.payload->>'email',''\)\)=\$3/);
+  assert.match(authRegistrationRoutes,/\['ACTIVE','SUSPENDED','ON_LEAVE'\]/);
+  assert.match(authRegistrationRoutes,/OR employee_id=\$3/);
+  assert.match(authRegistrationRoutes,/permissions,employee_id,is_active,email_verified_at/);
+  assert.match(authRegistrationRoutes,/VALUES \(\$1,\$2,\$3,\$4,\$5,'EMPLOYEE',\$6::jsonb,'\[\]'::jsonb,\$7,true,now\(\)\)/);
+  assert.match(authRegistrationRoutes,/email_verified_at\).*now\(\)/s);
 });
 
 test('login is delegated with rate limiting, transaction, and secure cookie behavior', () => {
