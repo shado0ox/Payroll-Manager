@@ -32,9 +32,12 @@ export function createAuthorizationService({ pool,q,cookieValue,sha256,developer
       await pool.query(`UPDATE ${q('sessions')} SET expires_at=now()+interval '1 hour' WHERE token_hash=$1`, [tokenHash]);
       req.user = result.rows[0];
       const requestPath = String(req.originalUrl || req.path || '').split('?')[0];
+      const employeePortalPath = requestPath === '/api/employee-portal/me'
+        || requestPath === '/api/employee-portal/payslips'
+        || /^\/api\/employee-portal\/payslips\/[^/]+\/\d{4}-(0[1-9]|1[0-2])$/.test(requestPath);
       if (req.user.role === 'EMPLOYEE'
         && !requestPath.startsWith('/api/auth/')
-        && requestPath !== '/api/employee-portal/me') {
+        && !employeePortalPath) {
         return res.status(403).json({ error:'EMPLOYEE_PORTAL_ONLY' });
       }
       if (req.user.role !== 'ADMIN') {

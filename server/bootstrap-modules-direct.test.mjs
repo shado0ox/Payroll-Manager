@@ -34,9 +34,11 @@ test('state router directly owns read, event stream, and explicit restore endpoi
   ]);
 });
 
-test('employee portal router exposes only the session-derived self profile', () => {
+test('employee portal router exposes only session-derived employee resources', () => {
   assert.deepEqual(registeredRoutes(createEmployeePortalRouter({ auth:middleware })), [
     { path:'/employee-portal/me',methods:['get'] },
+    { path:'/employee-portal/payslips',methods:['get'] },
+    { path:'/employee-portal/payslips/:batchId/:periodMonth',methods:['get'] },
   ]);
 });
 
