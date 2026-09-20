@@ -168,7 +168,7 @@ export function createEmployeePortalRouter({ auth,writeLimiter,pool,q,bumpStateV
     try {
       if (!requireEmployee(req,res)) return;
       const result = await pool.query(`SELECT e.id,e.company_id,e.employee_no,e.first_name_ar,e.last_name_ar,e.first_name_en,e.last_name_en,
-          e.department,e.job_title,e.hire_date::text,e.status,e.payload,
+          e.department,e.job_title,e.hire_date::text,e.status,e.bank_iban,e.payload,
           c.company_code,c.name_ar company_name_ar,c.name_en company_name_en,c.payload company_payload
         FROM ${q('employees')} e JOIN ${q('companies')} c ON c.id=e.company_id AND c.is_archived=false
         WHERE e.id=$1 AND e.company_id=ANY($2::text[]) AND e.is_archived=false LIMIT 1`, [req.user.employee_id,req.user.company_ids]);
@@ -177,7 +177,16 @@ export function createEmployeePortalRouter({ auth,writeLimiter,pool,q,bumpStateV
       const employee = row.payload || {};
       const company = row.company_payload || {};
       res.json({
-        profile:{ id:row.id,employeeNo:row.employee_no,firstNameAr:row.first_name_ar,lastNameAr:row.last_name_ar,firstNameEn:row.first_name_en,lastNameEn:row.last_name_en,department:row.department,jobTitle:row.job_title,hireDate:row.hire_date,status:row.status,email:String(employee.email || req.user.email || ''),phone:String(employee.phone || req.user.phone || '') },
+        profile:{
+          id:row.id,employeeNo:row.employee_no,firstNameAr:row.first_name_ar,lastNameAr:row.last_name_ar,
+          firstNameEn:row.first_name_en,lastNameEn:row.last_name_en,department:row.department,jobTitle:row.job_title,
+          hireDate:row.hire_date,status:row.status,email:String(employee.email || req.user.email || ''),phone:String(employee.phone || req.user.phone || ''),
+          nationality:String(employee.nationality || ''),
+          contractEndDate:employee.nationality === 'SAUDI' ? String(employee.contractEndDate || '') : '',
+          iqamaExpiryDate:employee.nationality === 'NON_SAUDI' ? String(employee.iqamaExpiryDate || '') : '',
+          bankName:String(employee.bankName || ''),bankIban:String(row.bank_iban || employee.bankIban || ''),
+          bankSwiftCode:String(employee.bankSwiftCode || ''),bankAccountStatus:String(employee.bankAccountStatus || ''),
+        },
         company:{ id:row.company_id,companyCode:row.company_code,nameAr:row.company_name_ar,nameEn:row.company_name_en,logo:typeof company.logo === 'string' ? company.logo : undefined },
         subscription:req.subscription || null,
       });

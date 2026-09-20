@@ -170,6 +170,10 @@ export const EmployeePortalView: React.FC<Props> = ({ onLogout }) => {
           <div><dt className="text-xs text-slate-500">{language === 'ar' ? 'المسمى الوظيفي' : 'Job title'}</dt><dd className="mt-1 font-bold">{profile.jobTitle || '—'}</dd></div>
           <div><dt className="text-xs text-slate-500">{language === 'ar' ? 'تاريخ التعيين' : 'Hire date'}</dt><dd className="mt-1 font-bold" dir="ltr">{profile.hireDate || '—'}</dd></div>
           <div><dt className="text-xs text-slate-500">{language === 'ar' ? 'الحالة' : 'Status'}</dt><dd className="mt-1 font-bold text-emerald-700">{profile.status}</dd></div>
+          <div><dt className="text-xs text-slate-500">{language === 'ar' ? (profile.nationality === 'SAUDI' ? 'انتهاء العقد' : 'انتهاء الإقامة') : (profile.nationality === 'SAUDI' ? 'Contract expiry' : 'Iqama expiry')}</dt><dd className="mt-1 font-bold" dir="ltr">{profile.nationality === 'SAUDI' ? (profile.contractEndDate || '—') : (profile.iqamaExpiryDate || '—')}</dd></div>
+          <div><dt className="text-xs text-slate-500">{language === 'ar' ? 'البنك' : 'Bank'}</dt><dd className="mt-1 font-bold">{profile.bankName || '—'}</dd></div>
+          <div className="sm:col-span-2"><dt className="text-xs text-slate-500">IBAN</dt><dd className="mt-1 break-all font-mono font-bold" dir="ltr">{profile.bankIban || '—'}</dd></div>
+          <div><dt className="text-xs text-slate-500">SWIFT / BIC</dt><dd className="mt-1 font-mono font-bold" dir="ltr">{profile.bankSwiftCode || '—'}</dd></div>
         </dl>
       </section>
     </main>
