@@ -43,6 +43,8 @@ test('employee portal router exposes only session-derived employee resources', (
     { path:'/employee-portal/leaves',methods:['get'] },
     { path:'/employee-portal/leaves',methods:['post'] },
     { path:'/employee-portal/leaves/:id',methods:['delete'] },
+    { path:'/employee-portal/bank-change-requests',methods:['get'] },
+    { path:'/employee-portal/bank-change-requests',methods:['post'] },
   ]);
 });
 

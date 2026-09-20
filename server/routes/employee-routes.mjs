@@ -14,6 +14,14 @@ export function createEmployeeRouter({
   broadcastStateUpdate,
 }) {
   const router = express.Router();
+  const safeBankRequest = row => ({
+    id:row.id,companyId:row.company_id,employeeId:row.employee_id,employeeNo:row.employee_no,
+    employeeName:`${row.first_name_ar || ''} ${row.last_name_ar || ''}`.trim(),status:row.status,
+    currentBankName:row.current_bank_name,currentIban:row.current_iban,currentSwiftCode:row.current_swift_code,
+    requestedBankName:row.requested_bank_name,requestedIban:row.requested_iban,requestedSwiftCode:row.requested_swift_code,
+    employeeReason:row.employee_reason,reviewReason:row.review_reason,requestedAt:row.requested_at,
+    reviewedAt:row.reviewed_at,reviewedBy:row.reviewed_by,
+  });
 
 function validImportedEmployee(employee, user) {
   const salary = employee?.salaryPackage || {};
@@ -157,6 +165,78 @@ router.put('/employees/:id', auth, writeLimiter, async (req, res, next) => {
     try { await client.query('ROLLBACK'); } catch {}
     if (e?.code === '23505') return res.status(409).json({ error:'EMPLOYEE_NUMBER_EXISTS' });
     next(e);
+  } finally { client.release(); }
+});
+
+router.get('/employee-bank-change-requests', auth, async (req,res,next) => {
+  try {
+    if (!can(req.user,'MANAGE_EMPLOYEES')) return res.status(403).json({ error:'FORBIDDEN' });
+    const companyId = String(req.query.companyId || '');
+    const status = String(req.query.status || 'PENDING');
+    if (!req.user.company_ids.includes(companyId) || !['ALL','PENDING','APPROVED','REJECTED'].includes(status)) {
+      return res.status(400).json({ error:'INVALID_BANK_CHANGE_FILTER' });
+    }
+    const values = status === 'ALL' ? [companyId] : [companyId,status];
+    const filter = status === 'ALL' ? '' : 'AND r.status=$2';
+    const result = await pool.query(`SELECT r.*,e.employee_no,e.first_name_ar,e.last_name_ar
+      FROM ${q('employee_bank_change_requests')} r JOIN ${q('employees')} e ON e.id=r.employee_id
+      WHERE r.company_id=$1 ${filter} ORDER BY r.requested_at DESC LIMIT 200`,values);
+    res.json({ requests:result.rows.map(safeBankRequest) });
+  } catch (error) { next(error); }
+});
+
+router.post('/employee-bank-change-requests/:id/review', auth, writeLimiter, async (req,res,next) => {
+  const client = await pool.connect();
+  try {
+    if (!can(req.user,'MANAGE_EMPLOYEES')) return res.status(403).json({ error:'FORBIDDEN' });
+    const decision = String(req.body?.decision || '');
+    const reason = String(req.body?.reason || '').trim();
+    if (!['APPROVED','REJECTED'].includes(decision) || reason.length > 500 || (decision === 'REJECTED' && !reason)) {
+      return res.status(400).json({ error:'INVALID_BANK_CHANGE_REVIEW' });
+    }
+    await client.query('BEGIN');
+    const request = await client.query(`SELECT r.*,e.employee_no,e.first_name_ar,e.last_name_ar,e.payload
+      FROM ${q('employee_bank_change_requests')} r JOIN ${q('employees')} e ON e.id=r.employee_id
+      WHERE r.id=$1 FOR UPDATE OF r,e`,[req.params.id]);
+    if (!request.rowCount) throw workflowError(404,'BANK_CHANGE_REQUEST_NOT_FOUND');
+    const row = request.rows[0];
+    if (!req.user.company_ids.includes(row.company_id)) throw workflowError(403,'FORBIDDEN');
+    if (row.status !== 'PENDING') throw workflowError(409,'BANK_CHANGE_REQUEST_ALREADY_REVIEWED');
+    let employee = null;
+    if (decision === 'APPROVED') {
+      employee = { ...(row.payload || {}),bankName:row.requested_bank_name,bankIban:row.requested_iban,
+        bankSwiftCode:row.requested_swift_code,bankAccountStatus:'READY' };
+      await client.query(`UPDATE ${q('employees')} SET bank_iban=$2,payload=$3::jsonb,updated_at=now() WHERE id=$1`,
+      [row.employee_id,row.requested_iban,JSON.stringify(employee)]);
+    }
+    const reviewed = await client.query(`UPDATE ${q('employee_bank_change_requests')}
+      SET status=$2,review_reason=$3,reviewed_by=$4,reviewed_at=now(),updated_at=now() WHERE id=$1 RETURNING *`,
+    [req.params.id,decision,reason,req.user.id]);
+    const updated = await bumpStateVersion(client,req.user.id);
+    const auditId = `bank-change-review-${crypto.randomUUID()}`;
+    const auditPayload = { id:auditId,companyId:row.company_id,userId:req.user.id,userName:req.user.name || req.user.username || '',
+      userRole:req.user.role,action:decision === 'APPROVED' ? 'اعتماد تعديل بيانات البنك' : 'رفض تعديل بيانات البنك',
+      entityType:'EMPLOYEE_BANK_CHANGE_REQUEST',entityId:row.id,timestamp:new Date().toISOString(),reason,
+      previousSnapshot:{ bankName:row.current_bank_name,bankIban:row.current_iban,bankSwiftCode:row.current_swift_code },
+      newSnapshot:{ bankName:row.requested_bank_name,bankIban:row.requested_iban,bankSwiftCode:row.requested_swift_code },
+    };
+    await client.query(`INSERT INTO ${q('application_audit_logs')}
+      (id,company_id,user_id,user_name,user_role,action,entity_type,entity_id,occurred_at,details,payload,sort_order)
+      VALUES ($1,$2,$3,$4,$5,$6,'EMPLOYEE_BANK_CHANGE_REQUEST',$7,now(),$8,$9::jsonb,
+        COALESCE((SELECT max(sort_order)+1 FROM ${q('application_audit_logs')}),0))`,[
+      auditId,row.company_id,req.user.id,req.user.name || req.user.username || '',req.user.role,auditPayload.action,row.id,
+      `${row.employee_no} - ${decision}`,JSON.stringify(auditPayload),
+    ]);
+    await client.query(`INSERT INTO ${q('audit_log')} (user_id,action,ip) VALUES ($1,$2,$3)`,
+    [req.user.id,`REVIEW_EMPLOYEE_BANK_CHANGE:${decision}:${row.id}`,req.ip]);
+    await client.query('COMMIT');
+    const changes = employee ? [{ collection:'employees',operation:'upsert',records:[employee] }] : [];
+    broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at,companyIds:[row.company_id],changes });
+    res.json({ request:safeBankRequest({ ...reviewed.rows[0],employee_no:row.employee_no,first_name_ar:row.first_name_ar,last_name_ar:row.last_name_ar }),employee,version:Number(updated.rows[0].version) });
+  } catch (error) {
+    try { await client.query('ROLLBACK'); } catch {}
+    if (Number.isInteger(error?.status)) return res.status(error.status).json({ error:error.message });
+    next(error);
   } finally { client.release(); }
 });
 

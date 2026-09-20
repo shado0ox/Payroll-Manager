@@ -5,6 +5,21 @@ const number = value => Math.round((Number(value || 0) + Number.EPSILON) * 100) 
 const array = value => Array.isArray(value) ? value : [];
 const validDate = value => /^\d{4}-\d{2}-\d{2}$/.test(value)
   && new Date(`${value}T00:00:00Z`).toISOString().slice(0,10) === value;
+const normalizeIban = value => String(value || '').replace(/\s/g,'').toUpperCase();
+const validSaudiIban = value => {
+  const iban = normalizeIban(value);
+  if (!/^SA\d{22}$/.test(iban)) return false;
+  const rearranged = `${iban.slice(4)}${iban.slice(0,4)}`.replace(/[A-Z]/g, letter => String(letter.charCodeAt(0) - 55));
+  let remainder = 0;
+  for (const digit of rearranged) remainder = (remainder * 10 + Number(digit)) % 97;
+  return remainder === 1;
+};
+const safeBankChangeRequest = row => ({
+  id:row.id,status:row.status,currentBankName:row.current_bank_name,currentIban:row.current_iban,
+  currentSwiftCode:row.current_swift_code,requestedBankName:row.requested_bank_name,requestedIban:row.requested_iban,
+  requestedSwiftCode:row.requested_swift_code,employeeReason:row.employee_reason,reviewReason:row.review_reason,
+  requestedAt:row.requested_at,reviewedAt:row.reviewed_at,
+});
 
 const safePayrollSnapshot = (row, periodMonth) => {
   if (!row) return null;
@@ -313,6 +328,60 @@ export function createEmployeePortalRouter({ auth,writeLimiter,pool,q,bumpStateV
       await client.query('COMMIT');
       broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at,companyIds:[existing.rows[0].company_id],changes:[{ collection:'leaves',operation:'delete',ids:[req.params.id] }] });
       res.json({ deleted:true });
+    } catch (error) {
+      try { await client.query('ROLLBACK'); } catch {}
+      if (Number.isInteger(error?.status)) return res.status(error.status).json({ error:error.message });
+      next(error);
+    } finally { client.release(); }
+  });
+
+  router.get('/employee-portal/bank-change-requests', auth, async (req,res,next) => {
+    try {
+      if (!requireEmployee(req,res)) return;
+      const result = await pool.query(`SELECT * FROM ${q('employee_bank_change_requests')}
+        WHERE employee_id=$1 AND company_id=ANY($2::text[]) ORDER BY requested_at DESC LIMIT 20`,
+      [req.user.employee_id,req.user.company_ids]);
+      res.json({ requests:result.rows.map(safeBankChangeRequest) });
+    } catch (error) { next(error); }
+  });
+
+  router.post('/employee-portal/bank-change-requests', auth, writes, async (req,res,next) => {
+    const client = await pool.connect();
+    try {
+      if (!requireEmployee(req,res)) return;
+      const requestedIban = normalizeIban(req.body?.iban);
+      const employeeReason = String(req.body?.reason || '').trim();
+      if (!validSaudiIban(requestedIban) || employeeReason.length > 500) {
+        return res.status(400).json({ error:'INVALID_SAUDI_IBAN' });
+      }
+      await client.query('BEGIN');
+      const employee = await client.query(`SELECT id,company_id,bank_iban,payload FROM ${q('employees')}
+        WHERE id=$1 AND company_id=ANY($2::text[]) AND is_archived=false FOR UPDATE`,[req.user.employee_id,req.user.company_ids]);
+      if (!employee.rowCount) throw Object.assign(new Error('EMPLOYEE_PORTAL_PROFILE_NOT_FOUND'),{ status:404 });
+      const row = employee.rows[0];
+      const pending = await client.query(`SELECT 1 FROM ${q('employee_bank_change_requests')}
+        WHERE employee_id=$1 AND status='PENDING' LIMIT 1`,[req.user.employee_id]);
+      if (pending.rowCount) throw Object.assign(new Error('BANK_CHANGE_REQUEST_PENDING'),{ status:409 });
+      const bankCode = requestedIban.slice(4,6);
+      const bank = await client.query(`SELECT name_ar,name_en,swift_code FROM ${q('company_bank_definitions')}
+        WHERE company_id=$1 AND iban_bank_code=$2 AND is_active=true LIMIT 1`,[row.company_id,bankCode]);
+      if (!bank.rowCount) throw Object.assign(new Error('IBAN_BANK_NOT_CONFIGURED'),{ status:409 });
+      const id = `bank-change-${randomUUID()}`;
+      const payload = row.payload || {};
+      const requestedBankName = String(bank.rows[0].name_ar || bank.rows[0].name_en || '');
+      const requestedSwiftCode = String(bank.rows[0].swift_code || '');
+      const inserted = await client.query(`INSERT INTO ${q('employee_bank_change_requests')}
+        (id,company_id,employee_id,current_bank_name,current_iban,current_swift_code,requested_bank_name,requested_iban,
+          requested_swift_code,employee_reason,requested_by)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,[
+        id,row.company_id,row.id,String(payload.bankName || ''),String(row.bank_iban || payload.bankIban || ''),
+        String(payload.bankSwiftCode || ''),requestedBankName,requestedIban,requestedSwiftCode,employeeReason,req.user.id,
+      ]);
+      const updated = await bumpStateVersion(client,req.user.id);
+      await appendStateAudit(client,q,{ companyIds:[row.company_id],user:req.user,action:'EMPLOYEE_BANK_CHANGE_REQUEST',version:updated.rows[0].version });
+      await client.query('COMMIT');
+      broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at,companyIds:[row.company_id],changes:[] });
+      res.status(201).json({ request:safeBankChangeRequest(inserted.rows[0]) });
     } catch (error) {
       try { await client.query('ROLLBACK'); } catch {}
       if (Number.isInteger(error?.status)) return res.status(error.status).json({ error:error.message });

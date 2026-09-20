@@ -140,6 +140,12 @@ export type EmployeeLeave = {
 export type EmployeeLeaveReport = {
   year:number;annualBalance:{entitlementDays:number;approvedDays:number;pendingDays:number;remainingDays:number};leaves:EmployeeLeave[];
 };
+export type EmployeeBankChangeRequest = {
+  id:string;companyId?:string;employeeId?:string;employeeNo?:string;employeeName?:string;
+  status:'PENDING'|'APPROVED'|'REJECTED';currentBankName:string;currentIban:string;currentSwiftCode:string;
+  requestedBankName:string;requestedIban:string;requestedSwiftCode:string;employeeReason:string;reviewReason:string;
+  requestedAt:string;reviewedAt:string|null;reviewedBy?:string|null;
+};
 
 class ApiError extends Error {
   constructor(message: string, public status: number) { super(message); this.name = 'ApiError'; }
@@ -424,6 +430,15 @@ export const api = {
   employeePortalLeaves: (year:number) => request<EmployeeLeaveReport>(`/api/employee-portal/leaves?year=${encodeURIComponent(year)}`),
   createEmployeePortalLeave: (record:{type:EmployeeLeave['type'];startDate:string;endDate:string;reason:string}) => request<{leave:EmployeeLeave}>('/api/employee-portal/leaves',{ method:'POST',body:JSON.stringify(record) }),
   cancelEmployeePortalLeave: (id:string) => request<{deleted:boolean}>(`/api/employee-portal/leaves/${encodeURIComponent(id)}`,{ method:'DELETE' }),
+  employeePortalBankChangeRequests: () => request<{requests:EmployeeBankChangeRequest[]}>('/api/employee-portal/bank-change-requests'),
+  createEmployeePortalBankChangeRequest: (iban:string,reason:string) => request<{request:EmployeeBankChangeRequest}>('/api/employee-portal/bank-change-requests',{ method:'POST',body:JSON.stringify({iban,reason}) }),
+  employeeBankChangeRequests: (companyId:string,status:'ALL'|'PENDING'|'APPROVED'|'REJECTED'='PENDING') => request<{requests:EmployeeBankChangeRequest[]}>(`/api/employee-bank-change-requests?companyId=${encodeURIComponent(companyId)}&status=${encodeURIComponent(status)}`),
+  reviewEmployeeBankChangeRequest: async (id:string,decision:'APPROVED'|'REJECTED',reason:string) => {
+    const result = await request<{request:EmployeeBankChangeRequest;employee:any|null;version:number}>(`/api/employee-bank-change-requests/${encodeURIComponent(id)}/review`,{ method:'POST',body:JSON.stringify({decision,reason}) });
+    stateVersion = result.version;
+    if (result.employee) updateSyncedCollection('employees',result.employee);
+    return result;
+  },
   logout: () => request<void>('/api/auth/logout', { method:'POST' }),
   getState: async () => {
     const result = await request<{state: Partial<AppState> | null; version: number}>('/api/state');
