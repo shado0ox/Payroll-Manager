@@ -78,6 +78,7 @@ const TAB_PATHS: Record<NavigationTab, string> = {
   gosi: '/gosi',
   settlements: '/settlements',
   attendance: '/attendance',
+  annual_leave: '/annual-leave',
   loans_penalties: '/loans-penalties',
   journals: '/journals',
   reports: '/reports',
@@ -1389,6 +1390,12 @@ export const App: React.FC = () => {
                 onUpdateLeaveStatus={handleUpdateLeaveStatus}
                 onAddLeave={handleAddLeave}
               />
+            )}
+
+            {activeTab === 'annual_leave' && hasPermission(state.currentUser, 'MANAGE_ATTENDANCE') && (
+              <AttendanceLeavesView company={activeCompany} employees={state.employees} attendance={state.attendance} leaves={state.leaves}
+                activeRole={state.activeRole} onAddAttendance={handleAddAttendance} onBulkImportAttendance={handleBulkImportAttendance}
+                onDeleteAttendance={handleDeleteAttendance} onUpdateLeaveStatus={handleUpdateLeaveStatus} onAddLeave={handleAddLeave} leaveOnly />
             )}
 
             {activeTab === 'loans_penalties' && hasPermission(state.currentUser, 'MANAGE_LOANS_PENALTIES') && (

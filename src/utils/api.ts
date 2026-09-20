@@ -138,7 +138,7 @@ export type EmployeeLeave = {
   daysCount:number;status:'PENDING'|'APPROVED'|'REJECTED';isPaid:boolean;reason:string;createdAt:string|null;
 };
 export type EmployeeLeaveReport = {
-  year:number;annualBalance:{entitlementDays:number;approvedDays:number;pendingDays:number;remainingDays:number};leaves:EmployeeLeave[];
+  year:number;annualBalance:{policy:'LABOR_LAW'|'FIXED_30'|'CUSTOM';entitlementDays:number;openingBalanceDays:number;priorUsedDays:number;availableDays:number;approvedDays:number;pendingDays:number;remainingDays:number};leaves:EmployeeLeave[];
 };
 export type EmployeeBankChangeRequest = {
   id:string;companyId?:string;employeeId?:string;employeeNo?:string;employeeName?:string;

@@ -12,7 +12,8 @@ import {
   ShieldAlert,
   ShieldCheck,
   UserCheck,
-  LogOut
+  LogOut,
+  CalendarDays
 } from 'lucide-react';
 import { NavigationTab, UserRole, UserAccount, Company } from '../types';
 import { useLanguage } from '../i18n/LanguageContext';
@@ -53,6 +54,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { id: 'payroll_runs', label: t('payrollRuns'), icon: Banknote },
     { id: 'gosi', label: language === 'ar' ? 'التأمينات' : 'GOSI', icon: ShieldCheck },
     { id: 'attendance', label: t('attendance'), icon: Clock },
+    { id: 'annual_leave', label: language === 'ar' ? 'الإجازات السنوية' : 'Annual Leave', icon: CalendarDays },
     { id: 'loans_penalties', label: t('loans'), icon: Receipt },
     { id: 'company_profile', label: t('companyProfile'), icon: Building2, managementOnly: true },
     { id: 'journals', label: t('journals'), icon: Layers, managementOnly: true },

@@ -209,6 +209,9 @@ export interface Employee {
   hireDate: string; // YYYY-MM-DD
   salaryStartDate: string; // YYYY-MM-DD
   annualLeaveEntitlementDays?: number; // Configured annual entitlement used by the employee portal
+  annualLeavePolicy?: 'LABOR_LAW' | 'FIXED_30' | 'CUSTOM';
+  annualLeaveOpeningBalance?: number; // Carried/opening days added to the selected year's entitlement
+  annualLeavePriorUsedDays?: number; // Approved/received days before the system was activated
   prorateFirstMonth?: boolean; // Apply daily proration in the salary start month only when explicitly enabled
   entryDate?: string; // YYYY-MM-DD, non-Saudi arrival date
   entryNumber?: string; // Border/entry number before iqama issuance
@@ -606,6 +609,7 @@ export type NavigationTab =
   | 'gosi'
   | 'settlements'
   | 'attendance' 
+  | 'annual_leave'
   | 'loans_penalties' 
   | 'journals' 
   | 'reports' 

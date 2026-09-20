@@ -29,6 +29,7 @@ interface AttendanceLeavesViewProps {
   onDeleteAttendance: (recordId: string) => void;
   onUpdateLeaveStatus: (leaveId: string, status: 'PENDING' | 'APPROVED' | 'REJECTED') => void;
   onAddLeave: (leave: LeaveRequest) => void;
+  leaveOnly?: boolean;
 }
 
 export const AttendanceLeavesView: React.FC<AttendanceLeavesViewProps> = ({
@@ -42,13 +43,14 @@ export const AttendanceLeavesView: React.FC<AttendanceLeavesViewProps> = ({
   onDeleteAttendance,
   onUpdateLeaveStatus,
   onAddLeave,
+  leaveOnly = false,
 }) => {
   const { language } = useLanguage();
   const tr = (ar: string, en: string) => language === 'ar' ? ar : en;
   const today = new Date().toISOString().slice(0, 10);
   const currentPeriod = today.slice(0, 7);
   const [selectedPeriod, setSelectedPeriod] = useState(currentPeriod);
-  const [activeSubTab, setActiveSubTab] = useState<'attendance' | 'analysis' | 'leaves'>('attendance');
+  const [activeSubTab, setActiveSubTab] = useState<'attendance' | 'analysis' | 'leaves'>(leaveOnly ? 'leaves' : 'attendance');
   const [searchTerm, setSearchTerm] = useState('');
 
   // Attendance Modal
@@ -143,14 +145,14 @@ export const AttendanceLeavesView: React.FC<AttendanceLeavesViewProps> = ({
         <div>
           <h1 className="text-xl sm:text-2xl font-bold text-slate-900 flex items-center gap-2">
             <Clock className="w-6 h-6 text-emerald-600" />
-            <span>{tr('الحضور والانصراف والإجازات', 'Attendance & Leave')}</span>
+            <span>{leaveOnly ? tr('نظام الإجازات السنوية', 'Annual Leave System') : tr('الحضور والانصراف', 'Attendance')}</span>
           </h1>
           <p className="text-xs text-slate-500 mt-1">
-            {tr('تسجيل التأخير، الغياب، العمل الإضافي، والإجازات بدون راتب لتطبيقها آلياً في مسير الرواتب', 'Record lateness, absence, overtime and unpaid leave for automatic payroll calculation')}
+            {leaveOnly ? tr('إدارة الأرصدة والاستحقاقات والطلبات والموافقات وسجل الإجازات', 'Manage balances, entitlements, requests, approvals, and leave history') : tr('تسجيل التأخير، الغياب والعمل الإضافي لتطبيقها آلياً في مسير الرواتب', 'Record lateness, absence, and overtime for automatic payroll calculation')}
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2.5">
+        {!leaveOnly && <div className="flex flex-wrap items-center gap-2.5">
           {/* Period Selector */}
           <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-xl border border-slate-200 shadow-xs">
             <Calendar className="w-4 h-4 text-slate-500" />
@@ -175,11 +177,11 @@ export const AttendanceLeavesView: React.FC<AttendanceLeavesViewProps> = ({
             <Plus className="w-4 h-4" />
             <span>{tr('تسجيل حركة حضور / غياب', 'Record attendance / absence')}</span>
           </button>
-        </div>
+        </div>}
       </div>
 
       {/* Sub Tabs Toggle */}
-      <div className="flex items-center gap-2 border-b border-slate-200 pb-2">
+      {!leaveOnly && <div className="flex items-center gap-2 border-b border-slate-200 pb-2">
         <button
           onClick={() => setActiveSubTab('attendance')}
           className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
@@ -212,7 +214,7 @@ export const AttendanceLeavesView: React.FC<AttendanceLeavesViewProps> = ({
         >
           {tr('طلبات الإجازات والإجازة بدون راتب', 'Leave and unpaid leave requests')} ({companyLeaves.length})
         </button>
-      </div>
+      </div>}
 
       {/* Attendance Records Table */}
       {activeSubTab === 'analysis' ? (
