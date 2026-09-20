@@ -212,6 +212,7 @@ export interface Employee {
   annualLeavePolicy?: 'LABOR_LAW' | 'FIXED_30' | 'CUSTOM';
   annualLeaveOpeningBalance?: number; // Carried/opening days added to the selected year's entitlement
   annualLeavePriorUsedDays?: number; // Approved/received days before the system was activated
+  annualLeaveBalanceYear?: number; // Year to which opening balance and prior usage belong
   prorateFirstMonth?: boolean; // Apply daily proration in the salary start month only when explicitly enabled
   entryDate?: string; // YYYY-MM-DD, non-Saudi arrival date
   entryNumber?: string; // Border/entry number before iqama issuance
