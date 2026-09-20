@@ -20,6 +20,14 @@ export function createAdminDatabaseRouter({
   broadcastStateUpdate,
 }) {
   const router = express.Router();
+  const withArchivedEmployeeReferences = async (client,state,companyIds) => {
+    const archived = await client.query(`SELECT payload FROM ${q('employees')}
+      WHERE is_archived=true AND company_id=ANY($1::text[])`,[companyIds]);
+    const knownIds = new Set(asArray(state?.employees).map(employee => String(employee?.id || '')));
+    const historical = archived.rows.map(row => ({ ...(row.payload || {}),isArchived:true }))
+      .filter(employee => employee.id && !knownIds.has(String(employee.id)));
+    return historical.length ? { ...state,employees:[...asArray(state?.employees),...historical] } : state;
+  };
 
   router.get('/database/normalization-status', auth, async (req, res, next) => {
     try {
@@ -48,7 +56,8 @@ export function createAdminDatabaseRouter({
     try {
       if (!isDeveloperUser(req.user)) return res.status(403).json({ error:'FORBIDDEN' });
       const stored = await readNormalizedApplicationState(pool);
-      const plan = buildPayrollRepairPlan(stored,req.user.company_ids);
+      const auditState = await withArchivedEmployeeReferences(pool,stored,req.user.company_ids);
+      const plan = buildPayrollRepairPlan(auditState,req.user.company_ids);
       res.json({ issues:plan.issues,scannedAt:new Date().toISOString() });
     } catch (error) {
       next(error);
@@ -66,7 +75,8 @@ export function createAdminDatabaseRouter({
       if (issueIds.length !== new Set(issueIds).size) return res.status(400).json({ error:'DUPLICATE_REPAIR_SELECTION' });
       await client.query('BEGIN');
       const stored = await readLockedNormalizedState(client);
-      const plan = buildPayrollRepairPlan(stored,req.user.company_ids);
+      const auditState = await withArchivedEmployeeReferences(client,stored,req.user.company_ids);
+      const plan = buildPayrollRepairPlan(auditState,req.user.company_ids);
       const repairedRuns = issueIds.map(id => plan.proposedRuns.get(id));
       if (repairedRuns.some(run => !run)) throw workflowError(409,'REPAIR_SELECTION_STALE_OR_LOCKED');
       const repairedById = new Map(repairedRuns.map(run => [run.id,run]));
@@ -80,7 +90,7 @@ export function createAdminDatabaseRouter({
       const companyIds = [...new Set(repairedRuns.map(run => run.companyId))];
       await appendStateAudit(client,q,{ companyIds,user:req.user,action:'REPAIR_PAYROLL_DATA',version:updated.rows[0].version });
       await client.query('COMMIT');
-      const remainingIssues = buildPayrollRepairPlan(nextState,req.user.company_ids).issues;
+      const remainingIssues = buildPayrollRepairPlan({ ...auditState,payrollRuns:nextRuns },req.user.company_ids).issues;
       broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at,
         companyIds,changes:[{ collection:'payrollRuns',operation:'upsert',records:repairedRuns }] });
       res.json({ repairedRuns,remainingIssues,version:Number(updated.rows[0].version),updated_at:updated.rows[0].updated_at });
