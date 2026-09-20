@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import test from 'node:test';
 import {resolveAnnualLeaveBalance} from './routes/employee-portal-routes.mjs';
 
+// Regression coverage for the standalone administration screen and server-owned balance rules.
 const app=fs.readFileSync(new URL('../src/App.tsx',import.meta.url),'utf8');
 const view=fs.readFileSync(new URL('../src/components/AnnualLeaveView.tsx',import.meta.url),'utf8');
 const employeeForm=fs.readFileSync(new URL('../src/components/employees/EmployeeFormModal.tsx',import.meta.url),'utf8');
