@@ -557,6 +557,9 @@ export const App: React.FC = () => {
         const next: MasarAppState = {
           ...prev,
           employees: synchronizeEmployeeBankDetails(prev.companies || [], employees),
+          archivedEmployees: result.archived
+            ? [...(prev.archivedEmployees || []).filter(candidate => candidate.id !== result.employee.id),result.employee as Employee]
+            : (prev.archivedEmployees || []).filter(candidate => candidate.id !== result.employee.id),
         };
         return next;
       });
@@ -1360,6 +1363,7 @@ export const App: React.FC = () => {
               <PayrollRunsView
                 company={activeCompany}
                 employees={state.employees}
+                archivedEmployees={state.archivedEmployees || []}
                 payrollRuns={state.payrollRuns}
                 attendance={state.attendance}
                 loans={state.loans}

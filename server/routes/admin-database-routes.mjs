@@ -105,5 +105,27 @@ export function createAdminDatabaseRouter({
     }
   });
 
+  router.post('/payroll-data-repair/journal-adjustments/resolve', auth, writeLimiter, async (req,res,next) => {
+    const client=await pool.connect();
+    try {
+      if(!isDeveloperUser(req.user))return res.status(403).json({error:'FORBIDDEN'});
+      const journalBatchId=String(req.body?.journalBatchId||''),lineId=String(req.body?.lineId||'');
+      if(!/^[A-Za-z0-9._:-]+$/.test(journalBatchId)||!/^[A-Za-z0-9._:-]+$/.test(lineId))return res.status(400).json({error:'INVALID_JOURNAL_ADJUSTMENT'});
+      await client.query('BEGIN');
+      const found=await client.query(`SELECT jl.payload,jb.company_id FROM ${q('journal_lines')} jl JOIN ${q('journal_batches')} jb ON jb.id=jl.journal_batch_id
+        WHERE jl.journal_batch_id=$1 AND jl.id=$2 AND jl.account_code='9999' FOR UPDATE`,[journalBatchId,lineId]);
+      if(!found.rowCount)throw workflowError(404,'JOURNAL_ADJUSTMENT_NOT_FOUND');
+      if(!req.user.company_ids.includes(found.rows[0].company_id))throw workflowError(403,'FORBIDDEN');
+      const resolution={resolvedAt:new Date().toISOString(),resolvedBy:req.user.id,reason:'LEGACY_BALANCE_ADJUSTMENT_REVIEWED'};
+      const payload={...(found.rows[0].payload||{}),auditResolution:resolution};
+      await client.query(`UPDATE ${q('journal_lines')} SET payload=$3::jsonb WHERE journal_batch_id=$1 AND id=$2`,[journalBatchId,lineId,JSON.stringify(payload)]);
+      const updated=await bumpStateVersion(client,req.user.id);
+      await appendStateAudit(client,q,{companyIds:[found.rows[0].company_id],user:req.user,action:`RESOLVE_LEGACY_JOURNAL_ADJUSTMENT:${journalBatchId}`,version:updated.rows[0].version});
+      await client.query('COMMIT');
+      broadcastStateUpdate({version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at,companyIds:[found.rows[0].company_id],changes:[]});
+      res.json({resolved:true,version:Number(updated.rows[0].version),updated_at:updated.rows[0].updated_at});
+    }catch(error){try{await client.query('ROLLBACK');}catch{} if(Number.isInteger(error?.status))return res.status(error.status).json({error:error.message});next(error);}finally{client.release();}
+  });
+
   return router;
 }

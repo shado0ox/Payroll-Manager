@@ -85,7 +85,7 @@ const pool = new Pool({
 const q = (name) => `"${schema}".${name}`;
 const sha256 = (value) => crypto.createHash('sha256').update(value).digest('hex');
 const cookieValue = (req, key) => (req.headers.cookie || '').split(';').map(v => v.trim()).find(v => v.startsWith(`${key}=`))?.slice(key.length + 1);
-const COMPANY_SCOPED_KEYS = ['employees', 'attendance', 'loans', 'penalties', 'temporaryEarnings', 'leaves', 'payrollRuns', 'payrollSettlements', 'journals'];
+const COMPANY_SCOPED_KEYS = ['employees', 'archivedEmployees', 'attendance', 'loans', 'penalties', 'temporaryEarnings', 'leaves', 'payrollRuns', 'payrollSettlements', 'journals'];
 const OPERATIONS_MUTABLE_KEYS = new Set(['employees', 'attendance', 'loans', 'penalties', 'temporaryEarnings', 'leaves', 'payrollRuns', 'payrollSettlements']);
 const clone = (value) => value == null ? value : structuredClone(value);
 

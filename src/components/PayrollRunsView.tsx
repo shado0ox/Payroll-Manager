@@ -68,6 +68,7 @@ import { getPayrollPaymentCoverages } from '../utils/payrollPaymentCoverage';
 interface PayrollRunsViewProps {
   company: Company;
   employees: Employee[];
+  archivedEmployees?: Employee[];
   payrollRuns: PayrollRun[];
   attendance: AttendanceRecord[];
   loans: LoanSchedule[];
@@ -111,6 +112,7 @@ const PAYMENT_METHOD_LABELS: Record<PaymentMethod, { ar: string; en: string }> =
 export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
   company,
   employees,
+  archivedEmployees = [],
   payrollRuns,
   attendance,
   loans,
@@ -178,8 +180,16 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
   }, [companyRuns, selectedPeriod]);
 
   const companyEmployees = useMemo(() => {
-    return employees.filter(e => e.companyId === company.id);
-  }, [employees, company.id]);
+    const active = employees.filter(e => e.companyId === company.id);
+    const archivedFinalPeriod = archivedEmployees.filter(e =>
+      e.companyId === company.id
+      && e.status === 'TERMINATED'
+      && ['SPONSOR_TRANSFER','FINAL_EXIT'].includes(String(e.employmentEndReason || e.archiveReason || ''))
+      && e.terminationDate?.slice(0,7) === selectedPeriod
+    );
+    const known = new Set(active.map(employee => employee.id));
+    return [...active,...archivedFinalPeriod.filter(employee => !known.has(employee.id))];
+  }, [employees, archivedEmployees, company.id, selectedPeriod]);
 
   // Departments for filtering
   const departments = useMemo(() => {

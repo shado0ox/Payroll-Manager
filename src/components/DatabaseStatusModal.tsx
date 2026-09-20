@@ -46,6 +46,7 @@ export const DatabaseStatusModal: React.FC<DatabaseStatusModalProps> = ({
   const [selectedRepairIds,setSelectedRepairIds] = useState<string[]>([]);
   const [isScanningRepair,setIsScanningRepair] = useState(false);
   const [isRepairing,setIsRepairing] = useState(false);
+  const [resolvingAdjustment,setResolvingAdjustment] = useState<string | null>(null);
   
   if (!isOpen) return null;
 
@@ -87,6 +88,14 @@ export const DatabaseStatusModal: React.FC<DatabaseStatusModalProps> = ({
     } catch (error:any) {
       alert(`${tr('تعذر تنفيذ الإصلاح:', 'Repair failed:')} ${error?.message || 'UNKNOWN_ERROR'}`);
     } finally { setIsRepairing(false); }
+  };
+
+  const resolveLegacyAdjustment=async(journalBatchId:string,lineId:string)=>{
+    if(!confirm(tr('تأكيد أن تسوية 9999 تاريخية وتمت مراجعتها؟ سيبقى القيد كما هو وسيُسجل الإغلاق في سجل المراجعة.','Confirm this is a reviewed historical 9999 adjustment? The journal will remain unchanged and the resolution will be audited.')))return;
+    setResolvingAdjustment(`${journalBatchId}:${lineId}`);
+    try{await api.resolveLegacyJournalAdjustment(journalBatchId,lineId);await scanPayrollData();}
+    catch(error:any){alert(`${tr('تعذر إغلاق التنبيه:','Could not resolve the alert:')} ${error?.message||'UNKNOWN_ERROR'}`);}
+    finally{setResolvingAdjustment(null);}
   };
 
   const repairFindingLabel = (finding:PayrollRepairIssue['findings'][number]) => ({
@@ -359,7 +368,7 @@ export const DatabaseStatusModal: React.FC<DatabaseStatusModalProps> = ({
                   </div>}
                   {issue.details?.journalAdjustments?.length>0&&<div className="mt-2 rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-[10px] text-orange-900">
                     <div className="font-black">{tr('قيود تحتوي تسوية 9999 ويجب تحليلها قبل الترحيل:', 'Journals containing account 9999 must be reviewed before posting:')}</div>
-                    {issue.details.journalAdjustments.map(detail=><div key={detail.journalBatchId} className="mt-1">{detail.batchNumber||detail.journalBatchId}: {formatRepairAmount(detail.amount)}{detail.qoyodSynced?` · ${tr('مرحّل إلى قيود — للمراجعة فقط','Posted to Qoyod — review only')}`:''}</div>)}
+                    {issue.details.journalAdjustments.map(detail=><div key={`${detail.journalBatchId}:${detail.lineId}`} className="mt-1 flex flex-wrap items-center gap-2"><span>{detail.batchNumber||detail.journalBatchId}: {formatRepairAmount(detail.amount)}{detail.qoyodSynced?` · ${tr('مرحّل إلى قيود — للمراجعة فقط','Posted to Qoyod — review only')}`:''}</span><button type="button" disabled={Boolean(resolvingAdjustment)} onClick={()=>resolveLegacyAdjustment(detail.journalBatchId,detail.lineId)} className="rounded-md border border-orange-300 bg-white px-2 py-1 font-bold disabled:opacity-50">{resolvingAdjustment===`${detail.journalBatchId}:${detail.lineId}`?tr('جاري الإغلاق…','Resolving…'):tr('تمت المراجعة وإغلاق التنبيه','Reviewed — close alert')}</button></div>)}
                   </div>}
                   {issue.details?.holdMismatches?.length > 0 && <div className="mt-2 rounded-lg border border-violet-100 bg-white px-3 py-2 text-[10px] text-slate-700">
                     <span className="font-black text-violet-900">{tr('الموظفون ذوو التعليق الآلي المنتهي:', 'Employees with stale automatic hold:')}</span>{' '}
