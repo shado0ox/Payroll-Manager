@@ -82,7 +82,7 @@ export const EmployeePortalView: React.FC<Props> = ({ onLogout }) => {
     finally { setPayslipsLoading(false); }
   };
 
-  if (!data) return <div dir={language === 'ar' ? 'rtl' : 'ltr'} className="min-h-screen bg-slate-950 text-white flex items-center justify-center p-6">
+  if (!data) return <div dir={language === 'ar' ? 'rtl' : 'ltr'} className="masar-employee-portal flex h-[100dvh] w-full items-center justify-center overflow-x-hidden overflow-y-auto bg-slate-950 p-4 text-white sm:p-6">
     <div className="w-full max-w-md rounded-3xl border border-slate-800 bg-slate-900 p-8 text-center shadow-2xl">
       {error ? <>
         <ShieldCheck className="mx-auto h-10 w-10 text-rose-400" />
@@ -111,20 +111,20 @@ export const EmployeePortalView: React.FC<Props> = ({ onLogout }) => {
     { icon:CalendarDays,titleAr:'الإجازات',titleEn:'Leave',textAr:leaveReport ? `${leaveReport.annualBalance.remainingDays} يوم سنوي متبقي` : 'الرصيد والطلبات وسجل الإجازات',textEn:leaveReport ? `${leaveReport.annualBalance.remainingDays} annual days remaining` : 'Balance, requests, and leave history',ready:true },
   ];
 
-  return <div dir={language === 'ar' ? 'rtl' : 'ltr'} className="min-h-screen bg-slate-100 text-slate-900">
-    <header className="border-b border-slate-800 bg-slate-950 text-white">
-      <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-5 py-4">
+  return <div dir={language === 'ar' ? 'rtl' : 'ltr'} className="masar-employee-portal h-[100dvh] w-full overflow-x-hidden overflow-y-auto bg-slate-100 text-slate-900">
+    <header className="sticky top-0 z-30 border-b border-slate-800 bg-slate-950/95 text-white backdrop-blur">
+      <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-3 py-3 sm:gap-4 sm:px-5 sm:py-4">
         <div className="flex items-center gap-3">
           <div className="flex h-11 w-11 items-center justify-center overflow-hidden rounded-2xl bg-emerald-500/15 text-emerald-400">
             {company.logo ? <img src={company.logo} alt="" className="h-full w-full object-contain" /> : <ShieldCheck className="h-6 w-6" />}
           </div>
           <div><div className="text-sm font-black">{language === 'ar' ? company.nameAr : company.nameEn || company.nameAr}</div><div className="text-xs text-slate-400">{language === 'ar' ? 'بوابة الموظف' : 'Employee Portal'}</div></div>
         </div>
-        <button onClick={onLogout} className="flex items-center gap-2 rounded-xl border border-slate-700 px-3 py-2 text-xs font-bold hover:bg-slate-800"><LogOut className="h-4 w-4" />{language === 'ar' ? 'خروج' : 'Sign out'}</button>
+        <button onClick={onLogout} className="flex shrink-0 items-center gap-2 rounded-xl border border-slate-700 px-3 py-2 text-xs font-bold hover:bg-slate-800"><LogOut className="h-4 w-4" /><span className="hidden sm:inline">{language === 'ar' ? 'خروج' : 'Sign out'}</span></button>
       </div>
     </header>
 
-    <main className="mx-auto max-w-6xl space-y-6 px-5 py-8">
+    <main className="mx-auto w-full max-w-6xl space-y-4 px-3 pb-[calc(2rem+env(safe-area-inset-bottom))] pt-4 sm:space-y-6 sm:px-5 sm:py-8 sm:pb-[calc(2rem+env(safe-area-inset-bottom))]">
       {subscription?.expired && <div className="rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm font-bold text-amber-900">
         {language === 'ar' ? 'اشتراك المنشأة معلّق. يمكنك الاطلاع على بياناتك الحالية فقط.' : 'The company subscription is suspended. Existing information remains read-only.'}
         {subscription.deletionScheduledAt && <span> {language === 'ar' ? 'تاريخ الحذف المجدول:' : 'Scheduled deletion:'} <span dir="ltr">{new Date(subscription.deletionScheduledAt).toLocaleDateString('en-GB')}</span></span>}
@@ -205,7 +205,7 @@ export const EmployeePortalView: React.FC<Props> = ({ onLogout }) => {
       </section>
     </main>
 
-    {selectedPayslip && <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/70 p-4 print:static print:bg-white print:p-0"><div className="mx-auto my-8 max-w-4xl rounded-3xl bg-white p-6 shadow-2xl print:my-0 print:max-w-none print:rounded-none print:shadow-none sm:p-8">
+    {selectedPayslip && <div className="fixed inset-0 z-50 overflow-x-hidden overflow-y-auto bg-slate-950/70 p-2 sm:p-4 print:static print:bg-white print:p-0"><div className="mx-auto my-2 w-full max-w-4xl overflow-x-auto rounded-2xl bg-white p-4 shadow-2xl sm:my-8 sm:rounded-3xl sm:p-8 print:my-0 print:max-w-none print:rounded-none print:shadow-none">
       <div className="flex items-center justify-between gap-3 print:hidden"><h2 className="text-xl font-black">{language === 'ar' ? 'قسيمة راتب' : 'Payslip'}</h2><div className="flex gap-2"><button onClick={() => window.print()} className="flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-sm font-bold text-white"><Printer className="h-4 w-4" />{language === 'ar' ? 'طباعة' : 'Print'}</button><button onClick={() => setSelectedPayslip(null)} className="rounded-xl border p-2"><X className="h-5 w-5" /></button></div></div>
       <PayslipDocument payslip={selectedPayslip} company={company} language={language} money={money} monthName={monthName} />
     </div></div>}
