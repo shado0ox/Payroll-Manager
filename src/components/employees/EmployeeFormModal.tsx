@@ -317,6 +317,19 @@ export const EmployeeFormModal = React.memo<EmployeeFormModalProps>(({
                     />
                   </div>
 
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">{language === 'ar' ? 'استحقاق الإجازة السنوية (يوم)' : 'Annual leave entitlement (days)'}</label>
+                    <input
+                      type="number"
+                      min="0"
+                      max="60"
+                      step="1"
+                      value={formData.annualLeaveEntitlementDays ?? 21}
+                      onChange={(e) => setFormData({ ...formData, annualLeaveEntitlementDays: Math.max(0, Math.min(60, Number(e.target.value) || 0)) })}
+                      className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white"
+                    />
+                  </div>
+
                   <div className="sm:col-span-2 rounded-xl border border-slate-200 bg-slate-50 p-3">
                     <label className="flex items-start gap-2 cursor-pointer">
                       <input

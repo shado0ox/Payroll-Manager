@@ -208,6 +208,7 @@ export interface Employee {
   costCenterId: string;
   hireDate: string; // YYYY-MM-DD
   salaryStartDate: string; // YYYY-MM-DD
+  annualLeaveEntitlementDays?: number; // Configured annual entitlement used by the employee portal
   prorateFirstMonth?: boolean; // Apply daily proration in the salary start month only when explicitly enabled
   entryDate?: string; // YYYY-MM-DD, non-Saudi arrival date
   entryNumber?: string; // Border/entry number before iqama issuance

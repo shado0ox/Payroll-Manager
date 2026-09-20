@@ -135,6 +135,10 @@ test('employee sessions are restricted to auth and employee portal endpoints', a
   await auth({ method:'GET',originalUrl:'/api/employee-portal/attendance?periodMonth=2026-09' },response(),() => { continued = true; });
   assert.equal(continued,true);
 
+  continued = false;
+  await auth({ method:'POST',originalUrl:'/api/employee-portal/leaves' },response(),() => { continued = true; });
+  assert.equal(continued,true);
+
   const invalidPortalPath = response();
   await auth({ method:'GET',originalUrl:'/api/employee-portal/payslips/batch-1/not-a-month' },invalidPortalPath,() => assert.fail('invalid portal path must be blocked'));
   assert.deepEqual(invalidPortalPath.body,{ error:'EMPLOYEE_PORTAL_ONLY' });
