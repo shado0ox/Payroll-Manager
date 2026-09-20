@@ -182,9 +182,9 @@ router.put('/employees/:id', auth, writeLimiter, async (req, res, next) => {
 
     await client.query('COMMIT');
     if (updated.rowCount) broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at,
-      companyIds:[employee.companyId],changes:[archived
-        ? { collection:'employees',operation:'delete',ids:[employee.id] }
-        : { collection:'employees',operation:'upsert',records:[savedEmployee] }] });
+      companyIds:[employee.companyId],changes:archived
+        ? [{ collection:'employees',operation:'delete',ids:[employee.id] },{ collection:'archivedEmployees',operation:'upsert',records:[savedEmployee] }]
+        : [{ collection:'employees',operation:'upsert',records:[savedEmployee] },{ collection:'archivedEmployees',operation:'delete',ids:[employee.id] }] });
     res.json({ employee:savedEmployee, archived, created:!existing.rowCount, version:Number(updated.rows[0]?.version || 0), updated_at:updated.rows[0]?.updated_at || new Date().toISOString() });
   } catch (e) {
     try { await client.query('ROLLBACK'); } catch {}
@@ -208,7 +208,7 @@ router.post('/employees/:id/restore', auth, writeLimiter, async (req,res,next) =
     const updated = await bumpStateVersion(client,req.user.id);
     await client.query(`INSERT INTO ${q('audit_log')} (user_id,action,ip) VALUES ($1,$2,$3)`,[req.user.id,`RESTORE_EMPLOYEE:${req.params.id}`,req.ip]);
     await client.query('COMMIT');
-    broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at,companyIds:[row.company_id],changes:[{ collection:'employees',operation:'upsert',records:[employee] }] });
+    broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at,companyIds:[row.company_id],changes:[{ collection:'employees',operation:'upsert',records:[employee] },{ collection:'archivedEmployees',operation:'delete',ids:[employee.id] }] });
     res.json({ employee,version:Number(updated.rows[0].version),updated_at:updated.rows[0].updated_at });
   } catch (error) {
     try { await client.query('ROLLBACK'); } catch {}

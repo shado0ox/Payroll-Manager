@@ -4,6 +4,7 @@ export function createNormalizedStateReader({ q,clone,subscriptionState }) {
     // A checked-out pg PoolClient must execute one query at a time. pg@8 only
     // warns when Promise.all queues concurrent calls; pg@9 will reject them.
     const employeeResult = await client.query(`SELECT payload FROM ${q('employees')} WHERE is_archived=false ORDER BY sort_order,id`);
+    const archivedEmployeeResult = await client.query(`SELECT payload FROM ${q('employees')} WHERE is_archived=true ORDER BY sort_order,id`);
     const employeeGosiBranches = await client.query(`SELECT e.id,COALESCE(employee_assignment.account_id,department_assignment.account_id,default_account.id) AS account_id
       FROM ${q('employees')} e
       LEFT JOIN LATERAL (SELECT account_id FROM ${q('gosi_employee_assignments')} a WHERE a.employee_id=e.id
@@ -39,6 +40,7 @@ export function createNormalizedStateReader({ q,clone,subscriptionState }) {
       ...row.payload,
       ...(currentGosiBranchByEmployee.get(row.payload?.id) ? { gosiBranchId:currentGosiBranchByEmployee.get(row.payload.id) } : {}),
     }));
+    state.archivedEmployees = archivedEmployeeResult.rows.map(row => ({ ...(row.payload || {}),isArchived:true }));
     state.payrollRuns = runResult.rows.map(row => ({
       ...row.payload,
       items: itemsByRun.get(row.id) || [],

@@ -105,7 +105,7 @@ function mergeStateForUser(stored, incoming, user) {
   const next = clone(stored || {});
   const allowed = allowedCompanyIds(user);
   const keyPermissions = {
-    employees:'MANAGE_EMPLOYEES', attendance:'MANAGE_ATTENDANCE', leaves:'MANAGE_ATTENDANCE',
+    employees:'MANAGE_EMPLOYEES', archivedEmployees:'MANAGE_EMPLOYEES', attendance:'MANAGE_ATTENDANCE', leaves:'MANAGE_ATTENDANCE',
     loans:'MANAGE_LOANS_PENALTIES', penalties:'MANAGE_LOANS_PENALTIES', temporaryEarnings:'MANAGE_LOANS_PENALTIES', payrollRuns:'MANAGE_PAYROLL', payrollSettlements:'MANAGE_PAYROLL', journals:'MANAGE_JOURNALS',
   };
   const roleKeys = user.role === 'OPERATIONS_MANAGER' ? operationsMutableKeys : new Set(companyScopedKeys);

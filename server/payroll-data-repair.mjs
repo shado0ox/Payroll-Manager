@@ -158,8 +158,8 @@ const paymentBatchDetails = run => asArray(run.paymentBatches).flatMap(batch => 
 
 const journalAdjustmentDetails = (state,run) => asArray(state?.journals).flatMap(journal => {
   if(journal?.payrollRunId!==run.id||(journal?.journalType&&journal.journalType!=='PAYROLL_ACCRUAL'))return [];
-  const adjustmentLines=asArray(journal.lines).filter(line=>line?.id==='line-balance-adjustment'||String(line?.accountCode||'')==='9999');
-  return adjustmentLines.map(line=>({journalBatchId:String(journal.id||''),batchNumber:String(journal.batchNumber||''),
+  const adjustmentLines=asArray(journal.lines).filter(line=>(line?.id==='line-balance-adjustment'||String(line?.accountCode||'')==='9999')&&!line?.auditResolution?.resolvedAt);
+  return adjustmentLines.map(line=>({journalBatchId:String(journal.id||''),lineId:String(line.id||''),batchNumber:String(journal.batchNumber||''),
     amount:roundAmount(Number(line.debit||0)-Number(line.credit||0)),qoyodSynced:Boolean(journal.qoyodSyncStatus?.synced)}));
 });
 

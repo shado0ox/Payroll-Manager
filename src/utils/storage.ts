@@ -44,6 +44,8 @@ export interface AppState {
   currentUser: UserAccount | null;
   users: UserAccount[];
   employees: Employee[];
+  /** Archived employee snapshots used only for historical/final-period payroll calculations. */
+  archivedEmployees: Employee[];
   attendance: AttendanceRecord[];
   loans: LoanSchedule[];
   penalties: PenaltyRecord[];
@@ -103,6 +105,7 @@ export function loadInitialState(): AppState {
         currentUser,
         users,
         employees,
+        archivedEmployees: [],
         attendance,
         loans,
         penalties,
@@ -155,6 +158,7 @@ export function loadInitialState(): AppState {
     currentUser,
     users,
     employees,
+    archivedEmployees: [],
     attendance,
     loans,
     penalties,

@@ -1,7 +1,7 @@
 import { AppState } from './storage';
 import { AttendanceRecord, Company, Employee, JournalBatch, LeaveRequest, LoanSchedule, PayrollRun, PayrollSettlement, PenaltyRecord, QoyodApiConfig, TemporaryEarningRecord, UserAccount } from '../types';
 
-export type StateCollectionKey = 'employees' | 'attendance' | 'leaves' | 'loans' | 'penalties' | 'temporaryEarnings' | 'payrollRuns' | 'payrollSettlements' | 'journals';
+export type StateCollectionKey = 'employees' | 'archivedEmployees' | 'attendance' | 'leaves' | 'loans' | 'penalties' | 'temporaryEarnings' | 'payrollRuns' | 'payrollSettlements' | 'journals';
 export type StateRecordChange = {
   collection:StateCollectionKey;
   operation:'upsert' | 'delete';
@@ -78,7 +78,7 @@ export type PayrollRepairIssue = {
       recordedEmployeesCount:number|null;expectedEmployeesCount:number;recordedTotal:number;expectedTotal:number;difference:number;
     }>;
     journalAdjustments:Array<{
-      journalBatchId:string;batchNumber:string;amount:number;qoyodSynced:boolean;
+      journalBatchId:string;lineId:string;batchNumber:string;amount:number;qoyodSynced:boolean;
     }>;
   };
   repairable:boolean;
@@ -284,7 +284,12 @@ export const api = {
       if (result.archived) { if (index >= 0) employees.splice(index,1); }
       else if (index >= 0) employees[index] = cloneState(result.employee);
       else employees.push(cloneState(result.employee));
-      syncedState = { ...syncedState, employees };
+      const archivedEmployees = Array.isArray(syncedState.archivedEmployees) ? [...syncedState.archivedEmployees] : [];
+      const archivedIndex = archivedEmployees.findIndex((item:any) => item?.id === result.employee.id);
+      if (result.archived && archivedIndex >= 0) archivedEmployees[archivedIndex] = cloneState(result.employee);
+      else if (result.archived) archivedEmployees.push(cloneState(result.employee));
+      else if (archivedIndex >= 0) archivedEmployees.splice(archivedIndex,1);
+      syncedState = { ...syncedState, employees, archivedEmployees };
     }
     return result;
   },
@@ -470,6 +475,13 @@ export const api = {
     });
     stateVersion = result.version;
     for (const run of result.repairedRuns) updateSyncedCollection('payrollRuns',run);
+    return result;
+  },
+  resolveLegacyJournalAdjustment: async (journalBatchId:string,lineId:string) => {
+    const result=await request<{resolved:boolean;version:number;updated_at:string}>('/api/admin/payroll-data-repair/journal-adjustments/resolve',{
+      method:'POST',body:JSON.stringify({journalBatchId,lineId}),
+    });
+    stateVersion=result.version;
     return result;
   },
   version: () => request<{buildId:string}>('/api/version', { headers:{ 'Cache-Control':'no-cache' } }),

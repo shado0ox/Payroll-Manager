@@ -1,4 +1,4 @@
-const COMPANY_SCOPED_KEYS = ['employees', 'attendance', 'loans', 'penalties', 'temporaryEarnings', 'leaves', 'payrollRuns', 'payrollSettlements', 'journals'];
+const COMPANY_SCOPED_KEYS = ['employees', 'archivedEmployees', 'attendance', 'loans', 'penalties', 'temporaryEarnings', 'leaves', 'payrollRuns', 'payrollSettlements', 'journals'];
 
 const normalizeCompanyIds = (companyIds) => [...new Set(
   (Array.isArray(companyIds) ? companyIds : []).filter(id => typeof id === 'string' && id.trim())
