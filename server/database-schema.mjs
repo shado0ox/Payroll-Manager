@@ -409,8 +409,7 @@ await pool.query(`WITH legacy_hybrid_users AS (
   FROM ${q('app_state_migration_backups')} backup
   CROSS JOIN LATERAL jsonb_array_elements(COALESCE(backup.state->'users','[]'::jsonb)) legacy_user
   WHERE legacy_user->>'role'='EMPLOYEE'
-    AND COALESCE(legacy_user->>'employeeId','') <> ''
-    AND jsonb_array_length(COALESCE(legacy_user->'permissions','[]'::jsonb)) > 0
+    AND COALESCE(legacy_user->>'id','') <> ''
   ORDER BY legacy_user->>'id',backup.created_at DESC
 )
 INSERT INTO ${q('users')}
@@ -418,11 +417,11 @@ INSERT INTO ${q('users')}
 SELECT legacy_user->>'id',portal.username,portal.password_hash,
   COALESCE(NULLIF(legacy_user->>'name',''),employee.first_name_ar || ' ' || employee.last_name_ar),
   portal.email,COALESCE(legacy_user->>'phone',''),'OPERATIONS_MANAGER',
-  COALESCE(legacy_user->'companyIds',jsonb_build_array(portal.company_id)),legacy_user->'permissions',
+  COALESCE(legacy_user->'companyIds',jsonb_build_array(portal.company_id)),COALESCE(legacy_user->'permissions','[]'::jsonb),
   portal.employee_id,portal.is_active,
   COALESCE(NULLIF(legacy_user->>'createdAt','')::timestamptz,portal.created_at),now()
 FROM legacy_hybrid_users legacy
-JOIN ${q('employee_portal_accounts')} portal ON portal.employee_id=(legacy.legacy_user->>'employeeId')
+JOIN ${q('employee_portal_accounts')} portal ON portal.id=('portal-' || (legacy.legacy_user->>'id'))
 JOIN ${q('employees')} employee ON employee.id=portal.employee_id
 WHERE NOT EXISTS (SELECT 1 FROM ${q('users')} existing_user WHERE existing_user.id=legacy.legacy_user->>'id')
   AND NOT EXISTS (SELECT 1 FROM ${q('users')} existing_user WHERE existing_user.username=portal.username)
