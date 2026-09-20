@@ -26,6 +26,15 @@ body {
   overflow: hidden;
 }
 
+/* The employee portal owns its scroll container because the app shell locks body scrolling. */
+.masar-employee-portal {
+  min-width: 0;
+  max-width: 100vw;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  padding-top: env(safe-area-inset-top);
+}
+
 *,
 *::before,
 *::after {
