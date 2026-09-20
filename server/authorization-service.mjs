@@ -36,6 +36,7 @@ export function createAuthorizationService({ pool,q,cookieValue,sha256,developer
         || requestPath === '/api/employee-portal/payslips'
         || requestPath === '/api/employee-portal/attendance'
         || requestPath === '/api/employee-portal/leaves'
+        || requestPath === '/api/employee-portal/bank-change-requests'
         || /^\/api\/employee-portal\/leaves\/[^/]+$/.test(requestPath)
         || /^\/api\/employee-portal\/payslips\/[^/]+\/\d{4}-(0[1-9]|1[0-2])$/.test(requestPath);
       if (req.user.role === 'EMPLOYEE'

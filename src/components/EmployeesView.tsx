@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { Company, Employee, UserRole } from '../types';
 import { downloadCsvFile } from '../utils/exportUtils';
 import { 
@@ -13,6 +13,7 @@ import { EmployeeFormModal } from './employees/EmployeeFormModal';
 import { EmployeesToolbar } from './employees/EmployeesToolbar';
 import { EmployeePayrollTotals } from './employees/EmployeePayrollTotals';
 import { useEmployeeImport } from './employees/useEmployeeImport';
+import { api, type EmployeeBankChangeRequest } from '../utils/api';
 
 interface EmployeesViewProps {
   company: Company;
@@ -56,6 +57,26 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
   const [selectedDept, setSelectedDept] = useState('ALL');
   const [selectedStatus, setSelectedStatus] = useState<string>('ALL');
   const [selectedNationality, setSelectedNationality] = useState<string>('ALL');
+  const [bankRequests,setBankRequests] = useState<EmployeeBankChangeRequest[]>([]);
+  const [bankRequestsLoading,setBankRequestsLoading] = useState(false);
+  const [bankRequestsError,setBankRequestsError] = useState('');
+  const loadBankRequests = async () => {
+    setBankRequestsLoading(true); setBankRequestsError('');
+    try { setBankRequests((await api.employeeBankChangeRequests(company.id,'PENDING')).requests); }
+    catch (error:any) { setBankRequestsError(String(error?.message || 'BANK_CHANGE_REQUESTS_LOAD_FAILED')); }
+    finally { setBankRequestsLoading(false); }
+  };
+  useEffect(() => { void loadBankRequests(); },[company.id]);
+  const reviewBankRequest = async (request:EmployeeBankChangeRequest,decision:'APPROVED'|'REJECTED') => {
+    const promptText = decision === 'APPROVED'
+      ? (language === 'ar' ? 'ملاحظة الاعتماد (اختياري):' : 'Approval note (optional):')
+      : (language === 'ar' ? 'اكتب سبب الرفض:' : 'Enter the rejection reason:');
+    const reason = window.prompt(promptText,'');
+    if (reason === null || (decision === 'REJECTED' && !reason.trim())) return;
+    setBankRequestsLoading(true); setBankRequestsError('');
+    try { await api.reviewEmployeeBankChangeRequest(request.id,decision,reason.trim()); await loadBankRequests(); }
+    catch (error:any) { setBankRequestsError(String(error?.message || 'BANK_CHANGE_REVIEW_FAILED')); setBankRequestsLoading(false); }
+  };
 
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -449,6 +470,12 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
         setSelectedNationality={setSelectedNationality}
         setSelectedStatus={setSelectedStatus}
       />
+
+      {(bankRequests.length > 0 || bankRequestsError) && <section className="rounded-2xl border border-sky-200 bg-sky-50/50 p-4 shadow-sm">
+        <div className="flex items-center justify-between gap-3"><div><h2 className="font-black text-slate-900">{language === 'ar' ? 'طلبات تعديل بيانات البنك' : 'Bank details change requests'}</h2><p className="mt-1 text-xs text-slate-500">{language === 'ar' ? 'لا تُطبّق البيانات الجديدة إلا بعد الاعتماد.' : 'New bank details are applied only after approval.'}</p></div><button type="button" onClick={() => void loadBankRequests()} disabled={bankRequestsLoading} className="rounded-lg border border-sky-200 bg-white px-3 py-2 text-xs font-bold text-sky-800">{language === 'ar' ? 'تحديث' : 'Refresh'}</button></div>
+        {bankRequestsError && <div className="mt-3 rounded-xl bg-rose-50 p-3 text-xs font-bold text-rose-700">{bankRequestsError}</div>}
+        {bankRequests.length > 0 && <div className="mt-4 overflow-x-auto"><table className="w-full min-w-[900px] text-sm"><thead><tr className="border-b text-slate-500"><th className="p-2 text-start">{language === 'ar' ? 'الموظف' : 'Employee'}</th><th className="p-2 text-start">{language === 'ar' ? 'البيانات الحالية' : 'Current details'}</th><th className="p-2 text-start">{language === 'ar' ? 'البيانات المطلوبة' : 'Requested details'}</th><th className="p-2 text-start">{language === 'ar' ? 'السبب' : 'Reason'}</th><th className="p-2"></th></tr></thead><tbody>{bankRequests.map(request => <tr key={request.id} className="border-b last:border-0"><td className="p-2 font-bold">{request.employeeName}<div className="text-xs text-slate-500" dir="ltr">{request.employeeNo}</div></td><td className="p-2"><div>{request.currentBankName || '—'}</div><div className="font-mono text-xs" dir="ltr">{request.currentIban || '—'}</div></td><td className="p-2"><div className="font-bold text-sky-800">{request.requestedBankName}</div><div className="font-mono text-xs" dir="ltr">{request.requestedIban}</div><div className="text-xs" dir="ltr">{request.requestedSwiftCode || '—'}</div></td><td className="max-w-48 p-2 text-xs text-slate-600">{request.employeeReason || '—'}</td><td className="p-2"><div className="flex justify-end gap-2"><button type="button" disabled={bankRequestsLoading} onClick={() => void reviewBankRequest(request,'APPROVED')} className="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-bold text-white">{language === 'ar' ? 'اعتماد' : 'Approve'}</button><button type="button" disabled={bankRequestsLoading} onClick={() => void reviewBankRequest(request,'REJECTED')} className="rounded-lg bg-rose-600 px-3 py-2 text-xs font-bold text-white">{language === 'ar' ? 'رفض' : 'Reject'}</button></div></td></tr>)}</tbody></table></div>}
+      </section>}
 
       <EmployeePayrollTotals
         language={language}

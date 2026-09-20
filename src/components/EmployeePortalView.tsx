@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { CalendarDays, Clock3, FileText, LogOut, Printer, RefreshCw, ShieldCheck, UserRound, X } from 'lucide-react';
-import { api, type EmployeeAttendanceReport, type EmployeeLeave, type EmployeeLeaveReport, type EmployeePayslipDetail, type EmployeePayslipSummary, type EmployeePortalProfile } from '../utils/api';
+import { CalendarDays, Clock3, FileText, Landmark, LogOut, Printer, RefreshCw, ShieldCheck, UserRound, X } from 'lucide-react';
+import { api, type EmployeeAttendanceReport, type EmployeeBankChangeRequest, type EmployeeLeave, type EmployeeLeaveReport, type EmployeePayslipDetail, type EmployeePayslipSummary, type EmployeePortalProfile } from '../utils/api';
 import { useLanguage } from '../i18n/LanguageContext';
 
 type Props = { onLogout:() => void };
@@ -19,6 +19,10 @@ export const EmployeePortalView: React.FC<Props> = ({ onLogout }) => {
   const [leaveLoading,setLeaveLoading] = useState(false);
   const [leaveError,setLeaveError] = useState('');
   const [leaveForm,setLeaveForm] = useState<{type:EmployeeLeave['type'];startDate:string;endDate:string;reason:string}>({ type:'ANNUAL',startDate:'',endDate:'',reason:'' });
+  const [bankRequests,setBankRequests] = useState<EmployeeBankChangeRequest[]>([]);
+  const [bankForm,setBankForm] = useState({ iban:'',reason:'' });
+  const [bankLoading,setBankLoading] = useState(false);
+  const [bankError,setBankError] = useState('');
   const [error,setError] = useState('');
 
   const load = () => {
@@ -48,6 +52,18 @@ export const EmployeePortalView: React.FC<Props> = ({ onLogout }) => {
     finally { setLeaveLoading(false); }
   };
   useEffect(() => { if (data) void loadLeaves(leaveYear); },[data,leaveYear]);
+  const loadBankRequests = async () => {
+    setBankLoading(true); setBankError('');
+    try { setBankRequests((await api.employeePortalBankChangeRequests()).requests); }
+    catch (reason:any) { setBankError(String(reason?.message || 'BANK_CHANGE_REQUESTS_LOAD_FAILED')); }
+    finally { setBankLoading(false); }
+  };
+  useEffect(() => { if (data) void loadBankRequests(); },[data]);
+  const submitBankChange = async (event:React.FormEvent) => {
+    event.preventDefault(); setBankLoading(true); setBankError('');
+    try { await api.createEmployeePortalBankChangeRequest(bankForm.iban,bankForm.reason); setBankForm({ iban:'',reason:'' }); await loadBankRequests(); }
+    catch (reason:any) { setBankError(String(reason?.message || 'BANK_CHANGE_REQUEST_FAILED')); setBankLoading(false); }
+  };
   const submitLeave = async (event:React.FormEvent) => {
     event.preventDefault(); setLeaveLoading(true); setLeaveError('');
     try { await api.createEmployeePortalLeave(leaveForm); setLeaveForm({ type:'ANNUAL',startDate:'',endDate:'',reason:'' }); await loadLeaves(); }
@@ -175,6 +191,17 @@ export const EmployeePortalView: React.FC<Props> = ({ onLogout }) => {
           <div className="sm:col-span-2"><dt className="text-xs text-slate-500">IBAN</dt><dd className="mt-1 break-all font-mono font-bold" dir="ltr">{profile.bankIban || '—'}</dd></div>
           <div><dt className="text-xs text-slate-500">SWIFT / BIC</dt><dd className="mt-1 font-mono font-bold" dir="ltr">{profile.bankSwiftCode || '—'}</dd></div>
         </dl>
+        <div className="mt-6 border-t pt-5">
+          <div className="flex items-center gap-2"><Landmark className="h-5 w-5 text-sky-700" /><h3 className="font-black">{language === 'ar' ? 'طلب تعديل بيانات البنك' : 'Bank details change request'}</h3></div>
+          <p className="mt-1 text-xs text-slate-500">{language === 'ar' ? 'لن تتغير بيانات الصرف حتى تعتمد الإدارة الطلب.' : 'Payroll bank details remain unchanged until management approves the request.'}</p>
+          {!bankRequests.some(request => request.status === 'PENDING') && !subscription?.readOnly && <form onSubmit={submitBankChange} className="mt-4 grid gap-3 rounded-2xl bg-slate-50 p-4 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="lg:col-span-2"><label className="mb-1 block text-xs font-bold text-slate-600">IBAN</label><input required value={bankForm.iban} onChange={event => setBankForm(current => ({ ...current,iban:event.target.value.toUpperCase() }))} placeholder="SA00 0000 0000 0000 0000 0000" dir="ltr" className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 font-mono text-sm" /></div>
+            <div><label className="mb-1 block text-xs font-bold text-slate-600">{language === 'ar' ? 'سبب التعديل (اختياري)' : 'Reason (optional)'}</label><input maxLength={500} value={bankForm.reason} onChange={event => setBankForm(current => ({ ...current,reason:event.target.value }))} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm" /></div>
+            <div className="flex items-end"><button disabled={bankLoading} className="w-full rounded-xl bg-sky-700 px-4 py-2 text-sm font-black text-white disabled:bg-slate-300">{bankLoading ? '...' : (language === 'ar' ? 'إرسال للمراجعة' : 'Submit for review')}</button></div>
+          </form>}
+          {bankError && <div className="mt-3 rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs font-bold text-rose-700">{bankMessage(bankError,language)}</div>}
+          {bankRequests.length > 0 && <div className="mt-4 space-y-2">{bankRequests.map(request => <div key={request.id} className="rounded-xl border border-slate-200 p-3 text-xs"><div className="flex flex-wrap items-center justify-between gap-2"><strong dir="ltr">{request.requestedIban}</strong><BankRequestStatus status={request.status} language={language} /></div><div className="mt-1 text-slate-500">{request.requestedBankName} · {request.requestedAt ? new Date(request.requestedAt).toLocaleDateString('en-GB') : '—'}</div>{request.reviewReason && <div className="mt-2 text-slate-700">{language === 'ar' ? 'ملاحظة الإدارة:' : 'Management note:'} {request.reviewReason}</div>}</div>)}</div>}
+        </div>
       </section>
     </main>
 
@@ -233,6 +260,19 @@ const leaveMessage = (code:string,language:string) => {
     ANNUAL_LEAVE_BALANCE_EXCEEDED:['مدة الطلب تتجاوز رصيد الإجازة السنوية المتاح.','The request exceeds the available annual leave balance.'],
     ANNUAL_LEAVE_SINGLE_YEAR_REQUIRED:['يجب أن يكون طلب الإجازة السنوية داخل سنة واحدة.','Annual leave must fall within one calendar year.'],
     EMPLOYEE_LEAVE_CANCELLATION_LOCKED:['لا يمكن إلغاء الطلب بعد اعتماده أو رفضه.','Approved or rejected requests cannot be cancelled.'],
+  };
+  const message = messages[code] || [code,code]; return message[language === 'ar' ? 0 : 1];
+};
+const BankRequestStatus = ({status,language}:{status:EmployeeBankChangeRequest['status'];language:string}) => {
+  const labels = { PENDING:['قيد المراجعة','Pending'],APPROVED:['معتمد','Approved'],REJECTED:['مرفوض','Rejected'] } as const;
+  const color = status === 'APPROVED' ? 'bg-emerald-50 text-emerald-700' : status === 'REJECTED' ? 'bg-rose-50 text-rose-700' : 'bg-amber-50 text-amber-700';
+  return <span className={`rounded-full px-2.5 py-1 font-bold ${color}`}>{labels[status][language === 'ar' ? 0 : 1]}</span>;
+};
+const bankMessage = (code:string,language:string) => {
+  const messages:Record<string,[string,string]> = {
+    INVALID_SAUDI_IBAN:['رقم الآيبان السعودي غير صحيح.','The Saudi IBAN is invalid.'],
+    BANK_CHANGE_REQUEST_PENDING:['يوجد طلب تعديل بنكي قيد المراجعة بالفعل.','A bank change request is already pending.'],
+    IBAN_BANK_NOT_CONFIGURED:['البنك غير معرّف في ملف المنشأة. اطلب من الإدارة إضافته أولًا.','This bank is not configured in the company profile. Ask management to add it first.'],
   };
   const message = messages[code] || [code,code]; return message[language === 'ar' ? 0 : 1];
 };

@@ -150,3 +150,26 @@ test('employee leave API owns identity, status, pay type, day count, overlap, an
   assert.match(source,/action:'EMPLOYEE_LEAVE_REQUEST'/);
   assert.match(source,/existing\.rows\[0\]\.status !== 'PENDING'/);
 });
+
+test('bank changes stay pending until management approval and derive bank identity from company definitions', () => {
+  const portal = fs.readFileSync(new URL('./routes/employee-portal-routes.mjs',import.meta.url),'utf8');
+  const employees = fs.readFileSync(new URL('./routes/employee-routes.mjs',import.meta.url),'utf8');
+  const schema = fs.readFileSync(new URL('./database-schema.mjs',import.meta.url),'utf8');
+  assert.match(schema,/CREATE TABLE IF NOT EXISTS \$\{q\('employee_bank_change_requests'\)\}/);
+  assert.match(schema,/employee_bank_change_one_pending_idx/);
+  assert.match(portal,/validSaudiIban\(requestedIban\)/);
+  assert.match(portal,/iban_bank_code=\$2 AND is_active=true/);
+  assert.match(portal,/status='PENDING'/);
+  assert.doesNotMatch(portal,/UPDATE \$\{q\('employees'\)\} SET bank_iban/);
+  assert.match(employees,/decision === 'APPROVED'/);
+  assert.match(employees,/SET bank_iban=\$2,payload=\$3::jsonb/);
+  assert.match(employees,/previousSnapshot/);
+  assert.match(employees,/newSnapshot/);
+});
+
+test('employee role is preserved by legacy role normalization', () => {
+  const schema = fs.readFileSync(new URL('./database-schema.mjs',import.meta.url),'utf8');
+  assert.match(schema,/role IN \('HR_MANAGER','PAYROLL_SPECIALIST','AUDITOR'\)/);
+  assert.doesNotMatch(schema,/role IN \('HR_MANAGER','PAYROLL_SPECIALIST','AUDITOR','EMPLOYEE'\)/);
+  assert.match(schema,/SET role='EMPLOYEE',permissions='\[\]'::jsonb[\s\S]*employee_id IS NOT NULL/);
+});

@@ -194,6 +194,20 @@ await pool.query(`CREATE TABLE IF NOT EXISTS ${q('leave_requests')} (
   CHECK (leave_type IN ('ANNUAL','SICK','UNPAID','EMERGENCY','MATERNITY')),
   CHECK (status IN ('PENDING','APPROVED','REJECTED')), CHECK (end_date >= start_date)
 )`);
+await pool.query(`CREATE TABLE IF NOT EXISTS ${q('employee_bank_change_requests')} (
+  id text PRIMARY KEY, company_id text NOT NULL REFERENCES ${q('companies')}(id) ON DELETE CASCADE,
+  employee_id text NOT NULL REFERENCES ${q('employees')}(id) ON DELETE CASCADE,
+  status text NOT NULL DEFAULT 'PENDING', current_bank_name text NOT NULL DEFAULT '', current_iban text NOT NULL DEFAULT '',
+  current_swift_code text NOT NULL DEFAULT '', requested_bank_name text NOT NULL, requested_iban text NOT NULL,
+  requested_swift_code text NOT NULL DEFAULT '', employee_reason text NOT NULL DEFAULT '', review_reason text NOT NULL DEFAULT '',
+  requested_by text NOT NULL, requested_at timestamptz NOT NULL DEFAULT now(), reviewed_by text,
+  reviewed_at timestamptz, updated_at timestamptz NOT NULL DEFAULT now(),
+  CHECK (status IN ('PENDING','APPROVED','REJECTED'))
+)`);
+await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS employee_bank_change_one_pending_idx
+  ON ${q('employee_bank_change_requests')}(employee_id) WHERE status='PENDING'`);
+await pool.query(`CREATE INDEX IF NOT EXISTS employee_bank_change_company_status_idx
+  ON ${q('employee_bank_change_requests')}(company_id,status,requested_at DESC)`);
 await pool.query(`CREATE TABLE IF NOT EXISTS ${q('loans')} (
   id text PRIMARY KEY, company_id text NOT NULL REFERENCES ${q('companies')}(id) ON DELETE RESTRICT,
   employee_id text NOT NULL REFERENCES ${q('employees')}(id) ON DELETE RESTRICT,
@@ -360,7 +374,9 @@ await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS company_departments_code_uni
 await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS cost_centers_code_unique_idx
   ON ${q('cost_centers')}(company_id,code) WHERE code <> ''`);
 await pool.query(`UPDATE ${q('users')} SET role='OPERATIONS_MANAGER',updated_at=now()
-  WHERE id <> 'user-admin' AND role IN ('HR_MANAGER','PAYROLL_SPECIALIST','AUDITOR','EMPLOYEE')`);
+  WHERE id <> 'user-admin' AND role IN ('HR_MANAGER','PAYROLL_SPECIALIST','AUDITOR')`);
+await pool.query(`UPDATE ${q('users')} SET role='EMPLOYEE',permissions='[]'::jsonb,updated_at=now()
+  WHERE employee_id IS NOT NULL AND role <> 'EMPLOYEE'`);
 
 const companyId = process.env.COMPANY_ID;
 await pool.query(`INSERT INTO ${q('companies')} (id, company_code, name_ar, name_en) VALUES ($1,$2,$3,$4) ON CONFLICT (id) DO NOTHING`, [
