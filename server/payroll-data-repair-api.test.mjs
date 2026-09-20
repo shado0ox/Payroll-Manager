@@ -12,7 +12,7 @@ test('payroll repair endpoints are developer-only and tenant scoped', () => {
   assert.match(server,/app\.use\('\/api\/admin', createAdminDatabaseRouter/);
   assert.match(routes,/router\.get\('\/payroll-data-repair\/scan', auth/);
   assert.match(routes,/isDeveloperUser\(req\.user\)/);
-  assert.match(routes,/buildPayrollRepairPlan\(stored,req\.user\.company_ids\)/);
+  assert.match(routes,/buildPayrollRepairPlan\(auditState,req\.user\.company_ids\)/);
   assert.doesNotMatch(routes,/req\.body\?\.companyIds/);
 });
 
