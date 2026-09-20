@@ -4,23 +4,29 @@ export function createUserRecordPolicy({ can,allowedRoles,allPermissions,default
     if (!user.username || !user.name || !user.role || !Array.isArray(user.companyIds)) throw workflowError(400, 'INVALID_USER');
     if (!allowedRoles.has(user.role) || user.role === 'ADMIN') throw workflowError(400, 'INVALID_ROLE');
     if (actor.role === 'ADMIN' && user.companyIds.some(id => !actor.company_ids.includes(id))) throw workflowError(403, 'TENANT_DATA_IS_PRIVATE');
-    const permissions = Array.isArray(user.permissions)
+    const normalizedEmail = String(user.email || '').trim().toLowerCase();
+    if (user.role === 'EMPLOYEE' && (!user.employeeId || user.companyIds.length !== 1)) {
+      throw workflowError(400, 'EMPLOYEE_ACCOUNT_REQUIRES_LINK');
+    }
+    if (user.role === 'EMPLOYEE' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+      throw workflowError(400, 'EMPLOYEE_ACCOUNT_EMAIL_REQUIRED');
+    }
+    const permissions = user.role === 'EMPLOYEE' ? [] : Array.isArray(user.permissions)
       ? [...new Set(user.permissions)].filter(value => allPermissions.has(value) && value !== 'MANAGE_COMPANIES')
       : defaultPermissions[user.role];
-    if (actor.role !== 'ADMIN' && (user.role !== 'OPERATIONS_MANAGER' || user.companyIds.some(id => !actor.company_ids.includes(id)))) {
+    if (actor.role !== 'ADMIN' && (!['OPERATIONS_MANAGER','EMPLOYEE'].includes(user.role) || user.companyIds.some(id => !actor.company_ids.includes(id)))) {
       throw workflowError(403, 'FORBIDDEN');
     }
     if (actor.role !== 'ADMIN' && permissions.some(permission => !permissionsFor(actor).includes(permission))) {
       throw workflowError(403, 'CANNOT_GRANT_UNOWNED_PERMISSION');
     }
-    const normalizedEmail = String(user.email || '').trim().toLowerCase();
     return { user,permissions,normalizedEmail };
   }
 
   function assertExistingUserScope(existing, actor) {
     const existingCompanyIds = Array.isArray(existing?.company_ids) ? existing.company_ids : [];
     const targetOutsideScope = existingCompanyIds.some(id => !actor.company_ids.includes(id));
-    if (targetOutsideScope || (actor.role !== 'ADMIN' && existing?.role !== 'OPERATIONS_MANAGER')) {
+    if (targetOutsideScope || (actor.role !== 'ADMIN' && !['OPERATIONS_MANAGER','EMPLOYEE'].includes(existing?.role))) {
       throw workflowError(403, 'FORBIDDEN');
     }
   }

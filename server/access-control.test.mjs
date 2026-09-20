@@ -9,6 +9,8 @@ test('role permissions preserve admin, defaults, and explicit overrides', () => 
   assert.equal(can({ role:'COMPANY_MANAGER' }, 'MANAGE_COMPANIES'), false);
   assert.equal(can({ role:'OPERATIONS_MANAGER',permissions:['VIEW_REPORTS'] }, 'VIEW_REPORTS'), true);
   assert.equal(can({ role:'OPERATIONS_MANAGER',permissions:['VIEW_REPORTS'] }, 'MANAGE_PAYROLL'), false);
+  assert.deepEqual(permissionsFor({ role:'EMPLOYEE',permissions:['VIEW_REPORTS'] }), []);
+  assert.equal(can({ role:'EMPLOYEE',permissions:['VIEW_REPORTS'] }, 'VIEW_REPORTS'), false);
 });
 
 test('company access stays restricted to assigned companies unless admin scope is unrestricted', () => {

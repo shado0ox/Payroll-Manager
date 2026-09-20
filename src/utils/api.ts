@@ -100,6 +100,14 @@ export type GosiAccount={
 };
 export type GosiAssignment={id:string;employeeId:string;accountId:string;effectiveFrom:string;effectiveTo:string|null};
 export type GosiDepartmentAssignment={id:string;departmentName:string;accountId:string;effectiveFrom:string;effectiveTo:string|null};
+export type EmployeePortalProfile = {
+  profile:{
+    id:string;employeeNo:string;firstNameAr:string;lastNameAr:string;firstNameEn:string;lastNameEn:string;
+    department:string;jobTitle:string;hireDate:string|null;status:string;email:string;phone:string;
+  };
+  company:{id:string;companyCode:string;nameAr:string;nameEn:string;logo?:string};
+  subscription:{status:string;expired:boolean;readOnly:boolean;deletionScheduledAt?:string|null}|null;
+};
 
 class ApiError extends Error {
   constructor(message: string, public status: number) { super(message); this.name = 'ApiError'; }
@@ -375,6 +383,7 @@ export const api = {
   emailLoginVerify: (requestId: string, code: string) => request<{user:UserAccount;companyId:string}>('/api/auth/email-login/verify', { method:'POST', body:JSON.stringify({ requestId,code }) }),
   login: (companyCode: string, username: string, password: string) => request<{user: UserAccount; companyId: string}>('/api/auth/login', { method:'POST', body:JSON.stringify({ companyCode, username, password }) }),
   session: () => request<{user: UserAccount}>('/api/auth/session'),
+  employeePortalMe: () => request<EmployeePortalProfile>('/api/employee-portal/me'),
   logout: () => request<void>('/api/auth/logout', { method:'POST' }),
   getState: async () => {
     const result = await request<{state: Partial<AppState> | null; version: number}>('/api/state');

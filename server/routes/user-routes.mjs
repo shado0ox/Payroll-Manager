@@ -23,17 +23,21 @@ export function createUserRouter({ auth,writeLimiter,pool,q,can,allowedRoles,all
       }
       const existing = await client.query(`SELECT id,password_hash,company_ids,role FROM ${q('users')} WHERE id=$1 FOR UPDATE`, [req.params.id]);
       if (existing.rowCount) assertExistingUserScope(existing.rows[0], req.user);
+      if (u.role === 'EMPLOYEE') {
+        const employee = await client.query(`SELECT company_id FROM ${q('employees')} WHERE id=$1 AND is_archived=false`, [u.employeeId]);
+        if (!employee.rowCount || employee.rows[0].company_id !== u.companyIds[0]) throw workflowError(400,'EMPLOYEE_ACCOUNT_LINK_INVALID');
+      }
       if ((!existing.rowCount || u.password) && !isStrongPassword(u.password)) throw workflowError(400,'PASSWORD_POLICY_FAILED');
       const passwordHash = u.password ? await bcrypt.hash(u.password, 12) : existing.rows[0]?.password_hash;
-      const r = await client.query(`INSERT INTO ${q('users')} (id,username,password_hash,name,email,phone,role,company_ids,permissions,is_active)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9::jsonb,$10)
+      const r = await client.query(`INSERT INTO ${q('users')} (id,username,password_hash,name,email,phone,role,company_ids,permissions,employee_id,is_active)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9::jsonb,$10,$11)
         ON CONFLICT (id) DO UPDATE SET username=EXCLUDED.username,password_hash=EXCLUDED.password_hash,name=EXCLUDED.name,
-        email=EXCLUDED.email,phone=EXCLUDED.phone,role=EXCLUDED.role,company_ids=EXCLUDED.company_ids,permissions=EXCLUDED.permissions,is_active=EXCLUDED.is_active,updated_at=now()
-        RETURNING id,username,name,email,phone,role,company_ids,permissions,is_active,created_at,last_login`, [
-        req.params.id, String(u.username).toLowerCase(), passwordHash, u.name, normalizedEmail, u.phone || '', u.role, JSON.stringify(u.companyIds), JSON.stringify(permissions), u.isActive !== false
+        email=EXCLUDED.email,phone=EXCLUDED.phone,role=EXCLUDED.role,company_ids=EXCLUDED.company_ids,permissions=EXCLUDED.permissions,employee_id=EXCLUDED.employee_id,is_active=EXCLUDED.is_active,updated_at=now()
+        RETURNING id,username,name,email,phone,role,company_ids,permissions,employee_id,is_active,created_at,last_login`, [
+        req.params.id, String(u.username).toLowerCase(), passwordHash, u.name, normalizedEmail, u.phone || '', u.role, JSON.stringify(u.companyIds), JSON.stringify(permissions), u.employeeId || null, u.isActive !== false
       ]);
       const row = r.rows[0];
-      const record = { id:row.id,username:row.username,name:row.name,email:row.email,phone:row.phone,role:row.role,companyIds:row.company_ids,permissions:row.permissions,isActive:row.is_active,createdAt:row.created_at,lastLogin:row.last_login };
+      const record = { id:row.id,username:row.username,name:row.name,email:row.email,phone:row.phone,role:row.role,companyIds:row.company_ids,permissions:row.permissions,employeeId:row.employee_id || undefined,isActive:row.is_active,createdAt:row.created_at,lastLogin:row.last_login };
       const updated = await client.query(`UPDATE ${q('app_state')} SET version=version+1,updated_by=$1,updated_at=now() WHERE id=1 RETURNING version,updated_at`, [req.user.id]);
       if (!updated.rowCount) throw workflowError(409,'STATE_NOT_INITIALIZED');
       await appendStateAudit(client,q,{ companyIds:record.companyIds,user:req.user,action:'STATE_PATCH',version:updated.rows[0].version });
@@ -45,7 +49,11 @@ export function createUserRouter({ auth,writeLimiter,pool,q,can,allowedRoles,all
     } catch (e) {
       if (client) { try { await client.query('ROLLBACK'); } catch {} }
       if (Number.isInteger(e?.status) && e.status >= 400 && e.status < 500) return res.status(e.status).json({ error:e.message });
-      if (e?.code === '23505') return res.status(409).json({ error:String(e.constraint || '').includes('email') ? 'USER_EMAIL_EXISTS' : 'USERNAME_EXISTS' });
+      if (e?.code === '23505') {
+        const constraint = String(e.constraint || '');
+        const error = constraint.includes('employee') ? 'EMPLOYEE_ACCOUNT_EXISTS' : constraint.includes('email') ? 'USER_EMAIL_EXISTS' : 'USERNAME_EXISTS';
+        return res.status(409).json({ error });
+      }
       next(e);
     } finally { client?.release(); }
   });

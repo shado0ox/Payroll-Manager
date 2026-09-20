@@ -21,14 +21,14 @@ export function createStateRouter({ auth,writeLimiter,pool,q,buildId,clone,permi
     try {
       const [r, userResult] = await Promise.all([
         pool.query(`SELECT version,updated_at FROM ${q('app_state')} WHERE id=1`),
-        pool.query(`SELECT id,username,name,email,phone,role,company_ids,permissions,is_active,created_at,last_login FROM ${q('users')} ORDER BY created_at`),
+        pool.query(`SELECT id,username,name,email,phone,role,company_ids,permissions,employee_id,is_active,created_at,last_login FROM ${q('users')} ORDER BY created_at`),
       ]);
       const state = publicStateForUser(await readNormalizedApplicationState(pool), req.user);
       const visibleCompanyIds = new Set(Array.isArray(req.user.company_ids) ? req.user.company_ids : []);
       state.users = userResult.rows
         .filter(user => Array.isArray(user.company_ids) && user.company_ids.some(id => visibleCompanyIds.has(id)))
         .map(user => ({ id:user.id,username:user.username,name:user.name,email:user.email,phone:user.phone,role:user.role,
-          companyIds:user.company_ids,permissions:permissionsFor(user),isActive:user.is_active,createdAt:user.created_at,lastLogin:user.last_login }));
+          companyIds:user.company_ids,employeeId:user.employee_id || undefined,permissions:permissionsFor(user),isActive:user.is_active,createdAt:user.created_at,lastLogin:user.last_login }));
       res.json({ version:Number(r.rows[0]?.version || 0),updated_at:r.rows[0]?.updated_at || null,state });
     } catch (e) { next(e); }
   });

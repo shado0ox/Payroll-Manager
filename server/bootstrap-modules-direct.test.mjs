@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createCompanyRouter } from './routes/company-routes.mjs';
 import { createUserRouter } from './routes/user-routes.mjs';
+import { createEmployeePortalRouter } from './routes/employee-portal-routes.mjs';
 import { createStateRouter } from './routes/state-routes.mjs';
 import { createStateRuntime } from './state-runtime.mjs';
 import { createDatabaseMigrator } from './database-migrator.mjs';
@@ -30,6 +31,12 @@ test('state router directly owns read, event stream, and explicit restore endpoi
     { path:'/state/events',methods:['get'] },
     { path:'/state',methods:['get'] },
     { path:'/state',methods:['put'] },
+  ]);
+});
+
+test('employee portal router exposes only the session-derived self profile', () => {
+  assert.deepEqual(registeredRoutes(createEmployeePortalRouter({ auth:middleware })), [
+    { path:'/employee-portal/me',methods:['get'] },
   ]);
 });
 

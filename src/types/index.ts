@@ -1,4 +1,4 @@
-export type UserRole = 'ADMIN' | 'COMPANY_MANAGER' | 'OPERATIONS_MANAGER';
+export type UserRole = 'ADMIN' | 'COMPANY_MANAGER' | 'OPERATIONS_MANAGER' | 'EMPLOYEE';
 export type UserPermission =
   | 'VIEW_DASHBOARD'
   | 'MANAGE_COMPANY_PROFILE'

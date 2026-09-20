@@ -30,12 +30,14 @@ export const PERMISSION_LABELS: Record<UserPermission, { ar: string; en: string 
 export function defaultPermissionsForRole(role: UserRole): UserPermission[] {
   if (role === 'ADMIN') return [...ALL_PERMISSIONS];
   if (role === 'COMPANY_MANAGER') return ALL_PERMISSIONS.filter(p => p !== 'MANAGE_COMPANIES');
+  if (role === 'EMPLOYEE') return [];
   return ['VIEW_DASHBOARD', 'MANAGE_EMPLOYEES', 'MANAGE_ATTENDANCE', 'MANAGE_LOANS_PENALTIES', 'MANAGE_PAYROLL', 'MANAGE_GOSI', 'POST_PAYROLL', 'CONFIRM_PAYROLL_PAYMENT', 'VIEW_REPORTS'];
 }
 
 export function effectivePermissions(user?: Pick<UserAccount, 'role' | 'permissions'> | null): UserPermission[] {
   if (!user) return [];
   if (user.role === 'ADMIN') return [...ALL_PERMISSIONS];
+  if (user.role === 'EMPLOYEE') return [];
   return Array.isArray(user.permissions) ? user.permissions : defaultPermissionsForRole(user.role);
 }
 

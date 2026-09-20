@@ -1,4 +1,4 @@
-export const ALLOWED_ROLES = new Set(['ADMIN', 'COMPANY_MANAGER', 'OPERATIONS_MANAGER']);
+export const ALLOWED_ROLES = new Set(['ADMIN', 'COMPANY_MANAGER', 'OPERATIONS_MANAGER', 'EMPLOYEE']);
 
 export const ALL_PERMISSIONS = new Set([
   'VIEW_DASHBOARD','MANAGE_COMPANY_PROFILE','MANAGE_COMPANIES','MANAGE_EMPLOYEES','MANAGE_ATTENDANCE',
@@ -10,11 +10,14 @@ export const ALL_PERMISSIONS = new Set([
 export const DEFAULT_PERMISSIONS = {
   COMPANY_MANAGER: [...ALL_PERMISSIONS].filter(value => value !== 'MANAGE_COMPANIES'),
   OPERATIONS_MANAGER: ['VIEW_DASHBOARD','MANAGE_EMPLOYEES','MANAGE_ATTENDANCE','MANAGE_LOANS_PENALTIES','MANAGE_PAYROLL','MANAGE_GOSI','POST_PAYROLL','CONFIRM_PAYROLL_PAYMENT','VIEW_REPORTS'],
+  EMPLOYEE: [],
 };
 
 export const permissionsFor = user => user.role === 'ADMIN'
   ? [...ALL_PERMISSIONS]
-  : (Array.isArray(user.permissions) ? user.permissions : DEFAULT_PERMISSIONS[user.role] || []);
+  : user.role === 'EMPLOYEE'
+    ? []
+    : (Array.isArray(user.permissions) ? user.permissions : DEFAULT_PERMISSIONS[user.role] || []);
 
 export const can = (user, permission) => user.role === 'ADMIN' || permissionsFor(user).includes(permission);
 export const allowedCompanyIds = user => new Set(user.role === 'ADMIN' ? [] : (Array.isArray(user.company_ids) ? user.company_ids : []));

@@ -29,6 +29,7 @@ const ROLE_LABELS: Record<UserRole, { key: 'systemAdmin' | 'generalManager' | 'o
   ADMIN: { key: 'systemAdmin', color: 'bg-purple-50 text-purple-700 border-purple-200' },
   COMPANY_MANAGER: { key: 'generalManager', color: 'bg-indigo-50 text-indigo-700 border-indigo-200' },
   OPERATIONS_MANAGER: { key: 'operationsManager', color: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+  EMPLOYEE: { key: 'operationsManager', color: 'bg-sky-50 text-sky-700 border-sky-200' },
 };
 
 export const Navbar: React.FC<NavbarProps> = ({

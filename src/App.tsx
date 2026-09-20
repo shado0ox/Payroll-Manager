@@ -65,6 +65,7 @@ const AuditLogsView = lazy(() => import('./components/AuditLogsView').then(modul
 const EmployeeStatementModal = lazy(() => import('./components/EmployeeStatementModal').then(module => ({ default:module.EmployeeStatementModal })));
 const QoyodIntegrationModal = lazy(() => import('./components/QoyodIntegrationModal').then(module => ({ default:module.QoyodIntegrationModal })));
 const DatabaseStatusModal = lazy(() => import('./components/DatabaseStatusModal').then(module => ({ default:module.DatabaseStatusModal })));
+const EmployeePortalView = lazy(() => import('./components/EmployeePortalView').then(module => ({ default:module.EmployeePortalView })));
 
 const TAB_SESSION_KEY = 'masar_tab_session_v1';
 const LAST_ACTIVITY_KEY = 'masar_last_activity_v1';
@@ -247,7 +248,8 @@ export const App: React.FC = () => {
         return;
       }
       try {
-        const [{ user }, remote] = await Promise.all([api.session(), api.getState()]);
+        const { user } = await api.session();
+        const remote = user.role === 'EMPLOYEE' ? { state:null } : await api.getState();
         if (cancelled) return;
         setState(prev => {
           const base = remote.state ? { ...prev, ...remote.state } : prev;
@@ -256,6 +258,7 @@ export const App: React.FC = () => {
           return { ...base, employees, currentUser: user, users, activeRole: user.role } as typeof prev;
         });
         sessionStorage.setItem(LAST_ACTIVITY_KEY, String(Date.now()));
+        if (user.role === 'EMPLOYEE' && window.location.pathname !== '/portal') window.history.replaceState({},'', '/portal');
       } catch {
         sessionStorage.removeItem(TAB_SESSION_KEY);
         sessionStorage.removeItem(LAST_ACTIVITY_KEY);
@@ -317,7 +320,7 @@ export const App: React.FC = () => {
   // and relying on the server's company/permission filtering.
   useEffect(() => {
     const currentUser = state.currentUser;
-    if (!currentUser) return;
+    if (!currentUser || currentUser.role === 'EMPLOYEE') return;
     return api.subscribeStateEvents((event) => {
       if (event.buildId && event.buildId !== __MASAR_BUILD_ID__) {
         setUpdateAvailable(true);
@@ -370,7 +373,7 @@ export const App: React.FC = () => {
   useEffect(() => {
     const onPopState = () => setActiveTabState(tabFromLocation());
     window.addEventListener('popstate', onPopState);
-    if (window.location.pathname === '/' || !PATH_TABS[window.location.pathname.replace(/\/$/, '')]) {
+    if (window.location.pathname !== '/portal' && (window.location.pathname === '/' || !PATH_TABS[window.location.pathname.replace(/\/$/, '')])) {
       window.history.replaceState({ masarTab: activeTab }, '', TAB_PATHS[activeTab]);
     }
     return () => window.removeEventListener('popstate', onPopState);
@@ -385,7 +388,7 @@ export const App: React.FC = () => {
 
   // Auth handlers
   const completeLogin = async (user: UserAccount,companyId: string) => {
-    const remote = await api.getState();
+    const remote = user.role === 'EMPLOYEE' ? { state:null } : await api.getState();
     setState(prev => {
       const base = remote.state ? { ...prev, ...remote.state } : prev;
       const users = [...(base.users || []).filter(u => u.id !== user.id), user];
@@ -398,6 +401,7 @@ export const App: React.FC = () => {
     });
     sessionStorage.setItem(TAB_SESSION_KEY, 'active');
     sessionStorage.setItem(LAST_ACTIVITY_KEY, String(Date.now()));
+    if (user.role === 'EMPLOYEE') window.history.replaceState({},'', '/portal');
   };
 
   const handleLogin = async (companyCode: string,username: string,password: string) => {
@@ -1193,6 +1197,10 @@ export const App: React.FC = () => {
 
   if (!state.currentUser) {
     return <>{buildUpdateBanner}<LoginView defaultCompanyCode={state.companies[0]?.companyCode || '101'} onLogin={handleLogin} onEmailCodeLogin={handleEmailCodeLogin} /></>;
+  }
+
+  if (state.currentUser.role === 'EMPLOYEE') {
+    return <>{buildUpdateBanner}<Suspense fallback={<div className="min-h-screen bg-slate-950" />}><EmployeePortalView onLogout={handleLogout} /></Suspense></>;
   }
 
   const canViewDatabaseTools = isDeveloperAccount(state.currentUser);

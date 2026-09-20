@@ -25,12 +25,18 @@ export function createAuthorizationService({ pool,q,cookieValue,sha256,developer
       const token = cookieValue(req, 'masar_session');
       if (!token) return res.status(401).json({ error:'AUTH_REQUIRED' });
       const tokenHash = sha256(token);
-      const result = await pool.query(`SELECT u.id,u.username,u.name,u.email,u.phone,u.role,u.company_ids,u.permissions,u.is_active
+      const result = await pool.query(`SELECT u.id,u.username,u.name,u.email,u.phone,u.role,u.company_ids,u.permissions,u.employee_id,u.is_active
         FROM ${q('sessions')} s JOIN ${q('users')} u ON u.id=s.user_id
         WHERE s.token_hash=$1 AND s.expires_at > now() AND u.is_active=true`, [tokenHash]);
       if (!result.rowCount) return res.status(401).json({ error:'SESSION_EXPIRED' });
       await pool.query(`UPDATE ${q('sessions')} SET expires_at=now()+interval '1 hour' WHERE token_hash=$1`, [tokenHash]);
       req.user = result.rows[0];
+      const requestPath = String(req.originalUrl || req.path || '').split('?')[0];
+      if (req.user.role === 'EMPLOYEE'
+        && !requestPath.startsWith('/api/auth/')
+        && requestPath !== '/api/employee-portal/me') {
+        return res.status(403).json({ error:'EMPLOYEE_PORTAL_ONLY' });
+      }
       if (req.user.role !== 'ADMIN') {
         const company = await pool.query(`SELECT subscription_status,trial_ends_at,subscription_ends_at,
           subscription_suspended_at,deletion_scheduled_at
@@ -38,7 +44,6 @@ export function createAuthorizationService({ pool,q,cookieValue,sha256,developer
           ORDER BY created_at LIMIT 1`, [req.user.company_ids]);
         const subscription = subscriptionState(company.rows[0]);
         req.subscription = subscription;
-        const requestPath = String(req.originalUrl || req.path || '').split('?')[0];
         const readOnlyMethod = ['GET','HEAD','OPTIONS'].includes(String(req.method || 'GET').toUpperCase());
         const allowedWhileExpired = readOnlyMethod || requestPath === '/api/auth/logout';
         if (subscription.expired && !allowedWhileExpired) {

@@ -32,6 +32,7 @@ const ROLE_DISPLAY: Record<UserRole, 'primarySystemAdmin' | 'generalManager' | '
   ADMIN: 'primarySystemAdmin',
   COMPANY_MANAGER: 'generalManager',
   OPERATIONS_MANAGER: 'operationsManager',
+  EMPLOYEE: 'operationsManager',
 };
 
 export const Sidebar: React.FC<SidebarProps> = ({

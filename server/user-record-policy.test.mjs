@@ -6,11 +6,27 @@ import { createUserRecordPolicy } from './user-record-policy.mjs';
 const workflowError = (status, code) => Object.assign(new Error(code), { status });
 const policy = createUserRecordPolicy({
   can:() => true,
-  allowedRoles:new Set(['ADMIN','COMPANY_MANAGER','OPERATIONS_MANAGER']),
+  allowedRoles:new Set(['ADMIN','COMPANY_MANAGER','OPERATIONS_MANAGER','EMPLOYEE']),
   allPermissions:new Set(['VIEW_REPORTS','MANAGE_PAYROLL','MANAGE_COMPANIES']),
-  defaultPermissions:{ OPERATIONS_MANAGER:['VIEW_REPORTS'] },
+  defaultPermissions:{ OPERATIONS_MANAGER:['VIEW_REPORTS'],EMPLOYEE:[] },
   permissionsFor:() => ['VIEW_REPORTS'],
   workflowError,
+});
+
+test('employee accounts require one linked employee and receive no administrative permissions', () => {
+  assert.throws(() => policy.prepareUserRecord(
+    { role:'ADMIN',company_ids:['company-a'] },
+    { username:'employee',name:'Employee',role:'EMPLOYEE',companyIds:['company-a'] },
+  ), error => error.status === 400 && error.message === 'EMPLOYEE_ACCOUNT_REQUIRES_LINK');
+  assert.throws(() => policy.prepareUserRecord(
+    { role:'ADMIN',company_ids:['company-a'] },
+    { username:'employee',name:'Employee',role:'EMPLOYEE',employeeId:'employee-a',companyIds:['company-a'] },
+  ), error => error.status === 400 && error.message === 'EMPLOYEE_ACCOUNT_EMAIL_REQUIRED');
+  const result = policy.prepareUserRecord(
+    { role:'ADMIN',company_ids:['company-a'] },
+    { username:'employee',name:'Employee',email:'employee@example.com',role:'EMPLOYEE',employeeId:'employee-a',companyIds:['company-a'],permissions:['VIEW_REPORTS'] },
+  );
+  assert.deepEqual(result.permissions,[]);
 });
 
 test('user record policy normalizes email and removes duplicate or forbidden permissions', () => {
