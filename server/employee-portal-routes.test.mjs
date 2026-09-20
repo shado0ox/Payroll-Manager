@@ -136,7 +136,7 @@ test('leave report calculates selected-year annual balance without counting pend
     { id:'pending',leave_type:'ANNUAL',start_date:'2026-08-01',end_date:'2026-08-03',days_count:3,status:'PENDING',is_paid:true,reason:'' },
     { id:'sick',leave_type:'SICK',start_date:'2026-05-01',end_date:'2026-05-02',days_count:2,status:'APPROVED',is_paid:true,reason:'' },
   ],21,2026);
-  assert.deepEqual(report.annualBalance,{ entitlementDays:21,approvedDays:4,pendingDays:3,remainingDays:17 });
+  assert.deepEqual(report.annualBalance,{ policy:'CUSTOM',entitlementDays:21,openingBalanceDays:0,priorUsedDays:0,availableDays:21,approvedDays:4,pendingDays:3,remainingDays:17 });
   assert.equal('employee_id' in report.leaves[0],false);
 });
 
@@ -167,9 +167,12 @@ test('bank changes stay pending until management approval and derive bank identi
   assert.match(employees,/newSnapshot/);
 });
 
-test('employee role is preserved by legacy role normalization', () => {
+test('portal accounts are separated from administrative users and legacy employee accounts are migrated', () => {
   const schema = fs.readFileSync(new URL('./database-schema.mjs',import.meta.url),'utf8');
   assert.match(schema,/role IN \('HR_MANAGER','PAYROLL_SPECIALIST','AUDITOR'\)/);
   assert.doesNotMatch(schema,/role IN \('HR_MANAGER','PAYROLL_SPECIALIST','AUDITOR','EMPLOYEE'\)/);
-  assert.match(schema,/SET role='EMPLOYEE',permissions='\[\]'::jsonb[\s\S]*employee_id IS NOT NULL/);
+  assert.match(schema,/CREATE TABLE IF NOT EXISTS \$\{q\('employee_portal_accounts'\)\}/);
+  assert.match(schema,/WHERE u\.role='EMPLOYEE' AND u\.employee_id IS NOT NULL/);
+  assert.match(schema,/DELETE FROM \$\{q\('users'\)\} WHERE role='EMPLOYEE'/);
+  assert.doesNotMatch(schema,/SET role='EMPLOYEE'/);
 });

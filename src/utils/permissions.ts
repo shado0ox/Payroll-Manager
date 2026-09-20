@@ -52,7 +52,7 @@ export function isDeveloperAccount(user?: Pick<UserAccount, 'role' | 'username'>
 
 export const TAB_PERMISSION: Record<NavigationTab, UserPermission> = {
   dashboard: 'VIEW_DASHBOARD', company_profile: 'MANAGE_COMPANY_PROFILE', employees: 'MANAGE_EMPLOYEES',
-  payroll_runs: 'MANAGE_PAYROLL', gosi:'MANAGE_GOSI', settlements: 'MANAGE_PAYROLL', attendance: 'MANAGE_ATTENDANCE', loans_penalties: 'MANAGE_LOANS_PENALTIES',
+  payroll_runs: 'MANAGE_PAYROLL', gosi:'MANAGE_GOSI', settlements: 'MANAGE_PAYROLL', attendance: 'MANAGE_ATTENDANCE', annual_leave:'MANAGE_ATTENDANCE', loans_penalties: 'MANAGE_LOANS_PENALTIES',
   journals: 'MANAGE_JOURNALS', reports: 'VIEW_REPORTS', users: 'MANAGE_USERS',
   settings: 'MANAGE_COMPANIES', audit_logs: 'VIEW_AUDIT_LOGS',
 };

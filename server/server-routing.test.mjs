@@ -43,13 +43,13 @@ test('registration start and verification are delegated as one bounded workflow'
   assert.match(authRegistrationRoutes, /await client\.query\('COMMIT'\)/);
 });
 
-test('employee self-registration verifies stored identity and email before creating a least-privilege linked account', () => {
+test('employee self-registration verifies identity and the supplied email before creating a separate portal account', () => {
   assert.match(authRegistrationRoutes,/e\.national_id_or_iqama=\$2 OR e\.payload->>'iqamaNumber'=\$2/);
-  assert.match(authRegistrationRoutes,/lower\(COALESCE\(e\.payload->>'email',''\)\)=\$3/);
+  assert.doesNotMatch(authRegistrationRoutes,/lower\(COALESCE\(e\.payload->>'email',''\)\)=\$3/);
   assert.match(authRegistrationRoutes,/\['ACTIVE','SUSPENDED','ON_LEAVE'\]/);
   assert.match(authRegistrationRoutes,/OR employee_id=\$3/);
-  assert.match(authRegistrationRoutes,/permissions,employee_id,is_active,email_verified_at/);
-  assert.match(authRegistrationRoutes,/VALUES \(\$1,\$2,\$3,\$4,\$5,'EMPLOYEE',\$6::jsonb,'\[\]'::jsonb,\$7,true,now\(\)\)/);
+  assert.match(authRegistrationRoutes,/INSERT INTO \$\{q\('employee_portal_accounts'\)\}/);
+  assert.match(authRegistrationRoutes,/jsonb_set\(payload,'\{email\}'/);
   assert.match(authRegistrationRoutes,/email_verified_at\).*now\(\)/s);
 });
 

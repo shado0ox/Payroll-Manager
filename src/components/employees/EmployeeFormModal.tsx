@@ -318,7 +318,15 @@ export const EmployeeFormModal = React.memo<EmployeeFormModalProps>(({
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">{language === 'ar' ? 'استحقاق الإجازة السنوية (يوم)' : 'Annual leave entitlement (days)'}</label>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">{language === 'ar' ? 'سياسة الإجازة السنوية' : 'Annual leave policy'}</label>
+                    <select value={formData.annualLeavePolicy || 'LABOR_LAW'} onChange={(e) => setFormData({ ...formData, annualLeavePolicy:e.target.value as Employee['annualLeavePolicy'] })} className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white">
+                      <option value="LABOR_LAW">{language === 'ar' ? 'نظام العمل: 21 يوم ثم 30 بعد 5 سنوات' : 'Labor law: 21 days, then 30 after 5 years'}</option>
+                      <option value="FIXED_30">{language === 'ar' ? '30 يومًا من بداية الخدمة' : '30 days from employment start'}</option>
+                      <option value="CUSTOM">{language === 'ar' ? 'استحقاق مخصص' : 'Custom entitlement'}</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">{language === 'ar' ? 'الاستحقاق المخصص (يوم)' : 'Custom entitlement (days)'}</label>
                     <input
                       type="number"
                       min="0"
@@ -326,8 +334,17 @@ export const EmployeeFormModal = React.memo<EmployeeFormModalProps>(({
                       step="1"
                       value={formData.annualLeaveEntitlementDays ?? 21}
                       onChange={(e) => setFormData({ ...formData, annualLeaveEntitlementDays: Math.max(0, Math.min(60, Number(e.target.value) || 0)) })}
+                      disabled={(formData.annualLeavePolicy || 'LABOR_LAW') !== 'CUSTOM'}
                       className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white"
                     />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">{language === 'ar' ? 'الرصيد الافتتاحي/المرحّل' : 'Opening/carried balance'}</label>
+                    <input type="number" min="0" max="365" step="0.5" value={formData.annualLeaveOpeningBalance ?? 0} onChange={(e) => setFormData({ ...formData,annualLeaveOpeningBalance:Math.max(0,Number(e.target.value)||0) })} className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">{language === 'ar' ? 'إجازات سنوية مستلمة قبل تشغيل النظام' : 'Annual leave already taken before activation'}</label>
+                    <input type="number" min="0" max="365" step="0.5" value={formData.annualLeavePriorUsedDays ?? 0} onChange={(e) => setFormData({ ...formData,annualLeavePriorUsedDays:Math.max(0,Number(e.target.value)||0) })} className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white" />
                   </div>
 
                   <div className="sm:col-span-2 rounded-xl border border-slate-200 bg-slate-50 p-3">

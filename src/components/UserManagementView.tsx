@@ -225,7 +225,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
   };
 
   // Filtered list
-  const filteredUsers = users.filter((u) => {
+  const filteredUsers = users.filter((u) => u.role !== 'EMPLOYEE' && (() => {
     const matchSearch = 
       u.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       u.username.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -238,7 +238,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
       (statusFilter === 'INACTIVE' && !u.isActive);
 
     return matchSearch && matchRole && matchStatus;
-  });
+  })());
 
   const activeCount = users.filter(u => u.isActive).length;
   const adminCount = users.filter(u => u.role === 'ADMIN').length;
@@ -329,7 +329,6 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
           <option value="ADMIN">{language === 'ar' ? 'مسؤول النظام (Admin)' : 'System Administrator'}</option>
           <option value="COMPANY_MANAGER">{language === 'ar' ? 'المدير العام' : 'General Manager'}</option>
           <option value="OPERATIONS_MANAGER">{language === 'ar' ? 'مدير العمليات' : 'Operations Manager'}</option>
-          <option value="EMPLOYEE">{language === 'ar' ? 'بوابة الموظف' : 'Employee Portal'}</option>
         </select>
 
         {/* Status Filter */}
@@ -658,7 +657,6 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
                 >
                   {currentUser?.role === 'ADMIN' && <option value="COMPANY_MANAGER">{language === 'ar' ? 'المدير العام - دون إدارة الشركات' : 'General Manager — no company administration'}</option>}
                   <option value="OPERATIONS_MANAGER">{language === 'ar' ? 'مدير العمليات - جميع العمليات دون اعتماد الرواتب' : 'Operations Manager — all operations without payroll approval'}</option>
-                  <option value="EMPLOYEE">{language === 'ar' ? 'موظف - وصول ذاتي لبياناته فقط' : 'Employee — self-service access only'}</option>
                 </select>
                 <p className="text-[11px] text-slate-500 mt-1">
                   {language === 'ar' ? ROLE_INFO[formData.role]?.descAr : ROLE_INFO[formData.role]?.descEn}

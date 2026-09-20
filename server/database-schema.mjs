@@ -112,6 +112,24 @@ await pool.query(`DO $$ BEGIN
     FOREIGN KEY (employee_id) REFERENCES ${q('employees')}(id) ON DELETE SET NULL;
 EXCEPTION WHEN duplicate_object THEN NULL; END $$`);
 await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS users_employee_unique_idx ON ${q('users')}(employee_id) WHERE employee_id IS NOT NULL`);
+await pool.query(`CREATE TABLE IF NOT EXISTS ${q('employee_portal_accounts')} (
+  id text PRIMARY KEY, employee_id text NOT NULL UNIQUE REFERENCES ${q('employees')}(id) ON DELETE CASCADE,
+  company_id text NOT NULL REFERENCES ${q('companies')}(id) ON DELETE CASCADE,
+  username text NOT NULL UNIQUE, password_hash text NOT NULL, email text NOT NULL,
+  is_active boolean NOT NULL DEFAULT true, email_verified_at timestamptz NOT NULL DEFAULT now(),
+  last_login timestamptz, created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now()
+)`);
+await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS employee_portal_email_unique_idx
+  ON ${q('employee_portal_accounts')}(lower(email))`);
+await pool.query(`ALTER TABLE ${q('sessions')} ALTER COLUMN user_id DROP NOT NULL`);
+await pool.query(`ALTER TABLE ${q('sessions')} ADD COLUMN IF NOT EXISTS portal_account_id text REFERENCES ${q('employee_portal_accounts')}(id) ON DELETE CASCADE`);
+await pool.query(`INSERT INTO ${q('employee_portal_accounts')}
+  (id,employee_id,company_id,username,password_hash,email,is_active,email_verified_at,last_login,created_at,updated_at)
+  SELECT 'portal-' || u.id,u.employee_id,e.company_id,u.username,u.password_hash,u.email,u.is_active,
+    COALESCE(u.email_verified_at,now()),u.last_login,u.created_at,u.updated_at
+  FROM ${q('users')} u JOIN ${q('employees')} e ON e.id=u.employee_id
+  WHERE u.role='EMPLOYEE' AND u.employee_id IS NOT NULL
+  ON CONFLICT (employee_id) DO NOTHING`);
 
 // LEGACY_EMPLOYEE_IDENTITY_COMPAT: records created before the lifecycle wizard already
 // have a valid national ID/iqama. Never reinterpret them as new arrivals solely because
@@ -375,8 +393,7 @@ await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS cost_centers_code_unique_idx
   ON ${q('cost_centers')}(company_id,code) WHERE code <> ''`);
 await pool.query(`UPDATE ${q('users')} SET role='OPERATIONS_MANAGER',updated_at=now()
   WHERE id <> 'user-admin' AND role IN ('HR_MANAGER','PAYROLL_SPECIALIST','AUDITOR')`);
-await pool.query(`UPDATE ${q('users')} SET role='EMPLOYEE',permissions='[]'::jsonb,updated_at=now()
-  WHERE employee_id IS NOT NULL AND role <> 'EMPLOYEE'`);
+await pool.query(`DELETE FROM ${q('users')} WHERE role='EMPLOYEE' AND employee_id IS NOT NULL`);
 
 const companyId = process.env.COMPANY_ID;
 await pool.query(`INSERT INTO ${q('companies')} (id, company_code, name_ar, name_en) VALUES ($1,$2,$3,$4) ON CONFLICT (id) DO NOTHING`, [

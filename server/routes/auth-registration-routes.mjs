@@ -31,12 +31,13 @@ export function createAuthRegistrationRouter({
       const requestId = `employee-registration-${crypto.randomUUID()}`;
       const employee = await pool.query(`SELECT e.id,e.company_id,e.status,e.first_name_ar,e.last_name_ar,e.first_name_en,e.last_name_en,e.payload
         FROM ${q('employees')} e JOIN ${q('companies')} c ON c.id=e.company_id AND c.company_code=$1 AND c.is_archived=false
-        WHERE e.is_archived=false AND e.status=ANY($4::text[])
-          AND (e.national_id_or_iqama=$2 OR e.payload->>'iqamaNumber'=$2)
-          AND lower(COALESCE(e.payload->>'email',''))=$3 LIMIT 1`,[companyCode,identityNumber,email,employeeAccountStatuses]);
+        WHERE e.is_archived=false AND e.status=ANY($3::text[])
+          AND (e.national_id_or_iqama=$2 OR e.payload->>'iqamaNumber'=$2) LIMIT 1`,[companyCode,identityNumber,employeeAccountStatuses]);
       if (!employee.rowCount) return res.status(202).json({ requestId,maskedEmail:email.replace(/^(.{1,2}).*(@.*)$/,'$1***$2'),expiresInSeconds:900 });
-      const duplicate = await pool.query(`SELECT 1 FROM ${q('users')} WHERE lower(username)=$1 OR lower(email)=$2 OR employee_id=$3 LIMIT 1`,[username,email,employee.rows[0].id]);
+      const duplicate = await pool.query(`SELECT 1 FROM ${q('employee_portal_accounts')} WHERE lower(username)=$1 OR lower(email)=$2 OR employee_id=$3 LIMIT 1`,[username,email,employee.rows[0].id]);
       if (duplicate.rowCount) return res.status(409).json({ error:'EMPLOYEE_ACCOUNT_ALREADY_EXISTS' });
+      const administrativeCollision = await pool.query(`SELECT 1 FROM ${q('users')} WHERE lower(username)=$1 LIMIT 1`,[username]);
+      if (administrativeCollision.rowCount) return res.status(409).json({ error:'EMPLOYEE_PORTAL_CREDENTIALS_CONFLICT' });
       const code = String(crypto.randomInt(100000,1000000));
       const row = employee.rows[0];
       const name = `${row.first_name_ar || row.first_name_en || ''} ${row.last_name_ar || row.last_name_en || ''}`.trim();
@@ -72,11 +73,15 @@ export function createAuthRegistrationRouter({
       if (!employee.rowCount || !employeeAccountStatuses.includes(employee.rows[0].status)) {
         await client.query('ROLLBACK'); return res.status(409).json({ error:'EMPLOYEE_ACCOUNT_NOT_ELIGIBLE' });
       }
-      const duplicate = await client.query(`SELECT 1 FROM ${q('users')} WHERE lower(username)=$1 OR lower(email)=$2 OR employee_id=$3 LIMIT 1`,[details.username,details.email,details.employeeId]);
+      const duplicate = await client.query(`SELECT 1 FROM ${q('employee_portal_accounts')} WHERE lower(username)=$1 OR lower(email)=$2 OR employee_id=$3 LIMIT 1`,[details.username,details.email,details.employeeId]);
       if (duplicate.rowCount) { await client.query('ROLLBACK'); return res.status(409).json({ error:'EMPLOYEE_ACCOUNT_ALREADY_EXISTS' }); }
-      const userId = `user-${crypto.randomUUID()}`;
-      await client.query(`INSERT INTO ${q('users')} (id,username,password_hash,name,email,role,company_ids,permissions,employee_id,is_active,email_verified_at)
-        VALUES ($1,$2,$3,$4,$5,'EMPLOYEE',$6::jsonb,'[]'::jsonb,$7,true,now())`,[userId,details.username,details.passwordHash,details.name,details.email,JSON.stringify([details.companyId]),details.employeeId]);
+      const administrativeCollision = await client.query(`SELECT 1 FROM ${q('users')} WHERE lower(username)=$1 LIMIT 1`,[details.username]);
+      if (administrativeCollision.rowCount) { await client.query('ROLLBACK'); return res.status(409).json({ error:'EMPLOYEE_PORTAL_CREDENTIALS_CONFLICT' }); }
+      const accountId = `portal-${crypto.randomUUID()}`;
+      await client.query(`INSERT INTO ${q('employee_portal_accounts')} (id,employee_id,company_id,username,password_hash,email,is_active,email_verified_at)
+        VALUES ($1,$2,$3,$4,$5,$6,true,now())`,[accountId,details.employeeId,details.companyId,details.username,details.passwordHash,details.email]);
+      await client.query(`UPDATE ${q('employees')} SET payload=jsonb_set(payload,'{email}',to_jsonb($1::text),true),updated_at=now()
+        WHERE id=$2 AND company_id=$3`,[details.email,details.employeeId,details.companyId]);
       await client.query(`DELETE FROM ${q('registration_requests')} WHERE id=$1`,[requestId]);
       await client.query('COMMIT');
       res.status(201).json({ companyCode:details.companyCode,username:details.username });

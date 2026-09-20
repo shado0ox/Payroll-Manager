@@ -182,6 +182,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ defaultCompanyCode = '101'
       INVALID_EMPLOYEE_REGISTRATION:isArabic ? 'راجع رمز المنشأة والهوية والبريد واسم المستخدم وكلمة المرور.' : 'Check the company code, identity, email, username, and password.',
       EMPLOYEE_ACCOUNT_ALREADY_EXISTS:isArabic ? 'يوجد حساب مرتبط بهذا الموظف أو البريد أو اسم المستخدم بالفعل.' : 'An account already exists for this employee, email, or username.',
       EMPLOYEE_ACCOUNT_NOT_ELIGIBLE:isArabic ? 'حالة الموظف الحالية لا تسمح بإنشاء حساب.' : 'The employee status is not eligible for account creation.',
+      EMPLOYEE_PORTAL_CREDENTIALS_CONFLICT:isArabic ? 'اسم المستخدم مرتبط بحساب إداري. استخدم اسم مستخدم مختلفًا لحساب بوابة الموظف.' : 'The username belongs to an administrative account. Use a different portal username.',
     };
     return messages[code] || (isArabic ? 'تعذر إكمال العملية. حاول مرة أخرى.' : 'Could not complete the request. Try again.');
   };

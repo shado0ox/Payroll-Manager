@@ -142,14 +142,37 @@ const safeLeave = row => ({
   status:row.status,isPaid:Boolean(row.is_paid),reason:String(row.reason || ''),createdAt:row.created_at || null,
 });
 
-export function buildEmployeeLeaveReport(rows, annualEntitlementDays, year) {
+export function resolveAnnualLeaveBalance(employee, year) {
+  const payload = employee?.payload || employee || {};
+  const policy = ['LABOR_LAW','FIXED_30','CUSTOM'].includes(payload.annualLeavePolicy) ? payload.annualLeavePolicy : 'LABOR_LAW';
+  const hireDate = String(employee?.hire_date || payload.hireDate || '');
+  const customDays = Math.max(0,Math.min(60,Number(payload.annualLeaveEntitlementDays ?? 21)));
+  let entitlementDays = customDays;
+  if (policy === 'FIXED_30') entitlementDays = 30;
+  if (policy === 'LABOR_LAW') {
+    const fifthAnniversaryYear = /^\d{4}-\d{2}-\d{2}$/.test(hireDate) ? Number(hireDate.slice(0,4)) + 5 : Number.POSITIVE_INFINITY;
+    entitlementDays = year >= fifthAnniversaryYear ? 30 : 21;
+  }
+  return {
+    policy,entitlementDays,
+    openingBalanceDays:Math.max(0,Number(payload.annualLeaveOpeningBalance || 0)),
+    priorUsedDays:Math.max(0,Number(payload.annualLeavePriorUsedDays || 0)),
+  };
+}
+
+export function buildEmployeeLeaveReport(rows, annualLeaveConfig, year) {
   const leaves = rows.map(safeLeave);
+  const config = typeof annualLeaveConfig === 'number'
+    ? { policy:'CUSTOM',entitlementDays:annualLeaveConfig,openingBalanceDays:0,priorUsedDays:0 }
+    : annualLeaveConfig;
   const approvedAnnualDays = leaves.filter(item => item.type === 'ANNUAL' && item.status === 'APPROVED')
     .reduce((sum,item) => sum + leaveDaysInYear(item.startDate,item.endDate,year),0);
   const pendingAnnualDays = leaves.filter(item => item.type === 'ANNUAL' && item.status === 'PENDING')
     .reduce((sum,item) => sum + leaveDaysInYear(item.startDate,item.endDate,year),0);
   return {
-    year,annualBalance:{ entitlementDays:annualEntitlementDays,approvedDays:approvedAnnualDays,pendingDays:pendingAnnualDays,remainingDays:annualEntitlementDays - approvedAnnualDays },
+    year,annualBalance:{ ...config,approvedDays:approvedAnnualDays,pendingDays:pendingAnnualDays,
+      availableDays:config.entitlementDays + config.openingBalanceDays - config.priorUsedDays,
+      remainingDays:config.entitlementDays + config.openingBalanceDays - config.priorUsedDays - approvedAnnualDays },
     leaves,
   };
 }
@@ -251,15 +274,14 @@ export function createEmployeePortalRouter({ auth,writeLimiter,pool,q,bumpStateV
       if (!Number.isInteger(year) || year < 2000 || year > 2200) return res.status(400).json({ error:'INVALID_LEAVE_YEAR' });
       const params = [req.user.employee_id,req.user.company_ids];
       const [employee,leaves] = await Promise.all([
-        pool.query(`SELECT payload FROM ${q('employees')} WHERE id=$1 AND company_id=ANY($2::text[]) AND is_archived=false LIMIT 1`,params),
+        pool.query(`SELECT hire_date::text,payload FROM ${q('employees')} WHERE id=$1 AND company_id=ANY($2::text[]) AND is_archived=false LIMIT 1`,params),
         pool.query(`SELECT id,leave_type,start_date::text,end_date::text,days_count,status,is_paid,reason,
             COALESCE(payload->>'createdAt',updated_at::text) created_at
           FROM ${q('leave_requests')} WHERE employee_id=$1 AND company_id=ANY($2::text[])
           ORDER BY start_date DESC,sort_order`,params),
       ]);
       if (!employee.rowCount) return res.status(404).json({ error:'EMPLOYEE_PORTAL_PROFILE_NOT_FOUND' });
-      const entitlement = Math.max(0,Math.min(60,Number(employee.rows[0].payload?.annualLeaveEntitlementDays ?? 21)));
-      res.json(buildEmployeeLeaveReport(leaves.rows,entitlement,year));
+      res.json(buildEmployeeLeaveReport(leaves.rows,resolveAnnualLeaveBalance(employee.rows[0],year),year));
     } catch (error) { next(error); }
   });
 
@@ -277,7 +299,7 @@ export function createEmployeePortalRouter({ auth,writeLimiter,pool,q,bumpStateV
         return res.status(400).json({ error:'INVALID_EMPLOYEE_LEAVE_REQUEST' });
       }
       await client.query('BEGIN');
-      const employee = await client.query(`SELECT company_id,payload FROM ${q('employees')}
+      const employee = await client.query(`SELECT company_id,hire_date::text,payload FROM ${q('employees')}
         WHERE id=$1 AND company_id=ANY($2::text[]) AND is_archived=false FOR UPDATE`,[req.user.employee_id,req.user.company_ids]);
       if (!employee.rowCount) throw Object.assign(new Error('EMPLOYEE_PORTAL_PROFILE_NOT_FOUND'),{ status:404 });
       const companyId = employee.rows[0].company_id;
@@ -292,8 +314,9 @@ export function createEmployeePortalRouter({ auth,writeLimiter,pool,q,bumpStateV
         const balance = await client.query(`SELECT COALESCE(sum(GREATEST(0,LEAST(end_date,$4::date)-GREATEST(start_date,$3::date)+1)),0)::numeric used_days FROM ${q('leave_requests')}
           WHERE employee_id=$1 AND company_id=$2 AND leave_type='ANNUAL' AND status IN ('PENDING','APPROVED')
             AND start_date <= $4::date AND end_date >= $3::date`,[req.user.employee_id,companyId,`${year}-01-01`,`${year}-12-31`]);
-        const entitlement = Math.max(0,Math.min(60,Number(employee.rows[0].payload?.annualLeaveEntitlementDays ?? 21)));
-        if (Number(balance.rows[0]?.used_days || 0) + requestedDays > entitlement) throw Object.assign(new Error('ANNUAL_LEAVE_BALANCE_EXCEEDED'),{ status:409 });
+        const config = resolveAnnualLeaveBalance(employee.rows[0],year);
+        const available = config.entitlementDays + config.openingBalanceDays - config.priorUsedDays;
+        if (Number(balance.rows[0]?.used_days || 0) + requestedDays > available) throw Object.assign(new Error('ANNUAL_LEAVE_BALANCE_EXCEEDED'),{ status:409 });
       }
       const id = `employee-leave-${randomUUID()}`;
       const createdAt = new Date().toISOString();
