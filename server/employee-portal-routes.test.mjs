@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
-import { buildEmployeePaidPayslips,createEmployeePortalRouter } from './routes/employee-portal-routes.mjs';
+import { buildEmployeeAttendanceReport,buildEmployeePaidPayslips,createEmployeePortalRouter } from './routes/employee-portal-routes.mjs';
 
 const response = () => ({
   statusCode:200,body:null,
@@ -96,4 +96,33 @@ test('payslip list is restricted to paid batches and the authenticated employee 
   assert.match(queries[0].sql,/direct_item\.employee_id=\$1/);
   assert.match(queries[1].sql,/i\.employee_id=\$1/);
   assert.deepEqual(res.body,{ payslips:[] });
+});
+
+test('attendance report summarizes delays, absences, leave, and missing punches from stored records', () => {
+  const report = buildEmployeeAttendanceReport([
+    { id:'1',record_date:'2026-09-01',days_count:1,delay_minutes:0,absence:false,unpaid_leave:false,overtime_hours:'1.5',payload:{ attendanceStatus:'LATE',calculatedDelayMinutes:25,scheduledStart:'09:00',actualCheckIn:'09:25' } },
+    { id:'2',record_date:'2026-09-02',days_count:2,delay_minutes:0,absence:true,unpaid_leave:false,overtime_hours:0,payload:{ attendanceStatus:'ABSENT' } },
+    { id:'3',record_date:'2026-09-04',days_count:1,delay_minutes:0,absence:false,unpaid_leave:true,overtime_hours:0,payload:{ attendanceStatus:'LEAVE' } },
+    { id:'4',record_date:'2026-09-05',days_count:1,delay_minutes:0,absence:false,unpaid_leave:false,overtime_hours:0,notes:'بصمة خروج ناقصة',payload:{ attendanceStatus:'MISSING_OUT' } },
+  ],'2026-09');
+  assert.deepEqual(report.summary,{ presentDays:1,lateDays:1,totalDelayMinutes:25,absenceDays:2,leaveDays:1,missingPunchDays:1,overtimeHours:1.5 });
+  assert.equal(report.records[0].actualCheckIn,'09:25');
+  assert.equal('sourceFileName' in report.records[0],false);
+});
+
+test('attendance endpoint validates the month and scopes both queries to the session employee', async () => {
+  const queries = [];
+  const router = createEmployeePortalRouter({ auth:(_req,_res,next) => next(),q:name => name,pool:{ query:async (sql,params) => {
+    queries.push({ sql,params }); return { rows:[],rowCount:0 };
+  } } });
+  const layer = router.stack.find(candidate => candidate.route?.path === '/employee-portal/attendance');
+  const invalid = response();
+  await layer.route.stack.at(-1).handle({ user:{ role:'EMPLOYEE',employee_id:'employee-a',company_ids:['company-a'] },query:{ periodMonth:'September' } },invalid,error => { if (error) throw error; });
+  assert.equal(invalid.statusCode,400);
+  assert.equal(queries.length,0);
+  const valid = response();
+  await layer.route.stack.at(-1).handle({ user:{ role:'EMPLOYEE',employee_id:'employee-a',company_ids:['company-a'] },query:{ periodMonth:'2026-09',employeeId:'employee-b' } },valid,error => { if (error) throw error; });
+  assert.deepEqual(queries.map(query => query.params),[['employee-a',['company-a'],'2026-09'],['employee-a',['company-a']]]);
+  assert.match(queries[0].sql,/employee_id=\$1/);
+  assert.deepEqual(valid.body.availableMonths,[]);
 });

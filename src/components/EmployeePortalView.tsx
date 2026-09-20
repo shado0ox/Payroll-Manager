@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { CalendarDays, Clock3, FileText, LogOut, Printer, RefreshCw, ShieldCheck, UserRound, X } from 'lucide-react';
-import { api, type EmployeePayslipDetail, type EmployeePayslipSummary, type EmployeePortalProfile } from '../utils/api';
+import { api, type EmployeeAttendanceReport, type EmployeePayslipDetail, type EmployeePayslipSummary, type EmployeePortalProfile } from '../utils/api';
 import { useLanguage } from '../i18n/LanguageContext';
 
 type Props = { onLogout:() => void };
@@ -11,6 +11,9 @@ export const EmployeePortalView: React.FC<Props> = ({ onLogout }) => {
   const [payslips,setPayslips] = useState<EmployeePayslipSummary[]>([]);
   const [selectedPayslip,setSelectedPayslip] = useState<EmployeePayslipDetail | null>(null);
   const [payslipsLoading,setPayslipsLoading] = useState(false);
+  const [attendancePeriod,setAttendancePeriod] = useState(() => new Date().toLocaleDateString('en-CA',{ timeZone:'Asia/Riyadh',year:'numeric',month:'2-digit' }).slice(0,7));
+  const [attendance,setAttendance] = useState<EmployeeAttendanceReport | null>(null);
+  const [attendanceLoading,setAttendanceLoading] = useState(false);
   const [error,setError] = useState('');
 
   const load = () => {
@@ -26,6 +29,13 @@ export const EmployeePortalView: React.FC<Props> = ({ onLogout }) => {
     finally { setPayslipsLoading(false); }
   };
   useEffect(() => { if (data) void loadPayslips(); },[data]);
+  const loadAttendance = async (periodMonth = attendancePeriod) => {
+    setAttendanceLoading(true);
+    try { setAttendance(await api.employeePortalAttendance(periodMonth)); }
+    catch (reason:any) { setError(String(reason?.message || 'EMPLOYEE_ATTENDANCE_LOAD_FAILED')); }
+    finally { setAttendanceLoading(false); }
+  };
+  useEffect(() => { if (data) void loadAttendance(attendancePeriod); },[data,attendancePeriod]);
   const openPayslip = async (item:EmployeePayslipSummary) => {
     setPayslipsLoading(true);
     try { setSelectedPayslip((await api.employeePortalPayslip(item.payment.batchId,item.periodMonth)).payslip); }
@@ -58,7 +68,7 @@ export const EmployeePortalView: React.FC<Props> = ({ onLogout }) => {
   };
   const cards = [
     { icon:FileText,titleAr:'الرواتب المدفوعة',titleEn:'Paid salaries',textAr:`${payslips.length} قسيمة مؤكدة الدفع`,textEn:`${payslips.length} confirmed payslips`,ready:true },
-    { icon:Clock3,titleAr:'الحضور والغياب',titleEn:'Attendance',textAr:'الحضور والتأخير والغياب المسجل',textEn:'Recorded attendance, delay, and absence' },
+    { icon:Clock3,titleAr:'الحضور والغياب',titleEn:'Attendance',textAr:attendance ? `${attendance.summary.lateDays} أيام تأخير · ${attendance.summary.absenceDays} أيام غياب` : 'الحضور والتأخير والغياب المسجل',textEn:attendance ? `${attendance.summary.lateDays} late days · ${attendance.summary.absenceDays} absent days` : 'Recorded attendance, delay, and absence',ready:true },
     { icon:CalendarDays,titleAr:'الإجازات',titleEn:'Leave',textAr:'الرصيد والطلبات وسجل الإجازات',textEn:'Balance, requests, and leave history' },
   ];
 
@@ -94,6 +104,21 @@ export const EmployeePortalView: React.FC<Props> = ({ onLogout }) => {
           <h2 className="mt-4 font-black">{language === 'ar' ? card.titleAr : card.titleEn}</h2><p className="mt-2 text-xs leading-6 text-slate-500">{language === 'ar' ? card.textAr : card.textEn}</p>
           <span className={`mt-4 inline-flex rounded-full px-2.5 py-1 text-[11px] font-bold ${card.ready ? 'bg-emerald-50 text-emerald-700' : 'bg-sky-50 text-sky-700'}`}>{card.ready ? (language === 'ar' ? 'متاح الآن' : 'Available now') : (language === 'ar' ? 'قيد الإضافة في المرحلة التالية' : 'Coming in the next phase')}</span>
         </article>)}
+      </section>
+
+      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center"><div className="flex items-center gap-2"><Clock3 className="h-5 w-5 text-emerald-700" /><h2 className="font-black">{language === 'ar' ? 'سجل الحضور والغياب' : 'Attendance record'}</h2></div><div className="flex items-center gap-2"><input type="month" value={attendancePeriod} onChange={event => setAttendancePeriod(event.target.value)} className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-bold" /><button onClick={() => void loadAttendance()} disabled={attendanceLoading} className="rounded-xl border border-slate-200 p-2 text-slate-500"><RefreshCw className={`h-4 w-4 ${attendanceLoading ? 'animate-spin' : ''}`} /></button></div></div>
+        {attendance && <>
+          <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+            <AttendanceSummary label={language === 'ar' ? 'أيام الحضور' : 'Present days'} value={attendance.summary.presentDays} tone="emerald" />
+            <AttendanceSummary label={language === 'ar' ? 'أيام التأخير' : 'Late days'} value={attendance.summary.lateDays} tone="amber" />
+            <AttendanceSummary label={language === 'ar' ? 'إجمالي التأخير' : 'Total delay'} value={`${Math.floor(attendance.summary.totalDelayMinutes / 60)}:${String(attendance.summary.totalDelayMinutes % 60).padStart(2,'0')}`} tone="amber" />
+            <AttendanceSummary label={language === 'ar' ? 'أيام الغياب' : 'Absent days'} value={attendance.summary.absenceDays} tone="rose" />
+            <AttendanceSummary label={language === 'ar' ? 'أيام الإجازة' : 'Leave days'} value={attendance.summary.leaveDays} tone="sky" />
+            <AttendanceSummary label={language === 'ar' ? 'بصمات ناقصة' : 'Missing punches'} value={attendance.summary.missingPunchDays} tone="rose" />
+          </div>
+          {attendance.records.length ? <div className="mt-5 overflow-x-auto"><table className="w-full min-w-[900px] text-sm"><thead><tr className="border-b bg-slate-50 text-slate-500"><th className="p-3 text-start">{language === 'ar' ? 'التاريخ' : 'Date'}</th><th className="p-3 text-start">{language === 'ar' ? 'الدوام' : 'Schedule'}</th><th className="p-3 text-start">{language === 'ar' ? 'الحضور' : 'Check-in'}</th><th className="p-3 text-start">{language === 'ar' ? 'الانصراف' : 'Check-out'}</th><th className="p-3 text-end">{language === 'ar' ? 'التأخير' : 'Delay'}</th><th className="p-3 text-start">{language === 'ar' ? 'الحالة' : 'Status'}</th><th className="p-3 text-start">{language === 'ar' ? 'ملاحظات' : 'Notes'}</th></tr></thead><tbody>{attendance.records.map(record => <tr key={record.id} className="border-b last:border-0"><td className="p-3 font-bold" dir="ltr">{record.date}{record.endDate && record.endDate !== record.date ? ` — ${record.endDate}` : ''}</td><td className="p-3" dir="ltr">{record.scheduledStart && record.scheduledEnd ? `${record.scheduledStart} — ${record.scheduledEnd}` : '—'}</td><td className="p-3" dir="ltr">{record.actualCheckIn || '—'}</td><td className="p-3" dir="ltr">{record.actualCheckOut || '—'}</td><td className="p-3 text-end font-bold" dir="ltr">{record.delayMinutes ? `${record.delayMinutes} min` : '—'}</td><td className="p-3"><AttendanceStatus status={record.status} language={language} /></td><td className="max-w-64 p-3 text-xs text-slate-500">{record.notes || '—'}</td></tr>)}</tbody></table></div> : <div className="mt-5 rounded-2xl bg-slate-50 p-8 text-center text-sm text-slate-500">{attendanceLoading ? (language === 'ar' ? 'جارٍ تحميل السجل...' : 'Loading attendance...') : (language === 'ar' ? 'لا توجد سجلات في الشهر المحدد.' : 'No records for the selected month.')}</div>}
+        </>}
       </section>
 
       <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -142,3 +167,15 @@ const PayslipDocument = ({ payslip,company,language,money,monthName }:{payslip:E
 };
 
 const PayslipRows = ({title,rows,language,money}:{title:string;rows:(string|number)[][];language:string;money:(value:number)=>string}) => <div><h3 className="mb-3 font-black">{title}</h3><div className="space-y-2 text-sm">{rows.length ? rows.map((row,index) => <div key={index} className="flex justify-between gap-3 border-b border-dashed pb-2"><span>{language === 'ar' ? row[0] : row[1]}</span><strong dir="ltr">{money(Number(row[2]))} SR</strong></div>) : <div className="text-slate-400">—</div>}</div></div>;
+
+const AttendanceSummary = ({label,value,tone}:{label:string;value:string|number;tone:'emerald'|'amber'|'rose'|'sky'}) => {
+  const colors = { emerald:'bg-emerald-50 text-emerald-800',amber:'bg-amber-50 text-amber-800',rose:'bg-rose-50 text-rose-800',sky:'bg-sky-50 text-sky-800' };
+  return <div className={`rounded-2xl p-4 ${colors[tone]}`}><div className="text-xs opacity-75">{label}</div><div className="mt-1 text-xl font-black" dir="ltr">{value}</div></div>;
+};
+
+const AttendanceStatus = ({status,language}:{status:string;language:string}) => {
+  const labels:Record<string,[string,string]> = { PRESENT:['حاضر','Present'],LATE:['متأخر','Late'],ABSENT:['غائب','Absent'],LEAVE:['إجازة','Leave'],OFF:['راحة','Off'],HOLIDAY:['عطلة','Holiday'],MISSION:['مهمة','Mission'],IGNORED:['مستبعد','Ignored'],MISSING_IN:['بصمة دخول ناقصة','Missing check-in'],MISSING_OUT:['بصمة خروج ناقصة','Missing check-out'],REVIEW:['للمراجعة','Review'] };
+  const label = labels[status] || [status,status];
+  const danger = ['ABSENT','MISSING_IN','MISSING_OUT','REVIEW'].includes(status);
+  return <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-bold ${danger ? 'bg-rose-50 text-rose-700' : status === 'LATE' ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'}`}>{language === 'ar' ? label[0] : label[1]}</span>;
+};

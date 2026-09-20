@@ -34,6 +34,7 @@ export function createAuthorizationService({ pool,q,cookieValue,sha256,developer
       const requestPath = String(req.originalUrl || req.path || '').split('?')[0];
       const employeePortalPath = requestPath === '/api/employee-portal/me'
         || requestPath === '/api/employee-portal/payslips'
+        || requestPath === '/api/employee-portal/attendance'
         || /^\/api\/employee-portal\/payslips\/[^/]+\/\d{4}-(0[1-9]|1[0-2])$/.test(requestPath);
       if (req.user.role === 'EMPLOYEE'
         && !requestPath.startsWith('/api/auth/')
