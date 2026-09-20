@@ -276,16 +276,22 @@ export const api = {
     return result;
   },
   saveEmployee: async (employee:any) => {
-    const result = await request<{employee:any;created:boolean;version:number;updated_at:string}>(`/api/employees/${encodeURIComponent(employee.id)}`, { method:'PUT', body:JSON.stringify(employee) });
+    const result = await request<{employee:any;archived:boolean;created:boolean;version:number;updated_at:string}>(`/api/employees/${encodeURIComponent(employee.id)}`, { method:'PUT', body:JSON.stringify(employee) });
     stateVersion = result.version;
     if (syncedState) {
       const employees = Array.isArray(syncedState.employees) ? [...syncedState.employees] : [];
       const index = employees.findIndex((item:any) => item?.id === result.employee.id);
-      if (index >= 0) employees[index] = cloneState(result.employee);
+      if (result.archived) { if (index >= 0) employees.splice(index,1); }
+      else if (index >= 0) employees[index] = cloneState(result.employee);
       else employees.push(cloneState(result.employee));
       syncedState = { ...syncedState, employees };
     }
     return result;
+  },
+  listArchivedEmployees: (companyId:string) => request<{employees:Employee[]}>(`/api/employees/archived?companyId=${encodeURIComponent(companyId)}`),
+  restoreEmployee: async (employeeId:string) => {
+    const result = await request<{employee:Employee;version:number;updated_at:string}>(`/api/employees/${encodeURIComponent(employeeId)}/restore`,{ method:'POST' });
+    stateVersion=result.version; updateSyncedCollection('employees',result.employee); return result;
   },
   importEmployees: async (employees: Employee[]) => {
     const result = await request<{employees:Employee[];version:number;updated_at:string}>('/api/employees/import', { method:'POST',body:JSON.stringify({ employees }) });

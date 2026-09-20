@@ -37,6 +37,20 @@ function validImportedEmployee(employee, user) {
       .every(key => Number.isFinite(Number(salary[key] || 0)) && Number(salary[key] || 0) >= 0);
 }
 
+const shouldArchiveEmployee = employee => employee?.status === 'ABSCONDED'
+  || (employee?.status === 'TERMINATED' && ['SPONSOR_TRANSFER','FINAL_EXIT'].includes(employee?.employmentEndReason));
+
+router.get('/employees/archived', auth, async (req,res,next) => {
+  try {
+    if (!can(req.user,'MANAGE_EMPLOYEES')) return res.status(403).json({ error:'FORBIDDEN' });
+    const companyId = String(req.query.companyId || '');
+    if (!req.user.company_ids.includes(companyId)) return res.status(403).json({ error:'FORBIDDEN' });
+    const result = await pool.query(`SELECT payload,updated_at FROM ${q('employees')}
+      WHERE company_id=$1 AND is_archived=true ORDER BY updated_at DESC`,[companyId]);
+    res.json({ employees:result.rows.map(row => ({ ...(row.payload || {}),isArchived:true,archivedAt:row.payload?.archivedAt || row.updated_at })) });
+  } catch (error) { next(error); }
+});
+
 router.post('/employees/import', auth, writeLimiter, async (req, res, next) => {
   const client = await pool.connect();
   try {
@@ -121,6 +135,10 @@ router.put('/employees/:id', auth, writeLimiter, async (req, res, next) => {
       : await client.query(`SELECT COALESCE(max(sort_order),-1)+1 AS sort_order FROM ${q('employees')} WHERE company_id=$1`, [employee.companyId]);
     const sortOrder = Number(orderResult.rows[0]?.sort_order || 0);
     const salary = employee.salaryPackage || {};
+    const archived = shouldArchiveEmployee(employee);
+    const savedEmployee = archived
+      ? { ...employee,isArchived:true,archiveReason:employee.employmentEndReason || 'ABSCONDED',archivedAt:new Date().toISOString() }
+      : employee;
 
     await client.query(`INSERT INTO ${q('employees')} (
       id,company_id,employee_no,national_id_or_iqama,status,first_name_ar,last_name_ar,first_name_en,last_name_en,
@@ -128,20 +146,25 @@ router.put('/employees/:id', auth, writeLimiter, async (req, res, next) => {
       base_salary,housing_allowance,transport_allowance,other_fixed_allowances,bank_iban,payload,sort_order,is_archived,updated_at
     ) VALUES (
       $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,NULLIF($12,'')::date,NULLIF($13,'')::date,NULLIF($14,'')::date,
-      NULLIF($15,'')::date,NULLIF($16,'')::date,$17,$18,$19,$20,$21,$22::jsonb,$23,false,now()
+      NULLIF($15,'')::date,NULLIF($16,'')::date,$17,$18,$19,$20,$21,$22::jsonb,$23,$24,now()
     ) ON CONFLICT (id) DO UPDATE SET
       employee_no=EXCLUDED.employee_no,national_id_or_iqama=EXCLUDED.national_id_or_iqama,status=EXCLUDED.status,
       first_name_ar=EXCLUDED.first_name_ar,last_name_ar=EXCLUDED.last_name_ar,first_name_en=EXCLUDED.first_name_en,last_name_en=EXCLUDED.last_name_en,
       department=EXCLUDED.department,job_title=EXCLUDED.job_title,hire_date=EXCLUDED.hire_date,salary_start_date=EXCLUDED.salary_start_date,
       termination_date=EXCLUDED.termination_date,suspension_start_date=EXCLUDED.suspension_start_date,suspension_end_date=EXCLUDED.suspension_end_date,
       base_salary=EXCLUDED.base_salary,housing_allowance=EXCLUDED.housing_allowance,transport_allowance=EXCLUDED.transport_allowance,
-      other_fixed_allowances=EXCLUDED.other_fixed_allowances,bank_iban=EXCLUDED.bank_iban,payload=EXCLUDED.payload,is_archived=false,updated_at=now()`, [
+      other_fixed_allowances=EXCLUDED.other_fixed_allowances,bank_iban=EXCLUDED.bank_iban,payload=EXCLUDED.payload,is_archived=EXCLUDED.is_archived,updated_at=now()`, [
       employee.id, employee.companyId, employee.employeeNo.trim(), employee.nationalIdOrIqama || '', employee.status || 'ACTIVE',
       employee.firstNameAr.trim(), employee.lastNameAr.trim(), employee.firstNameEn || '', employee.lastNameEn || '',
       employee.department || '', employee.jobTitle || '', employee.hireDate || '', employee.salaryStartDate || '', employee.terminationDate || '',
       employee.suspensionStartDate || '', employee.suspensionEndDate || '', Number(salary.baseSalary || 0), Number(salary.housingAllowance || 0),
-      Number(salary.transportAllowance || 0), Number(salary.otherFixedAllowances || 0), employee.bankIban || '', JSON.stringify(employee), sortOrder
+      Number(salary.transportAllowance || 0), Number(salary.otherFixedAllowances || 0), employee.bankIban || '', JSON.stringify(savedEmployee), sortOrder, archived
     ]);
+
+    if (archived) {
+      const disabled = await client.query(`UPDATE ${q('users')} SET is_active=false,updated_at=now() WHERE employee_id=$1 RETURNING id`,[employee.id]);
+      if (disabled.rowCount) await client.query(`UPDATE ${q('sessions')} SET expires_at=now() WHERE user_id=ANY($1::text[])`,[disabled.rows.map(row => row.id)]);
+    }
 
     const updated = await bumpStateVersion(client,req.user.id);
 
@@ -159,12 +182,38 @@ router.put('/employees/:id', auth, writeLimiter, async (req, res, next) => {
 
     await client.query('COMMIT');
     if (updated.rowCount) broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at,
-      companyIds:[employee.companyId],changes:[{ collection:'employees',operation:'upsert',records:[employee] }] });
-    res.json({ employee, created:!existing.rowCount, version:Number(updated.rows[0]?.version || 0), updated_at:updated.rows[0]?.updated_at || new Date().toISOString() });
+      companyIds:[employee.companyId],changes:[archived
+        ? { collection:'employees',operation:'delete',ids:[employee.id] }
+        : { collection:'employees',operation:'upsert',records:[savedEmployee] }] });
+    res.json({ employee:savedEmployee, archived, created:!existing.rowCount, version:Number(updated.rows[0]?.version || 0), updated_at:updated.rows[0]?.updated_at || new Date().toISOString() });
   } catch (e) {
     try { await client.query('ROLLBACK'); } catch {}
     if (e?.code === '23505') return res.status(409).json({ error:'EMPLOYEE_NUMBER_EXISTS' });
     next(e);
+  } finally { client.release(); }
+});
+
+router.post('/employees/:id/restore', auth, writeLimiter, async (req,res,next) => {
+  const client = await pool.connect();
+  try {
+    if (!can(req.user,'MANAGE_EMPLOYEES')) return res.status(403).json({ error:'FORBIDDEN' });
+    await client.query('BEGIN');
+    const found = await client.query(`SELECT company_id,payload FROM ${q('employees')} WHERE id=$1 AND is_archived=true FOR UPDATE`,[req.params.id]);
+    if (!found.rowCount) throw workflowError(404,'ARCHIVED_EMPLOYEE_NOT_FOUND');
+    const row = found.rows[0];
+    if (!req.user.company_ids.includes(row.company_id)) throw workflowError(403,'FORBIDDEN');
+    const employee = { ...(row.payload || {}),status:'SUSPENDED',isArchived:false };
+    delete employee.archiveReason; delete employee.archivedAt;
+    await client.query(`UPDATE ${q('employees')} SET status='SUSPENDED',is_archived=false,payload=$2::jsonb,updated_at=now() WHERE id=$1`,[req.params.id,JSON.stringify(employee)]);
+    const updated = await bumpStateVersion(client,req.user.id);
+    await client.query(`INSERT INTO ${q('audit_log')} (user_id,action,ip) VALUES ($1,$2,$3)`,[req.user.id,`RESTORE_EMPLOYEE:${req.params.id}`,req.ip]);
+    await client.query('COMMIT');
+    broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at,companyIds:[row.company_id],changes:[{ collection:'employees',operation:'upsert',records:[employee] }] });
+    res.json({ employee,version:Number(updated.rows[0].version),updated_at:updated.rows[0].updated_at });
+  } catch (error) {
+    try { await client.query('ROLLBACK'); } catch {}
+    if (Number.isInteger(error?.status)) return res.status(error.status).json({ error:error.message });
+    next(error);
   } finally { client.release(); }
 });
 
