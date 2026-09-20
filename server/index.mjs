@@ -231,7 +231,7 @@ app.use('/api/auth', createAuthPasswordResetRouter({
 app.use('/api/auth', createAuthLoginRouter({ loginLimiter, pool, q, sha256, permissionsFor }));
 app.use('/api/auth', createAuthSessionRouter({ auth, pool, q, cookieValue, sha256, permissionsFor }));
 
-app.use('/api', createEmployeePortalRouter({ auth,pool,q }));
+app.use('/api', createEmployeePortalRouter({ auth,writeLimiter,pool,q,bumpStateVersion,appendStateAudit,broadcastStateUpdate }));
 
 app.use('/api',createGosiRouter({ auth,writeLimiter,pool,q,can,workflowError,bumpStateVersion,appendStateAudit,broadcastStateUpdate }));
 

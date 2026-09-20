@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { CalendarDays, Clock3, FileText, LogOut, Printer, RefreshCw, ShieldCheck, UserRound, X } from 'lucide-react';
-import { api, type EmployeeAttendanceReport, type EmployeePayslipDetail, type EmployeePayslipSummary, type EmployeePortalProfile } from '../utils/api';
+import { api, type EmployeeAttendanceReport, type EmployeeLeave, type EmployeeLeaveReport, type EmployeePayslipDetail, type EmployeePayslipSummary, type EmployeePortalProfile } from '../utils/api';
 import { useLanguage } from '../i18n/LanguageContext';
 
 type Props = { onLogout:() => void };
@@ -14,6 +14,11 @@ export const EmployeePortalView: React.FC<Props> = ({ onLogout }) => {
   const [attendancePeriod,setAttendancePeriod] = useState(() => new Date().toLocaleDateString('en-CA',{ timeZone:'Asia/Riyadh',year:'numeric',month:'2-digit' }).slice(0,7));
   const [attendance,setAttendance] = useState<EmployeeAttendanceReport | null>(null);
   const [attendanceLoading,setAttendanceLoading] = useState(false);
+  const [leaveYear,setLeaveYear] = useState(() => Number(new Date().toLocaleDateString('en-CA',{ timeZone:'Asia/Riyadh',year:'numeric' })));
+  const [leaveReport,setLeaveReport] = useState<EmployeeLeaveReport | null>(null);
+  const [leaveLoading,setLeaveLoading] = useState(false);
+  const [leaveError,setLeaveError] = useState('');
+  const [leaveForm,setLeaveForm] = useState<{type:EmployeeLeave['type'];startDate:string;endDate:string;reason:string}>({ type:'ANNUAL',startDate:'',endDate:'',reason:'' });
   const [error,setError] = useState('');
 
   const load = () => {
@@ -36,6 +41,24 @@ export const EmployeePortalView: React.FC<Props> = ({ onLogout }) => {
     finally { setAttendanceLoading(false); }
   };
   useEffect(() => { if (data) void loadAttendance(attendancePeriod); },[data,attendancePeriod]);
+  const loadLeaves = async (year = leaveYear) => {
+    setLeaveLoading(true); setLeaveError('');
+    try { setLeaveReport(await api.employeePortalLeaves(year)); }
+    catch (reason:any) { setLeaveError(String(reason?.message || 'EMPLOYEE_LEAVES_LOAD_FAILED')); }
+    finally { setLeaveLoading(false); }
+  };
+  useEffect(() => { if (data) void loadLeaves(leaveYear); },[data,leaveYear]);
+  const submitLeave = async (event:React.FormEvent) => {
+    event.preventDefault(); setLeaveLoading(true); setLeaveError('');
+    try { await api.createEmployeePortalLeave(leaveForm); setLeaveForm({ type:'ANNUAL',startDate:'',endDate:'',reason:'' }); await loadLeaves(); }
+    catch (reason:any) { setLeaveError(String(reason?.message || 'EMPLOYEE_LEAVE_CREATE_FAILED')); setLeaveLoading(false); }
+  };
+  const cancelLeave = async (id:string) => {
+    if (!window.confirm(language === 'ar' ? 'هل تريد إلغاء طلب الإجازة المعلق؟' : 'Cancel this pending leave request?')) return;
+    setLeaveLoading(true); setLeaveError('');
+    try { await api.cancelEmployeePortalLeave(id); await loadLeaves(); }
+    catch (reason:any) { setLeaveError(String(reason?.message || 'EMPLOYEE_LEAVE_CANCEL_FAILED')); setLeaveLoading(false); }
+  };
   const openPayslip = async (item:EmployeePayslipSummary) => {
     setPayslipsLoading(true);
     try { setSelectedPayslip((await api.employeePortalPayslip(item.payment.batchId,item.periodMonth)).payslip); }
@@ -69,7 +92,7 @@ export const EmployeePortalView: React.FC<Props> = ({ onLogout }) => {
   const cards = [
     { icon:FileText,titleAr:'الرواتب المدفوعة',titleEn:'Paid salaries',textAr:`${payslips.length} قسيمة مؤكدة الدفع`,textEn:`${payslips.length} confirmed payslips`,ready:true },
     { icon:Clock3,titleAr:'الحضور والغياب',titleEn:'Attendance',textAr:attendance ? `${attendance.summary.lateDays} أيام تأخير · ${attendance.summary.absenceDays} أيام غياب` : 'الحضور والتأخير والغياب المسجل',textEn:attendance ? `${attendance.summary.lateDays} late days · ${attendance.summary.absenceDays} absent days` : 'Recorded attendance, delay, and absence',ready:true },
-    { icon:CalendarDays,titleAr:'الإجازات',titleEn:'Leave',textAr:'الرصيد والطلبات وسجل الإجازات',textEn:'Balance, requests, and leave history' },
+    { icon:CalendarDays,titleAr:'الإجازات',titleEn:'Leave',textAr:leaveReport ? `${leaveReport.annualBalance.remainingDays} يوم سنوي متبقي` : 'الرصيد والطلبات وسجل الإجازات',textEn:leaveReport ? `${leaveReport.annualBalance.remainingDays} annual days remaining` : 'Balance, requests, and leave history',ready:true },
   ];
 
   return <div dir={language === 'ar' ? 'rtl' : 'ltr'} className="min-h-screen bg-slate-100 text-slate-900">
@@ -104,6 +127,20 @@ export const EmployeePortalView: React.FC<Props> = ({ onLogout }) => {
           <h2 className="mt-4 font-black">{language === 'ar' ? card.titleAr : card.titleEn}</h2><p className="mt-2 text-xs leading-6 text-slate-500">{language === 'ar' ? card.textAr : card.textEn}</p>
           <span className={`mt-4 inline-flex rounded-full px-2.5 py-1 text-[11px] font-bold ${card.ready ? 'bg-emerald-50 text-emerald-700' : 'bg-sky-50 text-sky-700'}`}>{card.ready ? (language === 'ar' ? 'متاح الآن' : 'Available now') : (language === 'ar' ? 'قيد الإضافة في المرحلة التالية' : 'Coming in the next phase')}</span>
         </article>)}
+      </section>
+
+      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center"><div className="flex items-center gap-2"><CalendarDays className="h-5 w-5 text-emerald-700" /><h2 className="font-black">{language === 'ar' ? 'الإجازات والطلبات' : 'Leave and requests'}</h2></div><div className="flex items-center gap-2"><select value={leaveYear} onChange={event => setLeaveYear(Number(event.target.value))} className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-bold">{[leaveYear - 1,leaveYear,leaveYear + 1].map(year => <option key={year} value={year}>{year}</option>)}</select><button onClick={() => void loadLeaves()} disabled={leaveLoading} className="rounded-xl border border-slate-200 p-2 text-slate-500"><RefreshCw className={`h-4 w-4 ${leaveLoading ? 'animate-spin' : ''}`} /></button></div></div>
+        {leaveReport && <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4"><AttendanceSummary label={language === 'ar' ? 'الاستحقاق السنوي' : 'Annual entitlement'} value={leaveReport.annualBalance.entitlementDays} tone="sky" /><AttendanceSummary label={language === 'ar' ? 'المعتمد' : 'Approved'} value={leaveReport.annualBalance.approvedDays} tone="emerald" /><AttendanceSummary label={language === 'ar' ? 'قيد المراجعة' : 'Pending'} value={leaveReport.annualBalance.pendingDays} tone="amber" /><AttendanceSummary label={language === 'ar' ? 'المتبقي' : 'Remaining'} value={leaveReport.annualBalance.remainingDays} tone={leaveReport.annualBalance.remainingDays < 0 ? 'rose' : 'emerald'} /></div>}
+        <form onSubmit={submitLeave} className="mt-5 grid gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 sm:grid-cols-2 lg:grid-cols-5">
+          <div><label className="mb-1 block text-xs font-bold text-slate-600">{language === 'ar' ? 'نوع الإجازة' : 'Leave type'}</label><select value={leaveForm.type} onChange={event => setLeaveForm(current => ({ ...current,type:event.target.value as EmployeeLeave['type'] }))} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"><option value="ANNUAL">{language === 'ar' ? 'سنوية' : 'Annual'}</option><option value="SICK">{language === 'ar' ? 'مرضية' : 'Sick'}</option><option value="EMERGENCY">{language === 'ar' ? 'طارئة' : 'Emergency'}</option><option value="UNPAID">{language === 'ar' ? 'بدون راتب' : 'Unpaid'}</option><option value="MATERNITY">{language === 'ar' ? 'أمومة' : 'Maternity'}</option></select></div>
+          <div><label className="mb-1 block text-xs font-bold text-slate-600">{language === 'ar' ? 'من تاريخ' : 'From'}</label><input required type="date" value={leaveForm.startDate} onChange={event => setLeaveForm(current => ({ ...current,startDate:event.target.value,endDate:current.endDate < event.target.value ? event.target.value : current.endDate }))} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm" /></div>
+          <div><label className="mb-1 block text-xs font-bold text-slate-600">{language === 'ar' ? 'إلى تاريخ' : 'To'}</label><input required type="date" min={leaveForm.startDate} value={leaveForm.endDate} onChange={event => setLeaveForm(current => ({ ...current,endDate:event.target.value }))} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm" /></div>
+          <div><label className="mb-1 block text-xs font-bold text-slate-600">{language === 'ar' ? 'السبب/الملاحظة' : 'Reason / note'}</label><input maxLength={500} value={leaveForm.reason} onChange={event => setLeaveForm(current => ({ ...current,reason:event.target.value }))} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm" /></div>
+          <div className="flex items-end"><button disabled={leaveLoading} className="w-full rounded-xl bg-emerald-600 px-4 py-2 text-sm font-black text-white disabled:bg-slate-300">{language === 'ar' ? 'تقديم الطلب' : 'Submit request'}</button></div>
+        </form>
+        {leaveError && <div className="mt-3 rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs font-bold text-rose-700">{leaveMessage(leaveError,language)}</div>}
+        {leaveReport?.leaves.length ? <div className="mt-5 overflow-x-auto"><table className="w-full min-w-[760px] text-sm"><thead><tr className="border-b bg-slate-50 text-slate-500"><th className="p-3 text-start">{language === 'ar' ? 'النوع' : 'Type'}</th><th className="p-3 text-start">{language === 'ar' ? 'الفترة' : 'Period'}</th><th className="p-3 text-center">{language === 'ar' ? 'الأيام' : 'Days'}</th><th className="p-3 text-start">{language === 'ar' ? 'الحالة' : 'Status'}</th><th className="p-3 text-start">{language === 'ar' ? 'الملاحظة' : 'Note'}</th><th className="p-3"></th></tr></thead><tbody>{leaveReport.leaves.map(leave => <tr key={leave.id} className="border-b last:border-0"><td className="p-3 font-bold">{leaveTypeLabel(leave.type,language)}</td><td className="p-3" dir="ltr">{leave.startDate} — {leave.endDate}</td><td className="p-3 text-center font-bold">{leave.daysCount}</td><td className="p-3"><LeaveStatus status={leave.status} language={language} /></td><td className="max-w-64 p-3 text-xs text-slate-500">{leave.reason || '—'}</td><td className="p-3 text-end">{leave.status === 'PENDING' && <button onClick={() => void cancelLeave(leave.id)} className="rounded-lg border border-rose-200 px-3 py-1.5 text-xs font-bold text-rose-700">{language === 'ar' ? 'إلغاء' : 'Cancel'}</button>}</td></tr>)}</tbody></table></div> : <div className="mt-5 rounded-2xl bg-slate-50 p-6 text-center text-sm text-slate-500">{language === 'ar' ? 'لا توجد طلبات إجازة مسجلة.' : 'No leave requests recorded.'}</div>}
       </section>
 
       <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -178,4 +215,20 @@ const AttendanceStatus = ({status,language}:{status:string;language:string}) => 
   const label = labels[status] || [status,status];
   const danger = ['ABSENT','MISSING_IN','MISSING_OUT','REVIEW'].includes(status);
   return <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-bold ${danger ? 'bg-rose-50 text-rose-700' : status === 'LATE' ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'}`}>{language === 'ar' ? label[0] : label[1]}</span>;
+};
+
+const leaveTypeLabel = (type:EmployeeLeave['type'],language:string) => ({ ANNUAL:['سنوية','Annual'],SICK:['مرضية','Sick'],UNPAID:['بدون راتب','Unpaid'],EMERGENCY:['طارئة','Emergency'],MATERNITY:['أمومة','Maternity'] }[type][language === 'ar' ? 0 : 1]);
+const LeaveStatus = ({status,language}:{status:EmployeeLeave['status'];language:string}) => {
+  const labels = { PENDING:['قيد المراجعة','Pending'],APPROVED:['معتمدة','Approved'],REJECTED:['مرفوضة','Rejected'] } as const;
+  const classes = status === 'APPROVED' ? 'bg-emerald-50 text-emerald-700' : status === 'REJECTED' ? 'bg-rose-50 text-rose-700' : 'bg-amber-50 text-amber-700';
+  return <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-bold ${classes}`}>{labels[status][language === 'ar' ? 0 : 1]}</span>;
+};
+const leaveMessage = (code:string,language:string) => {
+  const messages:Record<string,[string,string]> = {
+    EMPLOYEE_LEAVE_OVERLAP:['يوجد طلب إجازة آخر متداخل مع هذه الفترة.','Another leave request overlaps this period.'],
+    ANNUAL_LEAVE_BALANCE_EXCEEDED:['مدة الطلب تتجاوز رصيد الإجازة السنوية المتاح.','The request exceeds the available annual leave balance.'],
+    ANNUAL_LEAVE_SINGLE_YEAR_REQUIRED:['يجب أن يكون طلب الإجازة السنوية داخل سنة واحدة.','Annual leave must fall within one calendar year.'],
+    EMPLOYEE_LEAVE_CANCELLATION_LOCKED:['لا يمكن إلغاء الطلب بعد اعتماده أو رفضه.','Approved or rejected requests cannot be cancelled.'],
+  };
+  const message = messages[code] || [code,code]; return message[language === 'ar' ? 0 : 1];
 };

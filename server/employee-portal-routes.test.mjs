@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
-import { buildEmployeeAttendanceReport,buildEmployeePaidPayslips,createEmployeePortalRouter } from './routes/employee-portal-routes.mjs';
+import { buildEmployeeAttendanceReport,buildEmployeeLeaveReport,buildEmployeePaidPayslips,createEmployeePortalRouter } from './routes/employee-portal-routes.mjs';
 
 const response = () => ({
   statusCode:200,body:null,
@@ -125,4 +125,25 @@ test('attendance endpoint validates the month and scopes both queries to the ses
   assert.deepEqual(queries.map(query => query.params),[['employee-a',['company-a'],'2026-09'],['employee-a',['company-a']]]);
   assert.match(queries[0].sql,/employee_id=\$1/);
   assert.deepEqual(valid.body.availableMonths,[]);
+});
+
+test('leave report calculates selected-year annual balance without counting pending requests as used', () => {
+  const report = buildEmployeeLeaveReport([
+    { id:'approved',leave_type:'ANNUAL',start_date:'2026-12-28',end_date:'2027-01-03',days_count:7,status:'APPROVED',is_paid:true,reason:'' },
+    { id:'pending',leave_type:'ANNUAL',start_date:'2026-08-01',end_date:'2026-08-03',days_count:3,status:'PENDING',is_paid:true,reason:'' },
+    { id:'sick',leave_type:'SICK',start_date:'2026-05-01',end_date:'2026-05-02',days_count:2,status:'APPROVED',is_paid:true,reason:'' },
+  ],21,2026);
+  assert.deepEqual(report.annualBalance,{ entitlementDays:21,approvedDays:4,pendingDays:3,remainingDays:17 });
+  assert.equal('employee_id' in report.leaves[0],false);
+});
+
+test('employee leave API owns identity, status, pay type, day count, overlap, and audit fields on the server', () => {
+  const source = fs.readFileSync(new URL('./routes/employee-portal-routes.mjs',import.meta.url),'utf8');
+  assert.match(source,/employeeId:req\.user\.employee_id/);
+  assert.match(source,/status:'PENDING'/);
+  assert.match(source,/isPaid:type !== 'UNPAID'/);
+  assert.match(source,/const requestedDays = leaveDays\(startDate,endDate\)/);
+  assert.match(source,/status IN \('PENDING','APPROVED'\)[\s\S]*start_date <= \$4::date/);
+  assert.match(source,/action:'EMPLOYEE_LEAVE_REQUEST'/);
+  assert.match(source,/existing\.rows\[0\]\.status !== 'PENDING'/);
 });

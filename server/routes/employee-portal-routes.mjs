@@ -1,7 +1,10 @@
 import express from 'express';
+import { randomUUID } from 'node:crypto';
 
 const number = value => Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
 const array = value => Array.isArray(value) ? value : [];
+const validDate = value => /^\d{4}-\d{2}-\d{2}$/.test(value)
+  && new Date(`${value}T00:00:00Z`).toISOString().slice(0,10) === value;
 
 const safePayrollSnapshot = (row, periodMonth) => {
   if (!row) return null;
@@ -113,8 +116,32 @@ export function buildEmployeeAttendanceReport(rows, periodMonth) {
   };
 }
 
-export function createEmployeePortalRouter({ auth,pool,q }) {
+const leaveDays = (startDate,endDate) => Math.floor((Date.parse(`${endDate}T00:00:00Z`) - Date.parse(`${startDate}T00:00:00Z`)) / 86_400_000) + 1;
+const leaveDaysInYear = (startDate,endDate,year) => {
+  const start = startDate > `${year}-01-01` ? startDate : `${year}-01-01`;
+  const end = endDate < `${year}-12-31` ? endDate : `${year}-12-31`;
+  return end < start ? 0 : leaveDays(start,end);
+};
+const safeLeave = row => ({
+  id:row.id,type:row.leave_type,startDate:row.start_date,endDate:row.end_date,daysCount:Number(row.days_count || 0),
+  status:row.status,isPaid:Boolean(row.is_paid),reason:String(row.reason || ''),createdAt:row.created_at || null,
+});
+
+export function buildEmployeeLeaveReport(rows, annualEntitlementDays, year) {
+  const leaves = rows.map(safeLeave);
+  const approvedAnnualDays = leaves.filter(item => item.type === 'ANNUAL' && item.status === 'APPROVED')
+    .reduce((sum,item) => sum + leaveDaysInYear(item.startDate,item.endDate,year),0);
+  const pendingAnnualDays = leaves.filter(item => item.type === 'ANNUAL' && item.status === 'PENDING')
+    .reduce((sum,item) => sum + leaveDaysInYear(item.startDate,item.endDate,year),0);
+  return {
+    year,annualBalance:{ entitlementDays:annualEntitlementDays,approvedDays:approvedAnnualDays,pendingDays:pendingAnnualDays,remainingDays:annualEntitlementDays - approvedAnnualDays },
+    leaves,
+  };
+}
+
+export function createEmployeePortalRouter({ auth,writeLimiter,pool,q,bumpStateVersion,appendStateAudit,broadcastStateUpdate }) {
   const router = express.Router();
+  const writes = writeLimiter || ((_req,_res,next) => next());
   const requireEmployee = (req,res) => {
     if (req.user.role !== 'EMPLOYEE') { res.status(403).json({ error:'EMPLOYEE_ROLE_REQUIRED' }); return false; }
     if (!req.user.employee_id) { res.status(409).json({ error:'EMPLOYEE_PORTAL_NOT_LINKED' }); return false; }
@@ -191,6 +218,97 @@ export function createEmployeePortalRouter({ auth,pool,q }) {
       ]);
       res.json({ ...buildEmployeeAttendanceReport(records.rows,periodMonth),availableMonths:periods.rows.map(row => row.period_month) });
     } catch (error) { next(error); }
+  });
+
+  router.get('/employee-portal/leaves', auth, async (req,res,next) => {
+    try {
+      if (!requireEmployee(req,res)) return;
+      const year = Number(req.query.year);
+      if (!Number.isInteger(year) || year < 2000 || year > 2200) return res.status(400).json({ error:'INVALID_LEAVE_YEAR' });
+      const params = [req.user.employee_id,req.user.company_ids];
+      const [employee,leaves] = await Promise.all([
+        pool.query(`SELECT payload FROM ${q('employees')} WHERE id=$1 AND company_id=ANY($2::text[]) AND is_archived=false LIMIT 1`,params),
+        pool.query(`SELECT id,leave_type,start_date::text,end_date::text,days_count,status,is_paid,reason,
+            COALESCE(payload->>'createdAt',updated_at::text) created_at
+          FROM ${q('leave_requests')} WHERE employee_id=$1 AND company_id=ANY($2::text[])
+          ORDER BY start_date DESC,sort_order`,params),
+      ]);
+      if (!employee.rowCount) return res.status(404).json({ error:'EMPLOYEE_PORTAL_PROFILE_NOT_FOUND' });
+      const entitlement = Math.max(0,Math.min(60,Number(employee.rows[0].payload?.annualLeaveEntitlementDays ?? 21)));
+      res.json(buildEmployeeLeaveReport(leaves.rows,entitlement,year));
+    } catch (error) { next(error); }
+  });
+
+  router.post('/employee-portal/leaves', auth, writes, async (req,res,next) => {
+    const client = await pool.connect();
+    try {
+      if (!requireEmployee(req,res)) return;
+      const type = String(req.body?.type || '');
+      const startDate = String(req.body?.startDate || '');
+      const endDate = String(req.body?.endDate || '');
+      const reason = String(req.body?.reason || '').trim();
+      if (!['ANNUAL','SICK','UNPAID','EMERGENCY','MATERNITY'].includes(type)
+        || !validDate(startDate) || !validDate(endDate)
+        || endDate < startDate || leaveDays(startDate,endDate) > 365 || reason.length > 500) {
+        return res.status(400).json({ error:'INVALID_EMPLOYEE_LEAVE_REQUEST' });
+      }
+      await client.query('BEGIN');
+      const employee = await client.query(`SELECT company_id,payload FROM ${q('employees')}
+        WHERE id=$1 AND company_id=ANY($2::text[]) AND is_archived=false FOR UPDATE`,[req.user.employee_id,req.user.company_ids]);
+      if (!employee.rowCount) throw Object.assign(new Error('EMPLOYEE_PORTAL_PROFILE_NOT_FOUND'),{ status:404 });
+      const companyId = employee.rows[0].company_id;
+      const overlap = await client.query(`SELECT 1 FROM ${q('leave_requests')}
+        WHERE employee_id=$1 AND company_id=$2 AND status IN ('PENDING','APPROVED')
+          AND start_date <= $4::date AND end_date >= $3::date LIMIT 1`,[req.user.employee_id,companyId,startDate,endDate]);
+      if (overlap.rowCount) throw Object.assign(new Error('EMPLOYEE_LEAVE_OVERLAP'),{ status:409 });
+      const requestedDays = leaveDays(startDate,endDate);
+      if (type === 'ANNUAL') {
+        const year = Number(startDate.slice(0,4));
+        if (endDate.slice(0,4) !== String(year)) throw Object.assign(new Error('ANNUAL_LEAVE_SINGLE_YEAR_REQUIRED'),{ status:400 });
+        const balance = await client.query(`SELECT COALESCE(sum(GREATEST(0,LEAST(end_date,$4::date)-GREATEST(start_date,$3::date)+1)),0)::numeric used_days FROM ${q('leave_requests')}
+          WHERE employee_id=$1 AND company_id=$2 AND leave_type='ANNUAL' AND status IN ('PENDING','APPROVED')
+            AND start_date <= $4::date AND end_date >= $3::date`,[req.user.employee_id,companyId,`${year}-01-01`,`${year}-12-31`]);
+        const entitlement = Math.max(0,Math.min(60,Number(employee.rows[0].payload?.annualLeaveEntitlementDays ?? 21)));
+        if (Number(balance.rows[0]?.used_days || 0) + requestedDays > entitlement) throw Object.assign(new Error('ANNUAL_LEAVE_BALANCE_EXCEEDED'),{ status:409 });
+      }
+      const id = `employee-leave-${randomUUID()}`;
+      const createdAt = new Date().toISOString();
+      const record = { id,companyId,employeeId:req.user.employee_id,type,startDate,endDate,daysCount:requestedDays,status:'PENDING',isPaid:type !== 'UNPAID',reason,createdAt,requestedByEmployee:true };
+      const sortOrder = Number((await client.query(`SELECT COALESCE(min(sort_order),0)-1 AS sort_order FROM ${q('leave_requests')} WHERE company_id=$1`,[companyId])).rows[0]?.sort_order || 0);
+      await client.query(`INSERT INTO ${q('leave_requests')} (id,company_id,employee_id,leave_type,start_date,end_date,days_count,status,is_paid,reason,payload,sort_order,updated_at)
+        VALUES ($1,$2,$3,$4,$5::date,$6::date,$7,'PENDING',$8,NULLIF($9,''),$10::jsonb,$11,now())`,[id,companyId,req.user.employee_id,type,startDate,endDate,requestedDays,record.isPaid,reason,JSON.stringify(record),sortOrder]);
+      const updated = await bumpStateVersion(client,req.user.id);
+      await appendStateAudit(client,q,{ companyIds:[companyId],user:req.user,action:'EMPLOYEE_LEAVE_REQUEST',version:updated.rows[0].version });
+      await client.query('COMMIT');
+      broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at,companyIds:[companyId],changes:[{ collection:'leaves',operation:'upsert',records:[record] }] });
+      res.status(201).json({ leave:safeLeave({ id,leave_type:type,start_date:startDate,end_date:endDate,days_count:requestedDays,status:'PENDING',is_paid:record.isPaid,reason,created_at:createdAt }) });
+    } catch (error) {
+      try { await client.query('ROLLBACK'); } catch {}
+      if (Number.isInteger(error?.status)) return res.status(error.status).json({ error:error.message });
+      next(error);
+    } finally { client.release(); }
+  });
+
+  router.delete('/employee-portal/leaves/:id', auth, writes, async (req,res,next) => {
+    const client = await pool.connect();
+    try {
+      if (!requireEmployee(req,res)) return;
+      await client.query('BEGIN');
+      const existing = await client.query(`SELECT id,company_id,status FROM ${q('leave_requests')}
+        WHERE id=$1 AND employee_id=$2 AND company_id=ANY($3::text[]) FOR UPDATE`,[req.params.id,req.user.employee_id,req.user.company_ids]);
+      if (!existing.rowCount) throw Object.assign(new Error('EMPLOYEE_LEAVE_NOT_FOUND'),{ status:404 });
+      if (existing.rows[0].status !== 'PENDING') throw Object.assign(new Error('EMPLOYEE_LEAVE_CANCELLATION_LOCKED'),{ status:409 });
+      await client.query(`DELETE FROM ${q('leave_requests')} WHERE id=$1`,[req.params.id]);
+      const updated = await bumpStateVersion(client,req.user.id);
+      await appendStateAudit(client,q,{ companyIds:[existing.rows[0].company_id],user:req.user,action:'EMPLOYEE_LEAVE_CANCEL',version:updated.rows[0].version });
+      await client.query('COMMIT');
+      broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at,companyIds:[existing.rows[0].company_id],changes:[{ collection:'leaves',operation:'delete',ids:[req.params.id] }] });
+      res.json({ deleted:true });
+    } catch (error) {
+      try { await client.query('ROLLBACK'); } catch {}
+      if (Number.isInteger(error?.status)) return res.status(error.status).json({ error:error.message });
+      next(error);
+    } finally { client.release(); }
   });
   return router;
 }

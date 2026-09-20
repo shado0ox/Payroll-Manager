@@ -132,6 +132,13 @@ export type EmployeeAttendanceReport = {
   summary:{presentDays:number;lateDays:number;totalDelayMinutes:number;absenceDays:number;leaveDays:number;missingPunchDays:number;overtimeHours:number};
   records:EmployeeAttendanceRecord[];
 };
+export type EmployeeLeave = {
+  id:string;type:'ANNUAL'|'SICK'|'UNPAID'|'EMERGENCY'|'MATERNITY';startDate:string;endDate:string;
+  daysCount:number;status:'PENDING'|'APPROVED'|'REJECTED';isPaid:boolean;reason:string;createdAt:string|null;
+};
+export type EmployeeLeaveReport = {
+  year:number;annualBalance:{entitlementDays:number;approvedDays:number;pendingDays:number;remainingDays:number};leaves:EmployeeLeave[];
+};
 
 class ApiError extends Error {
   constructor(message: string, public status: number) { super(message); this.name = 'ApiError'; }
@@ -411,6 +418,9 @@ export const api = {
   employeePortalPayslips: () => request<{payslips:EmployeePayslipSummary[]}>('/api/employee-portal/payslips'),
   employeePortalPayslip: (batchId:string,periodMonth:string) => request<{payslip:EmployeePayslipDetail}>(`/api/employee-portal/payslips/${encodeURIComponent(batchId)}/${encodeURIComponent(periodMonth)}`),
   employeePortalAttendance: (periodMonth:string) => request<EmployeeAttendanceReport>(`/api/employee-portal/attendance?periodMonth=${encodeURIComponent(periodMonth)}`),
+  employeePortalLeaves: (year:number) => request<EmployeeLeaveReport>(`/api/employee-portal/leaves?year=${encodeURIComponent(year)}`),
+  createEmployeePortalLeave: (record:{type:EmployeeLeave['type'];startDate:string;endDate:string;reason:string}) => request<{leave:EmployeeLeave}>('/api/employee-portal/leaves',{ method:'POST',body:JSON.stringify(record) }),
+  cancelEmployeePortalLeave: (id:string) => request<{deleted:boolean}>(`/api/employee-portal/leaves/${encodeURIComponent(id)}`,{ method:'DELETE' }),
   logout: () => request<void>('/api/auth/logout', { method:'POST' }),
   getState: async () => {
     const result = await request<{state: Partial<AppState> | null; version: number}>('/api/state');
