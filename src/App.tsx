@@ -551,7 +551,7 @@ export const App: React.FC = () => {
       const result = await operation;
       setState(prev => {
         const exists = (prev.employees || []).some(candidate => candidate.id === result.employee.id);
-        const employees = exists
+        const employees = result.archived ? (prev.employees || []).filter(candidate => candidate.id !== result.employee.id) : exists
           ? (prev.employees || []).map(candidate => candidate.id === result.employee.id ? result.employee as Employee : candidate)
           : [result.employee as Employee, ...(prev.employees || [])];
         const next: MasarAppState = {

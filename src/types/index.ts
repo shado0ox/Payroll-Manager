@@ -224,6 +224,9 @@ export interface Employee {
   onboardingStatus?: EmployeeOnboardingStatus;
   terminationDate?: string;
   employmentEndReason?: EmploymentEndReason;
+  isArchived?: boolean;
+  archiveReason?: EmploymentEndReason;
+  archivedAt?: string;
   status: EmploymentStatus;
   suspensionStartDate?: string;
   suspensionEndDate?: string;

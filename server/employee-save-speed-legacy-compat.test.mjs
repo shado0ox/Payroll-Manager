@@ -12,7 +12,7 @@ const appSource = fs.readFileSync(new URL('../src/App.tsx', import.meta.url), 'u
 const employeesSource = fs.readFileSync(new URL('../src/components/EmployeesView.tsx', import.meta.url), 'utf8');
 
 test('employee save returns committed version without forcing full state reload', () => {
-  assert.match(serverSource, /res\.json\(\{ employee, created:!existing\.rowCount, version:Number\(updated\.rows\[0\]\?\.version \|\| 0\)/);
+  assert.match(serverSource, /res\.json\(\{ employee:savedEmployee, archived, created:!existing\.rowCount, version:Number\(updated\.rows\[0\]\?\.version \|\| 0\)/);
   assert.match(apiSource, /saveEmployee: async/);
   assert.match(apiSource, /stateVersion = result\.version/);
   const start = appSource.indexOf('const handleSaveEmployee = async');

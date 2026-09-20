@@ -57,6 +57,21 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
   const [selectedDept, setSelectedDept] = useState('ALL');
   const [selectedStatus, setSelectedStatus] = useState<string>('ALL');
   const [selectedNationality, setSelectedNationality] = useState<string>('ALL');
+  const [listTab,setListTab] = useState<'CURRENT'|'ARCHIVED'>('CURRENT');
+  const [archivedEmployees,setArchivedEmployees] = useState<Employee[]>([]);
+  const [archiveLoading,setArchiveLoading] = useState(false);
+  const loadArchivedEmployees = async () => {
+    setArchiveLoading(true);
+    try { setArchivedEmployees((await api.listArchivedEmployees(company.id)).employees); }
+    finally { setArchiveLoading(false); }
+  };
+  useEffect(() => { void loadArchivedEmployees(); },[company.id]);
+  const restoreArchivedEmployee = async (employee:Employee) => {
+    if (!window.confirm(language === 'ar' ? 'إعادة الموظف إلى القائمة الحالية بحالة موقوف للمراجعة؟' : 'Restore this employee as suspended for review?')) return;
+    await api.restoreEmployee(employee.id);
+    setArchivedEmployees(current => current.filter(item => item.id !== employee.id));
+    window.location.reload();
+  };
   const [bankRequests,setBankRequests] = useState<EmployeeBankChangeRequest[]>([]);
   const [bankRequestsLoading,setBankRequestsLoading] = useState(false);
   const [bankRequestsError,setBankRequestsError] = useState('');
@@ -455,8 +470,12 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
 
   return (
     <div className="space-y-6">
+      <div className="flex flex-wrap gap-2 rounded-2xl border bg-white p-2 shadow-sm">
+        <button type="button" onClick={() => setListTab('CURRENT')} className={`rounded-xl px-4 py-2 text-sm font-black ${listTab==='CURRENT'?'bg-slate-900 text-white':'text-slate-600 hover:bg-slate-50'}`}>{language==='ar'?'الموظفون الحاليون':'Current employees'} ({companyEmployees.length})</button>
+        <button type="button" onClick={() => setListTab('ARCHIVED')} className={`rounded-xl px-4 py-2 text-sm font-black ${listTab==='ARCHIVED'?'bg-rose-700 text-white':'text-slate-600 hover:bg-rose-50'}`}>{language==='ar'?'مؤرشفون':'Archived'} ({archivedEmployees.length})</button>
+      </div>
       
-      <EmployeesToolbar
+      {listTab === 'CURRENT' && <><EmployeesToolbar
         language={language}
         filteredCount={filteredEmployees.length}
         companyEmployeeCount={companyEmployees.length}
@@ -501,6 +520,12 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
         handleOpenEdit={handleOpenEdit}
         onDeleteEmployee={onDeleteEmployee}
       />
+      </>}
+
+      {listTab === 'ARCHIVED' && <section className="rounded-2xl border bg-white p-5 shadow-sm">
+        <div className="mb-4"><h2 className="text-lg font-black">{language==='ar'?'الموظفون المؤرشفون':'Archived employees'}</h2><p className="text-xs text-slate-500">{language==='ar'?'نقل خدمة، خروج نهائي، أو هروب. لا يدخلون ضمن إجمالي الموظفين الحاليين.':'Sponsorship transfer, final exit, or absconding. Excluded from current employee totals.'}</p></div>
+        {archiveLoading ? <div className="p-8 text-center text-slate-500">{language==='ar'?'جارٍ التحميل…':'Loading…'}</div> : archivedEmployees.length===0 ? <div className="rounded-xl bg-slate-50 p-8 text-center text-slate-500">{language==='ar'?'لا يوجد موظفون مؤرشفون.':'No archived employees.'}</div> : <div className="overflow-x-auto"><table className="w-full min-w-[760px] text-sm"><thead><tr className="border-b text-slate-500"><th className="p-3 text-start">{language==='ar'?'الموظف':'Employee'}</th><th className="p-3 text-start">{language==='ar'?'الهوية / الإقامة':'Identity'}</th><th className="p-3 text-start">{language==='ar'?'سبب الأرشفة':'Archive reason'}</th><th className="p-3 text-start">{language==='ar'?'تاريخ الأرشفة':'Archived at'}</th><th className="p-3"></th></tr></thead><tbody>{archivedEmployees.map(employee => <tr key={employee.id} className="border-b last:border-0"><td className="p-3 font-bold">{employee.employeeNo} · {employee.firstNameAr} {employee.lastNameAr}</td><td className="p-3 font-mono">{employee.nationalIdOrIqama}</td><td className="p-3">{{SPONSOR_TRANSFER:language==='ar'?'نقل خدمة':'Sponsorship transfer',FINAL_EXIT:language==='ar'?'خروج نهائي':'Final exit',ABSCONDED:language==='ar'?'هروب':'Absconded',OTHER:language==='ar'?'أخرى':'Other'}[employee.archiveReason || employee.employmentEndReason || 'OTHER']}</td><td className="p-3">{employee.archivedAt ? new Date(employee.archivedAt).toLocaleDateString(language==='ar'?'ar-SA':'en-US') : '—'}</td><td className="p-3 text-end"><button type="button" onClick={() => void restoreArchivedEmployee(employee)} className="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-bold text-white">{language==='ar'?'استعادة':'Restore'}</button></td></tr>)}</tbody></table></div>}
+      </section>}
 
       {importSheet && (
         <EmployeeImportPreviewModal
