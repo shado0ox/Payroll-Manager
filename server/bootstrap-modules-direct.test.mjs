@@ -39,6 +39,7 @@ test('employee portal router exposes only session-derived employee resources', (
     { path:'/employee-portal/me',methods:['get'] },
     { path:'/employee-portal/payslips',methods:['get'] },
     { path:'/employee-portal/payslips/:batchId/:periodMonth',methods:['get'] },
+    { path:'/employee-portal/attendance',methods:['get'] },
   ]);
 });
 

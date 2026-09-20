@@ -122,6 +122,16 @@ export type EmployeePayslipDetail = {
     netSalary:number;payableDays:number|null;adjustmentNotes:string;
   };
 };
+export type EmployeeAttendanceRecord = {
+  id:string;date:string;endDate:string|null;daysCount:number;delayMinutes:number;status:string;
+  scheduledStart:string;scheduledEnd:string;actualCheckIn:string;actualCheckOut:string;graceMinutes:number;
+  overtimeHours:number;notes:string;payrollApproved:boolean;
+};
+export type EmployeeAttendanceReport = {
+  periodMonth:string;availableMonths:string[];
+  summary:{presentDays:number;lateDays:number;totalDelayMinutes:number;absenceDays:number;leaveDays:number;missingPunchDays:number;overtimeHours:number};
+  records:EmployeeAttendanceRecord[];
+};
 
 class ApiError extends Error {
   constructor(message: string, public status: number) { super(message); this.name = 'ApiError'; }
@@ -400,6 +410,7 @@ export const api = {
   employeePortalMe: () => request<EmployeePortalProfile>('/api/employee-portal/me'),
   employeePortalPayslips: () => request<{payslips:EmployeePayslipSummary[]}>('/api/employee-portal/payslips'),
   employeePortalPayslip: (batchId:string,periodMonth:string) => request<{payslip:EmployeePayslipDetail}>(`/api/employee-portal/payslips/${encodeURIComponent(batchId)}/${encodeURIComponent(periodMonth)}`),
+  employeePortalAttendance: (periodMonth:string) => request<EmployeeAttendanceReport>(`/api/employee-portal/attendance?periodMonth=${encodeURIComponent(periodMonth)}`),
   logout: () => request<void>('/api/auth/logout', { method:'POST' }),
   getState: async () => {
     const result = await request<{state: Partial<AppState> | null; version: number}>('/api/state');

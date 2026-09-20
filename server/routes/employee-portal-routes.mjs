@@ -83,6 +83,36 @@ export function buildEmployeePaidPayslips(batchRows, itemRows, employeeId) {
   return payslips.sort((a,b) => b.periodMonth.localeCompare(a.periodMonth) || String(b.payment.paymentDate || '').localeCompare(String(a.payment.paymentDate || '')));
 }
 
+export function buildEmployeeAttendanceReport(rows, periodMonth) {
+  const records = rows.map(row => {
+    const payload = row.payload || {};
+    const daysCount = Math.max(0,Number(row.days_count ?? 1));
+    const delayMinutes = Math.max(0,Number(payload.calculatedDelayMinutes ?? row.delay_minutes ?? 0));
+    const status = String(payload.attendanceStatus || (row.unpaid_leave ? 'LEAVE' : row.absence ? 'ABSENT' : delayMinutes > 0 ? 'LATE' : 'PRESENT'));
+    return {
+      id:row.id,date:row.record_date,endDate:row.end_date || null,daysCount,delayMinutes,status,
+      scheduledStart:String(payload.scheduledStart || ''),scheduledEnd:String(payload.scheduledEnd || ''),
+      actualCheckIn:String(payload.actualCheckIn || ''),actualCheckOut:String(payload.actualCheckOut || ''),
+      graceMinutes:Math.max(0,Number(payload.graceMinutes || 0)),overtimeHours:number(row.overtime_hours),
+      notes:String(row.notes || payload.notes || ''),payrollApproved:Boolean(payload.payrollApproved),
+    };
+  });
+  const countDays = predicate => records.filter(predicate).reduce((sum,row) => sum + row.daysCount,0);
+  return {
+    periodMonth,
+    summary:{
+      presentDays:countDays(row => ['PRESENT','LATE'].includes(row.status)),
+      lateDays:countDays(row => row.status === 'LATE' || row.delayMinutes > 0),
+      totalDelayMinutes:records.reduce((sum,row) => sum + row.delayMinutes,0),
+      absenceDays:countDays(row => row.status === 'ABSENT'),
+      leaveDays:countDays(row => row.status === 'LEAVE'),
+      missingPunchDays:countDays(row => ['MISSING_IN','MISSING_OUT'].includes(row.status)),
+      overtimeHours:number(records.reduce((sum,row) => sum + row.overtimeHours,0)),
+    },
+    records,
+  };
+}
+
 export function createEmployeePortalRouter({ auth,pool,q }) {
   const router = express.Router();
   const requireEmployee = (req,res) => {
@@ -141,6 +171,25 @@ export function createEmployeePortalRouter({ auth,pool,q }) {
       const payslip = (await loadPaidPayslips(req)).find(item => item.payment.batchId === req.params.batchId && item.periodMonth === req.params.periodMonth);
       if (!payslip) return res.status(404).json({ error:'EMPLOYEE_PAYSLIP_NOT_FOUND' });
       res.json({ payslip });
+    } catch (error) { next(error); }
+  });
+
+  router.get('/employee-portal/attendance', auth, async (req,res,next) => {
+    try {
+      if (!requireEmployee(req,res)) return;
+      const periodMonth = String(req.query.periodMonth || '');
+      if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(periodMonth)) return res.status(400).json({ error:'INVALID_ATTENDANCE_PERIOD' });
+      const params = [req.user.employee_id,req.user.company_ids,periodMonth];
+      const [records,periods] = await Promise.all([
+        pool.query(`SELECT id,record_date::text,end_date::text,days_count,delay_minutes,absence,unpaid_leave,overtime_hours,notes,payload
+          FROM ${q('attendance_records')}
+          WHERE employee_id=$1 AND company_id=ANY($2::text[]) AND period_month=$3
+          ORDER BY record_date,id`,params),
+        pool.query(`SELECT DISTINCT period_month FROM ${q('attendance_records')}
+          WHERE employee_id=$1 AND company_id=ANY($2::text[])
+          ORDER BY period_month DESC`,params.slice(0,2)),
+      ]);
+      res.json({ ...buildEmployeeAttendanceReport(records.rows,periodMonth),availableMonths:periods.rows.map(row => row.period_month) });
     } catch (error) { next(error); }
   });
   return router;
