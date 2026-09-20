@@ -393,7 +393,41 @@ await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS cost_centers_code_unique_idx
   ON ${q('cost_centers')}(company_id,code) WHERE code <> ''`);
 await pool.query(`UPDATE ${q('users')} SET role='OPERATIONS_MANAGER',updated_at=now()
   WHERE id <> 'user-admin' AND role IN ('HR_MANAGER','PAYROLL_SPECIALIST','AUDITOR')`);
-await pool.query(`DELETE FROM ${q('users')} WHERE role='EMPLOYEE' AND employee_id IS NOT NULL`);
+// A staff member may also be an administrative user. Preserve these hybrid
+// accounts and separate only permission-free employee portal identities.
+await pool.query(`UPDATE ${q('users')} SET role='OPERATIONS_MANAGER',updated_at=now()
+  WHERE role='EMPLOYEE' AND employee_id IS NOT NULL
+    AND jsonb_array_length(COALESCE(permissions,'[]'::jsonb)) > 0`);
+await pool.query(`DELETE FROM ${q('users')} WHERE role='EMPLOYEE' AND employee_id IS NOT NULL
+  AND jsonb_array_length(COALESCE(permissions,'[]'::jsonb)) = 0`);
+
+// Recover hybrid accounts removed by the original portal-account split. The
+// normalized migration backup retains their role/permissions while the portal
+// table retains the password hash; no password reset or plaintext is needed.
+await pool.query(`WITH legacy_hybrid_users AS (
+  SELECT DISTINCT ON (legacy_user->>'id') legacy_user
+  FROM ${q('app_state_migration_backups')} backup
+  CROSS JOIN LATERAL jsonb_array_elements(COALESCE(backup.state->'users','[]'::jsonb)) legacy_user
+  WHERE legacy_user->>'role'='EMPLOYEE'
+    AND COALESCE(legacy_user->>'employeeId','') <> ''
+    AND jsonb_array_length(COALESCE(legacy_user->'permissions','[]'::jsonb)) > 0
+  ORDER BY legacy_user->>'id',backup.created_at DESC
+)
+INSERT INTO ${q('users')}
+  (id,username,password_hash,name,email,phone,role,company_ids,permissions,employee_id,is_active,created_at,updated_at)
+SELECT legacy_user->>'id',portal.username,portal.password_hash,
+  COALESCE(NULLIF(legacy_user->>'name',''),employee.first_name_ar || ' ' || employee.last_name_ar),
+  portal.email,COALESCE(legacy_user->>'phone',''),'OPERATIONS_MANAGER',
+  COALESCE(legacy_user->'companyIds',jsonb_build_array(portal.company_id)),legacy_user->'permissions',
+  portal.employee_id,portal.is_active,
+  COALESCE(NULLIF(legacy_user->>'createdAt','')::timestamptz,portal.created_at),now()
+FROM legacy_hybrid_users legacy
+JOIN ${q('employee_portal_accounts')} portal ON portal.employee_id=(legacy.legacy_user->>'employeeId')
+JOIN ${q('employees')} employee ON employee.id=portal.employee_id
+WHERE NOT EXISTS (SELECT 1 FROM ${q('users')} existing_user WHERE existing_user.id=legacy.legacy_user->>'id')
+  AND NOT EXISTS (SELECT 1 FROM ${q('users')} existing_user WHERE existing_user.username=portal.username)
+  AND NOT EXISTS (SELECT 1 FROM ${q('users')} existing_user WHERE lower(existing_user.email)=lower(portal.email) AND portal.email<>'')
+ON CONFLICT (id) DO NOTHING`);
 
 const companyId = process.env.COMPANY_ID;
 await pool.query(`INSERT INTO ${q('companies')} (id, company_code, name_ar, name_en) VALUES ($1,$2,$3,$4) ON CONFLICT (id) DO NOTHING`, [
