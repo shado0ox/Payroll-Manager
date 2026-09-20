@@ -155,8 +155,8 @@ export function resolveAnnualLeaveBalance(employee, year) {
   }
   return {
     policy,entitlementDays,
-    openingBalanceDays:Math.max(0,Number(payload.annualLeaveOpeningBalance || 0)),
-    priorUsedDays:Math.max(0,Number(payload.annualLeavePriorUsedDays || 0)),
+    openingBalanceDays:!payload.annualLeaveBalanceYear||Number(payload.annualLeaveBalanceYear)===year?Math.max(0,Number(payload.annualLeaveOpeningBalance || 0)):0,
+    priorUsedDays:!payload.annualLeaveBalanceYear||Number(payload.annualLeaveBalanceYear)===year?Math.max(0,Number(payload.annualLeavePriorUsedDays || 0)):0,
   };
 }
 

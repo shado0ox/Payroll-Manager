@@ -56,6 +56,7 @@ const PayrollRunsView = lazy(() => import('./components/PayrollRunsView').then(m
 const GosiReconciliationView = lazy(() => import('./components/GosiReconciliationView').then(module => ({ default:module.GosiReconciliationView })));
 const PayrollSettlementsView = lazy(() => import('./components/PayrollSettlementsView').then(module => ({ default:module.PayrollSettlementsView })));
 const AttendanceLeavesView = lazy(() => import('./components/AttendanceLeavesView').then(module => ({ default:module.AttendanceLeavesView })));
+const AnnualLeaveView = lazy(() => import('./components/AnnualLeaveView').then(module => ({ default:module.AnnualLeaveView })));
 const LoansPenaltiesView = lazy(() => import('./components/LoansPenaltiesView').then(module => ({ default:module.LoansPenaltiesView })));
 const AccountingJournalsView = lazy(() => import('./components/AccountingJournalsView').then(module => ({ default:module.AccountingJournalsView })));
 const ReportsView = lazy(() => import('./components/ReportsView').then(module => ({ default:module.ReportsView })));
@@ -1397,9 +1398,8 @@ export const App: React.FC = () => {
             )}
 
             {activeTab === 'annual_leave' && hasPermission(state.currentUser, 'MANAGE_ATTENDANCE') && (
-              <AttendanceLeavesView company={activeCompany} employees={state.employees} attendance={state.attendance} leaves={state.leaves}
-                activeRole={state.activeRole} onAddAttendance={handleAddAttendance} onBulkImportAttendance={handleBulkImportAttendance}
-                onDeleteAttendance={handleDeleteAttendance} onUpdateLeaveStatus={handleUpdateLeaveStatus} onAddLeave={handleAddLeave} leaveOnly />
+              <AnnualLeaveView company={activeCompany} employees={state.employees} leaves={state.leaves}
+                onSaveEmployee={handleSaveEmployee} onUpdateLeaveStatus={handleUpdateLeaveStatus} onAddLeave={handleAddLeave} />
             )}
 
             {activeTab === 'loans_penalties' && hasPermission(state.currentUser, 'MANAGE_LOANS_PENALTIES') && (
