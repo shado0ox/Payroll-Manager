@@ -424,9 +424,9 @@ SELECT legacy_user->>'id',portal.username,portal.password_hash,
 FROM legacy_hybrid_users legacy
 JOIN ${q('employee_portal_accounts')} portal ON portal.employee_id=(legacy.legacy_user->>'employeeId')
 JOIN ${q('employees')} employee ON employee.id=portal.employee_id
-WHERE NOT EXISTS (SELECT 1 FROM ${q('users')} current_user WHERE current_user.id=legacy.legacy_user->>'id')
-  AND NOT EXISTS (SELECT 1 FROM ${q('users')} current_user WHERE current_user.username=portal.username)
-  AND NOT EXISTS (SELECT 1 FROM ${q('users')} current_user WHERE lower(current_user.email)=lower(portal.email) AND portal.email<>'')
+WHERE NOT EXISTS (SELECT 1 FROM ${q('users')} existing_user WHERE existing_user.id=legacy.legacy_user->>'id')
+  AND NOT EXISTS (SELECT 1 FROM ${q('users')} existing_user WHERE existing_user.username=portal.username)
+  AND NOT EXISTS (SELECT 1 FROM ${q('users')} existing_user WHERE lower(existing_user.email)=lower(portal.email) AND portal.email<>'')
 ON CONFLICT (id) DO NOTHING`);
 
 const companyId = process.env.COMPANY_ID;
