@@ -161,7 +161,7 @@ export function createAuthPasswordResetRouter({
       res.setHeader('Set-Cookie',`masar_session=${token}; Path=/; HttpOnly; SameSite=Strict${process.env.COOKIE_SECURE === 'false' ? '' : '; Secure'}`);
       res.json({
         user:{ id:user.id,username:user.username,name:user.name,email:user.email,phone:user.phone,role:user.role,
-          companyIds:user.company_ids,permissions:permissionsFor(user),isActive:true,createdAt:user.created_at,lastLogin:new Date().toISOString() },
+          companyIds:user.company_ids,employeeId:user.employee_id || undefined,permissions:permissionsFor(user),isActive:true,createdAt:user.created_at,lastLogin:new Date().toISOString() },
         companyId:user.company_id,
       });
     } catch (error) {

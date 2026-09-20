@@ -21,6 +21,7 @@ export function createAuthSessionRouter({
         phone:user.phone,
         role:user.role,
         companyIds:user.company_ids,
+        employeeId:user.employee_id || undefined,
         permissions:permissionsFor(user),
         isActive:true,
       },

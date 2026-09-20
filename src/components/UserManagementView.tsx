@@ -63,6 +63,14 @@ const ROLE_INFO: Record<UserRole, { labelAr: string; labelEn: string; descAr: st
     color: 'text-emerald-700',
     badgeBg: 'bg-emerald-50 border-emerald-200 text-emerald-700',
   },
+  EMPLOYEE: {
+    labelAr: 'موظف (بوابة الموظف)',
+    labelEn: 'Employee Portal',
+    descAr: 'وصول ذاتي محصور في بيانات الموظف المرتبط فقط دون أي صلاحيات إدارية',
+    descEn: 'Self-service access restricted to the linked employee record with no administrative permissions',
+    color: 'text-sky-700',
+    badgeBg: 'bg-sky-50 border-sky-200 text-sky-700',
+  },
 };
 
 export const UserManagementView: React.FC<UserManagementViewProps> = ({
@@ -173,6 +181,19 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
       setFormError(language === 'ar' ? passwordPolicyMessage : 'Password must be at least 8 characters and include uppercase, lowercase, number, and symbol.');
       return;
     }
+    if (formData.role === 'EMPLOYEE' && !formData.employeeId) {
+      setFormError(language === 'ar' ? 'يجب ربط حساب بوابة الموظف بموظف محدد.' : 'An employee portal account must be linked to an employee.');
+      return;
+    }
+    if (formData.role === 'EMPLOYEE' && !formData.email.trim()) {
+      setFormError(language === 'ar' ? 'البريد الإلكتروني إلزامي للدخول إلى بوابة الموظف واستلام رمز الدخول.' : 'Email is required for portal access and sign-in codes.');
+      return;
+    }
+    const linkedEmployee = employees.find(employee => employee.id === formData.employeeId);
+    if (formData.role === 'EMPLOYEE' && users.some(user => user.id !== editingUser?.id && user.employeeId === formData.employeeId)) {
+      setFormError(language === 'ar' ? 'هذا الموظف مرتبط بالفعل بحساب بوابة موظف.' : 'This employee already has a portal account.');
+      return;
+    }
 
     // Check duplicate username
     const isDuplicate = users.some(
@@ -192,8 +213,8 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
       phone: formData.phone,
       role: formData.role,
       avatar: formData.name ? formData.name.charAt(0) : (language === 'ar' ? 'م' : 'U'),
-      companyIds: formData.companyIds.length > 0 ? formData.companyIds : ['comp-1'],
-      permissions: formData.permissions.filter(permission => permission !== 'MANAGE_COMPANIES'),
+      companyIds: formData.role === 'EMPLOYEE' && linkedEmployee ? [linkedEmployee.companyId] : (formData.companyIds.length > 0 ? formData.companyIds : ['comp-1']),
+      permissions: formData.role === 'EMPLOYEE' ? [] : formData.permissions.filter(permission => permission !== 'MANAGE_COMPANIES'),
       employeeId: formData.employeeId || undefined,
       isActive: formData.isActive,
       createdAt: editingUser ? editingUser.createdAt : new Date().toISOString(),
@@ -308,6 +329,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
           <option value="ADMIN">{language === 'ar' ? 'مسؤول النظام (Admin)' : 'System Administrator'}</option>
           <option value="COMPANY_MANAGER">{language === 'ar' ? 'المدير العام' : 'General Manager'}</option>
           <option value="OPERATIONS_MANAGER">{language === 'ar' ? 'مدير العمليات' : 'Operations Manager'}</option>
+          <option value="EMPLOYEE">{language === 'ar' ? 'بوابة الموظف' : 'Employee Portal'}</option>
         </select>
 
         {/* Status Filter */}
@@ -512,7 +534,9 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
               {/* Link to existing employee (optional helper) */}
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">
-                  {language === 'ar' ? 'ربط بحساب موظف حالي (اختياري)' : 'Link to an existing employee (optional)'}
+                  {formData.role === 'EMPLOYEE'
+                    ? (language === 'ar' ? 'الموظف المرتبط بالبوابة (إلزامي)' : 'Portal employee link (required)')
+                    : (language === 'ar' ? 'ربط بحساب موظف حالي (اختياري)' : 'Link to an existing employee (optional)')}
                 </label>
                 <SearchableEmployeeSelect
                   employees={employees}
@@ -595,6 +619,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
                   </label>
                   <input
                     type="email"
+                    required={formData.role === 'EMPLOYEE'}
                     value={formData.email}
                     onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                     placeholder="user@example.com"
@@ -633,13 +658,14 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
                 >
                   {currentUser?.role === 'ADMIN' && <option value="COMPANY_MANAGER">{language === 'ar' ? 'المدير العام - دون إدارة الشركات' : 'General Manager — no company administration'}</option>}
                   <option value="OPERATIONS_MANAGER">{language === 'ar' ? 'مدير العمليات - جميع العمليات دون اعتماد الرواتب' : 'Operations Manager — all operations without payroll approval'}</option>
+                  <option value="EMPLOYEE">{language === 'ar' ? 'موظف - وصول ذاتي لبياناته فقط' : 'Employee — self-service access only'}</option>
                 </select>
                 <p className="text-[11px] text-slate-500 mt-1">
                   {language === 'ar' ? ROLE_INFO[formData.role]?.descAr : ROLE_INFO[formData.role]?.descEn}
                 </p>
               </div>
 
-              <fieldset className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+              {formData.role !== 'EMPLOYEE' && <fieldset className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
                 <legend className="px-2 text-xs font-black text-slate-800">{language === 'ar' ? 'تخصيص ما يمكن للمستخدم استخدامه' : 'Customize User Access'}</legend>
                 <p className="text-[11px] text-slate-500 mb-3">{language === 'ar' ? 'يمكن تعديل الصلاحيات الافتراضية للدور. إضافة وحذف الشركات متاحة لمسؤول النظام الرئيسي فقط.' : 'Default role permissions can be customized. Adding or deleting companies is restricted to the primary system administrator.'}</p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -660,7 +686,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
                     </label>
                   ))}
                 </div>
-              </fieldset>
+              </fieldset>}
 
               {/* Status Toggle */}
               <div className="pt-2">

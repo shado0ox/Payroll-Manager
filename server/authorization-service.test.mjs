@@ -108,3 +108,22 @@ test('admin authorization skips tenant subscription checks', async () => {
   assert.equal(continued, true);
   assert.equal(calls.length, 2);
 });
+
+test('employee sessions are restricted to auth and employee portal endpoints', async () => {
+  const user = { id:'employee-user',role:'EMPLOYEE',company_ids:['company-a'],employee_id:'employee-a' };
+  const pool = { query:async sql => {
+    if (sql.startsWith('SELECT u.id')) return { rowCount:1,rows:[user] };
+    if (sql.startsWith('UPDATE sessions')) return { rowCount:1,rows:[] };
+    return { rowCount:1,rows:[{ subscription_status:'ACTIVE' }] };
+  } };
+  const { auth } = createAuthorizationService({ pool,q:name => name,cookieValue:() => 'token',sha256:value => value,developerContactPhone:'' });
+
+  const blocked = response();
+  await auth({ method:'GET',originalUrl:'/api/state' },blocked,() => assert.fail('employee must not reach administrative state'));
+  assert.equal(blocked.statusCode,403);
+  assert.deepEqual(blocked.body,{ error:'EMPLOYEE_PORTAL_ONLY' });
+
+  let continued = false;
+  await auth({ method:'GET',originalUrl:'/api/employee-portal/me' },response(),() => { continued = true; });
+  assert.equal(continued,true);
+});

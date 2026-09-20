@@ -28,6 +28,14 @@ const ROLE_INFO: Record<UserRole, { labelAr: string; labelEn: string; descAr: st
     color: 'text-emerald-700 border-emerald-200',
     badgeBg: 'bg-emerald-50 text-emerald-700',
   },
+  EMPLOYEE: {
+    labelAr: 'موظف (بوابة الموظف)',
+    labelEn: 'Employee Portal',
+    descAr: 'وصول ذاتي إلى بيانات الموظف المرتبط فقط',
+    descEn: 'Self-service access to the linked employee record only',
+    color: 'text-sky-700 border-sky-200',
+    badgeBg: 'bg-sky-50 text-sky-700',
+  },
 };
 
 interface CompanyUsersTabProps {
@@ -66,7 +74,7 @@ export const CompanyUsersTab = React.memo<CompanyUsersTabProps>(({
   });
   const [userFormError, setUserFormError] = useState<string | null>(null);
   const assignableRoles = useMemo(
-    () => Object.entries(ROLE_INFO).filter(([key]) => key !== 'ADMIN' && (activeRole === 'ADMIN' || key === 'OPERATIONS_MANAGER')),
+    () => Object.entries(ROLE_INFO).filter(([key]) => !['ADMIN','EMPLOYEE'].includes(key) && (activeRole === 'ADMIN' || key === 'OPERATIONS_MANAGER')),
     [activeRole],
   );
 
@@ -210,14 +218,14 @@ export const CompanyUsersTab = React.memo<CompanyUsersTabProps>(({
               {tr('الدور', 'Role')}: <span className="font-bold text-slate-700">{language === 'ar' ? roleData.labelAr.split(' (')[0] : roleData.labelEn}</span>
             </div>
             <div className="flex items-center gap-1.5">
-              <button
+              {u.role !== 'EMPLOYEE' && <button
                 type="button"
                 onClick={() => handleOpenEditUser(u)}
                 className="p-1.5 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg text-xs"
                 title={tr('تعديل المستخدم', 'Edit user')}
               >
                 <Edit className="w-3.5 h-3.5" />
-              </button>
+              </button>}
               {onDeleteUser && !isCurrentUser && u.id !== 'user-admin' && (
                 <button
                   type="button"

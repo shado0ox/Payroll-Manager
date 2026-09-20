@@ -20,6 +20,7 @@ test('API endpoints remain delegated to isolated routers', () => {
     'createAuthPasswordResetRouter',
     'createAuthLoginRouter',
     'createAuthSessionRouter',
+    'createEmployeePortalRouter',
     'createGosiRouter',
     'createAdminDatabaseRouter',
     'createStateRouter',

@@ -83,6 +83,14 @@ const ROLE_INFO: Record<UserRole, { labelAr: string; labelEn: string; descAr: st
     color: 'text-emerald-700',
     badgeBg: 'bg-emerald-50 border-emerald-200 text-emerald-700',
   },
+  EMPLOYEE: {
+    labelAr: 'موظف (بوابة الموظف)',
+    labelEn: 'Employee Portal',
+    descAr: 'وصول ذاتي إلى بيانات الموظف المرتبط فقط',
+    descEn: 'Self-service access to the linked employee record only',
+    color: 'text-sky-700',
+    badgeBg: 'bg-sky-50 border-sky-200 text-sky-700',
+  },
 };
 
 export const SettingsView: React.FC<SettingsViewProps> = ({

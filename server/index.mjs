@@ -26,6 +26,7 @@ import { createJournalQoyodRouter } from './routes/journal-qoyod-routes.mjs';
 import { createGosiRouter } from './routes/gosi-routes.mjs';
 import { createCompanyRouter } from './routes/company-routes.mjs';
 import { createUserRouter } from './routes/user-routes.mjs';
+import { createEmployeePortalRouter } from './routes/employee-portal-routes.mjs';
 import { createStateRouter } from './routes/state-routes.mjs';
 import { createOperationalAlertSender, createOperationalLogger, requestContextMiddleware, startDatabaseHealthMonitor } from './operational-monitoring.mjs';
 import { ALLOWED_ROLES, ALL_PERMISSIONS, DEFAULT_PERMISSIONS, allowedCompanyIds, itemCompanyId, permissionsFor, can, isDeveloperUser } from './access-control.mjs';
@@ -229,6 +230,8 @@ app.use('/api/auth', createAuthPasswordResetRouter({
 
 app.use('/api/auth', createAuthLoginRouter({ loginLimiter, pool, q, sha256, permissionsFor }));
 app.use('/api/auth', createAuthSessionRouter({ auth, pool, q, cookieValue, sha256, permissionsFor }));
+
+app.use('/api', createEmployeePortalRouter({ auth,pool,q }));
 
 app.use('/api',createGosiRouter({ auth,writeLimiter,pool,q,can,workflowError,bumpStateVersion,appendStateAudit,broadcastStateUpdate }));
 

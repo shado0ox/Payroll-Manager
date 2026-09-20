@@ -106,6 +106,12 @@ await pool.query(`CREATE TABLE IF NOT EXISTS ${q('employees')} (
 await pool.query(`ALTER TABLE ${q('employees')} ADD COLUMN IF NOT EXISTS is_archived boolean NOT NULL DEFAULT false`);
 await pool.query(`ALTER TABLE ${q('employees')} DROP CONSTRAINT IF EXISTS employees_status_check`);
 await pool.query(`ALTER TABLE ${q('employees')} ADD CONSTRAINT employees_status_check CHECK (status IN ('ONBOARDING','ACTIVE','SUSPENDED','ON_LEAVE','TERMINATED','ABSCONDED'))`);
+await pool.query(`ALTER TABLE ${q('users')} ADD COLUMN IF NOT EXISTS employee_id text`);
+await pool.query(`DO $$ BEGIN
+  ALTER TABLE ${q('users')} ADD CONSTRAINT users_employee_id_fkey
+    FOREIGN KEY (employee_id) REFERENCES ${q('employees')}(id) ON DELETE SET NULL;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$`);
+await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS users_employee_unique_idx ON ${q('users')}(employee_id) WHERE employee_id IS NOT NULL`);
 
 // LEGACY_EMPLOYEE_IDENTITY_COMPAT: records created before the lifecycle wizard already
 // have a valid national ID/iqama. Never reinterpret them as new arrivals solely because

@@ -188,6 +188,10 @@ router.delete('/employees/:id', auth, writeLimiter, async (req, res, next) => {
     } else {
       await client.query(`DELETE FROM ${q('employees')} WHERE id=$1`, [req.params.id]);
     }
+    const disabledPortalUsers = await client.query(`UPDATE ${q('users')} SET is_active=false,updated_at=now() WHERE employee_id=$1 RETURNING id`, [req.params.id]);
+    if (disabledPortalUsers.rowCount) {
+      await client.query(`UPDATE ${q('sessions')} SET expires_at=now() WHERE user_id=ANY($1::text[])`, [disabledPortalUsers.rows.map(row => row.id)]);
+    }
     const updated = await bumpStateVersion(client,req.user.id);
     await client.query(`INSERT INTO ${q('audit_log')} (user_id,action,ip) VALUES ($1,$2,$3)`,
       [req.user.id,`${archived ? 'ARCHIVE' : 'DELETE'}_EMPLOYEE:${req.params.id}`,req.ip]);
@@ -229,6 +233,11 @@ router.post('/companies/:id/employees/archive', auth, writeLimiter, async (req, 
     }
     await client.query(`UPDATE ${q('employees')} SET is_archived=true,updated_at=now()
       WHERE company_id=$1 AND id=ANY($2::text[])`, [req.params.id,employeeIds]);
+    const disabledPortalUsers = await client.query(`UPDATE ${q('users')} SET is_active=false,updated_at=now()
+      WHERE employee_id=ANY($1::text[]) RETURNING id`, [employeeIds]);
+    if (disabledPortalUsers.rowCount) {
+      await client.query(`UPDATE ${q('sessions')} SET expires_at=now() WHERE user_id=ANY($1::text[])`, [disabledPortalUsers.rows.map(row => row.id)]);
+    }
     const updated = await bumpStateVersion(client,req.user.id);
     await appendStateAudit(client,q,{ companyIds:[req.params.id],user:req.user,action:`ARCHIVE_COMPANY_EMPLOYEES:${employeeIds.length}`,version:updated.rows[0].version });
     await client.query(`INSERT INTO ${q('audit_log')} (user_id,action,ip) VALUES ($1,$2,$3)`, [req.user.id,`ARCHIVE_COMPANY_EMPLOYEES:${employeeIds.length}`,req.ip]);
@@ -246,4 +255,3 @@ router.post('/companies/:id/employees/archive', auth, writeLimiter, async (req, 
 
   return router;
 }
-
