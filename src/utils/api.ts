@@ -108,6 +108,20 @@ export type EmployeePortalProfile = {
   company:{id:string;companyCode:string;nameAr:string;nameEn:string;logo?:string};
   subscription:{status:string;expired:boolean;readOnly:boolean;deletionScheduledAt?:string|null}|null;
 };
+export type EmployeePayslipPayment = {batchId:string;batchNumber:string;method:string;paymentDate:string|null;reference:string};
+export type EmployeePayslipSummary = {
+  id:string;periodMonth:string;paidAmount:number;employeeName:string;employeeNo:string;
+  grossSalary:number;totalDeductions:number;netSalary:number;payment:EmployeePayslipPayment;
+};
+export type EmployeePayslipDetail = {
+  id:string;periodMonth:string;paidAmount:number;payment:EmployeePayslipPayment;
+  snapshot:{
+    payrollRunId:string|null;payrollRunItemId:string|null;periodMonth:string;employeeNo:string;employeeName:string;department:string;
+    earnings:{baseSalary:number;housingAllowance:number;transportAllowance:number;otherAllowances:number;nonGosiAllowances:number;overtimeAmount:number;overtimeHours:number;bonuses:number;manualAddition:number;totalGrossSalary:number};
+    deductions:{delayMinutes:number;delayDeduction:number;absenceDays:number;absenceDeduction:number;unpaidLeaveDays:number;unpaidLeaveDeduction:number;gosiEmployeeShare:number;loanDeduction:number;penaltiesDeduction:number;otherDeductions:number;manualDeduction:number;totalDeductions:number};
+    netSalary:number;payableDays:number|null;adjustmentNotes:string;
+  };
+};
 
 class ApiError extends Error {
   constructor(message: string, public status: number) { super(message); this.name = 'ApiError'; }
@@ -384,6 +398,8 @@ export const api = {
   login: (companyCode: string, username: string, password: string) => request<{user: UserAccount; companyId: string}>('/api/auth/login', { method:'POST', body:JSON.stringify({ companyCode, username, password }) }),
   session: () => request<{user: UserAccount}>('/api/auth/session'),
   employeePortalMe: () => request<EmployeePortalProfile>('/api/employee-portal/me'),
+  employeePortalPayslips: () => request<{payslips:EmployeePayslipSummary[]}>('/api/employee-portal/payslips'),
+  employeePortalPayslip: (batchId:string,periodMonth:string) => request<{payslip:EmployeePayslipDetail}>(`/api/employee-portal/payslips/${encodeURIComponent(batchId)}/${encodeURIComponent(periodMonth)}`),
   logout: () => request<void>('/api/auth/logout', { method:'POST' }),
   getState: async () => {
     const result = await request<{state: Partial<AppState> | null; version: number}>('/api/state');
