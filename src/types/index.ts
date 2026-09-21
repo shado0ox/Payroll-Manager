@@ -209,7 +209,7 @@ export interface Employee {
   hireDate: string; // YYYY-MM-DD
   salaryStartDate: string; // YYYY-MM-DD
   annualLeaveEntitlementDays?: number; // Configured annual entitlement used by the employee portal
-  annualLeavePolicy?: 'LABOR_LAW' | 'FIXED_30' | 'CUSTOM';
+  annualLeavePolicy?: 'LABOR_LAW' | 'FIXED_30' | 'DOMESTIC_BIENNIAL_30' | 'CUSTOM';
   annualLeaveOpeningBalance?: number; // Carried/opening days added to the selected year's entitlement
   annualLeavePriorUsedDays?: number; // Approved/received days before the system was activated
   annualLeaveBalanceYear?: number; // Year to which opening balance and prior usage belong
