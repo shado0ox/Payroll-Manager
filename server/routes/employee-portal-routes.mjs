@@ -142,19 +142,32 @@ const safeLeave = row => ({
   status:row.status,isPaid:Boolean(row.is_paid),reason:String(row.reason || ''),createdAt:row.created_at || null,
 });
 
-export function resolveAnnualLeaveBalance(employee, year) {
+const addYears=(iso,years)=>{const date=new Date(`${iso}T00:00:00Z`);date.setUTCFullYear(date.getUTCFullYear()+years);return date.toISOString().slice(0,10);};
+const previousDay=iso=>new Date(Date.parse(`${iso}T00:00:00Z`)-86400000).toISOString().slice(0,10);
+const completedYears=(start,reference)=>{let years=Number(reference.slice(0,4))-Number(start.slice(0,4));if(reference.slice(5)<start.slice(5))years-=1;return Math.max(0,years);};
+
+export function resolveAnnualLeaveBalance(employee, year, referenceDate=`${year}-12-31`) {
   const payload = employee?.payload || employee || {};
-  const policy = ['LABOR_LAW','FIXED_30','CUSTOM'].includes(payload.annualLeavePolicy) ? payload.annualLeavePolicy : 'LABOR_LAW';
+  const policy = ['LABOR_LAW','FIXED_30','DOMESTIC_BIENNIAL_30','CUSTOM'].includes(payload.annualLeavePolicy) ? payload.annualLeavePolicy : 'LABOR_LAW';
   const hireDate = String(employee?.hire_date || payload.hireDate || '');
   const customDays = Math.max(0,Math.min(60,Number(payload.annualLeaveEntitlementDays ?? 21)));
   let entitlementDays = customDays;
   if (policy === 'FIXED_30') entitlementDays = 30;
+  let benefitPeriodStart=`${year}-01-01`,benefitPeriodEnd=`${year}-12-31`,nextEligibilityDate=null;
+  if(policy==='DOMESTIC_BIENNIAL_30'){
+    const validHire=/^\d{4}-\d{2}-\d{2}$/.test(hireDate),serviceYears=validHire?completedYears(hireDate,referenceDate):0;
+    const completedCycles=Math.floor(serviceYears/2);
+    entitlementDays=completedCycles>0?30:0;
+    benefitPeriodStart=validHire?addYears(hireDate,completedCycles*2):`${year}-01-01`;
+    nextEligibilityDate=validHire?addYears(hireDate,(completedCycles+1)*2):null;
+    benefitPeriodEnd=nextEligibilityDate?previousDay(nextEligibilityDate):`${year}-12-31`;
+  }
   if (policy === 'LABOR_LAW') {
     const fifthAnniversaryYear = /^\d{4}-\d{2}-\d{2}$/.test(hireDate) ? Number(hireDate.slice(0,4)) + 5 : Number.POSITIVE_INFINITY;
     entitlementDays = year >= fifthAnniversaryYear ? 30 : 21;
   }
   return {
-    policy,entitlementDays,
+    policy,entitlementDays,...(policy==='DOMESTIC_BIENNIAL_30'?{benefitPeriodStart,benefitPeriodEnd,nextEligibilityDate}:{}),
     openingBalanceDays:!payload.annualLeaveBalanceYear||Number(payload.annualLeaveBalanceYear)===year?Math.max(0,Number(payload.annualLeaveOpeningBalance || 0)):0,
     priorUsedDays:!payload.annualLeaveBalanceYear||Number(payload.annualLeaveBalanceYear)===year?Math.max(0,Number(payload.annualLeavePriorUsedDays || 0)):0,
   };
@@ -165,10 +178,12 @@ export function buildEmployeeLeaveReport(rows, annualLeaveConfig, year) {
   const config = typeof annualLeaveConfig === 'number'
     ? { policy:'CUSTOM',entitlementDays:annualLeaveConfig,openingBalanceDays:0,priorUsedDays:0 }
     : annualLeaveConfig;
+  const periodStart=config.benefitPeriodStart||`${year}-01-01`,periodEnd=config.benefitPeriodEnd||`${year}-12-31`;
+  const periodDays=(item)=>{const start=item.startDate>periodStart?item.startDate:periodStart;const end=item.endDate<periodEnd?item.endDate:periodEnd;return end<start?0:leaveDays(start,end);};
   const approvedAnnualDays = leaves.filter(item => item.type === 'ANNUAL' && item.status === 'APPROVED')
-    .reduce((sum,item) => sum + leaveDaysInYear(item.startDate,item.endDate,year),0);
+    .reduce((sum,item) => sum + periodDays(item),0);
   const pendingAnnualDays = leaves.filter(item => item.type === 'ANNUAL' && item.status === 'PENDING')
-    .reduce((sum,item) => sum + leaveDaysInYear(item.startDate,item.endDate,year),0);
+    .reduce((sum,item) => sum + periodDays(item),0);
   return {
     year,annualBalance:{ ...config,approvedDays:approvedAnnualDays,pendingDays:pendingAnnualDays,
       availableDays:config.entitlementDays + config.openingBalanceDays - config.priorUsedDays,
@@ -311,10 +326,10 @@ export function createEmployeePortalRouter({ auth,writeLimiter,pool,q,bumpStateV
       if (type === 'ANNUAL') {
         const year = Number(startDate.slice(0,4));
         if (endDate.slice(0,4) !== String(year)) throw Object.assign(new Error('ANNUAL_LEAVE_SINGLE_YEAR_REQUIRED'),{ status:400 });
+        const config = resolveAnnualLeaveBalance(employee.rows[0],year,startDate);
         const balance = await client.query(`SELECT COALESCE(sum(GREATEST(0,LEAST(end_date,$4::date)-GREATEST(start_date,$3::date)+1)),0)::numeric used_days FROM ${q('leave_requests')}
           WHERE employee_id=$1 AND company_id=$2 AND leave_type='ANNUAL' AND status IN ('PENDING','APPROVED')
-            AND start_date <= $4::date AND end_date >= $3::date`,[req.user.employee_id,companyId,`${year}-01-01`,`${year}-12-31`]);
-        const config = resolveAnnualLeaveBalance(employee.rows[0],year);
+            AND start_date <= $4::date AND end_date >= $3::date`,[req.user.employee_id,companyId,config.benefitPeriodStart||`${year}-01-01`,config.benefitPeriodEnd||`${year}-12-31`]);
         const available = config.entitlementDays + config.openingBalanceDays - config.priorUsedDays;
         if (Number(balance.rows[0]?.used_days || 0) + requestedDays > available) throw Object.assign(new Error('ANNUAL_LEAVE_BALANCE_EXCEEDED'),{ status:409 });
       }
