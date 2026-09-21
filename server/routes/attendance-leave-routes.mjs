@@ -19,16 +19,24 @@ export function createAttendanceLeaveRouter({
   const router = express.Router();
 
 const leaveDays=(start,end)=>Math.floor((Date.parse(`${end}T00:00:00Z`)-Date.parse(`${start}T00:00:00Z`))/86400000)+1;
-const annualLeaveConfig=(employee,year)=>{
-  const payload=employee?.payload||{},policy=['LABOR_LAW','FIXED_30','CUSTOM'].includes(payload.annualLeavePolicy)?payload.annualLeavePolicy:'LABOR_LAW';
+const addYears=(iso,years)=>{const date=new Date(`${iso}T00:00:00Z`);date.setUTCFullYear(date.getUTCFullYear()+years);return date.toISOString().slice(0,10);};
+const previousDay=iso=>new Date(Date.parse(`${iso}T00:00:00Z`)-86400000).toISOString().slice(0,10);
+const completedYears=(start,reference)=>{let years=Number(reference.slice(0,4))-Number(start.slice(0,4));if(reference.slice(5)<start.slice(5))years-=1;return Math.max(0,years);};
+const annualLeaveConfig=(employee,year,referenceDate=`${year}-12-31`)=>{
+  const payload=employee?.payload||{},policy=['LABOR_LAW','FIXED_30','DOMESTIC_BIENNIAL_30','CUSTOM'].includes(payload.annualLeavePolicy)?payload.annualLeavePolicy:'LABOR_LAW';
   let entitlement=Math.max(0,Math.min(60,Number(payload.annualLeaveEntitlementDays??21)));
   if(policy==='FIXED_30')entitlement=30;
+  let periodStart=`${year}-01-01`,periodEnd=`${year}-12-31`;
+  if(policy==='DOMESTIC_BIENNIAL_30'){
+    const hireDate=String(employee?.hire_date||payload.hireDate||''),valid=/^\d{4}-\d{2}-\d{2}$/.test(hireDate),cycles=valid?Math.floor(completedYears(hireDate,referenceDate)/2):0;
+    entitlement=cycles>0?30:0;periodStart=valid?addYears(hireDate,cycles*2):periodStart;periodEnd=valid?previousDay(addYears(hireDate,(cycles+1)*2)):periodEnd;
+  }
   if(policy==='LABOR_LAW'){
     const hireDate=String(employee?.hire_date||payload.hireDate||'');
     entitlement=/^\d{4}-\d{2}-\d{2}$/.test(hireDate)&&year>=Number(hireDate.slice(0,4))+5?30:21;
   }
   const applies=!payload.annualLeaveBalanceYear||Number(payload.annualLeaveBalanceYear)===year;
-  return {available:entitlement+(applies?Math.max(0,Number(payload.annualLeaveOpeningBalance||0)):0)-(applies?Math.max(0,Number(payload.annualLeavePriorUsedDays||0)):0)};
+  return {available:entitlement+(applies?Math.max(0,Number(payload.annualLeaveOpeningBalance||0)):0)-(applies?Math.max(0,Number(payload.annualLeavePriorUsedDays||0)):0),periodStart,periodEnd};
 };
 
 async function validateLeaveAvailability(client,record,employee){
@@ -38,10 +46,11 @@ async function validateLeaveAvailability(client,record,employee){
   if(record.type!=='ANNUAL'||!['PENDING','APPROVED'].includes(record.status))return;
   const year=Number(record.startDate.slice(0,4));
   if(record.endDate.slice(0,4)!==String(year))throw workflowError(400,'ANNUAL_LEAVE_SINGLE_YEAR_REQUIRED');
+  const config=annualLeaveConfig(employee,year,record.startDate);
   const used=await client.query(`SELECT COALESCE(sum(GREATEST(0,LEAST(end_date,$5::date)-GREATEST(start_date,$4::date)+1)),0)::numeric used_days
     FROM ${q('leave_requests')} WHERE employee_id=$1 AND company_id=$2 AND id<>$3 AND leave_type='ANNUAL'
-      AND status IN ('PENDING','APPROVED') AND start_date<=$5::date AND end_date>=$4::date`,[record.employeeId,record.companyId,record.id,`${year}-01-01`,`${year}-12-31`]);
-  if(Number(used.rows[0]?.used_days||0)+leaveDays(record.startDate,record.endDate)>annualLeaveConfig(employee,year).available)throw workflowError(409,'ANNUAL_LEAVE_BALANCE_EXCEEDED');
+      AND status IN ('PENDING','APPROVED') AND start_date<=$5::date AND end_date>=$4::date`,[record.employeeId,record.companyId,record.id,config.periodStart,config.periodEnd]);
+  if(Number(used.rows[0]?.used_days||0)+leaveDays(record.startDate,record.endDate)>config.available)throw workflowError(409,'ANNUAL_LEAVE_BALANCE_EXCEEDED');
 }
 
 function validateAttendanceRecord(record, user) {
