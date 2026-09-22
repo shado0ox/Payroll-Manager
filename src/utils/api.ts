@@ -304,6 +304,12 @@ export const api = {
     result.employees.forEach(employee => updateSyncedCollection('employees',employee));
     return result;
   },
+  saveAnnualLeaveSettings: async (companyId:string,employeeIds:string[],settings:{policy:string;customDays:number;opening:number;priorUsed:number;year:number}) => {
+    const result = await request<{employees:Employee[];updatedCount:number;version:number;updated_at:string}>('/api/employees/annual-leave-settings', { method:'POST',body:JSON.stringify({ companyId,employeeIds,settings }) });
+    stateVersion = result.version;
+    result.employees.forEach(employee => updateSyncedCollection('employees',employee));
+    return result;
+  },
   archiveCompanyEmployees: async (companyId: string) => {
     const result = await request<{employeeIds:string[];archivedCount:number;version:number;updated_at:string}>(`/api/companies/${encodeURIComponent(companyId)}/employees/archive`, { method:'POST' });
     stateVersion = result.version;
