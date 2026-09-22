@@ -26,14 +26,12 @@ const annualLeaveConfig=(employee,year,referenceDate=`${year}-12-31`)=>{
   const payload=employee?.payload||{},policy=['LABOR_LAW','FIXED_30','DOMESTIC_BIENNIAL_30','CUSTOM'].includes(payload.annualLeavePolicy)?payload.annualLeavePolicy:'LABOR_LAW';
   let entitlement=Math.max(0,Math.min(60,Number(payload.annualLeaveEntitlementDays??21)));
   if(policy==='FIXED_30')entitlement=30;
-  let periodStart=`${year}-01-01`,periodEnd=`${year}-12-31`;
-  if(policy==='DOMESTIC_BIENNIAL_30'){
-    const hireDate=String(employee?.hire_date||payload.hireDate||''),valid=/^\d{4}-\d{2}-\d{2}$/.test(hireDate),cycles=valid?Math.floor(completedYears(hireDate,referenceDate)/2):0;
-    entitlement=cycles>0?30:0;periodStart=valid?addYears(hireDate,cycles*2):periodStart;periodEnd=valid?previousDay(addYears(hireDate,(cycles+1)*2)):periodEnd;
-  }
+  const hireDate=String(employee?.hire_date||payload.hireDate||payload.salaryStartDate||''),valid=/^\d{4}-\d{2}-\d{2}$/.test(hireDate),serviceYears=valid?completedYears(hireDate,referenceDate):0;
+  const cycleYears=policy==='DOMESTIC_BIENNIAL_30'?2:1,cycles=Math.floor(serviceYears/cycleYears);
+  const periodStart=valid?addYears(hireDate,cycles*cycleYears):`${year}-01-01`,periodEnd=valid?previousDay(addYears(hireDate,(cycles+1)*cycleYears)):`${year}-12-31`;
+  if(policy==='DOMESTIC_BIENNIAL_30') entitlement=cycles>0?30:0;
   if(policy==='LABOR_LAW'){
-    const hireDate=String(employee?.hire_date||payload.hireDate||'');
-    entitlement=/^\d{4}-\d{2}-\d{2}$/.test(hireDate)&&year>=Number(hireDate.slice(0,4))+5?30:21;
+    entitlement=serviceYears>=5?30:21;
   }
   const applies=!payload.annualLeaveBalanceYear||Number(payload.annualLeaveBalanceYear)===year;
   return {available:entitlement+(applies?Math.max(0,Number(payload.annualLeaveOpeningBalance||0)):0)-(applies?Math.max(0,Number(payload.annualLeavePriorUsedDays||0)):0),periodStart,periodEnd};
@@ -45,8 +43,8 @@ async function validateLeaveAvailability(client,record,employee){
   if(overlap.rowCount)throw workflowError(409,'EMPLOYEE_LEAVE_OVERLAP');
   if(record.type!=='ANNUAL'||!['PENDING','APPROVED'].includes(record.status))return;
   const year=Number(record.startDate.slice(0,4));
-  if(record.endDate.slice(0,4)!==String(year))throw workflowError(400,'ANNUAL_LEAVE_SINGLE_YEAR_REQUIRED');
   const config=annualLeaveConfig(employee,year,record.startDate);
+  if(record.endDate>config.periodEnd)throw workflowError(400,'ANNUAL_LEAVE_SINGLE_BENEFIT_PERIOD_REQUIRED');
   const used=await client.query(`SELECT COALESCE(sum(GREATEST(0,LEAST(end_date,$5::date)-GREATEST(start_date,$4::date)+1)),0)::numeric used_days
     FROM ${q('leave_requests')} WHERE employee_id=$1 AND company_id=$2 AND id<>$3 AND leave_type='ANNUAL'
       AND status IN ('PENDING','APPROVED') AND start_date<=$5::date AND end_date>=$4::date`,[record.employeeId,record.companyId,record.id,config.periodStart,config.periodEnd]);
