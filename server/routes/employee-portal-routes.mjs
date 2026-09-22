@@ -149,25 +149,21 @@ const completedYears=(start,reference)=>{let years=Number(reference.slice(0,4))-
 export function resolveAnnualLeaveBalance(employee, year, referenceDate=`${year}-12-31`) {
   const payload = employee?.payload || employee || {};
   const policy = ['LABOR_LAW','FIXED_30','DOMESTIC_BIENNIAL_30','CUSTOM'].includes(payload.annualLeavePolicy) ? payload.annualLeavePolicy : 'LABOR_LAW';
-  const hireDate = String(employee?.hire_date || payload.hireDate || '');
+  const hireDate = String(employee?.hire_date || payload.hireDate || payload.salaryStartDate || '');
   const customDays = Math.max(0,Math.min(60,Number(payload.annualLeaveEntitlementDays ?? 21)));
   let entitlementDays = customDays;
   if (policy === 'FIXED_30') entitlementDays = 30;
-  let benefitPeriodStart=`${year}-01-01`,benefitPeriodEnd=`${year}-12-31`,nextEligibilityDate=null;
-  if(policy==='DOMESTIC_BIENNIAL_30'){
-    const validHire=/^\d{4}-\d{2}-\d{2}$/.test(hireDate),serviceYears=validHire?completedYears(hireDate,referenceDate):0;
-    const completedCycles=Math.floor(serviceYears/2);
-    entitlementDays=completedCycles>0?30:0;
-    benefitPeriodStart=validHire?addYears(hireDate,completedCycles*2):`${year}-01-01`;
-    nextEligibilityDate=validHire?addYears(hireDate,(completedCycles+1)*2):null;
-    benefitPeriodEnd=nextEligibilityDate?previousDay(nextEligibilityDate):`${year}-12-31`;
-  }
+  const validHire=/^\d{4}-\d{2}-\d{2}$/.test(hireDate),serviceYears=validHire?completedYears(hireDate,referenceDate):0;
+  const cycleYears=policy==='DOMESTIC_BIENNIAL_30'?2:1,completedCycles=Math.floor(serviceYears/cycleYears);
+  const benefitPeriodStart=validHire?addYears(hireDate,completedCycles*cycleYears):`${year}-01-01`;
+  const nextEligibilityDate=validHire?addYears(hireDate,(completedCycles+1)*cycleYears):null;
+  const benefitPeriodEnd=nextEligibilityDate?previousDay(nextEligibilityDate):`${year}-12-31`;
+  if(policy==='DOMESTIC_BIENNIAL_30') entitlementDays=completedCycles>0?30:0;
   if (policy === 'LABOR_LAW') {
-    const fifthAnniversaryYear = /^\d{4}-\d{2}-\d{2}$/.test(hireDate) ? Number(hireDate.slice(0,4)) + 5 : Number.POSITIVE_INFINITY;
-    entitlementDays = year >= fifthAnniversaryYear ? 30 : 21;
+    entitlementDays = serviceYears >= 5 ? 30 : 21;
   }
   return {
-    policy,entitlementDays,...(policy==='DOMESTIC_BIENNIAL_30'?{benefitPeriodStart,benefitPeriodEnd,nextEligibilityDate}:{}),
+    policy,entitlementDays,benefitPeriodStart,benefitPeriodEnd,nextEligibilityDate,
     openingBalanceDays:!payload.annualLeaveBalanceYear||Number(payload.annualLeaveBalanceYear)===year?Math.max(0,Number(payload.annualLeaveOpeningBalance || 0)):0,
     priorUsedDays:!payload.annualLeaveBalanceYear||Number(payload.annualLeaveBalanceYear)===year?Math.max(0,Number(payload.annualLeavePriorUsedDays || 0)):0,
   };
@@ -296,7 +292,8 @@ export function createEmployeePortalRouter({ auth,writeLimiter,pool,q,bumpStateV
           ORDER BY start_date DESC,sort_order`,params),
       ]);
       if (!employee.rowCount) return res.status(404).json({ error:'EMPLOYEE_PORTAL_PROFILE_NOT_FOUND' });
-      res.json(buildEmployeeLeaveReport(leaves.rows,resolveAnnualLeaveBalance(employee.rows[0],year),year));
+      const today=new Date().toISOString().slice(0,10),referenceDate=year===Number(today.slice(0,4))?today:`${year}-12-31`;
+      res.json(buildEmployeeLeaveReport(leaves.rows,resolveAnnualLeaveBalance(employee.rows[0],year,referenceDate),year));
     } catch (error) { next(error); }
   });
 
@@ -325,8 +322,8 @@ export function createEmployeePortalRouter({ auth,writeLimiter,pool,q,bumpStateV
       const requestedDays = leaveDays(startDate,endDate);
       if (type === 'ANNUAL') {
         const year = Number(startDate.slice(0,4));
-        if (endDate.slice(0,4) !== String(year)) throw Object.assign(new Error('ANNUAL_LEAVE_SINGLE_YEAR_REQUIRED'),{ status:400 });
         const config = resolveAnnualLeaveBalance(employee.rows[0],year,startDate);
+        if (endDate > config.benefitPeriodEnd) throw Object.assign(new Error('ANNUAL_LEAVE_SINGLE_BENEFIT_PERIOD_REQUIRED'),{ status:400 });
         const balance = await client.query(`SELECT COALESCE(sum(GREATEST(0,LEAST(end_date,$4::date)-GREATEST(start_date,$3::date)+1)),0)::numeric used_days FROM ${q('leave_requests')}
           WHERE employee_id=$1 AND company_id=$2 AND leave_type='ANNUAL' AND status IN ('PENDING','APPROVED')
             AND start_date <= $4::date AND end_date >= $3::date`,[req.user.employee_id,companyId,config.benefitPeriodStart||`${year}-01-01`,config.benefitPeriodEnd||`${year}-12-31`]);
