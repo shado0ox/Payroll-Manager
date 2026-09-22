@@ -7,32 +7,27 @@ import {useLanguage} from '../i18n/LanguageContext';
 type Props={
   company:Company;employees:Employee[];leaves:LeaveRequest[];
   onSaveEmployee:(employee:Employee)=>Promise<void>;
+  onBulkSaveAnnualLeaveSettings:(employeeIds:string[],settings:BulkSettings&{year:number})=>Promise<void>;
   onAddLeave:(leave:LeaveRequest)=>void;
   onUpdateLeaveStatus:(id:string,status:'PENDING'|'APPROVED'|'REJECTED')=>void;
 };
 type Balance={employee:Employee;policy:NonNullable<Employee['annualLeavePolicy']>;entitlement:number;opening:number;priorUsed:number;approved:number;pending:number;remaining:number;periodStart:string;periodEnd:string;nextEligibilityDate:string|null};
 type BulkSettings={policy:NonNullable<Employee['annualLeavePolicy']>;customDays:number;opening:number;priorUsed:number};
 const daysBetween=(start:string,end:string)=>Math.max(0,Math.floor((Date.parse(end)-Date.parse(start))/86400000)+1);
-const daysInYear=(leave:LeaveRequest,year:number)=>{
-  const start=leave.startDate>`${year}-01-01`?leave.startDate:`${year}-01-01`;
-  const end=leave.endDate<`${year}-12-31`?leave.endDate:`${year}-12-31`;
-  return end<start?0:daysBetween(start,end);
-};
 const addYears=(iso:string,years:number)=>{const date=new Date(`${iso}T00:00:00Z`);date.setUTCFullYear(date.getUTCFullYear()+years);return date.toISOString().slice(0,10);};
 const previousDay=(iso:string)=>new Date(Date.parse(`${iso}T00:00:00Z`)-86400000).toISOString().slice(0,10);
 const completedYears=(start:string,reference:string)=>{let years=Number(reference.slice(0,4))-Number(start.slice(0,4));if(reference.slice(5)<start.slice(5))years-=1;return Math.max(0,years);};
-const domesticCycle=(employee:Employee,year:number)=>{const hire=employee.hireDate||'',valid=/^\d{4}-\d{2}-\d{2}$/.test(hire),cycles=valid?Math.floor(completedYears(hire,`${year}-12-31`)/2):0;const periodStart=valid?addYears(hire,cycles*2):`${year}-01-01`;const nextEligibilityDate=valid?addYears(hire,(cycles+1)*2):null;return {entitlement:cycles>0?30:0,periodStart,periodEnd:nextEligibilityDate?previousDay(nextEligibilityDate):`${year}-12-31`,nextEligibilityDate};};
+const benefitCycle=(employee:Employee,year:number,referenceDate:string)=>{const hire=employee.hireDate||employee.salaryStartDate||'',valid=/^\d{4}-\d{2}-\d{2}$/.test(hire),cycleYears=employee.annualLeavePolicy==='DOMESTIC_BIENNIAL_30'?2:1,cycles=valid?Math.floor(completedYears(hire,referenceDate)/cycleYears):0;const periodStart=valid?addYears(hire,cycles*cycleYears):`${year}-01-01`;const nextEligibilityDate=valid?addYears(hire,(cycles+1)*cycleYears):null;return {periodStart,periodEnd:nextEligibilityDate?previousDay(nextEligibilityDate):`${year}-12-31`,nextEligibilityDate,serviceYears:valid?completedYears(hire,referenceDate):0,completedCycles:cycles};};
 const daysInRange=(leave:LeaveRequest,start:string,end:string)=>{const effectiveStart=leave.startDate>start?leave.startDate:start,effectiveEnd=leave.endDate<end?leave.endDate:end;return effectiveEnd<effectiveStart?0:daysBetween(effectiveStart,effectiveEnd);};
-const entitlementFor=(employee:Employee,year:number)=>{
+const entitlementFor=(employee:Employee,serviceYears:number,completedCycles:number)=>{
   const policy=employee.annualLeavePolicy||'LABOR_LAW';
   if(policy==='FIXED_30')return 30;
-  if(policy==='DOMESTIC_BIENNIAL_30')return domesticCycle(employee,year).entitlement;
+  if(policy==='DOMESTIC_BIENNIAL_30')return completedCycles>0?30:0;
   if(policy==='CUSTOM')return Math.max(0,Math.min(60,Number(employee.annualLeaveEntitlementDays??21)));
-  const hireYear=/^\d{4}-\d{2}-\d{2}$/.test(employee.hireDate||'')?Number(employee.hireDate.slice(0,4)):Number.POSITIVE_INFINITY;
-  return year>=hireYear+5?30:21;
+  return serviceYears>=5?30:21;
 };
 
-export const AnnualLeaveView:React.FC<Props>=({company,employees,leaves,onSaveEmployee,onAddLeave,onUpdateLeaveStatus})=>{
+export const AnnualLeaveView:React.FC<Props>=({company,employees,leaves,onSaveEmployee,onBulkSaveAnnualLeaveSettings,onAddLeave,onUpdateLeaveStatus})=>{
   const {language}=useLanguage();const tr=(ar:string,en:string)=>language==='ar'?ar:en;
   const now=new Date();const [year,setYear]=useState(now.getFullYear());const [tab,setTab]=useState<'BALANCES'|'REQUESTS'>('BALANCES');
   const [search,setSearch]=useState('');const [policyFilter,setPolicyFilter]=useState('ALL');const [departmentFilter,setDepartmentFilter]=useState('ALL');const [editing,setEditing]=useState<Employee|null>(null);const [saving,setSaving]=useState(false);const [requestOpen,setRequestOpen]=useState(false);
@@ -42,10 +37,10 @@ export const AnnualLeaveView:React.FC<Props>=({company,employees,leaves,onSaveEm
   const departments=useMemo<string[]>(()=>companyEmployees.reduce<string[]>((list,employee)=>employee.department&&!list.includes(employee.department)?[...list,employee.department]:list,[]).sort((a,b)=>a.localeCompare(b,language==='ar'?'ar':'en')),[companyEmployees,language]);
   const balances=useMemo<Balance[]>(()=>companyEmployees.map(employee=>{
     const policy=employee.annualLeavePolicy||'LABOR_LAW';const annual=companyLeaves.filter(l=>l.employeeId===employee.id&&l.type==='ANNUAL');
-    const cycle=policy==='DOMESTIC_BIENNIAL_30'?domesticCycle(employee,year):{entitlement:entitlementFor(employee,year),periodStart:`${year}-01-01`,periodEnd:`${year}-12-31`,nextEligibilityDate:null};
+    const today=new Date().toISOString().slice(0,10),referenceDate=year===Number(today.slice(0,4))?today:`${year}-12-31`,cycle=benefitCycle(employee,year,referenceDate);
     const approved=annual.filter(l=>l.status==='APPROVED').reduce((s,l)=>s+daysInRange(l,cycle.periodStart,cycle.periodEnd),0);
     const pending=annual.filter(l=>l.status==='PENDING').reduce((s,l)=>s+daysInRange(l,cycle.periodStart,cycle.periodEnd),0);
-    const entitlement=entitlementFor(employee,year),balanceApplies=!employee.annualLeaveBalanceYear||employee.annualLeaveBalanceYear===year,opening=balanceApplies?Math.max(0,Number(employee.annualLeaveOpeningBalance||0)):0,priorUsed=balanceApplies?Math.max(0,Number(employee.annualLeavePriorUsedDays||0)):0;
+    const entitlement=entitlementFor(employee,cycle.serviceYears,cycle.completedCycles),balanceApplies=!employee.annualLeaveBalanceYear||employee.annualLeaveBalanceYear===year,opening=balanceApplies?Math.max(0,Number(employee.annualLeaveOpeningBalance||0)):0,priorUsed=balanceApplies?Math.max(0,Number(employee.annualLeavePriorUsedDays||0)):0;
     return {employee,policy,entitlement,opening,priorUsed,approved,pending,remaining:entitlement+opening-priorUsed-approved,periodStart:cycle.periodStart,periodEnd:cycle.periodEnd,nextEligibilityDate:cycle.nextEligibilityDate};
   }),[companyEmployees,companyLeaves,year]);
   const rows=useMemo(()=>balances.filter(row=>{
@@ -64,7 +59,7 @@ export const AnnualLeaveView:React.FC<Props>=({company,employees,leaves,onSaveEm
   const toggleSelected=(id:string)=>setSelectedIds(current=>current.includes(id)?current.filter(value=>value!==id):[...current,id]);
   const visibleIds=rows.map(row=>row.employee.id),allVisibleSelected=visibleIds.length>0&&visibleIds.every(id=>selectedIds.includes(id));
   const toggleAllVisible=()=>setSelectedIds(current=>allVisibleSelected?current.filter(id=>!visibleIds.includes(id)):[...new Set([...current,...visibleIds])]);
-  const applyBulkSettings=async()=>{const targets=companyEmployees.filter(employee=>selectedIds.includes(employee.id));if(!targets.length)return;setSaving(true);try{for(const employee of targets){await onSaveEmployee({...employee,annualLeavePolicy:bulkSettings.policy,annualLeaveEntitlementDays:bulkSettings.policy==='CUSTOM'?bulkSettings.customDays:employee.annualLeaveEntitlementDays,annualLeaveBalanceYear:year,annualLeaveOpeningBalance:bulkSettings.opening,annualLeavePriorUsedDays:bulkSettings.priorUsed});}setSelectedIds([]);setBulkOpen(false);}finally{setSaving(false);}};
+  const applyBulkSettings=async()=>{if(!selectedIds.length)return;setSaving(true);try{await onBulkSaveAnnualLeaveSettings(selectedIds,{...bulkSettings,year});setSelectedIds([]);setBulkOpen(false);}finally{setSaving(false);}};
   const [request,setRequest]=useState({employeeId:'',type:'ANNUAL' as LeaveRequest['type'],startDate:new Date().toISOString().slice(0,10),endDate:new Date().toISOString().slice(0,10),reason:''});
   const submitRequest=(event:React.FormEvent)=>{event.preventDefault();if(!request.employeeId)return;const days=daysBetween(request.startDate,request.endDate);if(!days)return;onAddLeave({id:`leave-admin-${Date.now()}`,companyId:company.id,employeeId:request.employeeId,type:request.type,startDate:request.startDate,endDate:request.endDate,daysCount:days,status:'PENDING',isPaid:request.type!=='UNPAID',reason:request.reason});setRequestOpen(false);};
   const policyInput=editing?.annualLeavePolicy||'LABOR_LAW';

@@ -109,6 +109,41 @@ router.post('/employees/import', auth, writeLimiter, async (req, res, next) => {
   } finally { client.release(); }
 });
 
+router.post('/employees/annual-leave-settings', auth, writeLimiter, async (req,res,next) => {
+  const client=await pool.connect();
+  try {
+    if(!can(req.user,'MANAGE_ATTENDANCE'))return res.status(403).json({error:'FORBIDDEN'});
+    const companyId=String(req.body?.companyId||''),employeeIds=req.body?.employeeIds,settings=req.body?.settings||{};
+    const policy=String(settings.policy||''),year=Number(settings.year),customDays=Number(settings.customDays),opening=Number(settings.opening),priorUsed=Number(settings.priorUsed);
+    if(!req.user.company_ids.includes(companyId)||!Array.isArray(employeeIds)||!employeeIds.length||employeeIds.length>2500
+      ||new Set(employeeIds).size!==employeeIds.length||employeeIds.some(id=>typeof id!=='string'||!id)
+      ||!['LABOR_LAW','FIXED_30','DOMESTIC_BIENNIAL_30','CUSTOM'].includes(policy)
+      ||!Number.isInteger(year)||year<2000||year>2200||!Number.isFinite(customDays)||customDays<0||customDays>60
+      ||!Number.isFinite(opening)||opening<0||!Number.isFinite(priorUsed)||priorUsed<0){
+      return res.status(400).json({error:'INVALID_ANNUAL_LEAVE_BULK_SETTINGS'});
+    }
+    await client.query('BEGIN');
+    const found=await client.query(`SELECT id,payload FROM ${q('employees')} WHERE company_id=$1 AND id=ANY($2::text[]) AND is_archived=false FOR UPDATE`,[companyId,employeeIds]);
+    if(found.rowCount!==employeeIds.length)throw workflowError(409,'ANNUAL_LEAVE_EMPLOYEE_SET_CHANGED');
+    const employees=found.rows.map(row=>({...(row.payload||{}),annualLeavePolicy:policy,
+      annualLeaveEntitlementDays:policy==='CUSTOM'?customDays:row.payload?.annualLeaveEntitlementDays,
+      annualLeaveBalanceYear:year,annualLeaveOpeningBalance:opening,annualLeavePriorUsedDays:priorUsed}));
+    await client.query(`UPDATE ${q('employees')} employee SET payload=source.record,updated_at=now()
+      FROM (SELECT record,record->>'id' id FROM jsonb_array_elements($1::jsonb) record) source
+      WHERE employee.id=source.id AND employee.company_id=$2`,[JSON.stringify(employees),companyId]);
+    const updated=await bumpStateVersion(client,req.user.id);
+    await appendStateAudit(client,q,{companyIds:[companyId],user:req.user,action:`BULK_ANNUAL_LEAVE_SETTINGS:${employees.length}`,version:updated.rows[0].version});
+    await client.query(`INSERT INTO ${q('audit_log')} (user_id,action,ip) VALUES ($1,$2,$3)`,[req.user.id,`BULK_ANNUAL_LEAVE_SETTINGS:${employees.length}`,req.ip]);
+    await client.query('COMMIT');
+    broadcastStateUpdate({version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at,companyIds:[companyId],changes:[{collection:'employees',operation:'upsert',records:employees}]});
+    res.json({employees,updatedCount:employees.length,version:Number(updated.rows[0].version),updated_at:updated.rows[0].updated_at});
+  }catch(error){
+    try{await client.query('ROLLBACK');}catch{}
+    if(Number.isInteger(error?.status))return res.status(error.status).json({error:error.message});
+    next(error);
+  }finally{client.release();}
+});
+
 router.put('/employees/:id', auth, writeLimiter, async (req, res, next) => {
   const client = await pool.connect();
   try {

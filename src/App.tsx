@@ -594,6 +594,24 @@ export const App: React.FC = () => {
     }
   };
 
+  const handleBulkSaveAnnualLeaveSettings = async (employeeIds:string[],settings:{policy:NonNullable<Employee['annualLeavePolicy']>;customDays:number;opening:number;priorUsed:number;year:number}) => {
+    const operation = persistenceQueueRef.current.catch(() => undefined).then(() => api.saveAnnualLeaveSettings(activeCompany.id,employeeIds,settings));
+    persistenceQueueRef.current = operation.then(() => undefined, () => undefined);
+    try {
+      setDbStatus(prev => ({ ...prev,isChecking:true }));
+      const result = await operation;
+      setState(prev => {
+        const committed = new Map(result.employees.map(employee => [employee.id,employee]));
+        return { ...prev,employees:prev.employees.map(employee => committed.get(employee.id) || employee) };
+      });
+      setDbStatus(prev => ({ ...prev,isCloudConnected:true,isChecking:false,lastError:null,lastSavedAt:result.updated_at }));
+    } catch (error:any) {
+      const code=error?.message||'UNKNOWN_ERROR';
+      setDbStatus(prev => ({ ...prev,isChecking:false,lastError:`${tr('تعذر تطبيق إعدادات الإجازة:', 'Could not apply leave settings:')} ${code}` }));
+      throw error;
+    }
+  };
+
   const handleDeleteAllCompanyEmployees = async (companyId: string) => {
     const operation = persistenceQueueRef.current.catch(() => undefined).then(() => api.archiveCompanyEmployees(companyId));
     persistenceQueueRef.current = operation.then(() => undefined, () => undefined);
@@ -1399,7 +1417,8 @@ export const App: React.FC = () => {
 
             {activeTab === 'annual_leave' && hasPermission(state.currentUser, 'MANAGE_ATTENDANCE') && (
               <AnnualLeaveView company={activeCompany} employees={state.employees} leaves={state.leaves}
-                onSaveEmployee={handleSaveEmployee} onUpdateLeaveStatus={handleUpdateLeaveStatus} onAddLeave={handleAddLeave} />
+                onSaveEmployee={handleSaveEmployee} onBulkSaveAnnualLeaveSettings={handleBulkSaveAnnualLeaveSettings}
+                onUpdateLeaveStatus={handleUpdateLeaveStatus} onAddLeave={handleAddLeave} />
             )}
 
             {activeTab === 'loans_penalties' && hasPermission(state.currentUser, 'MANAGE_LOANS_PENALTIES') && (
