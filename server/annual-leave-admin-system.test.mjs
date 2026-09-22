@@ -17,6 +17,14 @@ test('annual leave has a dedicated administration screen outside employee data e
   assert.doesNotMatch(employeeForm,/الرصيد الافتتاحي\/المرحّل/);
 });
 
+test('annual leave administration supports department totals and bulk employee settings',()=>{
+  assert.match(view,/كل الأقسام/);
+  assert.match(view,/departmentTotals/);
+  assert.match(view,/تطبيق على المحددين/);
+  assert.match(view,/toggleAllVisible/);
+  assert.match(view,/applyBulkSettings/);
+});
+
 test('admin leave commands enforce overlap, year and available annual balance on the server',()=>{
   assert.match(routes,/validateLeaveAvailability/);
   assert.match(routes,/EMPLOYEE_LEAVE_OVERLAP/);
