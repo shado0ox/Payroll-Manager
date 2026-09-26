@@ -36,6 +36,17 @@ const annualLeaveConfig=(employee,year,referenceDate=`${year}-12-31`)=>{
   const applies=!payload.annualLeaveBalanceYear||Number(payload.annualLeaveBalanceYear)===year;
   return {available:entitlement+(applies?Math.max(0,Number(payload.annualLeaveOpeningBalance||0)):0)-(applies?Math.max(0,Number(payload.annualLeavePriorUsedDays||0)):0),periodStart,periodEnd};
 };
+const annualLeavePaymentSnapshot=(record,employee)=>{
+  if(record.type!=='ANNUAL')return record;
+  const payload=employee?.payload||{},salary=payload.salaryPackage||{};
+  const fixedCustom=Array.isArray(salary.customAllowances)?salary.customAllowances.reduce((sum,item)=>sum+Math.max(0,Number(item?.amount)||0),0):0;
+  const actualMonthlyWage=['baseSalary','housingAllowance','transportAllowance','otherFixedAllowances','nonGosiOtherAllowances']
+    .reduce((sum,key)=>sum+Math.max(0,Number(salary[key])||0),0)+fixedCustom;
+  const dailyRate=Math.round((actualMonthlyWage/30+Number.EPSILON)*100)/100;
+  const amount=Math.round((actualMonthlyWage/30*Number(record.daysCount)+Number.EPSILON)*100)/100;
+  const settlementType=record.annualSettlementType==='CASH_ALLOWANCE'?'CASH_ALLOWANCE':'LEAVE';
+  return {...record,annualSettlementType:settlementType,annualPaymentTiming:settlementType==='CASH_ALLOWANCE'?'WITH_PAYROLL':record.annualPaymentTiming==='ADVANCE'?'ADVANCE':'WITH_PAYROLL',annualLeaveDailyRate:dailyRate,annualLeaveAmount:amount};
+};
 
 async function validateLeaveAvailability(client,record,employee){
   const overlap=await client.query(`SELECT 1 FROM ${q('leave_requests')} WHERE employee_id=$1 AND company_id=$2 AND id<>$3
@@ -208,18 +219,21 @@ function validateLeaveRecord(record, user) {
   }
   const expectedDays = Math.floor((Date.parse(`${record.endDate}T00:00:00Z`) - Date.parse(`${record.startDate}T00:00:00Z`)) / 86_400_000) + 1;
   if (Number(record.daysCount) > expectedDays) throw workflowError(400,'INVALID_LEAVE_DAYS_COUNT');
+  if(record.type==='ANNUAL'&&(record.annualSettlementType&&!['LEAVE','CASH_ALLOWANCE'].includes(record.annualSettlementType)
+    ||record.annualPaymentTiming&&!['WITH_PAYROLL','ADVANCE'].includes(record.annualPaymentTiming)))throw workflowError(400,'INVALID_ANNUAL_LEAVE_PAYMENT');
 }
 
 router.put('/leaves/:id', auth, writeLimiter, async (req, res, next) => {
   const client = await pool.connect();
   try {
     if (!can(req.user,'MANAGE_ATTENDANCE')) return res.status(403).json({ error:'FORBIDDEN' });
-    const record = req.body || {};
+    let record = req.body || {};
     if (record.id !== req.params.id) return res.status(400).json({ error:'INVALID_LEAVE_REQUEST' });
     validateLeaveRecord(record,req.user);
     await client.query('BEGIN');
     const employee = await client.query(`SELECT company_id,hire_date::text,payload FROM ${q('employees')} WHERE id=$1 AND is_archived=false FOR UPDATE`, [record.employeeId]);
     if (!employee.rowCount || employee.rows[0].company_id !== record.companyId) throw workflowError(400,'INVALID_LEAVE_EMPLOYEE');
+    record=annualLeavePaymentSnapshot(record,employee.rows[0]);
     await validateLeaveAvailability(client,record,employee.rows[0]);
     const existing = await client.query(`SELECT company_id,status,sort_order FROM ${q('leave_requests')} WHERE id=$1 FOR UPDATE`, [record.id]);
     if (existing.rowCount && existing.rows[0].company_id !== record.companyId) throw workflowError(409,'LEAVE_COMPANY_IMMUTABLE');
@@ -261,11 +275,12 @@ router.patch('/leaves/:id/status', auth, writeLimiter, async (req, res, next) =>
     if (!existing.rowCount) throw workflowError(404,'LEAVE_NOT_FOUND');
     if (!req.user.company_ids.includes(existing.rows[0].company_id)) throw workflowError(403,'FORBIDDEN');
     if (existing.rows[0].payload?.status === status) throw workflowError(409,'LEAVE_STATUS_UNCHANGED');
-    const record = { ...existing.rows[0].payload,status };
+    let record = { ...existing.rows[0].payload,status };
     validateLeaveRecord(record,req.user);
     if(status==='APPROVED'){
       const employee=await client.query(`SELECT company_id,hire_date::text,payload FROM ${q('employees')} WHERE id=$1 AND is_archived=false FOR UPDATE`,[record.employeeId]);
       if(!employee.rowCount||employee.rows[0].company_id!==record.companyId)throw workflowError(400,'INVALID_LEAVE_EMPLOYEE');
+      record=annualLeavePaymentSnapshot(record,employee.rows[0]);
       await validateLeaveAvailability(client,record,employee.rows[0]);
     }
     await client.query(`UPDATE ${q('leave_requests')} SET status=$2,payload=$3::jsonb,updated_at=now() WHERE id=$1`, [record.id,status,JSON.stringify(record)]);
