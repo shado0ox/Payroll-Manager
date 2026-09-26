@@ -85,8 +85,12 @@ router.put('/attendance/:id', auth, writeLimiter, async (req, res, next) => {
       throw workflowError(409, 'PAYROLL_SOURCE_ENTRY_LOCKED');
     }
     if (!record.attendanceOnlyWorker) {
-      const employee = await client.query(`SELECT company_id FROM ${q('employees')} WHERE id=$1 AND is_archived=false`, [record.employeeId]);
+      const employee = await client.query(`SELECT company_id,is_archived,termination_date::text FROM ${q('employees')} WHERE id=$1`, [record.employeeId]);
       if (!employee.rowCount || employee.rows[0].company_id !== record.companyId) throw workflowError(400, 'INVALID_ATTENDANCE_EMPLOYEE');
+      if(employee.rows[0].is_archived){
+        const endDate=record.endDate||record.date,terminationDate=employee.rows[0].termination_date;
+        if(!terminationDate||record.periodMonth!==terminationDate.slice(0,7)||record.date>terminationDate||endDate>terminationDate)throw workflowError(409,'ARCHIVED_EMPLOYEE_FINAL_PERIOD_ONLY');
+      }
     }
     const existing = await client.query(`SELECT company_id,sort_order FROM ${q('attendance_records')} WHERE id=$1 FOR UPDATE`, [record.id]);
     if (existing.rowCount && existing.rows[0].company_id !== record.companyId) throw workflowError(409, 'ATTENDANCE_COMPANY_IMMUTABLE');
