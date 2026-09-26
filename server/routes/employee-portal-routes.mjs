@@ -140,6 +140,8 @@ const leaveDaysInYear = (startDate,endDate,year) => {
 const safeLeave = row => ({
   id:row.id,type:row.leave_type,startDate:row.start_date,endDate:row.end_date,daysCount:Number(row.days_count || 0),
   status:row.status,isPaid:Boolean(row.is_paid),reason:String(row.reason || ''),createdAt:row.created_at || null,
+  annualSettlementType:row.payload?.annualSettlementType,annualPaymentTiming:row.payload?.annualPaymentTiming,
+  annualLeaveDailyRate:number(row.payload?.annualLeaveDailyRate),annualLeaveAmount:number(row.payload?.annualLeaveAmount),
 });
 
 const addYears=(iso,years)=>{const date=new Date(`${iso}T00:00:00Z`);date.setUTCFullYear(date.getUTCFullYear()+years);return date.toISOString().slice(0,10);};
@@ -286,7 +288,7 @@ export function createEmployeePortalRouter({ auth,writeLimiter,pool,q,bumpStateV
       const params = [req.user.employee_id,req.user.company_ids];
       const [employee,leaves] = await Promise.all([
         pool.query(`SELECT hire_date::text,payload FROM ${q('employees')} WHERE id=$1 AND company_id=ANY($2::text[]) AND is_archived=false LIMIT 1`,params),
-        pool.query(`SELECT id,leave_type,start_date::text,end_date::text,days_count,status,is_paid,reason,
+        pool.query(`SELECT id,leave_type,start_date::text,end_date::text,days_count,status,is_paid,reason,payload,
             COALESCE(payload->>'createdAt',updated_at::text) created_at
           FROM ${q('leave_requests')} WHERE employee_id=$1 AND company_id=ANY($2::text[])
           ORDER BY start_date DESC,sort_order`,params),
