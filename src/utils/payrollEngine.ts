@@ -5,6 +5,7 @@ import {
   LoanSchedule, 
   PenaltyRecord, 
   TemporaryEarningRecord,
+  LeaveRequest,
   PayrollRunItem 
 } from '../types';
 import { detectBankFromIBAN, getSwiftCodeFromBankName } from './security';
@@ -17,6 +18,7 @@ export interface EmployeeCalculationInput {
   activeLoans: LoanSchedule[];
   penalties: PenaltyRecord[];
   temporaryEarnings?: TemporaryEarningRecord[];
+  leaveRequests?: LeaveRequest[];
 }
 
 export function calculateEmployeePayrollItem(input: EmployeeCalculationInput): PayrollRunItem {
@@ -25,6 +27,7 @@ export function calculateEmployeePayrollItem(input: EmployeeCalculationInput): P
   const activeLoans = input.activeLoans || [];
   const penalties = input.penalties || [];
   const temporaryEarnings = input.temporaryEarnings || [];
+  const leaveRequests = input.leaveRequests || [];
   const companyBank = detectBankFromIBAN(employee.bankIban, company.bankDefinitions);
   const effectiveBankName = companyBank?.nameAr || employee.bankName;
   const effectiveBankSwift = companyBank?.swiftCode || getSwiftCodeFromBankName(employee.bankName, company.bankDefinitions) || employee.bankSwiftCode;
@@ -234,10 +237,14 @@ export function calculateEmployeePayrollItem(input: EmployeeCalculationInput): P
   }
 
   const totalOtherAllowances = effectiveOtherFixed + effectiveNonGosiOther + (customAllowancesSum * salaryProrationFactor);
+  const leaveCashAllowance=roundAmount(leaveRequests.filter(leave=>leave.type==='ANNUAL'&&leave.status==='APPROVED'&&leave.annualSettlementType==='CASH_ALLOWANCE')
+    .reduce((sum,leave)=>sum+Math.max(0,Number(leave.annualLeaveAmount)||0),0),rules.roundingDecimals);
+  const leaveAdvancePaid=roundAmount(leaveRequests.filter(leave=>leave.type==='ANNUAL'&&leave.status==='APPROVED'&&(leave.annualSettlementType||'LEAVE')==='LEAVE'&&leave.annualPaymentTiming==='ADVANCE')
+    .reduce((sum,leave)=>sum+Math.max(0,Number(leave.annualLeaveAmount)||0),0),rules.roundingDecimals);
   const bonuses = roundAmount(
     temporaryEarnings
       .filter(earning => earning.appliedInPayroll !== false)
-      .reduce((sum, earning) => sum + Math.max(0, Number(earning.amount) || 0), 0),
+      .reduce((sum, earning) => sum + Math.max(0, Number(earning.amount) || 0), 0)+leaveCashAllowance,
     rules.roundingDecimals
   );
 
@@ -247,7 +254,7 @@ export function calculateEmployeePayrollItem(input: EmployeeCalculationInput): P
   );
 
   const totalDeductions = roundAmount(
-    delayDeduction + absenceDeduction + unpaidLeaveDeduction + gosiEmployeeShare + loanDeduction + penaltiesDeduction + customDeductionsSum,
+    delayDeduction + absenceDeduction + unpaidLeaveDeduction + gosiEmployeeShare + loanDeduction + penaltiesDeduction + customDeductionsSum + leaveAdvancePaid,
     rules.roundingDecimals
   );
 
@@ -280,6 +287,8 @@ export function calculateEmployeePayrollItem(input: EmployeeCalculationInput): P
   if (totalAbsenceDays >= 5) {
     warningFlags.push(`غياب مرتفع (${totalAbsenceDays} أيام)`);
   }
+  if(leaveCashAllowance>0)warningFlags.push(`بدل إجازة نقدي مضاف للمسير: ${leaveCashAllowance}`);
+  if(leaveAdvancePaid>0)warningFlags.push(`دفعة إجازة مقدمة مسجلة: ${leaveAdvancePaid}`);
 
   return {
     id: `item-${employee.id}-${input.periodMonth}`,
@@ -304,6 +313,7 @@ export function calculateEmployeePayrollItem(input: EmployeeCalculationInput): P
     overtimeAmount: totalOvertimeAmount,
     overtimeHours: totalOvertimeHours,
     bonuses,
+    leaveCashAllowance,
     totalGrossSalary,
     payableDays,
     salaryProrationFactor,
@@ -323,7 +333,8 @@ export function calculateEmployeePayrollItem(input: EmployeeCalculationInput): P
     gosiEnabled,
     loanDeduction,
     penaltiesDeduction,
-    otherDeductions: customDeductionsSum,
+    otherDeductions: customDeductionsSum+leaveAdvancePaid,
+    leaveAdvancePaid,
     totalDeductions,
 
     netSalary,
