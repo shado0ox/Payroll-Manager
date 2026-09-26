@@ -23,6 +23,7 @@ import { printLoanAcknowledgement, printPenaltyAcknowledgement } from '../utils/
 interface LoansPenaltiesViewProps {
   company: Company;
   employees: Employee[];
+  archivedEmployees?: Employee[];
   loans: LoanSchedule[];
   penalties: PenaltyRecord[];
   temporaryEarnings: TemporaryEarningRecord[];
@@ -43,6 +44,7 @@ interface LoansPenaltiesViewProps {
 export const LoansPenaltiesView: React.FC<LoansPenaltiesViewProps> = ({
   company,
   employees,
+  archivedEmployees = [],
   loans,
   penalties,
   temporaryEarnings,
@@ -75,6 +77,7 @@ export const LoansPenaltiesView: React.FC<LoansPenaltiesViewProps> = ({
   const companyEmployees = useMemo(() => {
     return employees.filter(e => e.companyId === company.id);
   }, [employees, company.id]);
+  const companyArchivedEmployees = useMemo(() => archivedEmployees.filter(e => e.companyId === company.id), [archivedEmployees,company.id]);
 
   const companyLoans = useMemo(() => {
     const rows = loans
@@ -149,6 +152,12 @@ export const LoansPenaltiesView: React.FC<LoansPenaltiesViewProps> = ({
     reason: '',
     amount: 200,
   });
+  const penaltyEmployees = useMemo(() => {
+    const eligibleArchived=companyArchivedEmployees.filter(employee=>employee.terminationDate?.slice(0,7)===penaltyForm.periodMonth||employee.id===penaltyForm.employeeId);
+    return [...companyEmployees,...eligibleArchived.filter(employee=>!companyEmployees.some(active=>active.id===employee.id))];
+  },[companyEmployees,companyArchivedEmployees,penaltyForm.periodMonth,penaltyForm.employeeId]);
+  const selectedPenaltyEmployee=penaltyEmployees.find(employee=>employee.id===penaltyForm.employeeId);
+  const penaltyEndDate=selectedPenaltyEmployee?.isArchived?selectedPenaltyEmployee.terminationDate:undefined;
 
   const handleSaveLoan = (e: React.FormEvent) => {
     e.preventDefault();
@@ -610,10 +619,11 @@ export const LoansPenaltiesView: React.FC<LoansPenaltiesViewProps> = ({
                 <label className="block font-semibold text-slate-700 mb-1">{tr('الموظف *', 'Employee *')}</label>
                 <SearchableEmployeeSelect
                   required
-                  employees={companyEmployees}
+                  employees={penaltyEmployees}
                   value={penaltyForm.employeeId}
                   onChange={(employeeId) => setPenaltyForm({ ...penaltyForm, employeeId })}
                 />
+                {penaltyEmployees.some(employee=>employee.id===penaltyForm.employeeId&&employee.isArchived)&&<p className="mt-1 text-[10px] font-bold text-amber-700">{tr('موظف مؤرشف — يسمح بالخصم في شهر انتهاء الخدمة وحتى تاريخ الانتهاء فقط.','Archived employee — deduction is allowed only in the final service month and through the end date.')}</p>}
               </div>
 
               <div className="grid grid-cols-2 gap-3">
@@ -634,6 +644,7 @@ export const LoansPenaltiesView: React.FC<LoansPenaltiesViewProps> = ({
                   <label className="block font-semibold text-slate-700 mb-1">{tr('تاريخ المخالفة', 'Incident date')}</label>
                   <input
                     type="date"
+                    max={penaltyEndDate}
                     value={penaltyForm.date}
                     onChange={(e) => setPenaltyForm({ ...penaltyForm, date: e.target.value })}
                     className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl"
@@ -647,7 +658,7 @@ export const LoansPenaltiesView: React.FC<LoansPenaltiesViewProps> = ({
                   type="month"
                   required
                   value={penaltyForm.periodMonth}
-                  onChange={(e) => setPenaltyForm({ ...penaltyForm, periodMonth: e.target.value })}
+                  onChange={(e) => setPenaltyForm({ ...penaltyForm, periodMonth: e.target.value,employeeId:selectedPenaltyEmployee?.isArchived&&selectedPenaltyEmployee.terminationDate?.slice(0,7)!==e.target.value?'':penaltyForm.employeeId })}
                   className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-mono"
                 />
                 <p className="mt-1 text-[10px] text-slate-500">
