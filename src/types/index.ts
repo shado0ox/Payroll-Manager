@@ -288,6 +288,10 @@ export interface LeaveRequest {
   status: 'PENDING' | 'APPROVED' | 'REJECTED';
   isPaid: boolean;
   reason?: string;
+  annualSettlementType?: 'LEAVE' | 'CASH_ALLOWANCE';
+  annualPaymentTiming?: 'WITH_PAYROLL' | 'ADVANCE';
+  annualLeaveDailyRate?: number;
+  annualLeaveAmount?: number;
 }
 
 export interface LoanAdjustment {
@@ -366,6 +370,7 @@ export interface PayrollRunItem {
   overtimeAmount: number;
   overtimeHours: number;
   bonuses: number;
+  leaveCashAllowance?: number;
   totalGrossSalary: number;
   payableDays?: number;
   salaryProrationFactor?: number;
@@ -393,6 +398,7 @@ export interface PayrollRunItem {
   loanDeduction: number;
   penaltiesDeduction: number;
   otherDeductions: number;
+  leaveAdvancePaid?: number;
   totalDeductions: number;
 
   // Net Pay & Company Costs
