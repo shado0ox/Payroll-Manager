@@ -1388,6 +1388,7 @@ export const App: React.FC = () => {
                 loans={state.loans}
                 penalties={state.penalties}
                 temporaryEarnings={state.temporaryEarnings}
+                leaves={state.leaves}
                 activeRole={state.activeRole}
                 permissions={state.currentUser?.permissions}
                 onSavePayrollRun={handleSavePayrollRunConfirmed}
