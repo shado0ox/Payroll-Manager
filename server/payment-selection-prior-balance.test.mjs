@@ -26,7 +26,7 @@ test('prior-period balance remains included in payroll additions and summary wit
 
 test('payment selection keeps deduction-period and eligibility behavior in current source', () => {
   assert.match(deductions, /value=\{penaltyForm\.periodMonth\}/);
-  assert.match(deductions, /setPenaltyForm\(\{ \.\.\.penaltyForm, periodMonth: e\.target\.value \}\)/);
+  assert.match(deductions, /setPenaltyForm\(\{ \.\.\.penaltyForm, periodMonth: e\.target\.value,/);
   assert.match(payroll, /selectedPaymentItems/);
   assert.match(payroll, /committedEmployeeIds/);
 });

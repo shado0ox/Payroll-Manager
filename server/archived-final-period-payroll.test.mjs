@@ -24,6 +24,21 @@ test('payroll screen includes archived transfers only in their final payroll mon
   assert.match(source,/terminationDate\?\.slice\(0,7\) === selectedPeriod/);
 });
 
+test('archived employees remain selectable for final-period attendance and penalties only',()=>{
+  const app=fs.readFileSync(new URL('../src/App.tsx',import.meta.url),'utf8');
+  const attendanceView=fs.readFileSync(new URL('../src/components/AttendanceLeavesView.tsx',import.meta.url),'utf8');
+  const penaltyView=fs.readFileSync(new URL('../src/components/LoansPenaltiesView.tsx',import.meta.url),'utf8');
+  const attendanceRoutes=fs.readFileSync(new URL('./routes/attendance-leave-routes.mjs',import.meta.url),'utf8');
+  const penaltyRoutes=fs.readFileSync(new URL('./routes/loan-penalty-routes.mjs',import.meta.url),'utf8');
+  assert.match(app,/archivedEmployees=\{state\.archivedEmployees \|\| \[\]\}/);
+  assert.match(attendanceView,/attendanceEmployees/);
+  assert.match(penaltyView,/penaltyEmployees/);
+  assert.match(attendanceRoutes,/ARCHIVED_EMPLOYEE_FINAL_PERIOD_ONLY/);
+  assert.match(penaltyRoutes,/ARCHIVED_EMPLOYEE_FINAL_PERIOD_ONLY/);
+  assert.match(attendanceRoutes,/record\.periodMonth!==terminationDate\.slice\(0,7\)/);
+  assert.match(penaltyRoutes,/record\.periodMonth!==terminationDate\.slice\(0,7\)/);
+});
+
 test('reviewed legacy 9999 adjustments no longer remain payroll scan findings',()=>{
   const run={id:'run-1',companyId:'c1',periodMonth:'2026-09',status:'POSTED',items:[],employeesCount:0};
   const state={employees:[],payrollRuns:[run],journals:[{id:'j1',payrollRunId:'run-1',journalType:'PAYROLL_ACCRUAL',lines:[{id:'line-balance-adjustment',accountCode:'9999',debit:10,credit:0,auditResolution:{resolvedAt:'2026-09-20T00:00:00Z'}}]}]};

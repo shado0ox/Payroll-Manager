@@ -35,8 +35,12 @@ router.put('/penalties/:id', auth, writeLimiter, async (req, res, next) => {
     if ((existingRecord && payrollSourceLocked(stored,'penalty',existingRecord)) || payrollSourceLocked(stored,'penalty',record)) {
       throw workflowError(409, 'PAYROLL_SOURCE_ENTRY_LOCKED');
     }
-    const employee = await client.query(`SELECT company_id FROM ${q('employees')} WHERE id=$1 AND is_archived=false`, [record.employeeId]);
+    const employee = await client.query(`SELECT company_id,is_archived,termination_date::text FROM ${q('employees')} WHERE id=$1`, [record.employeeId]);
     if (!employee.rowCount || employee.rows[0].company_id !== record.companyId) throw workflowError(400, 'INVALID_PENALTY_EMPLOYEE');
+    if(employee.rows[0].is_archived){
+      const terminationDate=employee.rows[0].termination_date;
+      if(!terminationDate||record.periodMonth!==terminationDate.slice(0,7)||record.date>terminationDate)throw workflowError(409,'ARCHIVED_EMPLOYEE_FINAL_PERIOD_ONLY');
+    }
     const existing = await client.query(`SELECT company_id,sort_order FROM ${q('penalties')} WHERE id=$1 FOR UPDATE`, [record.id]);
     if (existing.rowCount && existing.rows[0].company_id !== record.companyId) throw workflowError(409, 'PENALTY_COMPANY_IMMUTABLE');
     const sortOrder = existing.rowCount ? existing.rows[0].sort_order : Number((await client.query(`SELECT COALESCE(min(sort_order),0)-1 AS sort_order FROM ${q('penalties')} WHERE company_id=$1`, [record.companyId])).rows[0]?.sort_order || 0);
@@ -225,4 +229,3 @@ router.delete('/temporary-earnings/:id', auth, writeLimiter, async (req, res, ne
 
   return router;
 }
-

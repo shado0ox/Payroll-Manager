@@ -21,6 +21,7 @@ import { AttendanceImportPanel } from './attendance/AttendanceImportPanel';
 interface AttendanceLeavesViewProps {
   company: Company;
   employees: Employee[];
+  archivedEmployees?: Employee[];
   attendance: AttendanceRecord[];
   leaves: LeaveRequest[];
   activeRole: UserRole;
@@ -35,6 +36,7 @@ interface AttendanceLeavesViewProps {
 export const AttendanceLeavesView: React.FC<AttendanceLeavesViewProps> = ({
   company,
   employees,
+  archivedEmployees = [],
   attendance,
   leaves,
   activeRole,
@@ -91,6 +93,12 @@ export const AttendanceLeavesView: React.FC<AttendanceLeavesViewProps> = ({
   const companyEmployees = useMemo(() => {
     return employees.filter(e => e.companyId === company.id);
   }, [employees, company.id]);
+  const attendanceEmployees=useMemo(()=>{
+    const movementPeriod=(startDate||selectedPeriod).slice(0,7),eligibleArchived=archivedEmployees.filter(employee=>employee.companyId===company.id&&(employee.terminationDate?.slice(0,7)===movementPeriod||employee.id===newAttendance.employeeId));
+    return [...companyEmployees,...eligibleArchived.filter(employee=>!companyEmployees.some(active=>active.id===employee.id))];
+  },[companyEmployees,archivedEmployees,company.id,startDate,selectedPeriod,newAttendance.employeeId]);
+  const selectedAttendanceEmployee=attendanceEmployees.find(employee=>employee.id===newAttendance.employeeId);
+  const attendanceEndLimit=selectedAttendanceEmployee?.isArchived?selectedAttendanceEmployee.terminationDate:undefined;
   const employeeName = (employee?: Employee) => employee
     ? (language === 'en' && (employee.firstNameEn || employee.lastNameEn)
       ? `${employee.firstNameEn || ''} ${employee.lastNameEn || ''}`.trim()
@@ -428,10 +436,11 @@ export const AttendanceLeavesView: React.FC<AttendanceLeavesViewProps> = ({
                 <label className="block font-semibold text-slate-700 mb-1">{tr('الموظف *', 'Employee *')}</label>
                 <SearchableEmployeeSelect
                   required
-                  employees={companyEmployees}
+                  employees={attendanceEmployees}
                   value={newAttendance.employeeId}
                   onChange={(employeeId) => setNewAttendance({ ...newAttendance, employeeId })}
                 />
+                {attendanceEmployees.some(employee=>employee.id===newAttendance.employeeId&&employee.isArchived)&&<p className="mt-1 text-[10px] font-bold text-amber-700">{tr('موظف مؤرشف — الحركة مسموحة في شهر انتهاء الخدمة وحتى تاريخ الانتهاء فقط.','Archived employee — records are allowed only in the final service month and through the end date.')}</p>}
               </div>
 
               {/* Date Range: From / To */}
@@ -457,10 +466,12 @@ export const AttendanceLeavesView: React.FC<AttendanceLeavesViewProps> = ({
                     <input
                       type="date"
                       required
+                      max={attendanceEndLimit}
                       value={startDate}
                       onChange={(e) => {
                         const newStart = e.target.value;
                         setStartDate(newStart);
+                        if(selectedAttendanceEmployee?.isArchived&&selectedAttendanceEmployee.terminationDate?.slice(0,7)!==newStart.slice(0,7))setNewAttendance({...newAttendance,employeeId:''});
                         if (!endDate || endDate < newStart) {
                           setEndDate(newStart);
                         }
@@ -477,6 +488,7 @@ export const AttendanceLeavesView: React.FC<AttendanceLeavesViewProps> = ({
                       type="date"
                       required
                       min={startDate}
+                      max={attendanceEndLimit}
                       value={endDate}
                       onChange={(e) => setEndDate(e.target.value)}
                       className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-mono text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
