@@ -36,6 +36,7 @@ import {
   LoanSchedule, 
   PenaltyRecord, 
   TemporaryEarningRecord,
+  LeaveRequest,
   UserRole,
   UserPermission,
   PayrollPaymentBatch,
@@ -74,6 +75,7 @@ interface PayrollRunsViewProps {
   loans: LoanSchedule[];
   penalties: PenaltyRecord[];
   temporaryEarnings: TemporaryEarningRecord[];
+  leaves: LeaveRequest[];
   activeRole: UserRole;
   permissions?: UserPermission[];
   onSavePayrollRun: (run: PayrollRun) => Promise<boolean>;
@@ -118,6 +120,7 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
   loans,
   penalties,
   temporaryEarnings,
+  leaves,
   activeRole,
   permissions,
   onSavePayrollRun,
@@ -569,6 +572,7 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
         const empLoans = effectiveLoansFor(selectedPeriod, emp.id);
         const empPens = penalties.filter(p => p.employeeId === emp.id && p.periodMonth === selectedPeriod && p.appliedInPayroll !== false);
         const empEarnings = temporaryEarnings.filter(e => e.employeeId === emp.id && e.periodMonth === selectedPeriod && e.appliedInPayroll !== false);
+        const empLeavePayments=leaves.filter(leave=>leave.employeeId===emp.id&&leave.status==='APPROVED'&&leave.startDate.slice(0,7)===selectedPeriod);
 
         let calculated = calculateEmployeePayrollItem({
           employee: emp,
@@ -578,6 +582,7 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
           activeLoans: empLoans,
           penalties: empPens,
           temporaryEarnings: empEarnings,
+          leaveRequests: empLeavePayments,
         });
 
         // Carry every unpaid prior salary period into the current run exactly once.
@@ -605,6 +610,7 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
               activeLoans: effectiveLoansFor(cursor, emp.id),
               penalties: penalties.filter(p => p.employeeId === emp.id && p.periodMonth === cursor && p.appliedInPayroll !== false),
               temporaryEarnings: temporaryEarnings.filter(e => e.employeeId === emp.id && e.periodMonth === cursor && e.appliedInPayroll !== false),
+              leaveRequests: leaves.filter(leave=>leave.employeeId===emp.id&&leave.status==='APPROVED'&&leave.startDate.slice(0,7)===cursor),
             });
             if (Number(priorItem?.netSalary || 0) > 0) {
               priorPeriodDetails.push({
