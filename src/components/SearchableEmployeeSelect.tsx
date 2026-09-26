@@ -132,7 +132,7 @@ export const SearchableEmployeeSelect: React.FC<SearchableEmployeeSelectProps> =
                 className={`w-full px-3 py-2.5 text-start hover:bg-slate-50 flex items-center gap-3 ${employee.id === value ? 'bg-emerald-50' : ''} ${activeIndex === index + (emptyVisible ? 1 : 0) ? 'ring-1 ring-inset ring-emerald-200' : ''}`}
               >
                 <div className="grow min-w-0">
-                  <div className="text-xs font-bold text-slate-800 truncate">{employee.employeeNo} - {employeeName(employee)}</div>
+                  <div className="text-xs font-bold text-slate-800 truncate">{employee.employeeNo} - {employeeName(employee)} {employee.isArchived?<span className="text-amber-700">({language==='ar'?'مؤرشف':'Archived'})</span>:null}</div>
                   <div className="text-[10px] text-slate-500 truncate">{employee.nationalIdOrIqama} • {employee.department} • {employee.jobTitle}</div>
                 </div>
                 {employee.id === value && <Check className="w-4 h-4 text-emerald-600 shrink-0" />}
