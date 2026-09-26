@@ -1404,6 +1404,7 @@ export const App: React.FC = () => {
               <AttendanceLeavesView
                 company={activeCompany}
                 employees={state.employees}
+                archivedEmployees={state.archivedEmployees || []}
                 attendance={state.attendance}
                 leaves={state.leaves}
                 activeRole={state.activeRole}
@@ -1425,6 +1426,7 @@ export const App: React.FC = () => {
               <LoansPenaltiesView
                 company={activeCompany}
                 employees={state.employees}
+                archivedEmployees={state.archivedEmployees || []}
                 loans={state.loans}
                 penalties={state.penalties}
                 temporaryEarnings={state.temporaryEarnings}
