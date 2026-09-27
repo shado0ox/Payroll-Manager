@@ -14,6 +14,7 @@ import { EmployeesToolbar } from './employees/EmployeesToolbar';
 import { EmployeePayrollTotals } from './employees/EmployeePayrollTotals';
 import { useEmployeeImport } from './employees/useEmployeeImport';
 import { api, type EmployeeBankChangeRequest } from '../utils/api';
+import { matchesSearchText } from '../utils/searchNormalization';
 
 interface EmployeesViewProps {
   company: Company;
@@ -157,14 +158,9 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
 
   const filteredEmployees = useMemo(() => {
     return companyEmployees.filter(emp => {
-      const matchesSearch = 
-        emp.employeeNo.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        `${emp.firstNameAr} ${emp.lastNameAr}`.includes(searchTerm) ||
-        emp.nationalIdOrIqama.includes(searchTerm) ||
-        emp.bankIban.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (emp.bankSwiftCode && emp.bankSwiftCode.toLowerCase().includes(searchTerm.toLowerCase())) ||
-        (emp.bankName && emp.bankName.toLowerCase().includes(searchTerm.toLowerCase())) ||
-        emp.jobTitle.includes(searchTerm);
+      const matchesSearch = matchesSearchText(searchTerm, [emp.employeeNo,emp.firstNameAr,emp.lastNameAr,
+        emp.firstNameEn,emp.lastNameEn,emp.nationalIdOrIqama,emp.bankIban,emp.bankSwiftCode,emp.bankName,
+        emp.jobTitle,emp.department]);
 
       const matchesDept = selectedDept === 'ALL' || emp.department === selectedDept;
       const matchesStatus = selectedStatus === 'ALL' || emp.status === selectedStatus;
@@ -362,6 +358,16 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
       ? 'WAITING_IQAMA' as const
       : !hasBankAccount ? 'WAITING_BANK' as const : 'COMPLETE' as const;
 
+    // Some existing leave workflows used salaryStartDate as the return date. Preserve the
+    // employee's original salary eligibility and turn that date into an unpaid-leave period.
+    const returningFromLeave = editingEmployee?.status === 'ON_LEAVE' && formData.status === 'ACTIVE';
+    const enteredReturnDate = returningFromLeave
+      && formData.salaryStartDate
+      && formData.salaryStartDate !== editingEmployee.salaryStartDate
+      ? formData.salaryStartDate : '';
+    const dayBeforeReturn = enteredReturnDate ? new Date(`${enteredReturnDate}T00:00:00Z`) : null;
+    if (dayBeforeReturn) dayBeforeReturn.setUTCDate(dayBeforeReturn.getUTCDate() - 1);
+
     // Standardize SWIFT code uppercase
     const processedForm = {
       ...formData,
@@ -377,7 +383,13 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
       employmentEndReason: formData.status === 'ABSCONDED' ? 'ABSCONDED' as const : formData.employmentEndReason,
       suspensionReason: formData.status === 'ABSCONDED' ? (formData.suspensionReason || 'هروب') : formData.suspensionReason,
       bankIban: normalizedIban,
-      bankSwiftCode: formData.bankSwiftCode ? formData.bankSwiftCode.trim().toUpperCase() : ''
+      bankSwiftCode: formData.bankSwiftCode ? formData.bankSwiftCode.trim().toUpperCase() : '',
+      ...(enteredReturnDate ? {
+        salaryStartDate: editingEmployee?.salaryStartDate || editingEmployee?.hireDate || formData.salaryStartDate,
+        employmentLeaveType: 'UNPAID' as const,
+        employmentLeaveStartDate: formData.employmentLeaveStartDate || `${enteredReturnDate.slice(0,7)}-01`,
+        employmentLeaveEndDate: dayBeforeReturn?.toISOString().slice(0,10),
+      } : {}),
     };
 
     if (isCompletingOnboarding) {
