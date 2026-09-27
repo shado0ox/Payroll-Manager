@@ -102,6 +102,27 @@ test('partial unpaid leave keeps the configured 30-day calculation', () => {
   assert.equal(item.netSalary, 866.67);
 });
 
+test('returning from employee unpaid leave keeps full earnings and shows leave as a deduction', () => {
+  const returningEmployee = {
+    ...employee,
+    salaryStartDate:'2025-01-01',
+    employmentLeaveType:'UNPAID',
+    employmentLeaveStartDate:'2026-09-01',
+    employmentLeaveEndDate:'2026-09-21',
+  };
+  const item = payrollEngine.calculateEmployeePayrollItem({
+    employee:returningEmployee,
+    company,
+    periodMonth:'2026-09',
+    attendanceRecords:[],activeLoans:[],penalties:[],temporaryEarnings:[],
+  });
+  assert.equal(item.baseSalary, 1300);
+  assert.equal(item.totalGrossSalary, 1300);
+  assert.equal(item.unpaidLeaveDays, 21);
+  assert.equal(item.unpaidLeaveDeduction, 910);
+  assert.equal(item.netSalary, 390);
+});
+
 test('overlapping unpaid-leave records do not duplicate days or deductions', () => {
   const item = calculate('2026-08', [
     { date:'2026-08-01',endDate:'2026-08-20',absence:false,unpaidLeave:true,delayMinutes:0,overtimeHours:0 },
