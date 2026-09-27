@@ -51,6 +51,7 @@ import {
   formatNumber, 
   roundAmount 
 } from '../utils/payrollEngine';
+import { matchesSearchText } from '../utils/searchNormalization';
 import { 
   exportPayrollSheetCsv, 
   exportQoyodJournalCsv, 
@@ -204,10 +205,7 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
   const filteredItems = useMemo(() => {
     if (!currentRun) return [];
     return currentRun.items.filter(item => {
-      const matchesSearch = 
-        item.employeeNo.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        item.employeeName.includes(searchTerm) ||
-        item.bankIban.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchesSearch = matchesSearchText(searchTerm, [item.employeeNo,item.employeeName,item.bankIban,item.department]);
 
       const matchesWarning = filterWarningOnly ? item.warningFlags.length > 0 : true;
       const matchesDept = filterDept === 'ALL' || item.department === filterDept;

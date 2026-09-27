@@ -25,7 +25,7 @@ export function createEmployeeRouter({
 
 function validImportedEmployee(employee, user) {
   const salary = employee?.salaryPackage || {};
-  const dates = ['hireDate','salaryStartDate','terminationDate','suspensionStartDate','suspensionEndDate'];
+  const dates = ['hireDate','salaryStartDate','terminationDate','suspensionStartDate','suspensionEndDate','employmentLeaveStartDate','employmentLeaveEndDate'];
   return employee && typeof employee === 'object' && typeof employee.id === 'string' && Boolean(employee.id)
     && typeof employee.companyId === 'string' && user.company_ids.includes(employee.companyId)
     && typeof employee.employeeNo === 'string' && Boolean(employee.employeeNo.trim())

@@ -119,6 +119,13 @@ export function calculateEmployeePayrollItem(input: EmployeeCalculationInput): P
   const servicePeriodStart = salaryStart > periodStart ? salaryStart : periodStart;
   const servicePeriodEnd = salaryEnd && salaryEnd < periodEnd ? salaryEnd : periodEnd;
 
+  if (employee.employmentLeaveType === 'UNPAID' && employee.employmentLeaveStartDate) {
+    const leaveStart = employee.employmentLeaveStartDate > servicePeriodStart ? employee.employmentLeaveStartDate : servicePeriodStart;
+    const configuredLeaveEnd = employee.employmentLeaveEndDate || periodEnd;
+    const leaveEnd = configuredLeaveEnd < servicePeriodEnd ? configuredLeaveEnd : servicePeriodEnd;
+    if (leaveStart <= leaveEnd) addDateRangeToSet(unpaidLeaveDates, leaveStart, leaveEnd);
+  }
+
   attendanceRecords.forEach((record) => {
     const recordStart = record.date;
     const recordEnd = record.endDate || record.date;

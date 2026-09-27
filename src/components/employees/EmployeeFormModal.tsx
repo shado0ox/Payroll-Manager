@@ -373,6 +373,27 @@ export const EmployeeFormModal = React.memo<EmployeeFormModalProps>(({
                   </div>
                 )}
 
+                {(formData.status === 'ON_LEAVE' || (editingEmployee?.status === 'ON_LEAVE' && formData.status === 'ACTIVE')) && (
+                  <div className="mt-3 p-3 bg-violet-50 rounded-xl border border-violet-200 grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div>
+                      <label className="block text-xs font-bold text-violet-900 mb-1">{language === 'ar' ? 'نوع الإجازة' : 'Leave type'}</label>
+                      <select value={formData.employmentLeaveType || 'UNPAID'} onChange={(e) => setFormData({ ...formData, employmentLeaveType: e.target.value as Employee['employmentLeaveType'] })} className="w-full px-3 py-2 text-xs bg-white border border-violet-300 rounded-lg">
+                        <option value="UNPAID">{language === 'ar' ? 'بدون راتب' : 'Unpaid'}</option>
+                        <option value="PAID">{language === 'ar' ? 'مدفوعة' : 'Paid'}</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-violet-900 mb-1">{language === 'ar' ? 'أول يوم إجازة' : 'First leave day'}</label>
+                      <input type="date" value={formData.employmentLeaveStartDate || ''} onChange={(e) => setFormData({ ...formData, employmentLeaveStartDate: e.target.value })} className="w-full px-3 py-2 text-xs bg-white border border-violet-300 rounded-lg" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-violet-900 mb-1">{language === 'ar' ? 'آخر يوم إجازة' : 'Last leave day'}</label>
+                      <input type="date" min={formData.employmentLeaveStartDate || undefined} value={formData.employmentLeaveEndDate || ''} onChange={(e) => setFormData({ ...formData, employmentLeaveEndDate: e.target.value })} className="w-full px-3 py-2 text-xs bg-white border border-violet-300 rounded-lg" />
+                    </div>
+                    <p className="sm:col-span-3 text-[11px] text-violet-800">{language === 'ar' ? 'لا تغيّر بداية استحقاق الراتب عند العودة. سيظهر الراتب كاملًا في الاستحقاقات، وتظهر أيام الإجازة بدون راتب في الخصومات.' : 'Do not change salary eligibility on return. Full monthly earnings remain visible and unpaid-leave days appear under deductions.'}</p>
+                  </div>
+                )}
+
                 {formData.status === 'TERMINATED' && (
                   <div className="mt-3 p-3 bg-blue-50 rounded-xl border border-blue-200 grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>

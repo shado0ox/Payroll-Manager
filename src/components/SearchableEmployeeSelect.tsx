@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Check, ChevronDown, Search, UserRound, X } from 'lucide-react';
 import { Employee } from '../types';
 import { useLanguage } from '../i18n/LanguageContext';
+import { matchesSearchText } from '../utils/searchNormalization';
 
 interface SearchableEmployeeSelectProps {
   employees: Employee[];
@@ -38,9 +39,8 @@ export const SearchableEmployeeSelect: React.FC<SearchableEmployeeSelectProps> =
     : `${employee.firstNameAr} ${employee.lastNameAr}`;
 
   const filtered = useMemo(() => {
-    const normalized = query.trim().toLocaleLowerCase('ar');
-    if (!normalized) return employees;
-    return employees.filter(employee => [
+    if (!query.trim()) return employees;
+    return employees.filter(employee => matchesSearchText(query, [
       employee.employeeNo,
       employee.firstNameAr,
       employee.lastNameAr,
@@ -49,7 +49,7 @@ export const SearchableEmployeeSelect: React.FC<SearchableEmployeeSelectProps> =
       employee.nationalIdOrIqama,
       employee.department,
       employee.jobTitle,
-    ].join(' ').toLocaleLowerCase('ar').includes(normalized));
+    ]));
   }, [employees, query]);
 
   useEffect(() => {
