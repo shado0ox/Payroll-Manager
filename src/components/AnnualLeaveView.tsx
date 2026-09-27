@@ -3,6 +3,7 @@ import {CalendarDays,CheckCircle2,Plus,Search,Settings2,X,RotateCcw,XCircle,User
 import {Company,Employee,LeaveRequest} from '../types';
 import {SearchableEmployeeSelect} from './SearchableEmployeeSelect';
 import {useLanguage} from '../i18n/LanguageContext';
+import {matchesSearchText} from '../utils/searchNormalization';
 
 type Props={
   company:Company;employees:Employee[];leaves:LeaveRequest[];
@@ -44,7 +45,7 @@ export const AnnualLeaveView:React.FC<Props>=({company,employees,leaves,onSaveEm
     return {employee,policy,entitlement,opening,priorUsed,approved,pending,remaining:entitlement+opening-priorUsed-approved,periodStart:cycle.periodStart,periodEnd:cycle.periodEnd,nextEligibilityDate:cycle.nextEligibilityDate};
   }),[companyEmployees,companyLeaves,year]);
   const rows=useMemo(()=>balances.filter(row=>{
-    const q=search.trim().toLowerCase(),e=row.employee;const matches=!q||`${e.employeeNo} ${e.firstNameAr} ${e.lastNameAr} ${e.firstNameEn} ${e.lastNameEn}`.toLowerCase().includes(q);
+    const e=row.employee;const matches=matchesSearchText(search,[e.employeeNo,e.firstNameAr,e.lastNameAr,e.firstNameEn,e.lastNameEn,e.department]);
     return matches&&(policyFilter==='ALL'||row.policy===policyFilter)&&(departmentFilter==='ALL'||e.department===departmentFilter);
   }),[balances,search,policyFilter,departmentFilter]);
   const totals=useMemo(()=>rows.reduce((a,r)=>({entitlement:a.entitlement+r.entitlement+r.opening,approved:a.approved+r.approved,pending:a.pending+r.pending,remaining:a.remaining+r.remaining}),{entitlement:0,approved:0,pending:0,remaining:0}),[rows]);
