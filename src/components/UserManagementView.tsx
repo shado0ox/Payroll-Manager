@@ -378,6 +378,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
                 const roleMeta = ROLE_INFO[user.role] || ROLE_INFO.OPERATIONS_MANAGER;
                 const linkedEmployee = employees.find(e => e.id === user.employeeId);
                 const isMasterAdmin = user.id === 'user-admin';
+                const isProtectedOwner = user.isCompanyOwner === true;
                 const isSelf = currentUser?.id === user.id;
 
                 return (
@@ -463,7 +464,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
                         </button>}
 
                         {/* Delete */}
-                        {!isMasterAdmin && (
+                        {!isMasterAdmin && !isProtectedOwner && (
                           <button
                             onClick={() => {
                               if (isSelf) return;
