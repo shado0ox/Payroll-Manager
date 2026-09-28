@@ -21,7 +21,7 @@ export function createUserRouter({ auth,writeLimiter,pool,q,can,allowedRoles,all
         const duplicateEmail = await client.query(`SELECT id FROM ${q('users')} WHERE lower(email)=lower($1) AND id<>$2 LIMIT 1`, [normalizedEmail, req.params.id]);
         if (duplicateEmail.rowCount) throw workflowError(409,'USER_EMAIL_EXISTS');
       }
-      const existing = await client.query(`SELECT id,password_hash,company_ids,role FROM ${q('users')} WHERE id=$1 FOR UPDATE`, [req.params.id]);
+      const existing = await client.query(`SELECT id,password_hash,company_ids,role,is_company_owner FROM ${q('users')} WHERE id=$1 FOR UPDATE`, [req.params.id]);
       if (existing.rowCount) assertExistingUserScope(existing.rows[0], req.user);
       if (u.role === 'EMPLOYEE') {
         const employee = await client.query(`SELECT company_id FROM ${q('employees')} WHERE id=$1 AND is_archived=false`, [u.employeeId]);
@@ -33,11 +33,11 @@ export function createUserRouter({ auth,writeLimiter,pool,q,can,allowedRoles,all
         VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9::jsonb,$10,$11)
         ON CONFLICT (id) DO UPDATE SET username=EXCLUDED.username,password_hash=EXCLUDED.password_hash,name=EXCLUDED.name,
         email=EXCLUDED.email,phone=EXCLUDED.phone,role=EXCLUDED.role,company_ids=EXCLUDED.company_ids,permissions=EXCLUDED.permissions,employee_id=EXCLUDED.employee_id,is_active=EXCLUDED.is_active,updated_at=now()
-        RETURNING id,username,name,email,phone,role,company_ids,permissions,employee_id,is_active,created_at,last_login`, [
+        RETURNING id,username,name,email,phone,role,company_ids,permissions,employee_id,is_active,is_company_owner,created_at,last_login`, [
         req.params.id, String(u.username).toLowerCase(), passwordHash, u.name, normalizedEmail, u.phone || '', u.role, JSON.stringify(u.companyIds), JSON.stringify(permissions), u.employeeId || null, u.isActive !== false
       ]);
       const row = r.rows[0];
-      const record = { id:row.id,username:row.username,name:row.name,email:row.email,phone:row.phone,role:row.role,companyIds:row.company_ids,permissions:row.permissions,employeeId:row.employee_id || undefined,isActive:row.is_active,createdAt:row.created_at,lastLogin:row.last_login };
+      const record = { id:row.id,username:row.username,name:row.name,email:row.email,phone:row.phone,role:row.role,companyIds:row.company_ids,permissions:row.permissions,employeeId:row.employee_id || undefined,isActive:row.is_active,isCompanyOwner:row.is_company_owner,createdAt:row.created_at,lastLogin:row.last_login };
       const updated = await client.query(`UPDATE ${q('app_state')} SET version=version+1,updated_by=$1,updated_at=now() WHERE id=1 RETURNING version,updated_at`, [req.user.id]);
       if (!updated.rowCount) throw workflowError(409,'STATE_NOT_INITIALIZED');
       await appendStateAudit(client,q,{ companyIds:record.companyIds,user:req.user,action:'STATE_PATCH',version:updated.rows[0].version });
@@ -68,6 +68,8 @@ export function createUserRouter({ auth,writeLimiter,pool,q,can,allowedRoles,all
       const scope = ` AND company_ids <@ $2::jsonb${req.user.role !== 'ADMIN' ? " AND role='OPERATIONS_MANAGER'" : ''}`;
       client = await pool.connect();
       await client.query('BEGIN');
+      const protectedUser = await client.query(`SELECT is_company_owner FROM ${q('users')} WHERE id=$1${scope} FOR UPDATE`,params);
+      if (protectedUser.rows[0]?.is_company_owner) throw workflowError(403,'COMPANY_OWNER_IMMUTABLE');
       const deleted = await client.query(`DELETE FROM ${q('users')} WHERE id=$1${scope} RETURNING id,name,company_ids`, params);
       if (!deleted.rowCount) throw workflowError(404,'USER_NOT_FOUND');
       const row = deleted.rows[0];
