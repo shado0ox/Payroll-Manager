@@ -67,6 +67,7 @@ const EmployeeStatementModal = lazy(() => import('./components/EmployeeStatement
 const QoyodIntegrationModal = lazy(() => import('./components/QoyodIntegrationModal').then(module => ({ default:module.QoyodIntegrationModal })));
 const DatabaseStatusModal = lazy(() => import('./components/DatabaseStatusModal').then(module => ({ default:module.DatabaseStatusModal })));
 const EmployeePortalView = lazy(() => import('./components/EmployeePortalView').then(module => ({ default:module.EmployeePortalView })));
+const PublicWebsite = lazy(() => import('./components/PublicWebsite').then(module => ({ default:module.PublicWebsite })));
 
 const TAB_SESSION_KEY = 'masar_tab_session_v1';
 const LAST_ACTIVITY_KEY = 'masar_last_activity_v1';
@@ -404,6 +405,7 @@ export const App: React.FC = () => {
     sessionStorage.setItem(TAB_SESSION_KEY, 'active');
     sessionStorage.setItem(LAST_ACTIVITY_KEY, String(Date.now()));
     if (user.role === 'EMPLOYEE') window.history.replaceState({},'', '/portal');
+    else if (['/','/login','/pricing','/privacy','/terms'].includes(window.location.pathname)) navigateToTab('dashboard', { replace:true });
   };
 
   const handleLogin = async (companyCode: string,username: string,password: string) => {
@@ -1212,6 +1214,10 @@ export const App: React.FC = () => {
     void persistenceQueueRef.current.catch(() => undefined).finally(() => window.location.reload());
   };
   const buildUpdateBanner = updateAvailable ? <BuildUpdateBanner language={language} onReload={handleBuildReload} /> : null;
+
+  if (['/','/pricing','/privacy','/terms'].includes(window.location.pathname) && !state.currentUser) {
+    return <Suspense fallback={<div className="min-h-screen bg-slate-950" />}><PublicWebsite /></Suspense>;
+  }
 
   // If not logged in, show real Login View
   if (!authReady) {
