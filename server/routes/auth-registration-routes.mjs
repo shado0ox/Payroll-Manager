@@ -16,6 +16,10 @@ export function createAuthRegistrationRouter({
 }) {
   const router = express.Router();
   const employeeAccountStatuses = ['ACTIVE','SUSPENDED','ON_LEAVE'];
+  const privacyVersion = '1.0';
+  const termsVersion = '1.0';
+  const acceptedPolicies = body => body?.privacyAccepted === true
+    && body?.privacyVersion === privacyVersion && body?.termsVersion === termsVersion;
 
   router.post('/employee-register/start', registrationLimiter, async (req,res,next) => {
     try {
@@ -25,6 +29,7 @@ export function createAuthRegistrationRouter({
       const username = String(req.body?.username || '').trim().toLowerCase();
       const password = String(req.body?.password || '');
       const language = req.body?.language === 'en' ? 'en' : 'ar';
+      if (!acceptedPolicies(req.body)) return res.status(400).json({ error:'PRIVACY_CONSENT_REQUIRED' });
       if (!/^[A-Za-z0-9_-]{2,30}$/.test(companyCode) || !/^[A-Za-z0-9-]{5,30}$/.test(identityNumber)
         || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || !/^[a-z0-9._-]{3,40}$/.test(username)
         || !isStrongPassword(password)) return res.status(400).json({ error:'INVALID_EMPLOYEE_REGISTRATION' });
@@ -41,7 +46,7 @@ export function createAuthRegistrationRouter({
       const code = String(crypto.randomInt(100000,1000000));
       const row = employee.rows[0];
       const name = `${row.first_name_ar || row.first_name_en || ''} ${row.last_name_ar || row.last_name_en || ''}`.trim();
-      const details = { kind:'EMPLOYEE',employeeId:row.id,companyId:row.company_id,companyCode,username,email,name,passwordHash:await bcrypt.hash(password,12),language };
+      const details = { kind:'EMPLOYEE',employeeId:row.id,companyId:row.company_id,companyCode,username,email,name,passwordHash:await bcrypt.hash(password,12),language,privacyVersion,termsVersion,privacyAcceptedAt:new Date().toISOString() };
       await pool.query(`INSERT INTO ${q('registration_requests')} (id,email,code_hash,details,expires_at)
         VALUES ($1,$2,$3,$4::jsonb,now()+interval '15 minutes')
         ON CONFLICT (email) DO UPDATE SET id=EXCLUDED.id,code_hash=EXCLUDED.code_hash,details=EXCLUDED.details,expires_at=EXCLUDED.expires_at,attempts=0,updated_at=now()`,
@@ -80,6 +85,12 @@ export function createAuthRegistrationRouter({
       const accountId = `portal-${crypto.randomUUID()}`;
       await client.query(`INSERT INTO ${q('employee_portal_accounts')} (id,employee_id,company_id,username,password_hash,email,is_active,email_verified_at)
         VALUES ($1,$2,$3,$4,$5,$6,true,now())`,[accountId,details.employeeId,details.companyId,details.username,details.passwordHash,details.email]);
+      await client.query(`INSERT INTO ${q('privacy_consents')}
+        (id,subject_type,subject_id,company_id,email,privacy_version,terms_version,accepted_at,ip_hash,user_agent)
+        VALUES ($1,'EMPLOYEE_PORTAL',$2,$3,$4,$5,$6,$7,$8,$9)`,[
+        `consent-${crypto.randomUUID()}`,accountId,details.companyId,details.email,details.privacyVersion,details.termsVersion,
+        details.privacyAcceptedAt,sha256(String(req.ip || '')),String(req.get('user-agent') || '').slice(0,500),
+      ]);
       await client.query(`UPDATE ${q('employees')} SET payload=jsonb_set(payload,'{email}',to_jsonb($1::text),true),updated_at=now()
         WHERE id=$2 AND company_id=$3`,[details.email,details.employeeId,details.companyId]);
       await client.query(`DELETE FROM ${q('registration_requests')} WHERE id=$1`,[requestId]);
@@ -102,6 +113,7 @@ export function createAuthRegistrationRouter({
       const email = String(req.body?.email || '').trim().toLowerCase();
       const password = String(req.body?.password || '');
       const language = req.body?.language === 'en' ? 'en' : 'ar';
+      if (!acceptedPolicies(req.body)) return res.status(400).json({ error:'PRIVACY_CONSENT_REQUIRED' });
       if (companyNameAr.length < 2 || adminName.length < 2 || !/^[a-z0-9._-]{3,40}$/.test(username)
         || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || !isStrongPassword(password)
         || phone.length < 7 || phone.length > 25) {
@@ -111,7 +123,7 @@ export function createAuthRegistrationRouter({
       if (duplicate.rowCount) return res.status(409).json({ error:'ACCOUNT_ALREADY_EXISTS' });
       const requestId = crypto.randomUUID();
       const code = String(crypto.randomInt(100000, 1000000));
-      const details = { companyNameAr,companyNameEn,crNumber,taxNumber,phone,adminName,username,email,passwordHash:await bcrypt.hash(password,12),language };
+      const details = { companyNameAr,companyNameEn,crNumber,taxNumber,phone,adminName,username,email,passwordHash:await bcrypt.hash(password,12),language,privacyVersion,termsVersion,privacyAcceptedAt:new Date().toISOString() };
       await pool.query(`INSERT INTO ${q('registration_requests')} (id,email,code_hash,details,expires_at)
         VALUES ($1,$2,$3,$4::jsonb,now()+interval '15 minutes')
         ON CONFLICT (email) DO UPDATE SET id=EXCLUDED.id,code_hash=EXCLUDED.code_hash,details=EXCLUDED.details,
@@ -172,6 +184,12 @@ export function createAuthRegistrationRouter({
         (id,username,password_hash,name,email,phone,role,company_ids,permissions,is_active,email_verified_at,is_company_owner)
         VALUES ($1,$2,$3,$4,$5,$6,'COMPANY_MANAGER',$7::jsonb,$8::jsonb,true,now(),true)`,
         [userId,details.username,details.passwordHash,details.adminName,details.email,details.phone,JSON.stringify([companyId]),JSON.stringify(companyManagerPermissions)]);
+      await client.query(`INSERT INTO ${q('privacy_consents')}
+        (id,subject_type,subject_id,company_id,email,privacy_version,terms_version,accepted_at,ip_hash,user_agent)
+        VALUES ($1,'USER',$2,$3,$4,$5,$6,$7,$8,$9)`,[
+        `consent-${crypto.randomUUID()}`,userId,companyId,details.email,details.privacyVersion,details.termsVersion,
+        details.privacyAcceptedAt,sha256(String(req.ip || '')),String(req.get('user-agent') || '').slice(0,500),
+      ]);
       await client.query(`DELETE FROM ${q('registration_requests')} WHERE email=$1`, [details.email]);
       await client.query('COMMIT');
       res.status(201).json({ companyCode,username:details.username,trialEndsAt,trialDays });
