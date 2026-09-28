@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import test from 'node:test';
 
 import { createUserRecordPolicy } from './user-record-policy.mjs';
@@ -49,4 +50,30 @@ test('user record policy prevents cross-tenant grants and edits', () => {
     { role:'OPERATIONS_MANAGER',company_ids:['company-b'] },
     { role:'COMPANY_MANAGER',company_ids:['company-a'] },
   ), error => error.status === 403 && error.message === 'FORBIDDEN');
+});
+
+test('company managers may grant only permissions they currently own', () => {
+  const result = policy.prepareUserRecord(
+    { role:'COMPANY_MANAGER',company_ids:['company-a'] },
+    { username:'operations',name:'Operations',role:'OPERATIONS_MANAGER',companyIds:['company-a'],permissions:['VIEW_REPORTS'] },
+  );
+  assert.deepEqual(result.permissions,['VIEW_REPORTS']);
+  assert.throws(() => policy.prepareUserRecord(
+    { role:'COMPANY_MANAGER',company_ids:['company-a'] },
+    { username:'operations',name:'Operations',role:'OPERATIONS_MANAGER',companyIds:['company-a'],permissions:['MANAGE_PAYROLL'] },
+  ), error => error.status === 403 && error.message === 'CANNOT_GRANT_UNOWNED_PERMISSION');
+});
+
+test('user management limits defaults and checkboxes to the current manager permissions', () => {
+  const source = fs.readFileSync('src/components/UserManagementView.tsx','utf8');
+  assert.match(source,/effectivePermissions\(currentUser\)/);
+  assert.match(source,/permissions: permittedDefaults\('OPERATIONS_MANAGER'\)/);
+  assert.match(source,/\{grantablePermissions\.map\(permission =>/);
+  assert.match(source,/formData\.permissions\.filter\(permission => grantableSet\.has\(permission\)\)/);
+  assert.doesNotMatch(source,/\['comp-1'\]/);
+  assert.match(source,/currentUser\?\.companyIds \|\| companies\.map/);
+  const companyTab = fs.readFileSync('src/components/company/CompanyUsersTab.tsx','utf8');
+  assert.match(companyTab,/effectivePermissions\(currentUser\)/);
+  assert.match(companyTab,/permissions: permittedDefaults\('OPERATIONS_MANAGER'\)/);
+  assert.match(companyTab,/permissions: \(userFormData\.permissions \|\| permittedDefaults/);
 });
