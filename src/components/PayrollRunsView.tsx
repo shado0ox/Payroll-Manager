@@ -327,6 +327,10 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
       const iban = String(employee?.bankIban || item.bankIban || '').replace(/\s/g, '').toUpperCase();
       return !/^SA\d{22}$/.test(iban) || employee?.bankAccountStatus === 'PENDING';
     });
+    if (paymentBatchForm.method === 'CASH' && invalidBankItems.length && !company.allowCashPayrollWithoutIban) {
+      alert(tr('السداد النقدي لموظفين بدون آيبان غير مفعّل في إعدادات المنشأة.', 'Cash payroll for employees without IBAN is not enabled in company settings.'));
+      return;
+    }
     if (paymentBatchForm.method !== 'CASH' && invalidBankItems.length) {
       alert(tr('لا يمكن إنشاء دفعة بنكية: يوجد موظفون بدون IBAN سعودي مكتمل أو حساب بنكي جاهز.', 'Bank batch cannot be created: some employees do not have a valid Saudi IBAN or a ready bank account.'));
       return;
@@ -365,7 +369,7 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
       const employee = companyEmployees.find(emp => emp.id === item.employeeId);
       const normalizedIban = String(employee?.bankIban || '').replace(/\s/g, '').toUpperCase();
       const bankReady = /^SA\d{22}$/.test(normalizedIban) && employee?.bankAccountStatus !== 'PENDING';
-      if (!bankReady) {
+      if (!bankReady && company.allowCashPayrollWithoutIban !== true) {
         alert(tr('لا يمكن تحرير الراتب المعلق قبل اكتمال IBAN السعودي وتأكيد جاهزية الحساب البنكي في ملف الموظف.', 'The held salary cannot be released until a valid Saudi IBAN is saved and the bank account is marked ready.'));
         return;
       }
@@ -665,9 +669,10 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
         const previousEntitlementStatus = previousItem?.entitlementStatus || 'PAYABLE';
         const normalizedIban = String(emp.bankIban || '').replace(/\s/g, '').toUpperCase();
         const hasReadyBankAccount = /^SA\d{22}$/.test(normalizedIban) && emp.bankAccountStatus !== 'PENDING';
+        const cashWithoutIbanAllowed = company.allowCashPayrollWithoutIban === true;
         const shouldReleaseMissingBankHold = previousItem?.entitlementStatus === 'HELD'
           && previousItem.entitlementReason === 'MISSING_BANK_ACCOUNT'
-          && hasReadyBankAccount;
+          && (hasReadyBankAccount || cashWithoutIbanAllowed);
         const shouldReleaseSuspensionHold = previousItem?.entitlementStatus === 'HELD'
           && previousItem.entitlementHoldSource !== 'MANUAL'
           && (previousItem.isSuspended === true
@@ -675,7 +680,7 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
             || (Boolean(emp.suspensionReason?.trim()) && previousItem.entitlementReason === emp.suspensionReason?.trim()))
           && !calculated.isSuspended;
         const shouldReleaseAutomaticHold = shouldReleaseMissingBankHold || shouldReleaseSuspensionHold;
-        const missingBankHold = !hasReadyBankAccount && previousEntitlementStatus === 'PAYABLE';
+        const missingBankHold = !hasReadyBankAccount && !cashWithoutIbanAllowed && previousEntitlementStatus === 'PAYABLE';
         const suspensionHold = calculated.isSuspended && previousEntitlementStatus === 'PAYABLE';
         const shouldApplyAutomaticHold = missingBankHold || suspensionHold;
         const automaticHoldReason = missingBankHold
@@ -692,13 +697,13 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
             ? (missingBankHold ? 'MISSING_BANK_ACCOUNT' : 'EMPLOYEE_SUSPENSION')
             : (shouldReleaseAutomaticHold ? undefined : previousItem.entitlementHoldSource),
           entitlementUpdatedAt: (shouldApplyAutomaticHold || shouldReleaseAutomaticHold) ? new Date().toISOString() : previousItem.entitlementUpdatedAt,
-        } : (!hasReadyBankAccount || calculated.isSuspended) ? {
+        } : ((!hasReadyBankAccount && !cashWithoutIbanAllowed) || calculated.isSuspended) ? {
           ...calculated,
           entitlementStatus: 'HELD',
-          entitlementReason: !hasReadyBankAccount
+          entitlementReason: missingBankHold
             ? 'MISSING_BANK_ACCOUNT'
             : (emp.suspensionReason?.trim() || tr('تعليق تلقائي من ملف الموظف', 'Automatically held from employee profile')),
-          entitlementHoldSource: !hasReadyBankAccount ? 'MISSING_BANK_ACCOUNT' : 'EMPLOYEE_SUSPENSION',
+          entitlementHoldSource: missingBankHold ? 'MISSING_BANK_ACCOUNT' : 'EMPLOYEE_SUSPENSION',
           entitlementUpdatedAt: new Date().toISOString(),
         } : calculated;
       });
