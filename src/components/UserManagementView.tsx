@@ -26,7 +26,7 @@ import {
 import { UserAccount, UserRole, UserPermission, Employee, Company } from '../types';
 import { SearchableEmployeeSelect } from './SearchableEmployeeSelect';
 import { isStrongPassword, passwordPolicyMessage } from '../utils/passwordPolicy';
-import { ALL_PERMISSIONS, defaultPermissionsForRole, PERMISSION_LABELS } from '../utils/permissions';
+import { ALL_PERMISSIONS, defaultPermissionsForRole, effectivePermissions, PERMISSION_LABELS } from '../utils/permissions';
 import { useLanguage } from '../i18n/LanguageContext';
 
 interface UserManagementViewProps {
@@ -82,6 +82,11 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
   onDeleteUser,
 }) => {
   const { language } = useLanguage();
+  const grantablePermissions = (currentUser?.role === 'ADMIN'
+    ? ALL_PERMISSIONS
+    : effectivePermissions(currentUser)).filter(permission => permission !== 'MANAGE_COMPANIES');
+  const grantableSet = new Set<UserPermission>(grantablePermissions);
+  const permittedDefaults = (role: UserRole) => defaultPermissionsForRole(role).filter(permission => grantableSet.has(permission));
   const [searchTerm, setSearchTerm] = useState('');
   const [roleFilter, setRoleFilter] = useState<string>('ALL');
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
@@ -100,7 +105,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
     role: 'OPERATIONS_MANAGER' as UserRole,
     employeeId: '',
     companyIds: companies.map(c => c.id),
-    permissions: defaultPermissionsForRole('OPERATIONS_MANAGER'),
+    permissions: permittedDefaults('OPERATIONS_MANAGER'),
     isActive: true,
   });
 
@@ -119,7 +124,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
       role: 'OPERATIONS_MANAGER',
       employeeId: '',
       companyIds: companies.map(c => c.id),
-      permissions: defaultPermissionsForRole('OPERATIONS_MANAGER'),
+      permissions: permittedDefaults('OPERATIONS_MANAGER'),
       isActive: true,
     });
     setFormError(null);
@@ -140,7 +145,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
       role: user.role,
       employeeId: user.employeeId || '',
       companyIds: user.companyIds.length > 0 ? user.companyIds : companies.map(c => c.id),
-      permissions: user.permissions || defaultPermissionsForRole(user.role),
+      permissions: (user.permissions || defaultPermissionsForRole(user.role)).filter(permission => grantableSet.has(permission)),
       isActive: user.isActive,
     });
     setFormError(null);
@@ -213,8 +218,10 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
       phone: formData.phone,
       role: formData.role,
       avatar: formData.name ? formData.name.charAt(0) : (language === 'ar' ? 'م' : 'U'),
-      companyIds: formData.role === 'EMPLOYEE' && linkedEmployee ? [linkedEmployee.companyId] : (formData.companyIds.length > 0 ? formData.companyIds : ['comp-1']),
-      permissions: formData.role === 'EMPLOYEE' ? [] : formData.permissions.filter(permission => permission !== 'MANAGE_COMPANIES'),
+      companyIds: formData.role === 'EMPLOYEE' && linkedEmployee
+        ? [linkedEmployee.companyId]
+        : (formData.companyIds.length > 0 ? formData.companyIds : (currentUser?.companyIds || companies.map(company => company.id))),
+      permissions: formData.role === 'EMPLOYEE' ? [] : formData.permissions.filter(permission => grantableSet.has(permission)),
       employeeId: formData.employeeId || undefined,
       isActive: formData.isActive,
       createdAt: editingUser ? editingUser.createdAt : new Date().toISOString(),
@@ -651,7 +658,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
                   value={formData.role}
                   onChange={(e) => {
                     const role = e.target.value as UserRole;
-                    setFormData({ ...formData, role, permissions: defaultPermissionsForRole(role) });
+                    setFormData({ ...formData, role, permissions: permittedDefaults(role) });
                   }}
                   className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:bg-white focus:outline-none focus:border-emerald-500 cursor-pointer"
                 >
@@ -667,7 +674,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
                 <legend className="px-2 text-xs font-black text-slate-800">{language === 'ar' ? 'تخصيص ما يمكن للمستخدم استخدامه' : 'Customize User Access'}</legend>
                 <p className="text-[11px] text-slate-500 mb-3">{language === 'ar' ? 'يمكن تعديل الصلاحيات الافتراضية للدور. إضافة وحذف الشركات متاحة لمسؤول النظام الرئيسي فقط.' : 'Default role permissions can be customized. Adding or deleting companies is restricted to the primary system administrator.'}</p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  {ALL_PERMISSIONS.filter(permission => permission !== 'MANAGE_COMPANIES').map(permission => (
+                  {grantablePermissions.map(permission => (
                     <label key={permission} className="flex items-center gap-2 rounded-xl bg-white border border-slate-200 px-3 py-2 cursor-pointer">
                       <input
                         type="checkbox"
