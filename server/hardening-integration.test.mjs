@@ -62,7 +62,7 @@ test('state user listing is limited to users in assigned companies', () => {
 });
 
 test('user update checks existing target tenant scope', () => {
-  assert.match(source, /SELECT id,password_hash,company_ids,role FROM/);
+  assert.match(source, /SELECT id,password_hash,company_ids,role,is_company_owner FROM/);
   assert.match(source, /targetOutsideScope/);
 });
 

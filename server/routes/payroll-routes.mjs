@@ -89,6 +89,21 @@ router.post('/payroll-runs/:id/payment-batches', auth, writeLimiter, async (req,
       || batch.status !== 'SCHEDULED' || !['WPS','BANK_TRANSFER','CASH'].includes(batch.method)
       || !Array.isArray(batch.employeeIds) || !batch.employeeIds.length || !(Number(batch.totalAmount) > 0)
       || !validIsoDate(batch.scheduledDate)) throw workflowError(400,'INVALID_PAYMENT_BATCH');
+    const company = asArray(stored.companies).find(item => item.id === previous.companyId);
+    const selectedItems = asArray(previous.items).filter(item => batch.employeeIds.includes(item.employeeId));
+    if (selectedItems.length !== new Set(batch.employeeIds).size || selectedItems.some(item => (item.entitlementStatus || 'PAYABLE') !== 'PAYABLE')) {
+      throw workflowError(409,'PAYMENT_BATCH_EMPLOYEE_NOT_PAYABLE');
+    }
+    const employeeById = new Map(asArray(stored.employees).map(employee => [employee.id,employee]));
+    const withoutReadyIban = selectedItems.filter(item => {
+      const employee = employeeById.get(item.employeeId);
+      const iban = String(employee?.bankIban || item.bankIban || '').replace(/\s/g,'').toUpperCase();
+      return !/^SA\d{22}$/.test(iban) || employee?.bankAccountStatus === 'PENDING';
+    });
+    if (withoutReadyIban.length && batch.method !== 'CASH') throw workflowError(409,'PAYMENT_BATCH_IBAN_REQUIRED');
+    if (withoutReadyIban.length && batch.method === 'CASH' && company?.allowCashPayrollWithoutIban !== true) {
+      throw workflowError(409,'CASH_WITHOUT_IBAN_NOT_ALLOWED');
+    }
     const record = { ...previous,paymentBatches:[...asArray(previous.paymentBatches),batch] };
     const nextRuns = asArray(stored.payrollRuns).map(item => item.id === record.id ? record : item);
     validatePayrollWorkflowChanges(stored.payrollRuns,nextRuns,req.user);

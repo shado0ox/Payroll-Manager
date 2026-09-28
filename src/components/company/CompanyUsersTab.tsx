@@ -234,7 +234,7 @@ export const CompanyUsersTab = React.memo<CompanyUsersTabProps>(({
               >
                 <Edit className="w-3.5 h-3.5" />
               </button>}
-              {onDeleteUser && !isCurrentUser && u.id !== 'user-admin' && (
+              {onDeleteUser && !isCurrentUser && u.id !== 'user-admin' && !u.isCompanyOwner && (
                 <button
                   type="button"
                   onClick={() => {
