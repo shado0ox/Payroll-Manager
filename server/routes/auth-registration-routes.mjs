@@ -169,8 +169,8 @@ export function createAuthRegistrationRouter({
         [companyId,companyCode,details.companyNameAr,details.companyNameEn || details.companyNameAr,JSON.stringify(payload),trialEndsAt]);
       const userId = `user-${crypto.randomUUID()}`;
       await client.query(`INSERT INTO ${q('users')}
-        (id,username,password_hash,name,email,phone,role,company_ids,permissions,is_active,email_verified_at)
-        VALUES ($1,$2,$3,$4,$5,$6,'COMPANY_MANAGER',$7::jsonb,$8::jsonb,true,now())`,
+        (id,username,password_hash,name,email,phone,role,company_ids,permissions,is_active,email_verified_at,is_company_owner)
+        VALUES ($1,$2,$3,$4,$5,$6,'COMPANY_MANAGER',$7::jsonb,$8::jsonb,true,now(),true)`,
         [userId,details.username,details.passwordHash,details.adminName,details.email,details.phone,JSON.stringify([companyId]),JSON.stringify(companyManagerPermissions)]);
       await client.query(`DELETE FROM ${q('registration_requests')} WHERE email=$1`, [details.email]);
       await client.query('COMMIT');
