@@ -1,7 +1,8 @@
 import React, { useMemo, useState } from 'react';
 import { AlertCircle, Edit, Plus, Trash2, User, X } from 'lucide-react';
-import type { Company, UserAccount, UserRole } from '../../types';
+import type { Company, UserAccount, UserPermission, UserRole } from '../../types';
 import { isStrongPassword, passwordPolicyMessage } from '../../utils/passwordPolicy';
+import { defaultPermissionsForRole, effectivePermissions } from '../../utils/permissions';
 
 const ROLE_INFO: Record<UserRole, { labelAr: string; labelEn: string; descAr: string; descEn: string; color: string; badgeBg: string }> = {
   ADMIN: {
@@ -61,6 +62,11 @@ export const CompanyUsersTab = React.memo<CompanyUsersTabProps>(({
   onDeleteUser,
   tr,
 }) => {
+  const grantableSet = useMemo(() => new Set<UserPermission>(
+    (activeRole === 'ADMIN' ? defaultPermissionsForRole('ADMIN') : effectivePermissions(currentUser))
+      .filter(permission => permission !== 'MANAGE_COMPANIES'),
+  ), [activeRole,currentUser]);
+  const permittedDefaults = (role: UserRole) => defaultPermissionsForRole(role).filter(permission => grantableSet.has(permission));
   const [isUserModalOpen, setIsUserModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<UserAccount | null>(null);
   const [userFormData, setUserFormData] = useState<Partial<UserAccount>>({
@@ -88,6 +94,7 @@ export const CompanyUsersTab = React.memo<CompanyUsersTabProps>(({
       email: '',
       phone: '',
       role: 'OPERATIONS_MANAGER',
+      permissions: permittedDefaults('OPERATIONS_MANAGER'),
       isActive: true,
       companyIds: [company.id],
     });
@@ -98,7 +105,7 @@ export const CompanyUsersTab = React.memo<CompanyUsersTabProps>(({
     if (user.id === 'user-admin') return;
     setEditingUser(user);
     setUserFormError(null);
-    setUserFormData({ ...user });
+    setUserFormData({ ...user,permissions:(user.permissions || defaultPermissionsForRole(user.role)).filter(permission => grantableSet.has(permission)) });
     setIsUserModalOpen(true);
   };
 
@@ -133,6 +140,7 @@ export const CompanyUsersTab = React.memo<CompanyUsersTabProps>(({
       email: userFormData.email?.trim() || `${userFormData.username.trim()}@company.sa`,
       phone: userFormData.phone?.trim() || '',
       role: userFormData.role || 'OPERATIONS_MANAGER',
+      permissions: (userFormData.permissions || permittedDefaults(userFormData.role || 'OPERATIONS_MANAGER')).filter(permission => grantableSet.has(permission)),
       avatar: userFormData.name.trim().charAt(0),
       companyIds,
       isActive: userFormData.isActive ?? true,
@@ -322,7 +330,7 @@ export const CompanyUsersTab = React.memo<CompanyUsersTabProps>(({
             <label className="block text-xs font-bold text-slate-700 mb-1">{tr('الدور والصلاحية *', 'Role and permissions *')}</label>
             <select
               value={userFormData.role || 'OPERATIONS_MANAGER'}
-              onChange={(e) => setUserFormData({ ...userFormData, role: e.target.value as UserRole })}
+              onChange={(e) => { const role=e.target.value as UserRole;setUserFormData({ ...userFormData,role,permissions:permittedDefaults(role) }); }}
               className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white font-semibold"
             >
               {assignableRoles.map(([key, info]) => (
