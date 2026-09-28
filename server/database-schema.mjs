@@ -45,6 +45,14 @@ await pool.query(`CREATE TABLE IF NOT EXISTS ${q('registration_requests')} (
   expires_at timestamptz NOT NULL, created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now()
 )`);
 await pool.query(`DELETE FROM ${q('registration_requests')} WHERE expires_at < now()-interval '1 day'`);
+await pool.query(`CREATE TABLE IF NOT EXISTS ${q('privacy_consents')} (
+  id text PRIMARY KEY, subject_type text NOT NULL CHECK (subject_type IN ('USER','EMPLOYEE_PORTAL')),
+  subject_id text NOT NULL, company_id text, email text NOT NULL DEFAULT '',
+  privacy_version text NOT NULL, terms_version text NOT NULL,
+  accepted_at timestamptz NOT NULL, recorded_at timestamptz NOT NULL DEFAULT now(),
+  ip_hash text NOT NULL DEFAULT '', user_agent text NOT NULL DEFAULT ''
+)`);
+await pool.query(`CREATE INDEX IF NOT EXISTS privacy_consents_subject_idx ON ${q('privacy_consents')}(subject_type,subject_id,recorded_at DESC)`);
 await pool.query(`CREATE TABLE IF NOT EXISTS ${q('password_reset_tokens')} (
   id text PRIMARY KEY, user_id text NOT NULL REFERENCES ${q('users')}(id) ON DELETE CASCADE,
   token_hash text NOT NULL UNIQUE, expires_at timestamptz NOT NULL, used_at timestamptz, created_at timestamptz NOT NULL DEFAULT now()

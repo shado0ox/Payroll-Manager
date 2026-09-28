@@ -156,6 +156,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ defaultCompanyCode = '101'
     adminName:'', username:'', email:'', password:'',
   });
   const [employeeRegistration,setEmployeeRegistration] = useState({ identityNumber:'',email:'',username:'',password:'' });
+  const [privacyAccepted,setPrivacyAccepted] = useState(false);
 
   useEffect(() => {
     api.publicConfig().then(config => {
@@ -183,13 +184,15 @@ export const LoginView: React.FC<LoginViewProps> = ({ defaultCompanyCode = '101'
       EMPLOYEE_ACCOUNT_ALREADY_EXISTS:isArabic ? 'يوجد حساب مرتبط بهذا الموظف أو البريد أو اسم المستخدم بالفعل.' : 'An account already exists for this employee, email, or username.',
       EMPLOYEE_ACCOUNT_NOT_ELIGIBLE:isArabic ? 'حالة الموظف الحالية لا تسمح بإنشاء حساب.' : 'The employee status is not eligible for account creation.',
       EMPLOYEE_PORTAL_CREDENTIALS_CONFLICT:isArabic ? 'اسم المستخدم مرتبط بحساب إداري. استخدم اسم مستخدم مختلفًا لحساب بوابة الموظف.' : 'The username belongs to an administrative account. Use a different portal username.',
+      PRIVACY_CONSENT_REQUIRED:isArabic ? 'يجب الموافقة على سياسة الخصوصية وشروط الاستخدام لإكمال التسجيل.' : 'You must accept the Privacy Policy and Terms of Use to register.',
     };
     return messages[code] || (isArabic ? 'تعذر إكمال العملية. حاول مرة أخرى.' : 'Could not complete the request. Try again.');
   };
   const handleRegistration = async (e: React.FormEvent) => {
     e.preventDefault(); setError(null); setIsLoading(true);
     try {
-      const result = await api.startRegistration({ ...registration, language });
+      if (!privacyAccepted) throw new Error('PRIVACY_CONSENT_REQUIRED');
+      const result = await api.startRegistration({ ...registration,language,privacyAccepted,privacyVersion:'1.0',termsVersion:'1.0' });
       setRequestId(result.requestId); setMaskedEmail(result.maskedEmail); setMode('VERIFY');
     } catch (value) { setError(registrationError(value)); }
     finally { setIsLoading(false); }
@@ -208,7 +211,8 @@ export const LoginView: React.FC<LoginViewProps> = ({ defaultCompanyCode = '101'
   const handleEmployeeRegistration = async (event:React.FormEvent) => {
     event.preventDefault(); setError(null); setIsLoading(true);
     try {
-      const result = await api.startEmployeeRegistration({ companyCode:normalizeArabicNumbers(companyInput),identityNumber:normalizeArabicNumbers(employeeRegistration.identityNumber),email:employeeRegistration.email,username:employeeRegistration.username,password:employeeRegistration.password,language });
+      if (!privacyAccepted) throw new Error('PRIVACY_CONSENT_REQUIRED');
+      const result = await api.startEmployeeRegistration({ companyCode:normalizeArabicNumbers(companyInput),identityNumber:normalizeArabicNumbers(employeeRegistration.identityNumber),email:employeeRegistration.email,username:employeeRegistration.username,password:employeeRegistration.password,language,privacyAccepted,privacyVersion:'1.0',termsVersion:'1.0' });
       setRequestId(result.requestId); setMaskedEmail(result.maskedEmail); setVerificationCode(''); setMode('EMPLOYEE_VERIFY');
     } catch (value) { setError(registrationError(value)); }
     finally { setIsLoading(false); }
@@ -340,7 +344,8 @@ export const LoginView: React.FC<LoginViewProps> = ({ defaultCompanyCode = '101'
                 <RegisterInput icon={<UserIcon className="h-4 w-4" />} placeholder={isArabic ? 'اسم المستخدم بالإنجليزية' : 'Username'} value={registration.username} onChange={v => updateRegistration('username',v.toLowerCase())} required />
                 <RegisterInput icon={<Mail className="h-4 w-4" />} placeholder={isArabic ? 'البريد الإلكتروني الفعلي' : 'Real email address'} type="email" value={registration.email} onChange={v => updateRegistration('email',v.toLowerCase())} required wide />
                 <RegisterInput icon={<Lock className="h-4 w-4" />} placeholder={isArabic ? 'كلمة مرور قوية' : 'Strong password'} type="password" value={registration.password} onChange={v => updateRegistration('password',v)} required wide />
-                <button type="submit" disabled={isLoading} className="col-span-2 flex h-12 items-center justify-center rounded-2xl bg-emerald-500 text-sm font-black text-slate-950 disabled:opacity-50">{isLoading ? '...' : (isArabic ? 'إرسال رمز التحقق' : 'Send verification code')}</button>
+                <PrivacyConsent checked={privacyAccepted} onChange={setPrivacyAccepted} isArabic={isArabic} />
+                <button type="submit" disabled={isLoading || !privacyAccepted} className="col-span-2 flex h-12 items-center justify-center rounded-2xl bg-emerald-500 text-sm font-black text-slate-950 disabled:opacity-50">{isLoading ? '...' : (isArabic ? 'إرسال رمز التحقق' : 'Send verification code')}</button>
                 <button type="button" onClick={() => { setError(null); setMode('LOGIN'); }} className="col-span-2 text-xs font-bold text-slate-400">{isArabic ? 'العودة لتسجيل الدخول' : 'Back to sign in'}</button>
               </form>}
               {mode === 'VERIFY' && <form onSubmit={handleVerification} className="space-y-4">
@@ -354,7 +359,8 @@ export const LoginView: React.FC<LoginViewProps> = ({ defaultCompanyCode = '101'
                 <RegisterInput icon={<Mail className="h-4 w-4" />} placeholder={isArabic ? 'البريد المسجل في ملف الموظف' : 'Email stored in employee profile'} type="email" value={employeeRegistration.email} onChange={value => updateEmployeeRegistration('email',value.toLowerCase())} required wide />
                 <RegisterInput icon={<UserIcon className="h-4 w-4" />} placeholder={isArabic ? 'اسم مستخدم جديد بالإنجليزية' : 'New username'} value={employeeRegistration.username} onChange={value => updateEmployeeRegistration('username',value.toLowerCase())} required wide />
                 <RegisterInput icon={<Lock className="h-4 w-4" />} placeholder={isArabic ? 'كلمة مرور قوية' : 'Strong password'} type="password" value={employeeRegistration.password} onChange={value => updateEmployeeRegistration('password',value)} required wide />
-                <button type="submit" disabled={isLoading} className="flex h-12 w-full items-center justify-center rounded-2xl bg-cyan-400 text-sm font-black text-slate-950 disabled:opacity-50">{isLoading ? '...' : (isArabic ? 'إرسال رمز التحقق' : 'Send verification code')}</button>
+                <PrivacyConsent checked={privacyAccepted} onChange={setPrivacyAccepted} isArabic={isArabic} />
+                <button type="submit" disabled={isLoading || !privacyAccepted} className="flex h-12 w-full items-center justify-center rounded-2xl bg-cyan-400 text-sm font-black text-slate-950 disabled:opacity-50">{isLoading ? '...' : (isArabic ? 'إرسال رمز التحقق' : 'Send verification code')}</button>
                 <button type="button" onClick={() => { setError(null);setMode('LOGIN'); }} className="w-full text-xs font-bold text-slate-400">{isArabic ? 'العودة لتسجيل الدخول' : 'Back to sign in'}</button>
               </form>}
               {mode === 'EMPLOYEE_VERIFY' && <form onSubmit={handleEmployeeVerification} className="space-y-4">
@@ -368,7 +374,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ defaultCompanyCode = '101'
               </div>}
               {mode === 'EMPLOYEE_CREATED' && <div className="space-y-5"><div className="rounded-2xl border border-cyan-400/25 bg-cyan-400/10 p-5 text-center text-sm font-bold text-cyan-100">{isArabic ? 'تم ربط الحساب بملفك الوظيفي بنجاح.' : 'Your account was linked to your employee profile.'}</div><button type="button" onClick={() => setMode('LOGIN')} className="flex h-12 w-full items-center justify-center rounded-2xl bg-cyan-400 text-sm font-black text-slate-950">{isArabic ? 'الدخول الآن' : 'Sign in now'}</button></div>}
             </div>
-            <div className="mt-7 text-center text-[11px] leading-5 text-slate-600"><p>{t('loginFooter')}</p><p className="mt-1">{t('designedBy')} <span className="font-bold text-slate-500">Shadi Nassef</span></p></div>
+            <div className="mt-7 text-center text-[11px] leading-5 text-slate-600"><p>{t('loginFooter')}</p><p className="mt-1"><a href="/privacy" className="hover:text-emerald-400">{isArabic ? 'سياسة الخصوصية' : 'Privacy'}</a> · <a href="/terms" className="hover:text-emerald-400">{isArabic ? 'شروط الاستخدام' : 'Terms'}</a></p><p className="mt-1">{t('designedBy')} <span className="font-bold text-slate-500">Shadi Nassef</span></p></div>
           </div>
         </section>
       </div>
@@ -389,4 +395,11 @@ const LoginField: React.FC<{ label: string; icon: React.ReactNode; children: Rea
 
 const RegisterInput: React.FC<{icon:React.ReactNode; placeholder:string; value:string; onChange:(value:string)=>void; type?:string; required?:boolean; wide?:boolean}> = ({icon,placeholder,value,onChange,type='text',required,wide}) => (
   <label className={wide ? 'col-span-2' : ''}><span className="relative block"><span className="absolute start-3.5 top-1/2 -translate-y-1/2 text-slate-500">{icon}</span><input type={type} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} required={required} dir={type === 'email' || type === 'password' ? 'ltr' : undefined} className="h-11 w-full rounded-xl border border-white/10 bg-slate-950/45 ps-10 pe-3 text-xs text-white placeholder:text-slate-500 focus:border-emerald-400/70 focus:outline-none" /></span></label>
+);
+
+const PrivacyConsent:React.FC<{checked:boolean;onChange:(value:boolean)=>void;isArabic:boolean}> = ({checked,onChange,isArabic}) => (
+  <label className="col-span-2 flex cursor-pointer items-start gap-3 rounded-xl border border-white/10 bg-white/5 p-3 text-start text-[11px] leading-5 text-slate-300">
+    <input type="checkbox" checked={checked} onChange={event => onChange(event.target.checked)} className="mt-1 h-4 w-4 accent-emerald-500" required />
+    <span>{isArabic ? 'أوافق على' : 'I agree to the'} <a href="/privacy" target="_blank" rel="noreferrer" className="font-bold text-emerald-300 underline">{isArabic ? 'سياسة الخصوصية' : 'Privacy Policy'}</a> {isArabic ? 'و' : 'and'} <a href="/terms" target="_blank" rel="noreferrer" className="font-bold text-emerald-300 underline">{isArabic ? 'شروط الاستخدام' : 'Terms of Use'}</a>.</span>
+  </label>
 );

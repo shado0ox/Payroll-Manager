@@ -373,6 +373,18 @@ app.use('/api', createUserRouter({
   permissionsFor,isStrongPassword,workflowError,appendStateAudit,broadcastStateUpdate,disconnectStateEventClients,
 }));
 
+const publicSiteOrigin = req => String(process.env.PUBLIC_SITE_URL || process.env.APP_ORIGIN || `${req.get('x-forwarded-proto') || req.protocol}://${req.get('host')}`).replace(/\/$/,'');
+app.get('/robots.txt',(req,res) => {
+  const origin = publicSiteOrigin(req);
+  res.type('text/plain').send(`User-agent: *\nAllow: /\nAllow: /pricing\nAllow: /privacy\nAllow: /terms\nDisallow: /login\nDisallow: /portal\nDisallow: /dashboard\nDisallow: /company\nDisallow: /employees\nDisallow: /payroll\nDisallow: /api/\nSitemap: ${origin}/sitemap.xml\n`);
+});
+app.get('/sitemap.xml',(req,res) => {
+  const origin = publicSiteOrigin(req);
+  const updated = new Date().toISOString().slice(0,10);
+  const urls = ['/','/pricing','/privacy','/terms'].map(pathname => `<url><loc>${origin}${pathname}</loc><lastmod>${updated}</lastmod></url>`).join('');
+  res.type('application/xml').send(`<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${urls}</urlset>`);
+});
+
 app.use(express.static(root, { index: false, maxAge: '1h', immutable: false }));
 app.get('*', (_req, res) => {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
