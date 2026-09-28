@@ -62,6 +62,11 @@ export const CompanyBankingTab = React.memo<CompanyBankingTabProps>(({
     </div>
   </div>
 
+  <label className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 cursor-pointer">
+    <input type="checkbox" checked={formData.allowCashPayrollWithoutIban === true} onChange={event => setFormData({ ...formData,allowCashPayrollWithoutIban:event.target.checked })} className="mt-0.5 h-4 w-4 accent-amber-600" />
+    <span><span className="block text-xs font-black text-amber-900">{tr('السماح بسداد رواتب الموظفين بدون آيبان نقدًا','Allow cash payroll for employees without IBAN')}</span><span className="mt-1 block text-[11px] text-amber-800">{tr('عند التفعيل يمكن إدراج الموظف بدون آيبان في دفعة كاش فقط، ويظل ممنوعًا من التحويل البنكي وملف حماية الأجور.','When enabled, employees without IBAN may be included only in cash batches and remain blocked from bank transfer and WPS files.')}</span></span>
+  </label>
+
   <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
     {/* Bank Name */}
     <div>
