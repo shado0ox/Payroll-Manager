@@ -32,6 +32,7 @@ export interface UserAccount {
   companyIds: string[];
   employeeId?: string; // Optional link to employee profile
   isActive: boolean;
+  isCompanyOwner?: boolean;
   createdAt: string;
   lastLogin?: string;
 }
@@ -79,6 +80,7 @@ export interface Company {
   laborOfficeEstablishmentNo?: string;
   chamberOfCommerceNo?: string;
   bankPayrollCode?: string;
+  allowCashPayrollWithoutIban?: boolean;
   bankDefinitions?: CompanyBankDefinition[];
   gosiBranches?: CompanyGosiBranch[];
   logo?: string;
