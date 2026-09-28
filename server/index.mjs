@@ -178,7 +178,7 @@ function newCompanyPayload({ id, companyCode, companyNameAr, companyNameEn, crNu
     crNumber:crNumber || '', taxNumber:taxNumber || '', gosiEstablishmentNo:'',
     phone:phone || '', email, currency:'SAR', timezone:'Asia/Riyadh',
     fiscalYearStartMonth:1, payrollCutoffDay:25, payrollPaymentDay:27,
-    workDaysPerMonth:30, dailyWorkHours:8, departments:[], costCenters:[], bankDefinitions:[],
+    workDaysPerMonth:30, dailyWorkHours:8, allowCashPayrollWithoutIban:false, departments:[], costCenters:[], bankDefinitions:[],
     subscriptionStatus:'TRIAL', trialEndsAt,
     calculationRules:{
       dailyRateFormula:'BASE_PLUS_FIXED', hourlyRateDivisor:8, delayGracePeriodMinutes:15,
