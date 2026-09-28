@@ -15,8 +15,8 @@ test('previously deleted hybrid accounts are recovered from migration backup',()
   assert.match(schema,/legacy_hybrid_users/);
   assert.match(schema,/app_state_migration_backups/);
   assert.match(schema,/JOIN .*employee_portal_accounts.*portal/);
-  assert.match(schema,/portal\.id=\('portal-' \|\| \(legacy\.legacy_user->>'id'\)\)/);
-  assert.match(schema,/COALESCE\(legacy_user->'permissions','\[\]'::jsonb\)/);
+  assert.match(schema,/portal\.employee_id=\(legacy\.legacy_user->>'employeeId'\)/);
+  assert.match(schema,/jsonb_array_length\(COALESCE\(legacy_user->'permissions','\[\]'::jsonb\)\) > 0/);
 });
 
 test('permission-free portal identities remain hidden from administrative users',()=>{
