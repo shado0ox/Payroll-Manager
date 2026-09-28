@@ -1215,7 +1215,7 @@ export const App: React.FC = () => {
   };
   const buildUpdateBanner = updateAvailable ? <BuildUpdateBanner language={language} onReload={handleBuildReload} /> : null;
 
-  if (['/','/pricing','/privacy','/terms'].includes(window.location.pathname) && !state.currentUser) {
+  if (['/','/pricing','/privacy','/terms'].includes(window.location.pathname)) {
     return <Suspense fallback={<div className="min-h-screen bg-slate-950" />}><PublicWebsite /></Suspense>;
   }
 
