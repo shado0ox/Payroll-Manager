@@ -232,6 +232,7 @@ await pool.query(`CREATE TABLE IF NOT EXISTS ${q('attendance_report_shares')} (
   created_by text REFERENCES ${q('users')}(id) ON DELETE SET NULL,
   created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now()
 )`);
+await pool.query(`ALTER TABLE ${q('attendance_report_shares')} ADD COLUMN IF NOT EXISTS viewed_at timestamptz`);
 await pool.query(`CREATE TABLE IF NOT EXISTS ${q('leave_requests')} (
   id text PRIMARY KEY, company_id text NOT NULL REFERENCES ${q('companies')}(id) ON DELETE RESTRICT,
   employee_id text NOT NULL REFERENCES ${q('employees')}(id) ON DELETE CASCADE,

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { CheckCircle2, FileSpreadsheet, Printer, Upload, UserPlus } from 'lucide-react';
+import { CheckCircle2, FileSpreadsheet, Printer, RefreshCw, Upload, UserPlus } from 'lucide-react';
 import { AttendanceRecord, Company, Employee, LeaveRequest } from '../../types';
 import { DailySchedule, DayScheduleOverride, parseMoqootAttendanceFile } from '../../utils/moqootAttendanceImport';
 import { SearchableEmployeeSelect } from '../SearchableEmployeeSelect';
@@ -80,6 +80,26 @@ export const AttendanceImportPanel: React.FC<Props> = ({ company, employees, att
     setReviewConfirmed(false);
   }, [selectedPeriod]);
 
+  const updatePreviewRow = (id:string,patch:Partial<AttendanceRecord>)=>{
+    setPreview(current=>current.map(row=>row.id===id?{...row,...patch}:row));
+    setReviewConfirmed(false);
+  };
+  const recalculateRow=(id:string)=>setPreview(current=>current.map(row=>{
+    if(row.id!==id)return row;
+    const minutes=(value?:string)=>{const match=value?.match(/^(\d{2}):(\d{2})$/);return match?Number(match[1])*60+Number(match[2]):null;};
+    if(['OFF','LEAVE','HOLIDAY','MISSION','IGNORED'].includes(row.attendanceStatus||''))return {...row,calculatedDelayMinutes:0,overtimeHours:0};
+    const actualIn=minutes(row.actualCheckIn),rawOut=minutes(row.actualCheckOut),plannedStart=minutes(row.scheduledStart),rawEnd=minutes(row.scheduledEnd);
+    if(actualIn===null&&rawOut===null)return {...row,attendanceStatus:'ABSENT',calculatedDelayMinutes:0,overtimeHours:0,notes:row.notes||tr('لا توجد بصمات في يوم عمل','No punches on a workday')};
+    if(actualIn===null)return {...row,attendanceStatus:'MISSING_IN',calculatedDelayMinutes:0,overtimeHours:0};
+    if(rawOut===null)return {...row,attendanceStatus:'MISSING_OUT',calculatedDelayMinutes:0,overtimeHours:0};
+    let plannedEnd=rawEnd??rawOut,actualOut=rawOut;
+    if(plannedStart!==null&&plannedEnd<=plannedStart)plannedEnd+=1440;
+    if(plannedStart!==null&&actualOut<plannedStart&&plannedEnd>1440)actualOut+=1440;
+    const delay=plannedStart===null?0:Math.max(0,actualIn-plannedStart-(row.graceMinutes||0));
+    const overtime=Math.max(0,Math.round(((actualOut-plannedEnd)/60)*100)/100);
+    return {...row,calculatedDelayMinutes:delay,overtimeHours:overtime,attendanceStatus:delay>0?'LATE':'PRESENT'};
+  }));
+
   const readPreview = async () => {
     setError('');
     if (!file) return setError(tr('اختر ملف Excel أو CSV أولاً.', 'Choose an Excel or CSV file first.'));
@@ -151,9 +171,9 @@ export const AttendanceImportPanel: React.FC<Props> = ({ company, employees, att
     </section>
     {reportRows.length > 0 && <section className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
       <div className="p-4 flex flex-wrap justify-between gap-3"><div><h3 className="font-bold">{preview.length ? tr('مراجعة النتيجة واختيار ما سيُعتمد', 'Review results and select approvals') : tr('نتائج الشهر المحفوظة', 'Saved monthly results')}</h3><p className="text-xs text-slate-500">{tr('لا ينتقل أي تأخير أو غياب أو إضافي إلى سجل الحضور والمسير إلا بعد تحديده ثم الضغط على زر الاعتماد.', 'No lateness, absence, or overtime reaches attendance or payroll until selected and approved.')}</p></div><div className="flex flex-wrap items-center gap-2">{preview.length > 0 && <label className="inline-flex items-center gap-2 text-xs font-bold border rounded-xl px-3 py-2"><input type="checkbox" checked={reviewConfirmed} onChange={event => setReviewConfirmed(event.target.checked)}/>{tr('راجعت النتائج', 'Results reviewed')}</label>}{preview.length > 0 && <button disabled={saving || !reviewConfirmed || approvedIds.size===0} onClick={save} className="px-4 py-2 bg-emerald-600 disabled:bg-slate-300 text-white rounded-xl font-bold inline-flex items-center gap-2"><CheckCircle2 className="h-4 w-4"/>{saving ? tr('جارٍ الاعتماد...', 'Approving...') : tr(`اعتماد المحدد وترحيله (${approvedIds.size})`, `Approve and post selected (${approvedIds.size})`)}</button>}<button disabled={preview.length > 0 && !reviewConfirmed} onClick={printReport} className="px-4 py-2 border disabled:text-slate-300 rounded-xl font-bold inline-flex gap-2"><Printer className="w-4 h-4"/>{tr('إصدار التقرير', 'Issue report')}</button></div></div>
-      <div className="overflow-x-auto"><table className="w-full text-xs min-w-[1050px]"><thead><tr className="bg-slate-50">{preview.length>0&&<th className="p-2">{tr('اعتماد','Approve')}</th>}<th className="p-2">{tr('التاريخ', 'Date')}</th><th>{tr('الدوام', 'Schedule')}</th><th>{tr('الحضور', 'Check-in')}</th><th>{tr('الانصراف', 'Check-out')}</th><th>{tr('التأخير', 'Late')}</th><th>{tr('الإضافي', 'Overtime')}</th><th>{tr('الحالة', 'Status')}</th><th>{tr('ملاحظات', 'Notes')}</th></tr></thead><tbody>{reportRows.map(row => {
+      <div className="overflow-x-auto"><table className="w-full text-xs min-w-[1150px]"><thead><tr className="bg-slate-50">{preview.length>0&&<th className="p-2">{tr('اعتماد','Approve')}</th>}<th className="p-2">{tr('التاريخ', 'Date')}</th><th>{tr('الدوام', 'Schedule')}</th><th>{tr('الحضور', 'Check-in')}</th><th>{tr('الانصراف', 'Check-out')}</th><th>{tr('التأخير', 'Late')}</th><th>{tr('الإضافي', 'Overtime')}</th><th>{tr('الحالة', 'Status')}</th><th>{tr('ملاحظات', 'Notes')}</th>{preview.length>0&&<th>{tr('إعادة حساب','Recalculate')}</th>}</tr></thead><tbody>{reportRows.map(row => {
         const editable = preview.length > 0;
-        return <tr key={row.id} className={`border-t ${editable&&approvedIds.has(row.id)?'bg-emerald-50/50':''}`}>{editable&&<td className="p-2 text-center"><input type="checkbox" checked={approvedIds.has(row.id)} onChange={event=>setApprovedIds(current=>{const next=new Set(current);event.target.checked?next.add(row.id):next.delete(row.id);return next;})}/></td>}<td className="p-2 text-center font-mono">{row.date}</td><td className="text-center">{row.scheduledStart || '-'} - {row.scheduledEnd || '-'}</td><td className="p-1 text-center">{row.actualCheckIn || '-'}</td><td className="p-1 text-center">{row.actualCheckOut || '-'}</td><td className="p-1 text-center">{row.calculatedDelayMinutes || 0}</td><td className="p-1 text-center">{Number(row.overtimeHours||0).toFixed(2)}</td><td className="p-1 text-center"><span className="font-bold">{statusLabel(row.attendanceStatus, ar)}</span></td><td className="p-1">{row.notes || '-'}</td></tr>;
+        return <tr key={row.id} className={`border-t ${editable&&approvedIds.has(row.id)?'bg-emerald-50/50':''}`}>{editable&&<td className="p-2 text-center"><input type="checkbox" checked={approvedIds.has(row.id)} onChange={event=>setApprovedIds(current=>{const next=new Set(current);event.target.checked?next.add(row.id):next.delete(row.id);return next;})}/></td>}<td className="p-2 text-center font-mono">{row.date}</td><td className="text-center">{row.scheduledStart || '-'} - {row.scheduledEnd || '-'}</td><td className="p-1 text-center">{editable?<input type="time" value={row.actualCheckIn||''} onChange={event=>updatePreviewRow(row.id,{actualCheckIn:event.target.value||undefined})} className="rounded-lg border p-1"/>:row.actualCheckIn||'-'}</td><td className="p-1 text-center">{editable?<input type="time" value={row.actualCheckOut||''} onChange={event=>updatePreviewRow(row.id,{actualCheckOut:event.target.value||undefined})} className="rounded-lg border p-1"/>:row.actualCheckOut||'-'}</td><td className="p-1 text-center">{row.calculatedDelayMinutes||0}</td><td className="p-1 text-center">{Number(row.overtimeHours||0).toFixed(2)}</td><td className="p-1 text-center">{editable?<select value={row.attendanceStatus||'REVIEW'} onChange={event=>updatePreviewRow(row.id,{attendanceStatus:event.target.value as AttendanceRecord['attendanceStatus']})} className="rounded-lg border p-1.5"><option value="PRESENT">{tr('حاضر','Present')}</option><option value="LATE">{tr('متأخر','Late')}</option><option value="ABSENT">{tr('غياب','Absent')}</option><option value="LEAVE">{tr('إجازة','Leave')}</option><option value="OFF">{tr('راحة','Off')}</option><option value="HOLIDAY">{tr('عطلة رسمية','Public holiday')}</option><option value="MISSION">{tr('مهمة عمل','Business mission')}</option><option value="IGNORED">{tr('مستبعد','Ignored')}</option><option value="MISSING_IN">{tr('دخول ناقص','Missing check-in')}</option><option value="MISSING_OUT">{tr('خروج ناقص','Missing check-out')}</option><option value="REVIEW">{tr('مراجعة','Review')}</option></select>:<span className="font-bold">{statusLabel(row.attendanceStatus,ar)}</span>}</td><td className="p-1">{editable?<input value={row.notes||''} onChange={event=>updatePreviewRow(row.id,{notes:event.target.value})} className="w-full min-w-48 rounded-lg border p-1.5"/>:row.notes||'-'}</td>{editable&&<td className="text-center"><button type="button" onClick={()=>{recalculateRow(row.id);setReviewConfirmed(false);}} className="rounded-lg border p-2 text-blue-700" title={tr('إعادة حساب التأخير والإضافي والحالة','Recalculate lateness, overtime, and status')}><RefreshCw className="h-4 w-4"/></button></td>}</tr>;
       })}</tbody></table></div>
     </section>}
   </div>;

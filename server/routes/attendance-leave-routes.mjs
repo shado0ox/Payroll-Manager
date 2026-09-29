@@ -26,12 +26,12 @@ router.get('/public/attendance-reports/:token', async (req,res,next)=>{
   try{
     const token=String(req.params.token||'');
     if(!/^[A-Za-z0-9_-]{40,120}$/.test(token))return res.status(404).json({error:'ATTENDANCE_REPORT_NOT_FOUND'});
-    const result=await pool.query(`SELECT snapshot,response,signed_at,expires_at,revoked_at FROM ${q('attendance_report_shares')} WHERE token_hash=$1 LIMIT 1`,[sha256(token)]);
+    const result=await pool.query(`UPDATE ${q('attendance_report_shares')} SET viewed_at=COALESCE(viewed_at,now()),updated_at=now() WHERE token_hash=$1 RETURNING snapshot,response,signed_at,expires_at,revoked_at,viewed_at`,[sha256(token)]);
     if(!result.rowCount||result.rows[0].revoked_at)return res.status(404).json({error:'ATTENDANCE_REPORT_NOT_FOUND'});
     if(new Date(result.rows[0].expires_at).getTime()<=Date.now())return res.status(410).json({error:'ATTENDANCE_REPORT_EXPIRED'});
     const storedResponse=result.rows[0].response;
-    const response=storedResponse?{signatureName:String(storedResponse.signatureName||''),comments:storedResponse.comments||{}}:null;
-    res.json({report:result.rows[0].snapshot,response,signedAt:result.rows[0].signed_at||null,expiresAt:result.rows[0].expires_at});
+    const response=storedResponse?{signatureName:String(storedResponse.signatureName||''),signatureData:String(storedResponse.signatureData||''),comments:storedResponse.comments||{}}:null;
+    res.json({report:result.rows[0].snapshot,response,signedAt:result.rows[0].signed_at||null,viewedAt:result.rows[0].viewed_at||null,expiresAt:result.rows[0].expires_at});
   }catch(error){next(error);}
 });
 
@@ -73,6 +73,18 @@ router.post('/attendance-report-shares', auth, writeLimiter, async (req,res,next
     const saved=await pool.query(`INSERT INTO ${q('attendance_report_shares')}(id,company_id,employee_id,period_month,token_hash,expires_at,snapshot,created_by) VALUES($1,$2,$3,$4,$5,now()+($6||' days')::interval,$7::jsonb,$8) RETURNING expires_at`,[id,companyId,employeeId,periodMonth,sha256(token),String(expiresInDays),JSON.stringify(snapshot),req.user.id]);
     const url=`${req.protocol}://${req.get('host')}/attendance-report/${token}`;
     res.status(201).json({id,url,expiresAt:saved.rows[0].expires_at});
+  }catch(error){next(error);}
+});
+
+router.get('/attendance-report-shares', auth, async (req,res,next)=>{
+  try{
+    if(!can(req.user,'MANAGE_ATTENDANCE'))return res.status(403).json({error:'FORBIDDEN'});
+    const companyId=String(req.query.companyId||''),employeeId=String(req.query.employeeId||''),periodMonth=String(req.query.periodMonth||'');
+    if(!req.user.company_ids.includes(companyId)||!employeeId||!validPeriodMonth(periodMonth))return res.status(400).json({error:'INVALID_ATTENDANCE_REPORT_SHARE_FILTER'});
+    const result=await pool.query(`SELECT id,snapshot,response,viewed_at,signed_at,expires_at,revoked_at,created_at
+      FROM ${q('attendance_report_shares')} WHERE company_id=$1 AND employee_id=$2 AND period_month=$3
+      ORDER BY created_at DESC LIMIT 20`,[companyId,employeeId,periodMonth]);
+    res.json({shares:result.rows.map(row=>({id:row.id,report:row.snapshot,response:row.response||null,viewedAt:row.viewed_at||null,signedAt:row.signed_at||null,expiresAt:row.expires_at,revokedAt:row.revoked_at||null,createdAt:row.created_at}))});
   }catch(error){next(error);}
 });
 

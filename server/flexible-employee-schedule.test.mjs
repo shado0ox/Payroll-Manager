@@ -30,7 +30,7 @@ test('Excel and CSV imports automatically use the saved employee schedule by dat
   assert.match(importView,/item\.id===`schedule-\$\{company\.id\}-\$\{activeWorkerId\}-\$\{item\.date\}`/);
   assert.match(importView,/dayOverrides:effectiveDayOverrides/);
   assert.match(importView,/effectiveDayOverrides=useMemo<DayScheduleOverride\[\]>\(\(\)=>savedScheduleOverrides/);
-  assert.doesNotMatch(importView,/setShowMonthDays|updateDayOverride|updatePreviewRow/);
+  assert.doesNotMatch(importView,/setShowMonthDays|updateDayOverride/);
 });
 
 test('imported attendance requires explicit row approval before payroll posting',()=>{
@@ -40,4 +40,8 @@ test('imported attendance requires explicit row approval before payroll posting'
   assert.match(importView,/payrollApproved:approved/);
   assert.match(view,/a\.sourceType !== 'MOQOOT_IMPORT' \|\| a\.payrollApproved === true/);
   assert.match(payroll,/record\.sourceType === 'MOQOOT_IMPORT' && record\.payrollApproved !== true/);
+  assert.match(importView,/updatePreviewRow/);
+  assert.match(importView,/actualCheckIn:event\.target\.value/);
+  assert.match(importView,/attendanceStatus:event\.target\.value/);
+  assert.match(importView,/notes:event\.target\.value/);
 });
