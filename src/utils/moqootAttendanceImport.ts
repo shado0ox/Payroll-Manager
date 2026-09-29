@@ -29,7 +29,7 @@ export interface MoqootImportOptions {
   leaves: LeaveRequest[];
 }
 
-const normalize = (value: string) => value.trim().replace(/^\uFEFF/, '');
+const normalize = (value: unknown) => String(value ?? '').trim().replace(/^\uFEFF/, '');
 
 function parseCsvLine(line: string): string[] {
   const values: string[] = [];
@@ -73,20 +73,40 @@ const isApprovedLeave = (date: string, employeeId: string, leaves: LeaveRequest[
 export function parseMoqootAttendance(text: string, options: MoqootImportOptions): AttendanceRecord[] {
   const lines = text.replace(/\r/g, '').split('\n').filter(line => line.trim());
   if (lines.length < 2) throw new Error('EMPTY_ATTENDANCE_FILE');
-  const headers = parseCsvLine(lines[0]);
+  return parseMoqootAttendanceRows(lines.map(parseCsvLine),options);
+}
+
+const excelSerialDate=(value:number)=>{
+  const date=new Date(Date.UTC(1899,11,30)+Math.floor(value)*86_400_000);
+  return date.toISOString().slice(0,10);
+};
+const dateCell=(value:unknown)=>{
+  if(value instanceof Date&&!Number.isNaN(value.getTime()))return value.toISOString().slice(0,10);
+  if(typeof value==='number'&&value>20_000&&value<100_000)return excelSerialDate(value);
+  return normalize(value).replace(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/,'$3-$2-$1');
+};
+const timeCell=(value:unknown)=>{
+  if(value instanceof Date&&!Number.isNaN(value.getTime()))return `${String(value.getUTCHours()).padStart(2,'0')}:${String(value.getUTCMinutes()).padStart(2,'0')}:${String(value.getUTCSeconds()).padStart(2,'0')}`;
+  if(typeof value==='number'&&value>=0&&value<1){const seconds=Math.round(value*86_400)%86_400;return `${String(Math.floor(seconds/3600)).padStart(2,'0')}:${String(Math.floor(seconds%3600/60)).padStart(2,'0')}:${String(seconds%60).padStart(2,'0')}`;}
+  return normalize(value);
+};
+
+export function parseMoqootAttendanceRows(rawRows:unknown[][], options:MoqootImportOptions):AttendanceRecord[]{
+  const rows=rawRows.filter(row=>Array.isArray(row)&&row.some(value=>normalize(value)));
+  if(rows.length<2)throw new Error('EMPTY_ATTENDANCE_FILE');
+  const headers=rows[0].map(normalize);
   const dateIndex = headers.findIndex(header => header === 'يوم' || header.toLowerCase() === 'date');
   const inIndex = headers.findIndex(header => header === 'حضور' || header.toLowerCase().includes('check in'));
   const outIndex = headers.findIndex(header => header === 'انصراف' || header.toLowerCase().includes('check out'));
   if (dateIndex < 0 || inIndex < 0 || outIndex < 0) throw new Error('UNSUPPORTED_ATTENDANCE_FILE');
 
   const byDate = new Map<string, { ins: number[]; outs: number[]; absent: boolean }>();
-  for (const line of lines.slice(1)) {
-    const row = parseCsvLine(line);
-    const date = normalize(row[dateIndex] || '');
+  for (const row of rows.slice(1)) {
+    const date = dateCell(row[dateIndex]);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !date.startsWith(`${options.periodMonth}-`)) continue;
     const current = byDate.get(date) || { ins: [], outs: [], absent: false };
-    const incoming = normalize(row[inIndex] || '');
-    const outgoing = normalize(row[outIndex] || '');
+    const incoming = timeCell(row[inIndex]);
+    const outgoing = timeCell(row[outIndex]);
     if (incoming === 'غائب' || incoming.toLowerCase() === 'absent') current.absent = true;
     const inTime = parseTime(incoming);
     const outTime = parseTime(outgoing);
@@ -165,4 +185,17 @@ export function parseMoqootAttendance(text: string, options: MoqootImportOptions
       payrollApproved: false,
     };
   });
+}
+
+export async function parseMoqootAttendanceFile(file:File,options:MoqootImportOptions):Promise<AttendanceRecord[]>{
+  if(file.size>5*1024*1024)throw new Error('FILE_TOO_LARGE');
+  const extension=file.name.split('.').pop()?.toLowerCase();
+  if(extension==='csv')return parseMoqootAttendance(await file.text(),options);
+  if(extension==='xlsx'){
+    const {default:readXlsxFile}=await import('read-excel-file');
+    const rows=await readXlsxFile(file);
+    if(rows.length>5000)throw new Error('TOO_MANY_ROWS');
+    return parseMoqootAttendanceRows(rows,options);
+  }
+  throw new Error('UNSUPPORTED_FILE');
 }
