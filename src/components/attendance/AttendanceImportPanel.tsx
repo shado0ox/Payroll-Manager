@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { CalendarDays, FileSpreadsheet, Printer, RefreshCw, Upload, UserPlus } from 'lucide-react';
+import { CheckCircle2, FileSpreadsheet, Printer, Upload, UserPlus } from 'lucide-react';
 import { AttendanceRecord, Company, Employee, LeaveRequest } from '../../types';
-import { DailySchedule, DayOverrideMode, DayScheduleOverride, parseMoqootAttendanceFile } from '../../utils/moqootAttendanceImport';
+import { DailySchedule, DayScheduleOverride, parseMoqootAttendanceFile } from '../../utils/moqootAttendanceImport';
 import { SearchableEmployeeSelect } from '../SearchableEmployeeSelect';
 import { useLanguage } from '../../i18n/LanguageContext';
 
@@ -47,32 +47,20 @@ export const AttendanceImportPanel: React.FC<Props> = ({ company, employees, att
   const [externalNo, setExternalNo] = useState('');
   const [graceMinutes, setGraceMinutes] = useState(15);
   const [schedule, setSchedule] = useState<DailySchedule[]>(defaultSchedule);
-  const [dayOverrides, setDayOverrides] = useState<DayScheduleOverride[]>([]);
-  const [showMonthDays, setShowMonthDays] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<AttendanceRecord[]>([]);
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   const [reviewConfirmed, setReviewConfirmed] = useState(false);
+  const [approvedIds, setApprovedIds] = useState<Set<string>>(new Set());
 
   const selectedEmployee = employees.find(item => item.id === employeeId);
   const externalId = externalName.trim() ? attendanceOnlyKey(company.id, externalName, externalNo) : '';
   const activeWorkerId = workerMode === 'REGISTERED' ? employeeId : externalId;
   const importedMonth = useMemo(() => attendance.filter(item => item.companyId === company.id && item.employeeId === activeWorkerId && item.periodMonth === selectedPeriod && item.sourceType === 'MOQOOT_IMPORT'), [attendance, company.id, activeWorkerId, selectedPeriod]);
   const savedScheduleOverrides=useMemo<DayScheduleOverride[]>(()=>attendance.filter(item=>item.companyId===company.id&&item.employeeId===activeWorkerId&&item.periodMonth===selectedPeriod&&item.id===`schedule-${company.id}-${activeWorkerId}-${item.date}`).map(item=>({date:item.date,mode:item.workday===false?'OFF':'WORKDAY',start:item.scheduledStart,end:item.scheduledEnd})),[attendance,company.id,activeWorkerId,selectedPeriod]);
-  const effectiveDayOverrides=useMemo<DayScheduleOverride[]>(()=>[...savedScheduleOverrides.filter(saved=>!dayOverrides.some(manual=>manual.date===saved.date)),...dayOverrides],[savedScheduleOverrides,dayOverrides]);
+  const effectiveDayOverrides=useMemo<DayScheduleOverride[]>(()=>savedScheduleOverrides,[savedScheduleOverrides]);
   const reportRows = preview.length ? preview : importedMonth;
-  const monthDays = useMemo(() => {
-    const [year, month] = selectedPeriod.split('-').map(Number);
-    const count = new Date(Date.UTC(year, month, 0)).getUTCDate();
-    return Array.from({ length:count }, (_, index) => {
-      const date = `${selectedPeriod}-${String(index + 1).padStart(2, '0')}`;
-      const weekday = new Date(`${date}T12:00:00Z`).getUTCDay();
-      const weekly = schedule.find(day => day.weekday === weekday) || defaultSchedule()[weekday];
-      const override = effectiveDayOverrides.find(item => item.date === date);
-      return { date,weekday,weekly,override };
-    });
-  }, [selectedPeriod, schedule, effectiveDayOverrides]);
 
   useEffect(() => {
     if (!activeWorkerId) return;
@@ -87,43 +75,10 @@ export const AttendanceImportPanel: React.FC<Props> = ({ company, employees, att
   }, [activeWorkerId, attendance, company.id]);
 
   useEffect(() => {
-    setDayOverrides([]);
     setPreview([]);
+    setApprovedIds(new Set());
     setReviewConfirmed(false);
   }, [selectedPeriod]);
-
-  const updateSchedule = (weekday: number, patch: Partial<DailySchedule>) => {
-    setSchedule(current => current.map(day => day.weekday === weekday ? { ...day, ...patch } : day));
-    setPreview([]);
-    setReviewConfirmed(false);
-  };
-  const updateDayOverride = (date: string, patch: Partial<DayScheduleOverride>) => {
-    setDayOverrides(current => {
-      const existing = current.find(item => item.date === date);
-      const next = { date,mode:'DEFAULT' as DayOverrideMode,...existing,...patch };
-      return [...current.filter(item => item.date !== date),next];
-    });
-    setPreview([]);
-    setReviewConfirmed(false);
-  };
-  const updatePreviewRow = (id: string, patch: Partial<AttendanceRecord>) => {
-    setPreview(current => current.map(row => row.id === id ? { ...row,...patch } : row));
-    setReviewConfirmed(false);
-  };
-  const recalculateRow = (id: string) => setPreview(current => current.map(row => {
-    if (row.id !== id) return row;
-    const toMinutes = (time?: string) => {
-      const match = time?.match(/^(\d{2}):(\d{2})$/);
-      return match ? Number(match[1]) * 60 + Number(match[2]) : null;
-    };
-    if (['OFF','LEAVE','HOLIDAY','MISSION','IGNORED'].includes(row.attendanceStatus || '')) return { ...row,calculatedDelayMinutes:0 };
-    const actualIn = toMinutes(row.actualCheckIn), actualOut = toMinutes(row.actualCheckOut), planned = toMinutes(row.scheduledStart);
-    if (actualIn === null && actualOut === null) return { ...row,attendanceStatus:'ABSENT',calculatedDelayMinutes:0,notes:row.notes || tr('لا توجد بصمات في يوم عمل', 'No punches on a workday') };
-    if (actualIn === null) return { ...row,attendanceStatus:'MISSING_IN',calculatedDelayMinutes:0 };
-    if (actualOut === null) return { ...row,attendanceStatus:'MISSING_OUT',calculatedDelayMinutes:0 };
-    const delay = planned === null ? 0 : Math.max(0,actualIn - planned - (row.graceMinutes || 0));
-    return { ...row,calculatedDelayMinutes:delay,attendanceStatus:delay > 0 ? 'LATE' : 'PRESENT' };
-  }));
 
   const readPreview = async () => {
     setError('');
@@ -146,6 +101,7 @@ export const AttendanceImportPanel: React.FC<Props> = ({ company, employees, att
       });
       if (!records.length) throw new Error('NO_ROWS_FOR_SELECTED_MONTH');
       setPreview(records);
+      setApprovedIds(new Set(records.filter(record => record.attendanceStatus === 'ABSENT' || (record.calculatedDelayMinutes || 0) > 0 || (record.overtimeHours || 0) > 0).map(record => record.id)));
       setReviewConfirmed(false);
     } catch (cause: any) {
       setPreview([]);
@@ -158,7 +114,8 @@ export const AttendanceImportPanel: React.FC<Props> = ({ company, employees, att
   const save = async () => {
     if (!preview.length || !reviewConfirmed) return;
     setSaving(true);
-    try { const ok = await onImport(preview); if (ok !== false) setPreview([]); } finally { setSaving(false); }
+    const records=preview.map(row=>{const approved=approvedIds.has(row.id);return {...row,payrollApproved:approved,delayMinutes:approved&&row.attendanceStatus==='LATE'?Number(row.calculatedDelayMinutes||0):0,absence:approved&&row.attendanceStatus==='ABSENT',unpaidLeave:false,overtimeHours:approved?Number(row.overtimeHours||0):0};});
+    try { const ok = await onImport(records); if (ok !== false) { setPreview([]); setApprovedIds(new Set()); } } finally { setSaving(false); }
   };
 
   const printReport = () => {
@@ -188,27 +145,15 @@ export const AttendanceImportPanel: React.FC<Props> = ({ company, employees, att
       {workerMode === 'REGISTERED' ? <SearchableEmployeeSelect employees={employees} value={employeeId} onChange={setEmployeeId}/>
         : <div className="grid md:grid-cols-2 gap-3"><input className="px-3 py-2 border rounded-xl" placeholder={tr('اسم الموظف *', 'Worker name *')} value={externalName} onChange={event => setExternalName(event.target.value)}/><input className="px-3 py-2 border rounded-xl" placeholder={tr('رقم حضور اختياري', 'Optional attendance number')} value={externalNo} onChange={event => setExternalNo(event.target.value)}/></div>}
       <div><label className="block text-xs font-bold mb-1">{tr('مدة السماح قبل التأخير (دقيقة)', 'Grace period before lateness (minutes)')}</label><input type="number" min="0" max="240" className="w-40 px-3 py-2 border rounded-xl" value={graceMinutes} onChange={event => setGraceMinutes(Math.max(0, Number(event.target.value) || 0))}/></div>
-      {savedScheduleOverrides.length>0&&<p className="rounded-xl border border-blue-200 bg-blue-50 p-3 text-xs font-bold text-blue-800">{tr(`تم ربط جدول الموظف المحفوظ تلقائيًا (${savedScheduleOverrides.length} يومًا). ويمكن تعديل أي يوم أدناه قبل الاستيراد.`,`The saved employee schedule was applied automatically (${savedScheduleOverrides.length} days). You can override any day below before importing.`)}</p>}
-      <div className="overflow-x-auto"><table className="w-full text-xs"><thead><tr className="bg-slate-50"><th className="p-2 text-start">{tr('اليوم', 'Day')}</th><th>{tr('يوم عمل', 'Workday')}</th><th>{tr('من', 'From')}</th><th>{tr('إلى', 'To')}</th></tr></thead><tbody>{schedule.map(day => <tr key={day.weekday} className="border-t"><td className="p-2 font-bold">{ar ? weekdaysAr[day.weekday] : weekdaysEn[day.weekday]}</td><td className="text-center"><input type="checkbox" checked={day.enabled} onChange={event => updateSchedule(day.weekday, { enabled:event.target.checked })}/></td><td className="text-center"><input type="time" disabled={!day.enabled} value={day.start} onChange={event => updateSchedule(day.weekday, { start:event.target.value })} className="border rounded-lg p-1"/></td><td className="text-center"><input type="time" disabled={!day.enabled} value={day.end} onChange={event => updateSchedule(day.weekday, { end:event.target.value })} className="border rounded-lg p-1"/></td></tr>)}</tbody></table></div>
-      <div className="border border-slate-200 rounded-2xl overflow-hidden">
-        <button type="button" onClick={() => setShowMonthDays(value => !value)} className="w-full p-3 flex items-center justify-between bg-slate-50 font-bold text-xs">
-          <span className="inline-flex items-center gap-2"><CalendarDays className="w-4 h-4 text-blue-600"/>{tr(`عرض وتعديل أيام شهر ${selectedPeriod}`, `View and edit days in ${selectedPeriod}`)}</span>
-          <span>{showMonthDays ? tr('إخفاء', 'Hide') : tr('عرض', 'Show')}</span>
-        </button>
-        {showMonthDays && <div className="max-h-96 overflow-auto"><table className="w-full text-xs"><thead className="sticky top-0 bg-white"><tr><th className="p-2">{tr('التاريخ', 'Date')}</th><th>{tr('اليوم', 'Day')}</th><th>{tr('نوع اليوم', 'Day type')}</th><th>{tr('من', 'From')}</th><th>{tr('إلى', 'To')}</th></tr></thead><tbody>{monthDays.map(day => {
-          const mode = day.override?.mode || 'DEFAULT';
-          const isWorkday = mode === 'WORKDAY' || (mode === 'DEFAULT' && day.weekly.enabled);
-          return <tr key={day.date} className="border-t"><td className="p-2 text-center font-mono">{day.date}</td><td className="text-center font-bold">{ar ? weekdaysAr[day.weekday] : weekdaysEn[day.weekday]}</td><td className="p-1"><select value={mode} onChange={event => updateDayOverride(day.date,{ mode:event.target.value as DayOverrideMode })} className="w-full border rounded-lg p-1.5"><option value="DEFAULT">{tr(day.weekly.enabled ? 'حسب الأسبوع: عمل' : 'حسب الأسبوع: راحة', day.weekly.enabled ? 'Weekly: workday' : 'Weekly: off')}</option><option value="WORKDAY">{tr('يوم عمل', 'Workday')}</option><option value="OFF">{tr('راحة', 'Off')}</option><option value="LEAVE">{tr('إجازة', 'Leave')}</option><option value="HOLIDAY">{tr('عطلة رسمية', 'Public holiday')}</option><option value="MISSION">{tr('مهمة عمل', 'Business mission')}</option><option value="IGNORE">{tr('استبعاد من الفحص', 'Ignore')}</option></select></td><td className="text-center"><input type="time" disabled={!isWorkday} value={day.override?.start || day.weekly.start} onChange={event => updateDayOverride(day.date,{ mode:mode === 'DEFAULT' ? 'WORKDAY' : mode,start:event.target.value })} className="border rounded-lg p-1 disabled:bg-slate-100"/></td><td className="text-center"><input type="time" disabled={!isWorkday} value={day.override?.end || day.weekly.end} onChange={event => updateDayOverride(day.date,{ mode:mode === 'DEFAULT' ? 'WORKDAY' : mode,end:event.target.value })} className="border rounded-lg p-1 disabled:bg-slate-100"/></td></tr>;
-        })}</tbody></table></div>}
-      </div>
+      {savedScheduleOverrides.length>0?<p className="rounded-xl border border-blue-200 bg-blue-50 p-3 text-xs font-bold text-blue-800">{tr(`تم ربط قواعد دوام الموظف المحفوظة تلقائيًا (${savedScheduleOverrides.length} يومًا). تعديل أوقات الدوام يتم من زر «تطبيق جدول دوام» فقط.`,`Saved employee work rules were linked automatically (${savedScheduleOverrides.length} days). Schedule times can only be changed from “Apply work schedule”.`)}</p>:<p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs font-bold text-amber-800">{tr('لا توجد قاعدة دوام محفوظة لهذا الموظف في الشهر المختار؛ سيُستخدم الدوام الافتراضي من الأحد إلى الخميس 09:00–17:00.','No saved work rule exists for this employee in the selected month; the default Sunday–Thursday 09:00–17:00 schedule will be used.')}</p>}
       <div className="flex flex-wrap gap-3 items-center"><input type="file" accept=".xlsx,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv" onChange={event => { setFile(event.target.files?.[0] || null); setPreview([]); }} className="text-xs"/><button onClick={readPreview} className="px-4 py-2 bg-blue-600 text-white rounded-xl font-bold inline-flex gap-2"><Upload className="w-4 h-4"/>{tr('تحليل ومعاينة', 'Analyze and preview')}</button></div>
       {error && <p className="text-rose-700 bg-rose-50 border border-rose-200 rounded-xl p-3 text-xs font-bold">{error}</p>}
     </section>
     {reportRows.length > 0 && <section className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
-      <div className="p-4 flex flex-wrap justify-between gap-3"><div><h3 className="font-bold">{preview.length ? tr('مراجعة وتعديل النتيجة قبل الحفظ', 'Review and edit before saving') : tr('نتائج الشهر المحفوظة', 'Saved monthly results')}</h3><p className="text-xs text-slate-500">{tr('عدّل الوقت أو الحالة أو التأخير والملاحظة. النتائج لا تُنشئ خصمًا في المسير تلقائيًا.', 'Edit times, status, lateness, or notes. Results do not create payroll deductions automatically.')}</p></div><div className="flex flex-wrap items-center gap-2">{preview.length > 0 && <label className="inline-flex items-center gap-2 text-xs font-bold border rounded-xl px-3 py-2"><input type="checkbox" checked={reviewConfirmed} onChange={event => setReviewConfirmed(event.target.checked)}/>{tr('راجعت النتائج', 'Results reviewed')}</label>}{preview.length > 0 && <button disabled={saving || !reviewConfirmed} onClick={save} className="px-4 py-2 bg-emerald-600 disabled:bg-slate-300 text-white rounded-xl font-bold">{saving ? tr('جارٍ الحفظ...', 'Saving...') : tr('حفظ النتيجة', 'Save results')}</button>}<button disabled={preview.length > 0 && !reviewConfirmed} onClick={printReport} className="px-4 py-2 border disabled:text-slate-300 rounded-xl font-bold inline-flex gap-2"><Printer className="w-4 h-4"/>{tr('إصدار التقرير', 'Issue report')}</button></div></div>
-      <div className="overflow-x-auto"><table className="w-full text-xs min-w-[1050px]"><thead><tr className="bg-slate-50"><th className="p-2">{tr('التاريخ', 'Date')}</th><th>{tr('الدوام', 'Schedule')}</th><th>{tr('الحضور', 'Check-in')}</th><th>{tr('الانصراف', 'Check-out')}</th><th>{tr('التأخير', 'Late')}</th><th>{tr('الحالة', 'Status')}</th><th>{tr('ملاحظات', 'Notes')}</th><th>{tr('حساب', 'Calculate')}</th></tr></thead><tbody>{reportRows.map(row => {
+      <div className="p-4 flex flex-wrap justify-between gap-3"><div><h3 className="font-bold">{preview.length ? tr('مراجعة النتيجة واختيار ما سيُعتمد', 'Review results and select approvals') : tr('نتائج الشهر المحفوظة', 'Saved monthly results')}</h3><p className="text-xs text-slate-500">{tr('لا ينتقل أي تأخير أو غياب أو إضافي إلى سجل الحضور والمسير إلا بعد تحديده ثم الضغط على زر الاعتماد.', 'No lateness, absence, or overtime reaches attendance or payroll until selected and approved.')}</p></div><div className="flex flex-wrap items-center gap-2">{preview.length > 0 && <label className="inline-flex items-center gap-2 text-xs font-bold border rounded-xl px-3 py-2"><input type="checkbox" checked={reviewConfirmed} onChange={event => setReviewConfirmed(event.target.checked)}/>{tr('راجعت النتائج', 'Results reviewed')}</label>}{preview.length > 0 && <button disabled={saving || !reviewConfirmed || approvedIds.size===0} onClick={save} className="px-4 py-2 bg-emerald-600 disabled:bg-slate-300 text-white rounded-xl font-bold inline-flex items-center gap-2"><CheckCircle2 className="h-4 w-4"/>{saving ? tr('جارٍ الاعتماد...', 'Approving...') : tr(`اعتماد المحدد وترحيله (${approvedIds.size})`, `Approve and post selected (${approvedIds.size})`)}</button>}<button disabled={preview.length > 0 && !reviewConfirmed} onClick={printReport} className="px-4 py-2 border disabled:text-slate-300 rounded-xl font-bold inline-flex gap-2"><Printer className="w-4 h-4"/>{tr('إصدار التقرير', 'Issue report')}</button></div></div>
+      <div className="overflow-x-auto"><table className="w-full text-xs min-w-[1050px]"><thead><tr className="bg-slate-50">{preview.length>0&&<th className="p-2">{tr('اعتماد','Approve')}</th>}<th className="p-2">{tr('التاريخ', 'Date')}</th><th>{tr('الدوام', 'Schedule')}</th><th>{tr('الحضور', 'Check-in')}</th><th>{tr('الانصراف', 'Check-out')}</th><th>{tr('التأخير', 'Late')}</th><th>{tr('الإضافي', 'Overtime')}</th><th>{tr('الحالة', 'Status')}</th><th>{tr('ملاحظات', 'Notes')}</th></tr></thead><tbody>{reportRows.map(row => {
         const editable = preview.length > 0;
-        return <tr key={row.id} className="border-t"><td className="p-2 text-center font-mono">{row.date}</td><td className="text-center">{row.scheduledStart || '-'} - {row.scheduledEnd || '-'}</td><td className="p-1 text-center">{editable ? <input type="time" value={row.actualCheckIn || ''} onChange={event => updatePreviewRow(row.id,{ actualCheckIn:event.target.value || undefined })} className="border rounded-lg p-1"/> : row.actualCheckIn || '-'}</td><td className="p-1 text-center">{editable ? <input type="time" value={row.actualCheckOut || ''} onChange={event => updatePreviewRow(row.id,{ actualCheckOut:event.target.value || undefined })} className="border rounded-lg p-1"/> : row.actualCheckOut || '-'}</td><td className="p-1 text-center">{editable ? <input type="number" min="0" value={row.calculatedDelayMinutes || 0} onChange={event => updatePreviewRow(row.id,{ calculatedDelayMinutes:Math.max(0,Number(event.target.value) || 0) })} className="w-20 border rounded-lg p-1 text-center"/> : row.calculatedDelayMinutes || 0}</td><td className="p-1 text-center">{editable ? <select value={row.attendanceStatus || 'REVIEW'} onChange={event => updatePreviewRow(row.id,{ attendanceStatus:event.target.value as AttendanceRecord['attendanceStatus'] })} className="border rounded-lg p-1"><option value="PRESENT">{tr('حاضر', 'Present')}</option><option value="LATE">{tr('متأخر', 'Late')}</option><option value="ABSENT">{tr('غياب', 'Absent')}</option><option value="LEAVE">{tr('إجازة', 'Leave')}</option><option value="OFF">{tr('راحة', 'Off')}</option><option value="HOLIDAY">{tr('عطلة رسمية', 'Public holiday')}</option><option value="MISSION">{tr('مهمة عمل', 'Business mission')}</option><option value="IGNORED">{tr('مستبعد', 'Ignored')}</option><option value="MISSING_IN">{tr('دخول ناقص', 'Missing check-in')}</option><option value="MISSING_OUT">{tr('خروج ناقص', 'Missing check-out')}</option><option value="REVIEW">{tr('مراجعة', 'Review')}</option></select> : <span className="font-bold">{statusLabel(row.attendanceStatus, ar)}</span>}</td><td className="p-1">{editable ? <input value={row.notes || ''} onChange={event => updatePreviewRow(row.id,{ notes:event.target.value })} className="w-full min-w-48 border rounded-lg p-1.5"/> : row.notes || '-'}</td><td className="text-center">{editable ? <button type="button" onClick={() => { recalculateRow(row.id); setReviewConfirmed(false); }} className="p-2 border rounded-lg text-blue-700" title={tr('إعادة حساب اليوم', 'Recalculate day')}><RefreshCw className="w-4 h-4"/></button> : '-'}</td></tr>;
+        return <tr key={row.id} className={`border-t ${editable&&approvedIds.has(row.id)?'bg-emerald-50/50':''}`}>{editable&&<td className="p-2 text-center"><input type="checkbox" checked={approvedIds.has(row.id)} onChange={event=>setApprovedIds(current=>{const next=new Set(current);event.target.checked?next.add(row.id):next.delete(row.id);return next;})}/></td>}<td className="p-2 text-center font-mono">{row.date}</td><td className="text-center">{row.scheduledStart || '-'} - {row.scheduledEnd || '-'}</td><td className="p-1 text-center">{row.actualCheckIn || '-'}</td><td className="p-1 text-center">{row.actualCheckOut || '-'}</td><td className="p-1 text-center">{row.calculatedDelayMinutes || 0}</td><td className="p-1 text-center">{Number(row.overtimeHours||0).toFixed(2)}</td><td className="p-1 text-center"><span className="font-bold">{statusLabel(row.attendanceStatus, ar)}</span></td><td className="p-1">{row.notes || '-'}</td></tr>;
       })}</tbody></table></div>
     </section>}
   </div>;

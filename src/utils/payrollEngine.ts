@@ -127,6 +127,8 @@ export function calculateEmployeePayrollItem(input: EmployeeCalculationInput): P
   }
 
   attendanceRecords.forEach((record) => {
+    // Imported analysis rows are informational until HR explicitly approves them.
+    if (record.sourceType === 'MOQOOT_IMPORT' && record.payrollApproved !== true) return;
     const recordStart = record.date;
     const recordEnd = record.endDate || record.date;
     const overlapStart = recordStart > servicePeriodStart ? recordStart : servicePeriodStart;

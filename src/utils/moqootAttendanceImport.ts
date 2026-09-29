@@ -133,12 +133,16 @@ export function parseMoqootAttendanceRows(rawRows:unknown[][], options:MoqootImp
       end: override?.end || weekly.end,
     };
     const scheduledStart = parseTime(schedule.start) ?? 0;
+    let scheduledEnd = parseTime(schedule.end) ?? 0;
     const firstIn = day.ins.length ? Math.min(...day.ins) : null;
-    const lastOut = day.outs.length ? Math.max(...day.outs) : null;
+    let lastOut = day.outs.length ? Math.max(...day.outs) : null;
+    if (scheduledEnd <= scheduledStart) scheduledEnd += 1440;
+    if (lastOut !== null && lastOut < scheduledStart && scheduledEnd > 1440) lastOut += 1440;
     const approvedLeave = !options.attendanceOnlyWorker && isApprovedLeave(date, options.employeeId, options.leaves);
     let status: AttendanceRecord['attendanceStatus'] = 'PRESENT';
     let note = '';
     let calculatedDelayMinutes = 0;
+    let calculatedOvertimeHours = 0;
     if (override?.mode === 'IGNORE' || date > new Date().toISOString().slice(0, 10)) status = 'IGNORED';
     else if (override?.mode === 'HOLIDAY') status = 'HOLIDAY';
     else if (override?.mode === 'MISSION') status = 'MISSION';
@@ -150,6 +154,7 @@ export function parseMoqootAttendanceRows(rawRows:unknown[][], options:MoqootImp
     else if (lastOut === null) status = 'MISSING_OUT';
     else {
       calculatedDelayMinutes = Math.max(0, Math.floor(firstIn - scheduledStart - options.graceMinutes));
+      calculatedOvertimeHours = Math.max(0, Math.round(((lastOut - scheduledEnd) / 60) * 100) / 100);
       status = calculatedDelayMinutes > 0 ? 'LATE' : 'PRESENT';
     }
     if (status === 'MISSING_OUT') note = 'بصمة حضور بدون بصمة انصراف';
@@ -165,7 +170,7 @@ export function parseMoqootAttendanceRows(rawRows:unknown[][], options:MoqootImp
       delayMinutes: 0,
       absence: false,
       unpaidLeave: false,
-      overtimeHours: 0,
+      overtimeHours: calculatedOvertimeHours,
       overtimeType: 'STANDARD',
       notes: note,
       sourceType: 'MOQOOT_IMPORT',
