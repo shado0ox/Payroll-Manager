@@ -39,9 +39,9 @@ test('attendance reports use hashed expiring links and one-time signed responses
   assert.match(importView,/https:\/\/wa\.me\/\?text=/);
   assert.match(view,/قواعد دوام الموظف/);
   assert.match(publicView,/تعليق اختياري على هذا اليوم/);
-  assert.match(publicView,/toDataURL\('image\/png'\)/);
+  assert.match(publicView,/toDataURL\(["']image\/png["']\)/);
   assert.match(publicView,/h-dvh overflow-y-auto/);
-  assert.match(publicView,/طباعة الكشف الموقّع/);
+  assert.match(publicView,/طباعة (?:الكشف الموقّع|A4 الموقعة)/);
   assert.match(importView,/فتح التقرير ولم يوقّع/);
   assert.match(importView,/printShare/);
   assert.doesNotMatch(view,/مشاركة ومتابعة كشف موظف/);
