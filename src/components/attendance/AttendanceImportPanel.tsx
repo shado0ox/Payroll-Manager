@@ -59,6 +59,8 @@ export const AttendanceImportPanel: React.FC<Props> = ({ company, employees, att
   const externalId = externalName.trim() ? attendanceOnlyKey(company.id, externalName, externalNo) : '';
   const activeWorkerId = workerMode === 'REGISTERED' ? employeeId : externalId;
   const importedMonth = useMemo(() => attendance.filter(item => item.companyId === company.id && item.employeeId === activeWorkerId && item.periodMonth === selectedPeriod && item.sourceType === 'MOQOOT_IMPORT'), [attendance, company.id, activeWorkerId, selectedPeriod]);
+  const savedScheduleOverrides=useMemo<DayScheduleOverride[]>(()=>attendance.filter(item=>item.companyId===company.id&&item.employeeId===activeWorkerId&&item.periodMonth===selectedPeriod&&item.id===`schedule-${company.id}-${activeWorkerId}-${item.date}`).map(item=>({date:item.date,mode:item.workday===false?'OFF':'WORKDAY',start:item.scheduledStart,end:item.scheduledEnd})),[attendance,company.id,activeWorkerId,selectedPeriod]);
+  const effectiveDayOverrides=useMemo<DayScheduleOverride[]>(()=>[...savedScheduleOverrides.filter(saved=>!dayOverrides.some(manual=>manual.date===saved.date)),...dayOverrides],[savedScheduleOverrides,dayOverrides]);
   const reportRows = preview.length ? preview : importedMonth;
   const monthDays = useMemo(() => {
     const [year, month] = selectedPeriod.split('-').map(Number);
@@ -67,10 +69,10 @@ export const AttendanceImportPanel: React.FC<Props> = ({ company, employees, att
       const date = `${selectedPeriod}-${String(index + 1).padStart(2, '0')}`;
       const weekday = new Date(`${date}T12:00:00Z`).getUTCDay();
       const weekly = schedule.find(day => day.weekday === weekday) || defaultSchedule()[weekday];
-      const override = dayOverrides.find(item => item.date === date);
+      const override = effectiveDayOverrides.find(item => item.date === date);
       return { date,weekday,weekly,override };
     });
-  }, [selectedPeriod, schedule, dayOverrides]);
+  }, [selectedPeriod, schedule, effectiveDayOverrides]);
 
   useEffect(() => {
     if (!activeWorkerId) return;
@@ -138,7 +140,7 @@ export const AttendanceImportPanel: React.FC<Props> = ({ company, employees, att
         periodMonth: selectedPeriod,
         graceMinutes,
         schedule,
-        dayOverrides,
+        dayOverrides:effectiveDayOverrides,
         sourceFileName: file.name,
         leaves,
       });
@@ -186,6 +188,7 @@ export const AttendanceImportPanel: React.FC<Props> = ({ company, employees, att
       {workerMode === 'REGISTERED' ? <SearchableEmployeeSelect employees={employees} value={employeeId} onChange={setEmployeeId}/>
         : <div className="grid md:grid-cols-2 gap-3"><input className="px-3 py-2 border rounded-xl" placeholder={tr('اسم الموظف *', 'Worker name *')} value={externalName} onChange={event => setExternalName(event.target.value)}/><input className="px-3 py-2 border rounded-xl" placeholder={tr('رقم حضور اختياري', 'Optional attendance number')} value={externalNo} onChange={event => setExternalNo(event.target.value)}/></div>}
       <div><label className="block text-xs font-bold mb-1">{tr('مدة السماح قبل التأخير (دقيقة)', 'Grace period before lateness (minutes)')}</label><input type="number" min="0" max="240" className="w-40 px-3 py-2 border rounded-xl" value={graceMinutes} onChange={event => setGraceMinutes(Math.max(0, Number(event.target.value) || 0))}/></div>
+      {savedScheduleOverrides.length>0&&<p className="rounded-xl border border-blue-200 bg-blue-50 p-3 text-xs font-bold text-blue-800">{tr(`تم ربط جدول الموظف المحفوظ تلقائيًا (${savedScheduleOverrides.length} يومًا). ويمكن تعديل أي يوم أدناه قبل الاستيراد.`,`The saved employee schedule was applied automatically (${savedScheduleOverrides.length} days). You can override any day below before importing.`)}</p>}
       <div className="overflow-x-auto"><table className="w-full text-xs"><thead><tr className="bg-slate-50"><th className="p-2 text-start">{tr('اليوم', 'Day')}</th><th>{tr('يوم عمل', 'Workday')}</th><th>{tr('من', 'From')}</th><th>{tr('إلى', 'To')}</th></tr></thead><tbody>{schedule.map(day => <tr key={day.weekday} className="border-t"><td className="p-2 font-bold">{ar ? weekdaysAr[day.weekday] : weekdaysEn[day.weekday]}</td><td className="text-center"><input type="checkbox" checked={day.enabled} onChange={event => updateSchedule(day.weekday, { enabled:event.target.checked })}/></td><td className="text-center"><input type="time" disabled={!day.enabled} value={day.start} onChange={event => updateSchedule(day.weekday, { start:event.target.value })} className="border rounded-lg p-1"/></td><td className="text-center"><input type="time" disabled={!day.enabled} value={day.end} onChange={event => updateSchedule(day.weekday, { end:event.target.value })} className="border rounded-lg p-1"/></td></tr>)}</tbody></table></div>
       <div className="border border-slate-200 rounded-2xl overflow-hidden">
         <button type="button" onClick={() => setShowMonthDays(value => !value)} className="w-full p-3 flex items-center justify-between bg-slate-50 font-bold text-xs">
