@@ -112,7 +112,7 @@ export const PublicAttendanceReport: React.FC = () => {
       dir="rtl"
       className="attendance-print h-dvh overflow-y-auto overscroll-contain bg-slate-100 p-3 pb-12 text-slate-900 sm:p-8 print:h-auto print:overflow-visible print:bg-white print:p-0"
     >
-      <style>{`@media print{@page{size:A4 portrait;margin:5mm}.attendance-print{font-size:9px!important}.attendance-sheet{width:200mm!important;height:287mm!important;overflow:hidden!important;padding:4mm!important}.attendance-banner{padding:3mm 4mm!important}.attendance-banner img{height:13mm!important;max-width:30mm!important}.attendance-table{min-width:0!important;font-size:8.5px!important}.attendance-table th,.attendance-table td{padding:1.25mm 1mm!important;line-height:1.15!important}.attendance-table th{font-size:9px!important}.attendance-table textarea{min-height:0!important;height:4.5mm!important;border:0!important;padding:0!important;font-size:8.5px!important;line-height:1.1!important;resize:none!important;background:transparent!important}.attendance-sign{margin-top:2.5mm!important;padding:2.5mm!important;font-size:9px!important}.attendance-sign img{height:15mm!important}.attendance-sign p{margin:1mm 0!important}}`}</style>
+      <style>{`@media print{@page{size:A4 portrait;margin:5mm}.attendance-print{font-size:9px!important}.attendance-sheet{width:200mm!important;height:287mm!important;overflow:hidden!important;padding:4mm!important}.attendance-banner{padding:3mm 4mm!important}.attendance-banner img{height:13mm!important;max-width:30mm!important}.attendance-summary{margin:2mm 0!important;gap:1mm!important}.attendance-summary>div{padding:1.5mm .8mm!important}.attendance-table{min-width:0!important;font-size:8px!important}.attendance-table th,.attendance-table td{padding:1.05mm .7mm!important;line-height:1.1!important}.attendance-table th{font-size:8.5px!important}.attendance-table textarea{min-height:0!important;height:4.2mm!important;border:0!important;padding:0!important;font-size:8px!important;line-height:1.05!important;resize:none!important;background:transparent!important}.attendance-sign{margin-top:2mm!important;padding:2mm!important;font-size:9px!important}.attendance-sign img{height:14mm!important}.attendance-sign p{margin:.8mm 0!important}}`}</style>
       <section className="attendance-sheet mx-auto max-w-5xl rounded-3xl bg-white p-4 shadow-xl sm:p-8 print:max-w-none print:rounded-none print:shadow-none">
         <header className="attendance-banner flex items-center justify-between gap-4 rounded-2xl bg-gradient-to-l from-emerald-800 to-teal-600 p-5 text-white print:rounded-none">
           {" "}
@@ -154,8 +154,15 @@ export const PublicAttendanceReport: React.FC = () => {
             القسم: <b>{report.employee.department || "—"}</b>
           </span>
         </div>
+        <div className="attendance-summary mt-3 grid grid-cols-2 gap-2 sm:grid-cols-5">
+          <div className="rounded-xl border bg-rose-50 p-3 text-center"><span className="block text-xs text-slate-500">أيام الغياب</span><b>{report.summary.absenceDays}</b></div>
+          <div className="rounded-xl border bg-amber-50 p-3 text-center"><span className="block text-xs text-slate-500">أيام التأخير</span><b>{report.summary.lateDays}</b></div>
+          <div className="rounded-xl border bg-orange-50 p-3 text-center"><span className="block text-xs text-slate-500">إجمالي التأخير</span><b>{report.summary.totalDelayMinutes} دقيقة</b></div>
+          <div className="rounded-xl border bg-blue-50 p-3 text-center"><span className="block text-xs text-slate-500">السماح</span><b>{report.records[0]?.graceMinutes || 0} دقيقة</b></div>
+          <div className="rounded-xl border bg-violet-50 p-3 text-center"><span className="block text-xs text-slate-500">البصمة الناقصة</span><b>{report.summary.missingPunchDays}</b></div>
+        </div>
         <div className="mt-3 overflow-x-auto print:overflow-visible">
-          <table className="attendance-table w-full min-w-[850px] text-sm">
+          <table className="attendance-table w-full min-w-[1050px] text-sm">
             <thead className="bg-slate-100">
               <tr>
                 {[
@@ -165,7 +172,8 @@ export const PublicAttendanceReport: React.FC = () => {
                   "الخروج",
                   "الحالة",
                   "التأخير",
-                  "ملاحظة الموظف",
+                  "ملاحظات الإدارة",
+                  "ملاحظات الموظف",
                 ].map((x) => (
                   <th key={x} className="p-3 text-right">
                     {x}
@@ -184,6 +192,7 @@ export const PublicAttendanceReport: React.FC = () => {
                   <td className="p-3">{row.actualCheckOut || "—"}</td>
                   <td className="p-3 font-bold">{row.status}</td>
                   <td className="p-3">{row.delayMinutes} د</td>
+                  <td className="p-2">{row.notes || "—"}</td>
                   <td className="p-2">
                     <textarea
                       disabled={Boolean(signedAt)}
