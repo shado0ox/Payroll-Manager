@@ -35,6 +35,7 @@ test('attendance reports use hashed expiring links and one-time signed responses
   assert.match(routes,/signatureData\.startsWith\('data:image\/png;base64,'\)/);
   assert.match(routes,/ipHash:sha256/);
   assert.match(routes,/router\.get\('\/attendance-report-shares'/);
+  assert.match(routes,/router\.delete\('\/attendance-report-shares\/:id'/);
   assert.match(routes,/viewed_at=COALESCE\(viewed_at,now\(\)\)/);
   assert.match(importView,/https:\/\/wa\.me\/\?text=/);
   assert.match(view,/قواعد دوام الموظف/);
@@ -44,6 +45,7 @@ test('attendance reports use hashed expiring links and one-time signed responses
   assert.match(publicView,/طباعة (?:الكشف الموقّع|A4 الموقعة)/);
   assert.match(importView,/فتح التقرير ولم يوقّع/);
   assert.match(importView,/printShare/);
+  assert.match(importView,/deleteAttendanceReportShare/);
   assert.doesNotMatch(view,/مشاركة ومتابعة كشف موظف/);
   assert.match(app,/!window\.location\.pathname\.startsWith\('\/attendance-report\/'\)/);
 });
