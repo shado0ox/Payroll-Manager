@@ -43,6 +43,9 @@ test('attendance reports use hashed expiring links and one-time signed responses
   assert.match(publicView,/toDataURL\(["']image\/png["']\)/);
   assert.match(publicView,/h-dvh overflow-y-auto/);
   assert.match(publicView,/طباعة (?:الكشف الموقّع|A4 الموقعة)/);
+  assert.match(publicView,/أيام الغياب/);
+  assert.match(publicView,/ملاحظات الإدارة/);
+  assert.match(publicView,/ملاحظات الموظف/);
   assert.match(importView,/فتح التقرير ولم يوقّع/);
   assert.match(importView,/printShare/);
   assert.match(importView,/deleteAttendanceReportShare/);
