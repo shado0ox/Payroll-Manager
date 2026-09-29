@@ -114,6 +114,7 @@ export function calculateEmployeePayrollItem(input: EmployeeCalculationInput): P
   let totalUnpaidLeaveDays = 0;
   let standardOvertimeHours = 0;
   let weekendOvertimeHours = 0;
+  let aggregateAbsenceDays = 0;
   const absenceDates = new Set<string>();
   const unpaidLeaveDates = new Set<string>();
   const servicePeriodStart = salaryStart > periodStart ? salaryStart : periodStart;
@@ -129,6 +130,13 @@ export function calculateEmployeePayrollItem(input: EmployeeCalculationInput): P
   attendanceRecords.forEach((record) => {
     // Imported analysis rows are informational until HR explicitly approves them.
     if (record.sourceType === 'MOQOOT_IMPORT' && record.payrollApproved !== true) return;
+    if (record.aggregateAttendance) {
+      aggregateAbsenceDays += record.absence ? Math.max(0,Number(record.daysCount || 0)) : 0;
+      totalDelayMinutes += Math.max(0,Number(record.delayMinutes || 0));
+      if (record.overtimeType === 'WEEKEND') weekendOvertimeHours += Math.max(0,Number(record.overtimeHours || 0));
+      else standardOvertimeHours += Math.max(0,Number(record.overtimeHours || 0));
+      return;
+    }
     const recordStart = record.date;
     const recordEnd = record.endDate || record.date;
     const overlapStart = recordStart > servicePeriodStart ? recordStart : servicePeriodStart;
@@ -156,7 +164,7 @@ export function calculateEmployeePayrollItem(input: EmployeeCalculationInput): P
       }
     }
   });
-  totalAbsenceDays = absenceDates.size;
+  totalAbsenceDays = absenceDates.size + aggregateAbsenceDays;
   totalUnpaidLeaveDays = [...unpaidLeaveDates].filter(date => !absenceDates.has(date)).length;
 
   // Overtime Calculation
