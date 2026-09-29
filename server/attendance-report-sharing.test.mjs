@@ -27,14 +27,21 @@ test('date-range schedules expand into one report row per calendar day',()=>{
 
 test('attendance reports use hashed expiring links and one-time signed responses',()=>{
   assert.match(schema,/attendance_report_shares/);
+  assert.match(schema,/attendance_report_shares.*ADD COLUMN IF NOT EXISTS viewed_at/s);
   assert.match(routes,/token_hash/);
   assert.match(routes,/ATTENDANCE_REPORT_EXPIRED/);
   assert.match(routes,/ATTENDANCE_REPORT_ALREADY_SIGNED/);
   assert.match(routes,/signatureData\.startsWith\('data:image\/png;base64,'\)/);
   assert.match(routes,/ipHash:sha256/);
+  assert.match(routes,/router\.get\('\/attendance-report-shares'/);
+  assert.match(routes,/viewed_at=COALESCE\(viewed_at,now\(\)\)/);
   assert.match(view,/https:\/\/wa\.me\/\?text=/);
   assert.match(view,/قواعد دوام الموظف/);
   assert.match(publicView,/تعليق اختياري على هذا اليوم/);
   assert.match(publicView,/toDataURL\('image\/png'\)/);
+  assert.match(publicView,/h-dvh overflow-y-auto/);
+  assert.match(publicView,/طباعة الكشف الموقّع/);
+  assert.match(view,/تم فتح الرابط ولم يوقّع/);
+  assert.match(view,/printSignedShare/);
   assert.match(app,/!window\.location\.pathname\.startsWith\('\/attendance-report\/'\)/);
 });
