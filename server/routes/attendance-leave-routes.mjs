@@ -89,6 +89,17 @@ router.get('/attendance-report-shares', auth, async (req,res,next)=>{
   }catch(error){next(error);}
 });
 
+router.delete('/attendance-report-shares/:id', auth, writeLimiter, async (req,res,next)=>{
+  try{
+    if(!can(req.user,'MANAGE_ATTENDANCE'))return res.status(403).json({error:'FORBIDDEN'});
+    const id=String(req.params.id||'');
+    if(!id.startsWith('attendance-share-'))return res.status(400).json({error:'INVALID_ATTENDANCE_REPORT_SHARE'});
+    const result=await pool.query(`DELETE FROM ${q('attendance_report_shares')} WHERE id=$1 AND company_id=ANY($2::text[]) RETURNING id`,[id,req.user.company_ids]);
+    if(!result.rowCount)return res.status(404).json({error:'ATTENDANCE_REPORT_NOT_FOUND'});
+    res.json({deleted:true});
+  }catch(error){next(error);}
+});
+
 const leaveDays=(start,end)=>Math.floor((Date.parse(`${end}T00:00:00Z`)-Date.parse(`${start}T00:00:00Z`))/86400000)+1;
 const addYears=(iso,years)=>{const date=new Date(`${iso}T00:00:00Z`);date.setUTCFullYear(date.getUTCFullYear()+years);return date.toISOString().slice(0,10);};
 const previousDay=iso=>new Date(Date.parse(`${iso}T00:00:00Z`)-86400000).toISOString().slice(0,10);
