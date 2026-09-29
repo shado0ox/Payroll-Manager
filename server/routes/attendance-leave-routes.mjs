@@ -1,4 +1,7 @@
 import express from 'express';
+import { createHash,randomBytes,randomUUID } from 'node:crypto';
+import { resolveAnnualLeaveAccrual } from '../annual-leave-accrual.mjs';
+import { buildEmployeeAttendanceReport } from './employee-portal-routes.mjs';
 
 export function createAttendanceLeaveRouter({
   auth,
@@ -17,6 +20,61 @@ export function createAttendanceLeaveRouter({
   broadcastStateUpdate,
 }) {
   const router = express.Router();
+  const sha256=value=>createHash('sha256').update(String(value)).digest('hex');
+
+router.get('/public/attendance-reports/:token', async (req,res,next)=>{
+  try{
+    const token=String(req.params.token||'');
+    if(!/^[A-Za-z0-9_-]{40,120}$/.test(token))return res.status(404).json({error:'ATTENDANCE_REPORT_NOT_FOUND'});
+    const result=await pool.query(`SELECT snapshot,response,signed_at,expires_at,revoked_at FROM ${q('attendance_report_shares')} WHERE token_hash=$1 LIMIT 1`,[sha256(token)]);
+    if(!result.rowCount||result.rows[0].revoked_at)return res.status(404).json({error:'ATTENDANCE_REPORT_NOT_FOUND'});
+    if(new Date(result.rows[0].expires_at).getTime()<=Date.now())return res.status(410).json({error:'ATTENDANCE_REPORT_EXPIRED'});
+    const storedResponse=result.rows[0].response;
+    const response=storedResponse?{signatureName:String(storedResponse.signatureName||''),comments:storedResponse.comments||{}}:null;
+    res.json({report:result.rows[0].snapshot,response,signedAt:result.rows[0].signed_at||null,expiresAt:result.rows[0].expires_at});
+  }catch(error){next(error);}
+});
+
+router.post('/public/attendance-reports/:token/respond', writeLimiter, async (req,res,next)=>{
+  const client=await pool.connect();
+  try{
+    const token=String(req.params.token||''),signatureName=String(req.body?.signatureName||'').trim(),signatureData=String(req.body?.signatureData||'');
+    const comments=req.body?.comments&&typeof req.body.comments==='object'&&!Array.isArray(req.body.comments)?req.body.comments:{};
+    if(!/^[A-Za-z0-9_-]{40,120}$/.test(token)||signatureName.length<2||signatureName.length>160||signatureData.length>200000
+      ||Object.keys(comments).length>500||Object.entries(comments).some(([key,value])=>key.length>160||typeof value!=='string'||value.length>1000))return res.status(400).json({error:'INVALID_ATTENDANCE_REPORT_RESPONSE'});
+    await client.query('BEGIN');
+    const current=await client.query(`SELECT id,snapshot,signed_at,expires_at,revoked_at FROM ${q('attendance_report_shares')} WHERE token_hash=$1 FOR UPDATE`,[sha256(token)]);
+    if(!current.rowCount||current.rows[0].revoked_at){await client.query('ROLLBACK');return res.status(404).json({error:'ATTENDANCE_REPORT_NOT_FOUND'});}
+    if(new Date(current.rows[0].expires_at).getTime()<=Date.now()){await client.query('ROLLBACK');return res.status(410).json({error:'ATTENDANCE_REPORT_EXPIRED'});}
+    if(current.rows[0].signed_at){await client.query('ROLLBACK');return res.status(409).json({error:'ATTENDANCE_REPORT_ALREADY_SIGNED'});}
+    const allowedIds=new Set((current.rows[0].snapshot?.records||[]).map(record=>String(record.id)));
+    if(Object.keys(comments).some(id=>!allowedIds.has(id))){await client.query('ROLLBACK');return res.status(400).json({error:'INVALID_ATTENDANCE_REPORT_COMMENT'});}
+    const response={signatureName,signatureData:signatureData.startsWith('data:image/png;base64,')?signatureData:'',comments,
+      consent:true,ipHash:sha256(req.ip||''),userAgent:String(req.get('user-agent')||'').slice(0,500)};
+    const updated=await client.query(`UPDATE ${q('attendance_report_shares')} SET response=$2::jsonb,signed_at=now(),updated_at=now() WHERE id=$1 RETURNING signed_at`,[current.rows[0].id,JSON.stringify(response)]);
+    await client.query('COMMIT');
+    res.json({saved:true,signedAt:updated.rows[0].signed_at});
+  }catch(error){try{await client.query('ROLLBACK');}catch{}next(error);}finally{client.release();}
+});
+
+router.post('/attendance-report-shares', auth, writeLimiter, async (req,res,next)=>{
+  try{
+    if(!can(req.user,'MANAGE_ATTENDANCE'))return res.status(403).json({error:'FORBIDDEN'});
+    const companyId=String(req.body?.companyId||''),employeeId=String(req.body?.employeeId||''),periodMonth=String(req.body?.periodMonth||'');
+    const expiresInDays=Math.max(1,Math.min(30,Number(req.body?.expiresInDays||7)));
+    if(!req.user.company_ids.includes(companyId)||!validPeriodMonth(periodMonth))return res.status(400).json({error:'INVALID_ATTENDANCE_REPORT_SHARE'});
+    const employee=await pool.query(`SELECT id,employee_no,first_name_ar,last_name_ar,first_name_en,last_name_en,department FROM ${q('employees')} WHERE id=$1 AND company_id=$2 LIMIT 1`,[employeeId,companyId]);
+    if(!employee.rowCount)return res.status(404).json({error:'ATTENDANCE_REPORT_EMPLOYEE_NOT_FOUND'});
+    const records=await pool.query(`SELECT id,record_date::text,end_date::text,days_count,delay_minutes,absence,unpaid_leave,overtime_hours,notes,payload FROM ${q('attendance_records')} WHERE employee_id=$1 AND company_id=$2 AND period_month=$3 ORDER BY record_date,id`,[employeeId,companyId,periodMonth]);
+    const company=await pool.query(`SELECT name_ar,name_en FROM ${q('companies')} WHERE id=$1`,[companyId]);
+    const report=buildEmployeeAttendanceReport(records.rows,periodMonth),row=employee.rows[0];
+    const snapshot={...report,company:{nameAr:company.rows[0]?.name_ar||'',nameEn:company.rows[0]?.name_en||''},employee:{id:row.id,employeeNo:row.employee_no,nameAr:`${row.first_name_ar||''} ${row.last_name_ar||''}`.trim(),nameEn:`${row.first_name_en||''} ${row.last_name_en||''}`.trim(),department:row.department||''}};
+    const token=randomBytes(36).toString('base64url'),id=`attendance-share-${randomUUID()}`;
+    const saved=await pool.query(`INSERT INTO ${q('attendance_report_shares')}(id,company_id,employee_id,period_month,token_hash,expires_at,snapshot,created_by) VALUES($1,$2,$3,$4,$5,now()+($6||' days')::interval,$7::jsonb,$8) RETURNING expires_at`,[id,companyId,employeeId,periodMonth,sha256(token),String(expiresInDays),JSON.stringify(snapshot),req.user.id]);
+    const url=`${req.protocol}://${req.get('host')}/attendance-report/${token}`;
+    res.status(201).json({id,url,expiresAt:saved.rows[0].expires_at});
+  }catch(error){next(error);}
+});
 
 const leaveDays=(start,end)=>Math.floor((Date.parse(`${end}T00:00:00Z`)-Date.parse(`${start}T00:00:00Z`))/86400000)+1;
 const addYears=(iso,years)=>{const date=new Date(`${iso}T00:00:00Z`);date.setUTCFullYear(date.getUTCFullYear()+years);return date.toISOString().slice(0,10);};
@@ -24,17 +82,9 @@ const previousDay=iso=>new Date(Date.parse(`${iso}T00:00:00Z`)-86400000).toISOSt
 const completedYears=(start,reference)=>{let years=Number(reference.slice(0,4))-Number(start.slice(0,4));if(reference.slice(5)<start.slice(5))years-=1;return Math.max(0,years);};
 const annualLeaveConfig=(employee,year,referenceDate=`${year}-12-31`)=>{
   const payload=employee?.payload||{},policy=['LABOR_LAW','FIXED_30','DOMESTIC_BIENNIAL_30','CUSTOM'].includes(payload.annualLeavePolicy)?payload.annualLeavePolicy:'LABOR_LAW';
-  let entitlement=Math.max(0,Math.min(60,Number(payload.annualLeaveEntitlementDays??21)));
-  if(policy==='FIXED_30')entitlement=30;
-  const hireDate=String(employee?.hire_date||payload.hireDate||payload.salaryStartDate||''),valid=/^\d{4}-\d{2}-\d{2}$/.test(hireDate),serviceYears=valid?completedYears(hireDate,referenceDate):0;
-  const cycleYears=policy==='DOMESTIC_BIENNIAL_30'?2:1,cycles=Math.floor(serviceYears/cycleYears);
-  const periodStart=valid?addYears(hireDate,cycles*cycleYears):`${year}-01-01`,periodEnd=valid?previousDay(addYears(hireDate,(cycles+1)*cycleYears)):`${year}-12-31`;
-  if(policy==='DOMESTIC_BIENNIAL_30') entitlement=cycles>0?30:0;
-  if(policy==='LABOR_LAW'){
-    entitlement=serviceYears>=5?30:21;
-  }
+  const accrual=resolveAnnualLeaveAccrual(employee,year,referenceDate);
   const applies=!payload.annualLeaveBalanceYear||Number(payload.annualLeaveBalanceYear)===year;
-  return {available:entitlement+(applies?Math.max(0,Number(payload.annualLeaveOpeningBalance||0)):0)-(applies?Math.max(0,Number(payload.annualLeavePriorUsedDays||0)):0),periodStart,periodEnd};
+  return {available:accrual.accruedEntitlementDays+(applies?Math.max(0,Number(payload.annualLeaveOpeningBalance||0)):0)-(applies?Math.max(0,Number(payload.annualLeavePriorUsedDays||0)):0),periodStart:accrual.hireDate||accrual.currentCycleStart,periodEnd:accrual.currentCycleEnd};
 };
 const annualLeavePaymentSnapshot=(record,employee)=>{
   if(record.type!=='ANNUAL')return record;

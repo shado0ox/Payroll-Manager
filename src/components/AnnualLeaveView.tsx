@@ -18,14 +18,14 @@ const daysBetween=(start:string,end:string)=>Math.max(0,Math.floor((Date.parse(e
 const addYears=(iso:string,years:number)=>{const date=new Date(`${iso}T00:00:00Z`);date.setUTCFullYear(date.getUTCFullYear()+years);return date.toISOString().slice(0,10);};
 const previousDay=(iso:string)=>new Date(Date.parse(`${iso}T00:00:00Z`)-86400000).toISOString().slice(0,10);
 const completedYears=(start:string,reference:string)=>{let years=Number(reference.slice(0,4))-Number(start.slice(0,4));if(reference.slice(5)<start.slice(5))years-=1;return Math.max(0,years);};
-const benefitCycle=(employee:Employee,year:number,referenceDate:string)=>{const hire=employee.hireDate||employee.salaryStartDate||'',valid=/^\d{4}-\d{2}-\d{2}$/.test(hire),cycleYears=employee.annualLeavePolicy==='DOMESTIC_BIENNIAL_30'?2:1,cycles=valid?Math.floor(completedYears(hire,referenceDate)/cycleYears):0;const periodStart=valid?addYears(hire,cycles*cycleYears):`${year}-01-01`;const nextEligibilityDate=valid?addYears(hire,(cycles+1)*cycleYears):null;return {periodStart,periodEnd:nextEligibilityDate?previousDay(nextEligibilityDate):`${year}-12-31`,nextEligibilityDate,serviceYears:valid?completedYears(hire,referenceDate):0,completedCycles:cycles};};
+const benefitCycle=(employee:Employee,year:number,referenceDate:string)=>{const hire=employee.hireDate||employee.salaryStartDate||'',valid=/^\d{4}-\d{2}-\d{2}$/.test(hire)&&hire<=referenceDate,cycleYears=employee.annualLeavePolicy==='DOMESTIC_BIENNIAL_30'?2:1,serviceYears=valid?completedYears(hire,referenceDate):0,cycles=Math.floor(serviceYears/cycleYears);const currentCycleStart=valid?addYears(hire,cycles*cycleYears):`${year}-01-01`;const nextEligibilityDate=valid?addYears(hire,(cycles+1)*cycleYears):null;return {periodStart:valid?hire:`${year}-01-01`,currentCycleStart,periodEnd:nextEligibilityDate?previousDay(nextEligibilityDate):`${year}-12-31`,nextEligibilityDate,serviceYears,completedCycles:cycles};};
 const daysInRange=(leave:LeaveRequest,start:string,end:string)=>{const effectiveStart=leave.startDate>start?leave.startDate:start,effectiveEnd=leave.endDate<end?leave.endDate:end;return effectiveEnd<effectiveStart?0:daysBetween(effectiveStart,effectiveEnd);};
 const entitlementFor=(employee:Employee,serviceYears:number,completedCycles:number)=>{
   const policy=employee.annualLeavePolicy||'LABOR_LAW';
-  if(policy==='FIXED_30')return 30;
-  if(policy==='DOMESTIC_BIENNIAL_30')return completedCycles>0?30:0;
-  if(policy==='CUSTOM')return Math.max(0,Math.min(60,Number(employee.annualLeaveEntitlementDays??21)));
-  return serviceYears>=5?30:21;
+  if(policy==='FIXED_30')return (serviceYears+1)*30;
+  if(policy==='DOMESTIC_BIENNIAL_30')return completedCycles*30;
+  if(policy==='CUSTOM')return (serviceYears+1)*Math.max(0,Math.min(60,Number(employee.annualLeaveEntitlementDays??21)));
+  return Math.min(serviceYears,5)*21+Math.max(0,serviceYears-5)*30+(serviceYears>=5?30:21);
 };
 
 export const AnnualLeaveView:React.FC<Props>=({company,employees,leaves,onSaveEmployee,onBulkSaveAnnualLeaveSettings,onAddLeave,onUpdateLeaveStatus})=>{

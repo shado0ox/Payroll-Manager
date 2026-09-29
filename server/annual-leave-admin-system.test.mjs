@@ -39,19 +39,21 @@ test('admin leave commands enforce overlap, benefit period and available annual 
 
 test('opening balance is applied only to its configured year',()=>{
   const employee={hire_date:'2024-01-01',payload:{annualLeavePolicy:'LABOR_LAW',annualLeaveOpeningBalance:5,annualLeavePriorUsedDays:2,annualLeaveBalanceYear:2026}};
-  assert.deepEqual(resolveAnnualLeaveBalance(employee,2026),{policy:'LABOR_LAW',entitlementDays:21,benefitPeriodStart:'2026-01-01',benefitPeriodEnd:'2026-12-31',nextEligibilityDate:'2027-01-01',openingBalanceDays:5,priorUsedDays:2});
-  assert.deepEqual(resolveAnnualLeaveBalance(employee,2027),{policy:'LABOR_LAW',entitlementDays:21,benefitPeriodStart:'2027-01-01',benefitPeriodEnd:'2027-12-31',nextEligibilityDate:'2028-01-01',openingBalanceDays:0,priorUsedDays:0});
+  assert.deepEqual(resolveAnnualLeaveBalance(employee,2026),{policy:'LABOR_LAW',entitlementDays:63,currentCycleEntitlementDays:21,benefitPeriodStart:'2024-01-01',benefitPeriodEnd:'2026-12-31',nextEligibilityDate:'2027-01-01',openingBalanceDays:5,priorUsedDays:2});
+  assert.deepEqual(resolveAnnualLeaveBalance(employee,2027),{policy:'LABOR_LAW',entitlementDays:84,currentCycleEntitlementDays:21,benefitPeriodStart:'2024-01-01',benefitPeriodEnd:'2027-12-31',nextEligibilityDate:'2028-01-01',openingBalanceDays:0,priorUsedDays:0});
 });
 
 test('professional annual leave periods start on each employee work anniversary',()=>{
   const employee={hire_date:'2021-09-08',payload:{annualLeavePolicy:'LABOR_LAW'}};
   const beforeFifth=resolveAnnualLeaveBalance(employee,2026,'2026-09-07');
-  assert.equal(beforeFifth.entitlementDays,21);
-  assert.equal(beforeFifth.benefitPeriodStart,'2025-09-08');
+  assert.equal(beforeFifth.entitlementDays,105);
+  assert.equal(beforeFifth.currentCycleEntitlementDays,21);
+  assert.equal(beforeFifth.benefitPeriodStart,'2021-09-08');
   assert.equal(beforeFifth.benefitPeriodEnd,'2026-09-07');
   const afterFifth=resolveAnnualLeaveBalance(employee,2026,'2026-09-08');
-  assert.equal(afterFifth.entitlementDays,30);
-  assert.equal(afterFifth.benefitPeriodStart,'2026-09-08');
+  assert.equal(afterFifth.entitlementDays,135);
+  assert.equal(afterFifth.currentCycleEntitlementDays,30);
+  assert.equal(afterFifth.benefitPeriodStart,'2021-09-08');
   assert.equal(afterFifth.benefitPeriodEnd,'2027-09-07');
 });
 
@@ -62,7 +64,7 @@ test('domestic workers receive 30 days per completed two-year benefit cycle',()=
   assert.equal(before.nextEligibilityDate,'2026-05-10');
   const eligible=resolveAnnualLeaveBalance(employee,2026,'2026-05-10');
   assert.equal(eligible.entitlementDays,30);
-  assert.equal(eligible.benefitPeriodStart,'2026-05-10');
+  assert.equal(eligible.benefitPeriodStart,'2024-05-10');
   assert.equal(eligible.benefitPeriodEnd,'2028-05-09');
   assert.equal(eligible.nextEligibilityDate,'2028-05-10');
 });

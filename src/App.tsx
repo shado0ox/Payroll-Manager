@@ -68,6 +68,7 @@ const QoyodIntegrationModal = lazy(() => import('./components/QoyodIntegrationMo
 const DatabaseStatusModal = lazy(() => import('./components/DatabaseStatusModal').then(module => ({ default:module.DatabaseStatusModal })));
 const EmployeePortalView = lazy(() => import('./components/EmployeePortalView').then(module => ({ default:module.EmployeePortalView })));
 const PublicWebsite = lazy(() => import('./components/PublicWebsite').then(module => ({ default:module.PublicWebsite })));
+const PublicAttendanceReport = lazy(() => import('./components/PublicAttendanceReport').then(module => ({ default:module.PublicAttendanceReport })));
 
 const TAB_SESSION_KEY = 'masar_tab_session_v1';
 const LAST_ACTIVITY_KEY = 'masar_last_activity_v1';
@@ -376,7 +377,7 @@ export const App: React.FC = () => {
   useEffect(() => {
     const onPopState = () => setActiveTabState(tabFromLocation());
     window.addEventListener('popstate', onPopState);
-    if (window.location.pathname !== '/portal' && (window.location.pathname === '/' || !PATH_TABS[window.location.pathname.replace(/\/$/, '')])) {
+    if (window.location.pathname !== '/portal' && !window.location.pathname.startsWith('/attendance-report/') && (window.location.pathname === '/' || !PATH_TABS[window.location.pathname.replace(/\/$/, '')])) {
       window.history.replaceState({ masarTab: activeTab }, '', TAB_PATHS[activeTab]);
     }
     return () => window.removeEventListener('popstate', onPopState);
@@ -1215,6 +1216,7 @@ export const App: React.FC = () => {
   };
   const buildUpdateBanner = updateAvailable ? <BuildUpdateBanner language={language} onReload={handleBuildReload} /> : null;
 
+  if (window.location.pathname.startsWith('/attendance-report/')) return <Suspense fallback={<div className="min-h-screen bg-slate-100"/>}><PublicAttendanceReport/></Suspense>;
   if (['/','/pricing','/privacy','/terms'].includes(window.location.pathname)) {
     return <Suspense fallback={<div className="min-h-screen bg-slate-950" />}><PublicWebsite /></Suspense>;
   }
