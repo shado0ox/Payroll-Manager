@@ -124,7 +124,7 @@ export type EmployeePayslipDetail = {
   };
 };
 export type EmployeeAttendanceRecord = {
-  id:string;date:string;endDate:string|null;daysCount:number;delayMinutes:number;status:string;
+  id:string;sourceRecordId?:string;date:string;endDate:string|null;daysCount:number;delayMinutes:number;status:string;
   scheduledStart:string;scheduledEnd:string;actualCheckIn:string;actualCheckOut:string;graceMinutes:number;
   overtimeHours:number;notes:string;payrollApproved:boolean;
 };
@@ -444,6 +444,9 @@ export const api = {
   employeePortalPayslips: () => request<{payslips:EmployeePayslipSummary[]}>('/api/employee-portal/payslips'),
   employeePortalPayslip: (batchId:string,periodMonth:string) => request<{payslip:EmployeePayslipDetail}>(`/api/employee-portal/payslips/${encodeURIComponent(batchId)}/${encodeURIComponent(periodMonth)}`),
   employeePortalAttendance: (periodMonth:string) => request<EmployeeAttendanceReport>(`/api/employee-portal/attendance?periodMonth=${encodeURIComponent(periodMonth)}`),
+  createAttendanceReportShare: (companyId:string,employeeId:string,periodMonth:string,expiresInDays=7) => request<{id:string;url:string;expiresAt:string}>('/api/attendance-report-shares',{method:'POST',body:JSON.stringify({companyId,employeeId,periodMonth,expiresInDays})}),
+  publicAttendanceReport: (token:string) => request<{report:EmployeeAttendanceReport&{company:{nameAr:string;nameEn:string};employee:{id:string;employeeNo:string;nameAr:string;nameEn:string;department:string}};response:null|{signatureName:string;comments:Record<string,string>};signedAt:string|null;expiresAt:string}>(`/api/public/attendance-reports/${encodeURIComponent(token)}`),
+  respondToAttendanceReport: (token:string,response:{signatureName:string;signatureData:string;comments:Record<string,string>}) => request<{saved:boolean;signedAt:string}>(`/api/public/attendance-reports/${encodeURIComponent(token)}/respond`,{method:'POST',body:JSON.stringify(response)}),
   employeePortalLeaves: (year:number) => request<EmployeeLeaveReport>(`/api/employee-portal/leaves?year=${encodeURIComponent(year)}`),
   createEmployeePortalLeave: (record:{type:EmployeeLeave['type'];startDate:string;endDate:string;reason:string}) => request<{leave:EmployeeLeave}>('/api/employee-portal/leaves',{ method:'POST',body:JSON.stringify(record) }),
   cancelEmployeePortalLeave: (id:string) => request<{deleted:boolean}>(`/api/employee-portal/leaves/${encodeURIComponent(id)}`,{ method:'DELETE' }),

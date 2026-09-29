@@ -1,5 +1,6 @@
 import express from 'express';
 import { randomUUID } from 'node:crypto';
+import { resolveAnnualLeaveAccrual } from '../annual-leave-accrual.mjs';
 
 const number = value => Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
 const array = value => Array.isArray(value) ? value : [];
@@ -102,18 +103,19 @@ export function buildEmployeePaidPayslips(batchRows, itemRows, employeeId) {
 }
 
 export function buildEmployeeAttendanceReport(rows, periodMonth) {
-  const records = rows.map(row => {
+  const records = rows.flatMap(row => {
     const payload = row.payload || {};
-    const daysCount = Math.max(0,Number(row.days_count ?? 1));
+    const start=String(row.record_date),end=String(row.end_date||row.record_date),dates=[];
+    for(let cursor=start;cursor<=end;){dates.push(cursor);const next=new Date(`${cursor}T00:00:00Z`);next.setUTCDate(next.getUTCDate()+1);cursor=next.toISOString().slice(0,10);if(dates.length>370)break;}
     const delayMinutes = Math.max(0,Number(payload.calculatedDelayMinutes ?? row.delay_minutes ?? 0));
     const status = String(payload.attendanceStatus || (row.unpaid_leave ? 'LEAVE' : row.absence ? 'ABSENT' : delayMinutes > 0 ? 'LATE' : 'PRESENT'));
-    return {
-      id:row.id,date:row.record_date,endDate:row.end_date || null,daysCount,delayMinutes,status,
+    return dates.map(date=>({
+      id:dates.length===1?row.id:`${row.id}:${date}`,sourceRecordId:row.id,date,endDate:null,daysCount:dates.length===1?Math.max(0,Number(row.days_count??1)):1,delayMinutes,status,
       scheduledStart:String(payload.scheduledStart || ''),scheduledEnd:String(payload.scheduledEnd || ''),
       actualCheckIn:String(payload.actualCheckIn || ''),actualCheckOut:String(payload.actualCheckOut || ''),
       graceMinutes:Math.max(0,Number(payload.graceMinutes || 0)),overtimeHours:number(row.overtime_hours),
       notes:String(row.notes || payload.notes || ''),payrollApproved:Boolean(payload.payrollApproved),
-    };
+    }));
   });
   const countDays = predicate => records.filter(predicate).reduce((sum,row) => sum + row.daysCount,0);
   return {
@@ -150,22 +152,10 @@ const completedYears=(start,reference)=>{let years=Number(reference.slice(0,4))-
 
 export function resolveAnnualLeaveBalance(employee, year, referenceDate=`${year}-12-31`) {
   const payload = employee?.payload || employee || {};
-  const policy = ['LABOR_LAW','FIXED_30','DOMESTIC_BIENNIAL_30','CUSTOM'].includes(payload.annualLeavePolicy) ? payload.annualLeavePolicy : 'LABOR_LAW';
-  const hireDate = String(employee?.hire_date || payload.hireDate || payload.salaryStartDate || '');
-  const customDays = Math.max(0,Math.min(60,Number(payload.annualLeaveEntitlementDays ?? 21)));
-  let entitlementDays = customDays;
-  if (policy === 'FIXED_30') entitlementDays = 30;
-  const validHire=/^\d{4}-\d{2}-\d{2}$/.test(hireDate),serviceYears=validHire?completedYears(hireDate,referenceDate):0;
-  const cycleYears=policy==='DOMESTIC_BIENNIAL_30'?2:1,completedCycles=Math.floor(serviceYears/cycleYears);
-  const benefitPeriodStart=validHire?addYears(hireDate,completedCycles*cycleYears):`${year}-01-01`;
-  const nextEligibilityDate=validHire?addYears(hireDate,(completedCycles+1)*cycleYears):null;
-  const benefitPeriodEnd=nextEligibilityDate?previousDay(nextEligibilityDate):`${year}-12-31`;
-  if(policy==='DOMESTIC_BIENNIAL_30') entitlementDays=completedCycles>0?30:0;
-  if (policy === 'LABOR_LAW') {
-    entitlementDays = serviceYears >= 5 ? 30 : 21;
-  }
+  const accrual=resolveAnnualLeaveAccrual(employee,year,referenceDate);
   return {
-    policy,entitlementDays,benefitPeriodStart,benefitPeriodEnd,nextEligibilityDate,
+    policy:accrual.policy,entitlementDays:accrual.accruedEntitlementDays,currentCycleEntitlementDays:accrual.currentCycleDays,
+    benefitPeriodStart:accrual.hireDate||accrual.currentCycleStart,benefitPeriodEnd:accrual.currentCycleEnd,nextEligibilityDate:accrual.nextEligibilityDate,
     openingBalanceDays:!payload.annualLeaveBalanceYear||Number(payload.annualLeaveBalanceYear)===year?Math.max(0,Number(payload.annualLeaveOpeningBalance || 0)):0,
     priorUsedDays:!payload.annualLeaveBalanceYear||Number(payload.annualLeaveBalanceYear)===year?Math.max(0,Number(payload.annualLeavePriorUsedDays || 0)):0,
   };

@@ -223,6 +223,15 @@ await pool.query(`CREATE TABLE IF NOT EXISTS ${q('attendance_records')} (
   notes text, payload jsonb NOT NULL, sort_order integer NOT NULL DEFAULT 0, updated_at timestamptz NOT NULL DEFAULT now(),
   CHECK (overtime_type IN ('STANDARD','WEEKEND'))
 )`);
+await pool.query(`CREATE TABLE IF NOT EXISTS ${q('attendance_report_shares')} (
+  id text PRIMARY KEY, company_id text NOT NULL REFERENCES ${q('companies')}(id) ON DELETE CASCADE,
+  employee_id text NOT NULL REFERENCES ${q('employees')}(id) ON DELETE CASCADE,
+  period_month text NOT NULL CHECK (period_month ~ '^[0-9]{4}-(0[1-9]|1[0-2])$'),
+  token_hash text NOT NULL UNIQUE, expires_at timestamptz NOT NULL, revoked_at timestamptz,
+  snapshot jsonb NOT NULL, response jsonb, signed_at timestamptz,
+  created_by text REFERENCES ${q('users')}(id) ON DELETE SET NULL,
+  created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now()
+)`);
 await pool.query(`CREATE TABLE IF NOT EXISTS ${q('leave_requests')} (
   id text PRIMARY KEY, company_id text NOT NULL REFERENCES ${q('companies')}(id) ON DELETE RESTRICT,
   employee_id text NOT NULL REFERENCES ${q('employees')}(id) ON DELETE CASCADE,
@@ -397,6 +406,7 @@ await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS payroll_settlements_active_d
   ON ${q('payroll_settlements')}(company_id,dedupe_key) WHERE status <> 'REVERSED'`);
 await pool.query(`CREATE INDEX IF NOT EXISTS attendance_employee_period_idx ON ${q('attendance_records')}(employee_id,period_month)`);
 await pool.query(`CREATE INDEX IF NOT EXISTS attendance_company_period_idx ON ${q('attendance_records')}(company_id,period_month)`);
+await pool.query(`CREATE INDEX IF NOT EXISTS attendance_report_shares_company_idx ON ${q('attendance_report_shares')}(company_id,created_at DESC)`);
 await pool.query(`CREATE INDEX IF NOT EXISTS leaves_employee_dates_idx ON ${q('leave_requests')}(employee_id,start_date,end_date)`);
 await pool.query(`CREATE INDEX IF NOT EXISTS leaves_company_idx ON ${q('leave_requests')}(company_id)`);
 await pool.query(`CREATE INDEX IF NOT EXISTS loans_employee_status_idx ON ${q('loans')}(employee_id,status)`);

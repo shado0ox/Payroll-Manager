@@ -12,11 +12,13 @@ import {
   Trash2,
   Edit3,
   RotateCcw
+  ,CalendarRange,Share2,MessageCircle
 } from 'lucide-react';
 import { Company, Employee, AttendanceRecord, LeaveRequest, UserRole } from '../types';
 import { SearchableEmployeeSelect } from './SearchableEmployeeSelect';
 import { useLanguage } from '../i18n/LanguageContext';
 import { AttendanceImportPanel } from './attendance/AttendanceImportPanel';
+import { api } from '../utils/api';
 
 interface AttendanceLeavesViewProps {
   company: Company;
@@ -54,6 +56,9 @@ export const AttendanceLeavesView: React.FC<AttendanceLeavesViewProps> = ({
   const [selectedPeriod, setSelectedPeriod] = useState(currentPeriod);
   const [activeSubTab, setActiveSubTab] = useState<'attendance' | 'analysis' | 'leaves'>(leaveOnly ? 'leaves' : 'attendance');
   const [searchTerm, setSearchTerm] = useState('');
+  const [scheduleOpen,setScheduleOpen]=useState(false),[shareOpen,setShareOpen]=useState(false),[busy,setBusy]=useState(false);
+  const [schedule,setSchedule]=useState({department:'ALL',startDate:today,endDate:today,startTime:'08:00',endTime:'17:00'});
+  const [shareEmployeeId,setShareEmployeeId]=useState(''),[shareUrl,setShareUrl]=useState('');
 
   // Attendance Modal
   const [isAttendanceModalOpen, setIsAttendanceModalOpen] = useState(false);
@@ -104,6 +109,11 @@ export const AttendanceLeavesView: React.FC<AttendanceLeavesViewProps> = ({
       ? `${employee.firstNameEn || ''} ${employee.lastNameEn || ''}`.trim()
       : `${employee.firstNameAr} ${employee.lastNameAr}`)
     : tr('موظف', 'Employee');
+  const scheduleEmployees=companyEmployees.filter(employee=>schedule.department==='ALL'||employee.department===schedule.department);
+  const departments=[...new Set(companyEmployees.map(employee=>employee.department).filter(Boolean))] as string[];
+  const applySchedule=async()=>{if(!schedule.startDate||schedule.endDate<schedule.startDate||schedule.startTime>=schedule.endTime||!scheduleEmployees.length)return;setBusy(true);try{const segments:{start:string;end:string}[]=[];let cursor=schedule.startDate;while(cursor<=schedule.endDate){const [year,month]=cursor.split('-').map(Number),monthEnd=`${cursor.slice(0,7)}-${String(new Date(Date.UTC(year,month,0)).getUTCDate()).padStart(2,'0')}`,end=monthEnd<schedule.endDate?monthEnd:schedule.endDate;segments.push({start:cursor,end});const next=new Date(`${end}T00:00:00Z`);next.setUTCDate(next.getUTCDate()+1);cursor=next.toISOString().slice(0,10);}const stamp=Date.now();const records=scheduleEmployees.flatMap((employee,employeeIndex)=>segments.map((segment,segmentIndex):AttendanceRecord=>({id:`schedule-${stamp}-${employeeIndex}-${segmentIndex}`,companyId:company.id,employeeId:employee.id,periodMonth:segment.start.slice(0,7),date:segment.start,endDate:segment.end,daysCount:getDatesInRange(segment.start,segment.end).length,delayMinutes:0,absence:false,unpaidLeave:false,overtimeHours:0,overtimeType:'STANDARD',notes:tr('جدول دوام مطبق جماعيًا','Bulk work schedule'),sourceType:'MANUAL',scheduledStart:schedule.startTime,scheduledEnd:schedule.endTime,workday:true,attendanceStatus:'REVIEW'})));if(records.length>2500)throw new Error('ATTENDANCE_SCHEDULE_TOO_LARGE');await onBulkImportAttendance(records);setScheduleOpen(false);}finally{setBusy(false);}};
+  const createShare=async()=>{if(!shareEmployeeId)return;setBusy(true);try{const result=await api.createAttendanceReportShare(company.id,shareEmployeeId,selectedPeriod,7);setShareUrl(result.url);}finally{setBusy(false);}};
+  const shareWhatsApp=()=>{if(!shareUrl)return;const employee=companyEmployees.find(item=>item.id===shareEmployeeId);window.open(`https://wa.me/?text=${encodeURIComponent(tr(`كشف الحضور والانصراف الخاص بك للفترة ${selectedPeriod}\n${shareUrl}`,`Your attendance report for ${selectedPeriod}\n${shareUrl}`))}`,'_blank','noopener,noreferrer');};
 
   const companyAttendance = useMemo(() => {
     const monthStart = `${selectedPeriod}-01`;
@@ -185,6 +195,8 @@ export const AttendanceLeavesView: React.FC<AttendanceLeavesViewProps> = ({
             <Plus className="w-4 h-4" />
             <span>{tr('تسجيل حركة حضور / غياب', 'Record attendance / absence')}</span>
           </button>
+          <button onClick={()=>setScheduleOpen(true)} className="flex items-center gap-1.5 rounded-xl border border-blue-200 bg-blue-50 px-4 py-2 text-xs font-bold text-blue-800"><CalendarRange className="h-4 w-4"/>{tr('تطبيق جدول دوام','Apply work schedule')}</button>
+          <button onClick={()=>{setShareOpen(true);setShareUrl('');}} className="flex items-center gap-1.5 rounded-xl border border-violet-200 bg-violet-50 px-4 py-2 text-xs font-bold text-violet-800"><Share2 className="h-4 w-4"/>{tr('مشاركة كشف موظف','Share employee report')}</button>
         </div>}
       </div>
 
@@ -583,6 +595,10 @@ export const AttendanceLeavesView: React.FC<AttendanceLeavesViewProps> = ({
           </div>
         </div>
       )}
+
+      {scheduleOpen&&<div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4"><div className="w-full max-w-xl rounded-3xl bg-white p-6"><h3 className="font-black">{tr('تطبيق جدول دوام على مجموعة','Apply a work schedule in bulk')}</h3><div className="mt-5 grid gap-4 sm:grid-cols-2"><label className="sm:col-span-2 text-xs font-bold">{tr('القسم / الموظفون','Department / employees')}<select value={schedule.department} onChange={e=>setSchedule({...schedule,department:e.target.value})} className="mt-1 w-full rounded-xl border p-3"><option value="ALL">{tr(`كل الموظفين (${companyEmployees.length})`,`All employees (${companyEmployees.length})`)}</option>{departments.map(department=><option key={department} value={department}>{department} ({companyEmployees.filter(e=>e.department===department).length})</option>)}</select></label><label className="text-xs font-bold">{tr('من تاريخ','From date')}<input type="date" value={schedule.startDate} onChange={e=>setSchedule({...schedule,startDate:e.target.value})} className="mt-1 w-full rounded-xl border p-3"/></label><label className="text-xs font-bold">{tr('إلى تاريخ','To date')}<input type="date" min={schedule.startDate} value={schedule.endDate} onChange={e=>setSchedule({...schedule,endDate:e.target.value})} className="mt-1 w-full rounded-xl border p-3"/></label><label className="text-xs font-bold">{tr('بداية الدوام','Work starts')}<input type="time" value={schedule.startTime} onChange={e=>setSchedule({...schedule,startTime:e.target.value})} className="mt-1 w-full rounded-xl border p-3"/></label><label className="text-xs font-bold">{tr('نهاية الدوام','Work ends')}<input type="time" value={schedule.endTime} onChange={e=>setSchedule({...schedule,endTime:e.target.value})} className="mt-1 w-full rounded-xl border p-3"/></label></div><p className="mt-4 rounded-xl bg-blue-50 p-3 text-xs font-bold text-blue-800">{tr(`سيطبق الجدول على ${scheduleEmployees.length} موظف كعملية جماعية قابلة للمراجعة.`,`The schedule will be applied to ${scheduleEmployees.length} employees as an auditable bulk action.`)}</p><div className="mt-5 flex justify-end gap-2"><button onClick={()=>setScheduleOpen(false)} className="rounded-xl px-4 py-2 font-bold">{tr('إلغاء','Cancel')}</button><button disabled={busy||!scheduleEmployees.length} onClick={applySchedule} className="rounded-xl bg-blue-700 px-5 py-2 font-bold text-white disabled:opacity-50">{tr('تطبيق الجدول','Apply schedule')}</button></div></div></div>}
+
+      {shareOpen&&<div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4"><div className="w-full max-w-xl rounded-3xl bg-white p-6"><h3 className="font-black">{tr('مشاركة كشف الحضور للتوقيع','Share attendance report for signature')}</h3><p className="mt-1 text-xs text-slate-500">{tr(`الفترة ${selectedPeriod} — الرابط صالح 7 أيام ويقفل بعد توقيع الموظف.`,`Period ${selectedPeriod} — link is valid for 7 days and locks after signature.`)}</p><div className="mt-5"><SearchableEmployeeSelect required employees={companyEmployees} value={shareEmployeeId} onChange={setShareEmployeeId}/></div>{shareUrl&&<div className="mt-4 rounded-xl bg-emerald-50 p-3"><input readOnly value={shareUrl} className="w-full bg-transparent text-xs"/><button onClick={shareWhatsApp} className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-3 font-black text-white"><MessageCircle className="h-5 w-5"/>{tr('إرسال عبر واتساب','Send via WhatsApp')}</button></div>}<div className="mt-5 flex justify-end gap-2"><button onClick={()=>setShareOpen(false)} className="rounded-xl px-4 py-2 font-bold">{tr('إغلاق','Close')}</button>{!shareUrl&&<button disabled={busy||!shareEmployeeId} onClick={createShare} className="rounded-xl bg-violet-700 px-5 py-2 font-bold text-white disabled:opacity-50">{tr('إنشاء الرابط الآمن','Create secure link')}</button>}</div></div></div>}
 
     </div>
   );
