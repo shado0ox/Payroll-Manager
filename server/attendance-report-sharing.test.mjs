@@ -33,7 +33,7 @@ test('attendance reports use hashed expiring links and one-time signed responses
   assert.match(routes,/signatureData\.startsWith\('data:image\/png;base64,'\)/);
   assert.match(routes,/ipHash:sha256/);
   assert.match(view,/https:\/\/wa\.me\/\?text=/);
-  assert.match(view,/جدول دوام مرن للموظف/);
+  assert.match(view,/قواعد دوام الموظف/);
   assert.match(publicView,/تعليق اختياري على هذا اليوم/);
   assert.match(publicView,/toDataURL\('image\/png'\)/);
   assert.match(app,/!window\.location\.pathname\.startsWith\('\/attendance-report\/'\)/);
