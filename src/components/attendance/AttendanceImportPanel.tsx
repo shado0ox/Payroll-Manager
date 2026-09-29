@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { CalendarDays, FileSpreadsheet, Printer, RefreshCw, Upload, UserPlus } from 'lucide-react';
 import { AttendanceRecord, Company, Employee, LeaveRequest } from '../../types';
-import { DailySchedule, DayOverrideMode, DayScheduleOverride, parseMoqootAttendance } from '../../utils/moqootAttendanceImport';
+import { DailySchedule, DayOverrideMode, DayScheduleOverride, parseMoqootAttendanceFile } from '../../utils/moqootAttendanceImport';
 import { SearchableEmployeeSelect } from '../SearchableEmployeeSelect';
 import { useLanguage } from '../../i18n/LanguageContext';
 
@@ -125,12 +125,11 @@ export const AttendanceImportPanel: React.FC<Props> = ({ company, employees, att
 
   const readPreview = async () => {
     setError('');
-    if (!file) return setError(tr('اختر ملف CSV أولاً.', 'Choose a CSV file first.'));
+    if (!file) return setError(tr('اختر ملف Excel أو CSV أولاً.', 'Choose an Excel or CSV file first.'));
     if (workerMode === 'REGISTERED' && !employeeId) return setError(tr('اختر الموظف.', 'Choose an employee.'));
     if (workerMode === 'ATTENDANCE_ONLY' && !externalName.trim()) return setError(tr('اكتب اسم موظف الحضور.', 'Enter the attendance-only worker name.'));
     try {
-      const text = await file.text();
-      const records = parseMoqootAttendance(text, {
+      const records = await parseMoqootAttendanceFile(file, {
         companyId: company.id,
         employeeId: workerMode === 'REGISTERED' ? employeeId : externalId,
         employeeName: workerMode === 'ATTENDANCE_ONLY' ? externalName.trim() : undefined,
@@ -150,7 +149,7 @@ export const AttendanceImportPanel: React.FC<Props> = ({ company, employees, att
       setPreview([]);
       setError(cause?.message === 'NO_ROWS_FOR_SELECTED_MONTH'
         ? tr('لا توجد صفوف للشهر المختار داخل الملف.', 'No rows for the selected month were found.')
-        : tr('تعذر قراءة الملف. تأكد أنه ملف موقوت CSV بالأعمدة: يوم، حضور، انصراف.', 'Could not read the file. Verify the Moqoot CSV columns.'));
+        : tr('تعذر قراءة الملف. تأكد أنه ملف موقوت Excel أو CSV بالأعمدة: يوم، حضور، انصراف.', 'Could not read the file. Verify the Moqoot Excel or CSV columns.'));
     }
   };
 
@@ -179,7 +178,7 @@ export const AttendanceImportPanel: React.FC<Props> = ({ company, employees, att
 
   return <div className="space-y-5">
     <section className="bg-white border border-slate-200 rounded-2xl p-5 space-y-4">
-      <div className="flex items-center gap-2"><FileSpreadsheet className="w-5 h-5 text-emerald-600"/><h2 className="font-bold">{tr('استيراد وتحليل ملف موقوت', 'Import and analyze Moqoot file')}</h2></div>
+      <div className="flex items-center gap-2"><FileSpreadsheet className="w-5 h-5 text-emerald-600"/><h2 className="font-bold">{tr('استيراد وتحليل ملف موقوت Excel / CSV', 'Import and analyze Moqoot Excel / CSV')}</h2></div>
       <div className="grid md:grid-cols-2 gap-3">
         <label className="border rounded-xl p-3 flex items-center gap-2"><input type="radio" checked={workerMode === 'REGISTERED'} onChange={() => setWorkerMode('REGISTERED')}/>{tr('موظف مسجل', 'Registered employee')}</label>
         <label className="border rounded-xl p-3 flex items-center gap-2"><input type="radio" checked={workerMode === 'ATTENDANCE_ONLY'} onChange={() => setWorkerMode('ATTENDANCE_ONLY')}/><UserPlus className="w-4 h-4"/>{tr('موظف حضور فقط', 'Attendance-only worker')}</label>
@@ -199,7 +198,7 @@ export const AttendanceImportPanel: React.FC<Props> = ({ company, employees, att
           return <tr key={day.date} className="border-t"><td className="p-2 text-center font-mono">{day.date}</td><td className="text-center font-bold">{ar ? weekdaysAr[day.weekday] : weekdaysEn[day.weekday]}</td><td className="p-1"><select value={mode} onChange={event => updateDayOverride(day.date,{ mode:event.target.value as DayOverrideMode })} className="w-full border rounded-lg p-1.5"><option value="DEFAULT">{tr(day.weekly.enabled ? 'حسب الأسبوع: عمل' : 'حسب الأسبوع: راحة', day.weekly.enabled ? 'Weekly: workday' : 'Weekly: off')}</option><option value="WORKDAY">{tr('يوم عمل', 'Workday')}</option><option value="OFF">{tr('راحة', 'Off')}</option><option value="LEAVE">{tr('إجازة', 'Leave')}</option><option value="HOLIDAY">{tr('عطلة رسمية', 'Public holiday')}</option><option value="MISSION">{tr('مهمة عمل', 'Business mission')}</option><option value="IGNORE">{tr('استبعاد من الفحص', 'Ignore')}</option></select></td><td className="text-center"><input type="time" disabled={!isWorkday} value={day.override?.start || day.weekly.start} onChange={event => updateDayOverride(day.date,{ mode:mode === 'DEFAULT' ? 'WORKDAY' : mode,start:event.target.value })} className="border rounded-lg p-1 disabled:bg-slate-100"/></td><td className="text-center"><input type="time" disabled={!isWorkday} value={day.override?.end || day.weekly.end} onChange={event => updateDayOverride(day.date,{ mode:mode === 'DEFAULT' ? 'WORKDAY' : mode,end:event.target.value })} className="border rounded-lg p-1 disabled:bg-slate-100"/></td></tr>;
         })}</tbody></table></div>}
       </div>
-      <div className="flex flex-wrap gap-3 items-center"><input type="file" accept=".csv,text/csv" onChange={event => { setFile(event.target.files?.[0] || null); setPreview([]); }} className="text-xs"/><button onClick={readPreview} className="px-4 py-2 bg-blue-600 text-white rounded-xl font-bold inline-flex gap-2"><Upload className="w-4 h-4"/>{tr('تحليل ومعاينة', 'Analyze and preview')}</button></div>
+      <div className="flex flex-wrap gap-3 items-center"><input type="file" accept=".xlsx,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv" onChange={event => { setFile(event.target.files?.[0] || null); setPreview([]); }} className="text-xs"/><button onClick={readPreview} className="px-4 py-2 bg-blue-600 text-white rounded-xl font-bold inline-flex gap-2"><Upload className="w-4 h-4"/>{tr('تحليل ومعاينة', 'Analyze and preview')}</button></div>
       {error && <p className="text-rose-700 bg-rose-50 border border-rose-200 rounded-xl p-3 text-xs font-bold">{error}</p>}
     </section>
     {reportRows.length > 0 && <section className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
