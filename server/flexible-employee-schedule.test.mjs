@@ -33,13 +33,16 @@ test('Excel and CSV imports automatically use the saved employee schedule by dat
   assert.doesNotMatch(importView,/setShowMonthDays|updateDayOverride/);
 });
 
-test('imported attendance requires explicit row approval before payroll posting',()=>{
+test('saved analysis stays a draft and payroll uses only manager-approved totals',()=>{
   const payroll=fs.readFileSync(new URL('../src/utils/payrollEngine.ts',import.meta.url),'utf8');
-  assert.match(importView,/approvedIds/);
-  assert.match(importView,/اعتماد المحدد وترحيله/);
-  assert.match(importView,/payrollApproved:approved/);
+  assert.match(importView,/حفظ التقرير كمسودة/);
+  assert.match(importView,/payrollApproved:false/);
+  assert.match(importView,/اعتماد وترحيل الإجمالي/);
+  assert.match(importView,/aggregateAttendance:true/);
   assert.match(view,/a\.sourceType !== 'MOQOOT_IMPORT' \|\| a\.payrollApproved === true/);
   assert.match(payroll,/record\.sourceType === 'MOQOOT_IMPORT' && record\.payrollApproved !== true/);
+  assert.match(payroll,/record\.aggregateAttendance/);
+  assert.match(payroll,/totalAbsenceDays = absenceDates\.size \+ aggregateAbsenceDays/);
   assert.match(importView,/updatePreviewRow/);
   assert.match(importView,/actualCheckIn:event\.target\.value/);
   assert.match(importView,/attendanceStatus:event\.target\.value/);

@@ -280,6 +280,7 @@ export interface AttendanceRecord {
   workday?: boolean;
   attendanceStatus?: 'PRESENT' | 'LATE' | 'ABSENT' | 'LEAVE' | 'OFF' | 'HOLIDAY' | 'MISSION' | 'IGNORED' | 'MISSING_IN' | 'MISSING_OUT' | 'REVIEW';
   payrollApproved?: boolean;
+  aggregateAttendance?: boolean;
 }
 
 export interface LeaveRequest {

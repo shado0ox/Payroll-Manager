@@ -65,7 +65,7 @@ router.post('/attendance-report-shares', auth, writeLimiter, async (req,res,next
     if(!req.user.company_ids.includes(companyId)||!validPeriodMonth(periodMonth))return res.status(400).json({error:'INVALID_ATTENDANCE_REPORT_SHARE'});
     const employee=await pool.query(`SELECT id,employee_no,first_name_ar,last_name_ar,first_name_en,last_name_en,department FROM ${q('employees')} WHERE id=$1 AND company_id=$2 LIMIT 1`,[employeeId,companyId]);
     if(!employee.rowCount)return res.status(404).json({error:'ATTENDANCE_REPORT_EMPLOYEE_NOT_FOUND'});
-    const records=await pool.query(`SELECT id,record_date::text,end_date::text,days_count,delay_minutes,absence,unpaid_leave,overtime_hours,notes,payload FROM ${q('attendance_records')} WHERE employee_id=$1 AND company_id=$2 AND period_month=$3 ORDER BY record_date,id`,[employeeId,companyId,periodMonth]);
+    const records=await pool.query(`SELECT id,record_date::text,end_date::text,days_count,delay_minutes,absence,unpaid_leave,overtime_hours,notes,payload FROM ${q('attendance_records')} WHERE employee_id=$1 AND company_id=$2 AND period_month=$3 AND payload->>'sourceType'='MOQOOT_IMPORT' ORDER BY record_date,id`,[employeeId,companyId,periodMonth]);
     const company=await pool.query(`SELECT name_ar,name_en FROM ${q('companies')} WHERE id=$1`,[companyId]);
     const report=buildEmployeeAttendanceReport(records.rows,periodMonth),row=employee.rows[0];
     const snapshot={...report,company:{nameAr:company.rows[0]?.name_ar||'',nameEn:company.rows[0]?.name_en||''},employee:{id:row.id,employeeNo:row.employee_no,nameAr:`${row.first_name_ar||''} ${row.last_name_ar||''}`.trim(),nameEn:`${row.first_name_en||''} ${row.last_name_en||''}`.trim(),department:row.department||''}};

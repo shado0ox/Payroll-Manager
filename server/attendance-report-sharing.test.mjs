@@ -7,6 +7,7 @@ import {resolveAnnualLeaveAccrual} from './annual-leave-accrual.mjs';
 const routes=fs.readFileSync(new URL('./routes/attendance-leave-routes.mjs',import.meta.url),'utf8');
 const schema=fs.readFileSync(new URL('./database-schema.mjs',import.meta.url),'utf8');
 const view=fs.readFileSync(new URL('../src/components/AttendanceLeavesView.tsx',import.meta.url),'utf8');
+const importView=fs.readFileSync(new URL('../src/components/attendance/AttendanceImportPanel.tsx',import.meta.url),'utf8');
 const publicView=fs.readFileSync(new URL('../src/components/PublicAttendanceReport.tsx',import.meta.url),'utf8');
 const app=fs.readFileSync(new URL('../src/App.tsx',import.meta.url),'utf8');
 
@@ -35,13 +36,14 @@ test('attendance reports use hashed expiring links and one-time signed responses
   assert.match(routes,/ipHash:sha256/);
   assert.match(routes,/router\.get\('\/attendance-report-shares'/);
   assert.match(routes,/viewed_at=COALESCE\(viewed_at,now\(\)\)/);
-  assert.match(view,/https:\/\/wa\.me\/\?text=/);
+  assert.match(importView,/https:\/\/wa\.me\/\?text=/);
   assert.match(view,/قواعد دوام الموظف/);
   assert.match(publicView,/تعليق اختياري على هذا اليوم/);
   assert.match(publicView,/toDataURL\('image\/png'\)/);
   assert.match(publicView,/h-dvh overflow-y-auto/);
   assert.match(publicView,/طباعة الكشف الموقّع/);
-  assert.match(view,/تم فتح الرابط ولم يوقّع/);
-  assert.match(view,/printSignedShare/);
+  assert.match(importView,/فتح التقرير ولم يوقّع/);
+  assert.match(importView,/printShare/);
+  assert.doesNotMatch(view,/مشاركة ومتابعة كشف موظف/);
   assert.match(app,/!window\.location\.pathname\.startsWith\('\/attendance-report\/'\)/);
 });
