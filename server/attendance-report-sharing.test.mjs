@@ -30,6 +30,7 @@ test('attendance reports use hashed expiring links and one-time signed responses
   assert.match(schema,/attendance_report_shares/);
   assert.match(schema,/attendance_report_shares.*ADD COLUMN IF NOT EXISTS viewed_at/s);
   assert.match(routes,/token_hash/);
+  assert.match(routes,/instructions\.length>1500/);
   assert.match(routes,/ATTENDANCE_REPORT_EXPIRED/);
   assert.match(routes,/ATTENDANCE_REPORT_ALREADY_SIGNED/);
   assert.match(routes,/signatureData\.startsWith\('data:image\/png;base64,'\)/);
@@ -37,7 +38,11 @@ test('attendance reports use hashed expiring links and one-time signed responses
   assert.match(routes,/router\.get\('\/attendance-report-shares'/);
   assert.match(routes,/router\.delete\('\/attendance-report-shares\/:id'/);
   assert.match(routes,/viewed_at=COALESCE\(viewed_at,now\(\)\)/);
-  assert.match(importView,/https:\/\/wa\.me\/\?text=/);
+  assert.match(importView,/https:\/\/wa\.me\/\$\{phone\}\?text=/);
+  assert.match(importView,/normalizeWhatsAppPhone/);
+  assert.match(importView,/reportInstructions/);
+  assert.match(importView,/scheduledStart:event\.target\.value/);
+  assert.match(importView,/attendanceDayName\(row\.date/);
   assert.match(view,/قواعد دوام الموظف/);
   assert.match(publicView,/تعليق اختياري على هذا اليوم/);
   assert.match(publicView,/toDataURL\(["']image\/png["']\)/);
@@ -46,6 +51,8 @@ test('attendance reports use hashed expiring links and one-time signed responses
   assert.match(publicView,/أيام الغياب/);
   assert.match(publicView,/ملاحظات الإدارة/);
   assert.match(publicView,/ملاحظات الموظف/);
+  assert.match(publicView,/تعليمات للموظف/);
+  assert.match(publicView,/dayName\(row\.date\)/);
   assert.match(importView,/فتح التقرير ولم يوقّع/);
   assert.match(importView,/printShare/);
   assert.match(importView,/deleteAttendanceReportShare/);

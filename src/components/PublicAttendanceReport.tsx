@@ -3,6 +3,7 @@ import { CheckCircle2, Eraser, PenLine, Printer } from "lucide-react";
 import { api, type EmployeeAttendanceReport } from "../utils/api";
 
 type Report = EmployeeAttendanceReport & {
+  instructions?: string;
   company: { nameAr: string; nameEn: string; logo?: string };
   employee: {
     employeeNo: string;
@@ -11,6 +12,11 @@ type Report = EmployeeAttendanceReport & {
     department: string;
   };
 };
+
+const dayName = (date: string) =>
+  new Intl.DateTimeFormat("ar-SA", { weekday: "long", timeZone: "UTC" }).format(
+    new Date(`${date}T12:00:00Z`),
+  );
 
 export const PublicAttendanceReport: React.FC = () => {
   const token = window.location.pathname.split("/").filter(Boolean).pop() || "";
@@ -161,12 +167,13 @@ export const PublicAttendanceReport: React.FC = () => {
           <div className="rounded-xl border bg-blue-50 p-3 text-center"><span className="block text-xs text-slate-500">السماح</span><b>{report.records[0]?.graceMinutes || 0} دقيقة</b></div>
           <div className="rounded-xl border bg-violet-50 p-3 text-center"><span className="block text-xs text-slate-500">البصمة الناقصة</span><b>{report.summary.missingPunchDays}</b></div>
         </div>
+        {report.instructions && <div className="mt-2 rounded-xl border border-blue-200 bg-blue-50 p-3 text-sm"><b>تعليمات للموظف:</b> {report.instructions}</div>}
         <div className="mt-3 overflow-x-auto print:overflow-visible">
           <table className="attendance-table w-full min-w-[1050px] text-sm">
             <thead className="bg-slate-100">
               <tr>
                 {[
-                  "التاريخ",
+                  "اليوم والتاريخ",
                   "الدوام",
                   "الدخول",
                   "الخروج",
@@ -184,7 +191,7 @@ export const PublicAttendanceReport: React.FC = () => {
             <tbody>
               {report.records.map((row) => (
                 <tr key={row.id} className="border-b">
-                  <td className="p-3 font-mono">{row.date}</td>
+                  <td className="p-3"><b>{dayName(row.date)}</b><br/><span className="font-mono">{row.date}</span></td>
                   <td className="p-3">
                     {row.scheduledStart || "—"} - {row.scheduledEnd || "—"}
                   </td>
