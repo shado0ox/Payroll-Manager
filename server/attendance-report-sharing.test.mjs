@@ -53,6 +53,8 @@ test('attendance reports use hashed expiring links and one-time signed responses
   assert.match(publicView,/ملاحظات الموظف/);
   assert.match(publicView,/تعليمات للموظف/);
   assert.match(publicView,/dayName\(row\.date\)/);
+  assert.match(publicView,/@page\{size:A4 landscape/);
+  assert.match(publicView,/table-header-group/);
   assert.match(importView,/فتح التقرير ولم يوقّع/);
   assert.match(importView,/printShare/);
   assert.match(importView,/deleteAttendanceReportShare/);
