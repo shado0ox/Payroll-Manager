@@ -60,16 +60,16 @@ router.post('/public/attendance-reports/:token/respond', writeLimiter, async (re
 router.post('/attendance-report-shares', auth, writeLimiter, async (req,res,next)=>{
   try{
     if(!can(req.user,'MANAGE_ATTENDANCE'))return res.status(403).json({error:'FORBIDDEN'});
-    const companyId=String(req.body?.companyId||''),employeeId=String(req.body?.employeeId||''),periodMonth=String(req.body?.periodMonth||'');
+    const companyId=String(req.body?.companyId||''),employeeId=String(req.body?.employeeId||''),periodMonth=String(req.body?.periodMonth||''),instructions=String(req.body?.instructions||'').trim();
     const expiresInDays=Math.max(1,Math.min(30,Number(req.body?.expiresInDays||7)));
-    if(!req.user.company_ids.includes(companyId)||!validPeriodMonth(periodMonth))return res.status(400).json({error:'INVALID_ATTENDANCE_REPORT_SHARE'});
+    if(!req.user.company_ids.includes(companyId)||!validPeriodMonth(periodMonth)||instructions.length>1500)return res.status(400).json({error:'INVALID_ATTENDANCE_REPORT_SHARE'});
     const employee=await pool.query(`SELECT id,employee_no,first_name_ar,last_name_ar,first_name_en,last_name_en,department FROM ${q('employees')} WHERE id=$1 AND company_id=$2 LIMIT 1`,[employeeId,companyId]);
     if(!employee.rowCount)return res.status(404).json({error:'ATTENDANCE_REPORT_EMPLOYEE_NOT_FOUND'});
     const records=await pool.query(`SELECT id,record_date::text,end_date::text,days_count,delay_minutes,absence,unpaid_leave,overtime_hours,notes,payload FROM ${q('attendance_records')} WHERE employee_id=$1 AND company_id=$2 AND period_month=$3 AND payload->>'sourceType'='MOQOOT_IMPORT' ORDER BY record_date,id`,[employeeId,companyId,periodMonth]);
     const company=await pool.query(`SELECT name_ar,name_en,payload FROM ${q('companies')} WHERE id=$1`,[companyId]);
     const report=buildEmployeeAttendanceReport(records.rows,periodMonth),row=employee.rows[0];
     const companyRow=company.rows[0]||{},companyPayload=companyRow.payload||{};
-    const snapshot={...report,company:{nameAr:companyRow.name_ar||'',nameEn:companyRow.name_en||'',logo:typeof companyPayload.logo==='string'?companyPayload.logo:''},employee:{id:row.id,employeeNo:row.employee_no,nameAr:`${row.first_name_ar||''} ${row.last_name_ar||''}`.trim(),nameEn:`${row.first_name_en||''} ${row.last_name_en||''}`.trim(),department:row.department||''}};
+    const snapshot={...report,instructions,company:{nameAr:companyRow.name_ar||'',nameEn:companyRow.name_en||'',logo:typeof companyPayload.logo==='string'?companyPayload.logo:''},employee:{id:row.id,employeeNo:row.employee_no,nameAr:`${row.first_name_ar||''} ${row.last_name_ar||''}`.trim(),nameEn:`${row.first_name_en||''} ${row.last_name_en||''}`.trim(),department:row.department||''}};
     const token=randomBytes(36).toString('base64url'),id=`attendance-share-${randomUUID()}`;
     const saved=await pool.query(`INSERT INTO ${q('attendance_report_shares')}(id,company_id,employee_id,period_month,token_hash,expires_at,snapshot,created_by) VALUES($1,$2,$3,$4,$5,now()+($6||' days')::interval,$7::jsonb,$8) RETURNING expires_at`,[id,companyId,employeeId,periodMonth,sha256(token),String(expiresInDays),JSON.stringify(snapshot),req.user.id]);
     const url=`${req.protocol}://${req.get('host')}/attendance-report/${token}`;
