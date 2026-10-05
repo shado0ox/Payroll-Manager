@@ -7,11 +7,18 @@ const login=fs.readFileSync(new URL('../src/components/LoginView.tsx',import.met
 const registration=fs.readFileSync(new URL('./routes/auth-registration-routes.mjs',import.meta.url),'utf8');
 const schema=fs.readFileSync(new URL('./database-schema.mjs',import.meta.url),'utf8');
 const server=fs.readFileSync(new URL('./index.mjs',import.meta.url),'utf8');
+const app=fs.readFileSync(new URL('../src/App.tsx',import.meta.url),'utf8');
 
 test('public website exposes marketing, quote, privacy and terms pages',()=>{
   for (const path of ['/pricing','/privacy','/terms']) assert.match(website,new RegExp(path.replace('/','\\/')));
   assert.match(website,/اطلب عرض سعر/);
   assert.match(website,/Privacy Policy/);
+});
+
+test('the public home route is never rewritten to the authenticated dashboard',()=>{
+  assert.match(app,/const PUBLIC_WEBSITE_PATHS = \['\/'/);
+  assert.match(app,/if \(!isPublicWebsitePath && window\.location\.pathname !== '\/portal'/);
+  assert.doesNotMatch(app,/window\.location\.pathname === '\/' \|\| !PATH_TABS/);
 });
 
 test('registration requires and records versioned privacy consent on the server',()=>{
