@@ -49,7 +49,7 @@ const buildId = (() => {
   } catch {}
   return String(process.env.APP_BUILD_ID || 'development');
 })();
-const schema = process.env.DB_SCHEMA || 'masar_payroll';
+const schema = process.env.DB_SCHEMA || 'wafr_payroll';
 if (!/^[a-z_][a-z0-9_]*$/.test(schema)) throw new Error('DB_SCHEMA is invalid');
 if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL is required');
 const trialDays = Math.max(1, Math.min(90, Number(process.env.TRIAL_DAYS || 14)));
@@ -153,13 +153,13 @@ async function sendVerificationEmail(email, code, language = 'ar', purpose = 'CO
       from:verificationEmailFrom,
       to:[email],
       subject:purpose === 'EMPLOYEE_REGISTRATION'
-        ? (isArabic ? 'مسار - رمز إنشاء حساب الموظف' : 'Masar - Employee account verification')
-        : (isArabic ? 'رمز التحقق لتجربة مسار' : 'Masar trial verification code'),
+        ? (isArabic ? 'وفر - رمز إنشاء حساب الموظف' : 'WAFR - Employee account verification')
+        : (isArabic ? 'رمز التحقق لتجربة وفر' : 'WAFR trial verification code'),
       html:`<div dir="${isArabic ? 'rtl' : 'ltr'}" style="font-family:Arial,sans-serif;max-width:560px;margin:auto;padding:24px">
         <h2>${isArabic ? 'تأكيد البريد الإلكتروني' : 'Verify your email'}</h2>
         <p>${purpose === 'EMPLOYEE_REGISTRATION'
-          ? (isArabic ? 'استخدم الرمز التالي لإكمال إنشاء حسابك وربطه بملفك الوظيفي في مسار. الرمز صالح لمدة 15 دقيقة.' : 'Use this code to create your account and link it to your employee profile. It expires in 15 minutes.')
-          : (isArabic ? 'استخدم الرمز التالي لإكمال إنشاء شركتك في مسار. الرمز صالح لمدة 15 دقيقة.' : 'Use this code to finish creating your Masar company. It expires in 15 minutes.')}</p>
+          ? (isArabic ? 'استخدم الرمز التالي لإكمال إنشاء حسابك وربطه بملفك الوظيفي في وفر. الرمز صالح لمدة 15 دقيقة.' : 'Use this code to create your account and link it to your employee profile. It expires in 15 minutes.')
+          : (isArabic ? 'استخدم الرمز التالي لإكمال إنشاء شركتك في وفر. الرمز صالح لمدة 15 دقيقة.' : 'Use this code to finish creating your WAFR company. It expires in 15 minutes.')}</p>
         <div style="font-size:32px;font-weight:800;letter-spacing:8px;background:#ecfdf5;padding:18px;text-align:center;border-radius:12px">${code}</div>
         <p style="color:#64748b;font-size:12px">${isArabic ? 'إذا لم تطلب التسجيل فتجاهل الرسالة.' : 'If you did not request this, ignore this email.'}</p>
       </div>`,

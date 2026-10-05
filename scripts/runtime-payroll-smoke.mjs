@@ -7,7 +7,7 @@ const adminUsername = process.env.ADMIN_USERNAME || 'admin';
 const adminPassword = process.env.ADMIN_PASSWORD || 'TestAdmin1!';
 const companyCode = process.env.COMPANY_CODE || '101';
 const companyId = process.env.COMPANY_ID || 'comp-1';
-const schema = process.env.DB_SCHEMA || 'masar_payroll';
+const schema = process.env.DB_SCHEMA || 'wafr_payroll';
 
 if (!/^[a-z_][a-z0-9_]*$/.test(schema)) throw new Error('DB_SCHEMA is invalid');
 
@@ -68,7 +68,7 @@ const login = await request('/api/auth/login', {
 });
 const setCookie = login.response.headers.get('set-cookie') || '';
 cookie = setCookie.split(';')[0];
-assert.match(cookie, /^masar_session=/, 'Login must issue a Masar session cookie');
+assert.match(cookie, /^wafr_session=/, 'Login must issue a WAFR session cookie');
 
 await loadState();
 

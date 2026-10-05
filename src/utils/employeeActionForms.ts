@@ -25,7 +25,7 @@ function documentShell(company: Company, employee: Employee, titleAr: string, ti
   ${body}
   <div class="signatures"><div class="signature"><b>توقيع الموظف</b><span>Employee Signature</span><div class="line"></div></div><div class="signature"><b>الموارد البشرية</b><span>Human Resources</span><div class="line"></div></div><div class="signature"><b>الاعتماد</b><span>Authorized Approval</span><div class="line"></div></div></div>
   <div class="notice">يُحفظ أصل النموذج في ملف الموظف | The signed original must be retained in the employee file.</div>
-  <footer class="footer"><span>Masar Payroll & People</span><span>${escapeHtml(reference)}</span></footer></div></body></html>`;
+  <footer class="footer"><span>WAFR Payroll & People</span><span>${escapeHtml(reference)}</span></footer></div></body></html>`;
 }
 
 function openPrintDocument(html: string): boolean {

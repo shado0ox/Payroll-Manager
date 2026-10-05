@@ -81,7 +81,7 @@ test('session lookup and logout are delegated to an authenticated router', () =>
   assert.match(authSessionRoutes, /router\.get\('\/session', auth/);
   assert.match(authSessionRoutes, /router\.post\('\/logout', auth/);
   assert.match(authSessionRoutes, /DELETE FROM \$\{q\('sessions'\)\} WHERE token_hash=\$1/);
-  assert.match(authSessionRoutes, /masar_session=; Path=\/; HttpOnly; SameSite=Strict; Max-Age=0/);
+  assert.match(authSessionRoutes, /wafr_session=; Path=\/; HttpOnly; SameSite=Strict; Max-Age=0/);
 });
 
 test('health checks PostgreSQL and public config remains environment-driven', () => {

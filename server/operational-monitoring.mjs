@@ -19,7 +19,7 @@ function safeValue(value, key = '', depth = 0) {
   return value;
 }
 
-export function createOperationalLogger({ service = 'masar-payroll', buildId = 'development', write = line => process.stdout.write(`${line}\n`) } = {}) {
+export function createOperationalLogger({ service = 'wafr-payroll', buildId = 'development', write = line => process.stdout.write(`${line}\n`) } = {}) {
   return (level, event, fields = {}) => write(JSON.stringify(safeValue({
     timestamp:new Date().toISOString(),
     level,
@@ -54,7 +54,7 @@ export function requestContextMiddleware(logger) {
 export function createOperationalAlertSender({ logger, fetchImpl = globalThis.fetch, resendApiKey = '', emailFrom = '', recipients = [], webhookUrl = '' }) {
   const to = [...new Set(recipients.map(value => String(value).trim()).filter(Boolean))];
   return async ({ event, status, detail }) => {
-    const payload = { service:'masar-payroll', event, status, detail:String(detail || '').slice(0, 1_000), timestamp:new Date().toISOString() };
+    const payload = { service:'wafr-payroll', event, status, detail:String(detail || '').slice(0, 1_000), timestamp:new Date().toISOString() };
     const deliveries = [];
     if (webhookUrl) deliveries.push(fetchImpl(webhookUrl, {
       method:'POST', headers:{ 'Content-Type':'application/json' }, body:JSON.stringify(payload), signal:AbortSignal.timeout(10_000),
@@ -62,7 +62,7 @@ export function createOperationalAlertSender({ logger, fetchImpl = globalThis.fe
     if (resendApiKey && emailFrom && to.length) deliveries.push(fetchImpl('https://api.resend.com/emails', {
       method:'POST',
       headers:{ Authorization:`Bearer ${resendApiKey}`, 'Content-Type':'application/json' },
-      body:JSON.stringify({ from:emailFrom, to, subject:`Masar Payroll: ${event} (${status})`, text:JSON.stringify(payload, null, 2) }),
+      body:JSON.stringify({ from:emailFrom, to, subject:`WAFR Payroll: ${event} (${status})`, text:JSON.stringify(payload, null, 2) }),
       signal:AbortSignal.timeout(10_000),
     }));
     if (!deliveries.length) {

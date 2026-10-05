@@ -1,5 +1,5 @@
 # ====================================================================
-# Multi-stage Dockerfile for Masar Payroll System (No Nginx)
+# Multi-stage Dockerfile for WAFR Payroll System (No Nginx)
 # Uses Node.js direct high-performance serving (Zero Nginx dependencies)
 # ====================================================================
 
@@ -20,11 +20,11 @@ RUN npm run prepare:security && npm run test:security && npm run lint && npm run
 FROM node:20.19-alpine AS runner
 ENV NODE_ENV=production PORT=3033
 WORKDIR /app
-RUN addgroup -S -g 10001 masar && adduser -S -u 10001 -G masar masar
-COPY --from=deps --chown=masar:masar /app/node_modules ./node_modules
-COPY --from=builder --chown=masar:masar /app/dist ./dist
-COPY --from=builder --chown=masar:masar /app/server ./server
-COPY --from=builder --chown=masar:masar /app/package.json ./package.json
+RUN addgroup -S -g 10001 wafr && adduser -S -u 10001 -G wafr wafr
+COPY --from=deps --chown=wafr:wafr /app/node_modules ./node_modules
+COPY --from=builder --chown=wafr:wafr /app/dist ./dist
+COPY --from=builder --chown=wafr:wafr /app/server ./server
+COPY --from=builder --chown=wafr:wafr /app/package.json ./package.json
 USER 10001:10001
 EXPOSE 3033
 CMD ["node", "server/index.mjs"]

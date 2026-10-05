@@ -5,8 +5,8 @@ import test from 'node:test';
 
 const backup = fs.readFileSync('scripts/postgres-backup.sh','utf8');
 const restore = fs.readFileSync('scripts/postgres-restore-drill.sh','utf8');
-const backupTimer = fs.readFileSync('deploy/systemd/masar-payroll-backup.timer','utf8');
-const restoreTimer = fs.readFileSync('deploy/systemd/masar-payroll-restore-drill.timer','utf8');
+const backupTimer = fs.readFileSync('deploy/systemd/wafr-payroll-backup.timer','utf8');
+const restoreTimer = fs.readFileSync('deploy/systemd/wafr-payroll-restore-drill.timer','utf8');
 const alertScript = fs.readFileSync('scripts/operational-alert.sh','utf8');
 const workflow = fs.readFileSync('.github/workflows/payroll-workflow-ci.yml','utf8');
 
@@ -48,7 +48,7 @@ test('restore drill can only replace an explicitly disposable database', () => {
 
 test('CI creates and restores a real custom-format PostgreSQL backup', () => {
   assert.match(workflow,/backup-restore-drill:/);
-  assert.match(workflow,/docker run -d --name masar-backup-ci/);
+  assert.match(workflow,/docker run -d --name wafr-backup-ci/);
   assert.match(workflow,/\.\/scripts\/postgres-backup\.sh/);
   assert.match(workflow,/\.\/scripts\/postgres-restore-drill\.sh/);
   assert.match(workflow,/RESTORE_DRILL_CONFIRM: 'YES'/);

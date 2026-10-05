@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { appendStateAudit } from './state-audit.mjs';
 
-const q = (name) => `"masar_payroll".${name}`;
+const q = (name) => `"wafr_payroll".${name}`;
 
 test('appendStateAudit writes one server-owned event per unique company', async () => {
   const calls = [];
@@ -16,7 +16,7 @@ test('appendStateAudit writes one server-owned event per unique company', async 
 
   assert.equal(calls.length, 2);
   for (const call of calls) {
-    assert.match(call.text, /INSERT INTO "masar_payroll"\.application_audit_logs/);
+    assert.match(call.text, /INSERT INTO "wafr_payroll"\.application_audit_logs/);
     assert.equal(call.params[5], 'STATE_PATCH');
     assert.equal(JSON.parse(call.params[8]).entityType, 'APP_STATE');
     assert.equal(JSON.parse(call.params[8]).entityId, 'state');

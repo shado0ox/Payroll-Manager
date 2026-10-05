@@ -1,11 +1,11 @@
 [Unit]
-Description=Run Masar Payroll restore drill weekly
+Description=Run WAFR Payroll restore drill weekly
 
 [Timer]
 OnCalendar=Sun *-*-* 03:30:00
 Persistent=true
 RandomizedDelaySec=30m
-Unit=masar-payroll-restore-drill.service
+Unit=wafr-payroll-restore-drill.service
 
 [Install]
 WantedBy=timers.target

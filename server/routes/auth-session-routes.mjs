@@ -30,9 +30,9 @@ export function createAuthSessionRouter({
 
   router.post('/logout', auth, async (req, res, next) => {
     try {
-      const token = cookieValue(req, 'masar_session');
+      const token = cookieValue(req, 'wafr_session');
       await pool.query(`DELETE FROM ${q('sessions')} WHERE token_hash=$1`, [sha256(token)]);
-      res.setHeader('Set-Cookie', 'masar_session=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0');
+      res.setHeader('Set-Cookie', 'wafr_session=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0');
       res.status(204).end();
     } catch (error) {
       next(error);

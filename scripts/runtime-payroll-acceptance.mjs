@@ -4,7 +4,7 @@ import pg from 'pg';
 const { Pool } = pg;
 const baseUrl = process.env.CI_BASE_URL || 'http://127.0.0.1:3034';
 const databaseUrl = process.env.DATABASE_URL || '';
-const schema = process.env.DB_SCHEMA || 'masar_payroll';
+const schema = process.env.DB_SCHEMA || 'wafr_payroll';
 const adminUsername = process.env.ADMIN_USERNAME || 'admin';
 const adminPassword = process.env.ADMIN_PASSWORD || 'TestAdmin1!';
 const companyCode = process.env.COMPANY_CODE || '101';
@@ -108,7 +108,7 @@ const login = await request('/api/auth/login',{
   method:'POST',body:JSON.stringify({ companyCode,username:adminUsername,password:adminPassword }),
 });
 cookie = (login.response.headers.get('set-cookie') || '').split(';')[0];
-assert.match(cookie,/^masar_session=/,'Login must issue a session cookie');
+assert.match(cookie,/^wafr_session=/,'Login must issue a session cookie');
 
 const suspendedEmployee = {
   id:ids.employee,companyId,employeeNo:`ACC${key.slice(-12)}`,firstNameAr:'اختبار',lastNameAr:'قبول',

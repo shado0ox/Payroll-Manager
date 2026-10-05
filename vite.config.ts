@@ -10,7 +10,7 @@ export default defineConfig(({ command }) => {
       react(),
       tailwindcss(),
       {
-        name: 'masar-build-metadata',
+        name: 'wafr-build-metadata',
         generateBundle() {
           this.emitFile({
             type: 'asset',
@@ -21,7 +21,7 @@ export default defineConfig(({ command }) => {
       },
     ],
     define: {
-      __MASAR_BUILD_ID__: JSON.stringify(buildId),
+      __WAFR_BUILD_ID__: JSON.stringify(buildId),
     },
     resolve: {
       alias: {

@@ -61,7 +61,7 @@ export function createSubscriptionLifecycleService({
       body:JSON.stringify({
         from:emailFrom,
         to:recipients,
-        subject:'مسار - انتهى اشتراك المنشأة - ' + companyName,
+        subject:'وفر - انتهى اشتراك المنشأة - ' + companyName,
         html:'<div dir="rtl" style="font-family:Arial,sans-serif;max-width:620px;margin:auto;padding:24px">'
           + '<h2 style="margin:0 0 12px;color:#92400e">انتهى اشتراك المنشأة</h2>'
           + '<p>تم تعليق الخدمات التشغيلية للمنشأة <strong>' + escapeHtml(companyName) + '</strong> ووضع الحساب في وضع القراءة والتصدير فقط.</p>'

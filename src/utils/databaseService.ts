@@ -51,17 +51,17 @@ export async function pingDatabase(): Promise<{ status: 'HEALTHY' | 'ERROR'; lat
 // Export Full Database Backup JSON
 export function exportDatabaseBackup(state: AppState): void {
   const backupData = {
-    appName: 'مسار - نظام مسيرات الرواتب والموارد البشرية',
+    appName: 'وفر - نظام مسيرات الرواتب والموارد البشرية',
     version: '2.0',
     exportDate: new Date().toISOString(),
-    databaseFormat: 'MASAR_PAYROLL_JSON_DUMP',
+    databaseFormat: 'WAFR_PAYROLL_JSON_DUMP',
     state,
   };
 
   const jsonString = `data:text/json;charset=utf-8,${encodeURIComponent(JSON.stringify(backupData, null, 2))}`;
   const downloadAnchor = document.createElement('a');
   downloadAnchor.setAttribute('href', jsonString);
-  downloadAnchor.setAttribute('download', `Masar_Payroll_DB_Backup_${new Date().toISOString().split('T')[0]}.json`);
+  downloadAnchor.setAttribute('download', `WAFR_Payroll_DB_Backup_${new Date().toISOString().split('T')[0]}.json`);
   document.body.appendChild(downloadAnchor);
   downloadAnchor.click();
   downloadAnchor.remove();

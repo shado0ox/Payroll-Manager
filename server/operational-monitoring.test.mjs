@@ -60,12 +60,12 @@ test('alert sender supports a webhook without exposing its URL in logs', async (
 
 test('health endpoint and systemd failures expose operational state safely', () => {
   const health = fs.readFileSync('server/routes/system-routes.mjs','utf8');
-  const backupService = fs.readFileSync('deploy/systemd/masar-payroll-backup.service','utf8');
-  const restoreService = fs.readFileSync('deploy/systemd/masar-payroll-restore-drill.service','utf8');
+  const backupService = fs.readFileSync('deploy/systemd/wafr-payroll-backup.service','utf8');
+  const restoreService = fs.readFileSync('deploy/systemd/wafr-payroll-restore-drill.service','utf8');
   assert.match(health,/status:'degraded'/);
   assert.match(health,/database:\{ status:'down' \}/);
   assert.match(health,/res\.status\(503\)/);
   assert.doesNotMatch(health,/error\.message|String\(error/);
-  assert.match(backupService,/OnFailure=masar-payroll-ops-alert@%n\.service/);
-  assert.match(restoreService,/OnFailure=masar-payroll-ops-alert@%n\.service/);
+  assert.match(backupService,/OnFailure=wafr-payroll-ops-alert@%n\.service/);
+  assert.match(restoreService,/OnFailure=wafr-payroll-ops-alert@%n\.service/);
 });

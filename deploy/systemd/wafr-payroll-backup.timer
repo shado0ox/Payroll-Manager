@@ -1,11 +1,11 @@
 [Unit]
-Description=Run Masar Payroll backup daily
+Description=Run WAFR Payroll backup daily
 
 [Timer]
 OnCalendar=*-*-* 02:15:00
 Persistent=true
 RandomizedDelaySec=15m
-Unit=masar-payroll-backup.service
+Unit=wafr-payroll-backup.service
 
 [Install]
 WantedBy=timers.target

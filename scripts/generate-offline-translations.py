@@ -3,7 +3,7 @@ import os
 from pathlib import Path
 from argostranslate import translate
 
-source = json.loads(Path('/tmp/masar-ui-arabic.json').read_text())
+source = json.loads(Path('/tmp/wafr-ui-arabic.json').read_text())
 overrides = {
     'مسير الرواتب': 'Payroll run', 'مسيرات الرواتب': 'Payroll runs', 'قيد محاسبي': 'Journal entry',
     'القيود المحاسبية': 'Accounting journals', 'قيود': 'Qoyod', 'السلف': 'Employee loans',

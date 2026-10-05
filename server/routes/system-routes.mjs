@@ -19,7 +19,7 @@ export function createSystemRouter({
       res.setHeader('Cache-Control', 'no-store');
       res.json({
         status:'ok',
-        service:'masar-payroll',
+        service:'wafr-payroll',
         buildId,
         uptimeSeconds:Math.floor(process.uptime()),
         timestamp:new Date().toISOString(),
@@ -29,7 +29,7 @@ export function createSystemRouter({
       res.setHeader('Cache-Control', 'no-store');
       res.status(503).json({
         status:'degraded',
-        service:'masar-payroll',
+        service:'wafr-payroll',
         buildId,
         uptimeSeconds:Math.floor(process.uptime()),
         timestamp:new Date().toISOString(),

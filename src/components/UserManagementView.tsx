@@ -214,7 +214,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
       username: cleanUsername,
       password: editingUser ? '' : formData.password,
       name: formData.name || cleanUsername,
-      email: formData.email || `${cleanUsername}@masar.sa`,
+      email: formData.email || `${cleanUsername}@wafr.sa`,
       phone: formData.phone,
       role: formData.role,
       avatar: formData.name ? formData.name.charAt(0) : (language === 'ar' ? 'م' : 'U'),

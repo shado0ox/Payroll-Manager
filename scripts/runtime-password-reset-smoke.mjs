@@ -10,7 +10,7 @@ const oldPassword = process.env.ADMIN_PASSWORD || 'TestAdmin1!';
 const adminEmail = process.env.ADMIN_EMAIL || 'ci-admin@example.test';
 const companyCode = process.env.COMPANY_CODE || '101';
 const companyId = process.env.COMPANY_ID || 'comp-1';
-const schema = process.env.DB_SCHEMA || 'masar_payroll';
+const schema = process.env.DB_SCHEMA || 'wafr_payroll';
 const newPassword = 'ResetAdmin2!';
 const resetCode = '482731';
 
@@ -35,7 +35,7 @@ const loginOld = await jsonRequest('/api/auth/login', {
 });
 assert.equal(loginOld.response.status, 200, 'Old password must work before reset');
 const oldCookie = (loginOld.response.headers.get('set-cookie') || '').split(';')[0];
-assert.match(oldCookie, /^masar_session=/);
+assert.match(oldCookie, /^wafr_session=/);
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: false });
 try {
@@ -53,7 +53,7 @@ try {
     method:'POST',body:JSON.stringify({ requestId:emailLoginRequestId,code:resetCode }),
   });
   assert.equal(emailLogin.response.status,200,'A valid company-scoped email code must create a session');
-  assert.match((emailLogin.response.headers.get('set-cookie') || '').split(';')[0],/^masar_session=/);
+  assert.match((emailLogin.response.headers.get('set-cookie') || '').split(';')[0],/^wafr_session=/);
 
   const duplicateUser = await jsonRequest('/api/users/ci-duplicate-email-user', {
     method: 'PUT',

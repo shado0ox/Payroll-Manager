@@ -11,11 +11,11 @@ interface LoginViewProps {
 }
 
 const currencies = [
-  { symbol: 'SR', ar: 'ريال سعودي', en: 'Saudi Riyal', pos: 'masar-coin-one' },
-  { symbol: '$', ar: 'دولار أمريكي', en: 'US Dollar', pos: 'masar-coin-two' },
-  { symbol: 'E£', ar: 'جنيه مصري', en: 'Egyptian Pound', pos: 'masar-coin-three' },
-  { symbol: '€', ar: 'يورو', en: 'Euro', pos: 'masar-coin-four' },
-  { symbol: '£', ar: 'جنيه إسترليني', en: 'Pound Sterling', pos: 'masar-coin-five' },
+  { symbol: 'SR', ar: 'ريال سعودي', en: 'Saudi Riyal', pos: 'wafr-coin-one' },
+  { symbol: '$', ar: 'دولار أمريكي', en: 'US Dollar', pos: 'wafr-coin-two' },
+  { symbol: 'E£', ar: 'جنيه مصري', en: 'Egyptian Pound', pos: 'wafr-coin-three' },
+  { symbol: '€', ar: 'يورو', en: 'Euro', pos: 'wafr-coin-four' },
+  { symbol: '£', ar: 'جنيه إسترليني', en: 'Pound Sterling', pos: 'wafr-coin-five' },
 ];
 
 const normalizeArabicNumbers = (val: string): string => {
@@ -228,21 +228,21 @@ export const LoginView: React.FC<LoginViewProps> = ({ defaultCompanyCode = '101'
   const inputClass = 'w-full h-12 ps-11 pe-4 bg-slate-950/45 border border-white/10 rounded-2xl text-white placeholder:text-slate-500 text-sm focus:outline-none focus:border-emerald-400/70 focus:ring-4 focus:ring-emerald-400/10 transition-all font-mono';
 
   return (
-    <main className="masar-login min-h-[100dvh] w-full text-slate-100 relative overflow-x-hidden overflow-y-auto" dir={isArabic ? 'rtl' : 'ltr'}>
-      <div className="masar-grid absolute inset-0 pointer-events-none" />
+    <main className="wafr-login min-h-[100dvh] w-full text-slate-100 relative overflow-x-hidden overflow-y-auto" dir={isArabic ? 'rtl' : 'ltr'}>
+      <div className="wafr-grid absolute inset-0 pointer-events-none" />
       <div className="absolute -top-48 -start-40 h-[32rem] w-[32rem] rounded-full bg-emerald-500/15 blur-[110px] pointer-events-none" />
       <div className="absolute -bottom-56 -end-32 h-[34rem] w-[34rem] rounded-full bg-cyan-500/10 blur-[120px] pointer-events-none" />
       <div className="relative z-10 mx-auto grid min-h-[100dvh] w-full max-w-[1440px] lg:grid-cols-[1.08fr_.92fr]">
         <section className="relative hidden min-w-0 overflow-hidden border-e border-white/5 px-8 py-8 lg:flex xl:px-14 xl:py-12 2xl:px-20 2xl:py-16">
           <div className="relative z-10 flex w-full flex-col">
-            <MasarLogo />
+            <WAFRLogo />
             <div className="my-auto max-w-xl py-8 xl:py-12 2xl:py-16">
               <div className="mb-7 inline-flex items-center gap-2 rounded-full border border-emerald-300/20 bg-emerald-400/10 px-3.5 py-2 text-xs font-bold text-emerald-200 backdrop-blur-sm">
                 <Sparkles className="h-3.5 w-3.5" />{isArabic ? 'رحلة مالية أكثر وضوحًا' : 'A clearer financial journey'}
               </div>
               <h1 className="text-5xl font-black leading-[1.15] tracking-tight text-white xl:text-6xl">
                 {isArabic ? 'رواتبك على' : 'Your payroll,'}
-                <span className="block bg-gradient-to-l from-emerald-300 via-teal-200 to-cyan-300 bg-clip-text text-transparent">{isArabic ? 'المسار الصحيح.' : 'on the right path.'}</span>
+                <span className="block bg-gradient-to-l from-emerald-300 via-teal-200 to-cyan-300 bg-clip-text text-transparent">{isArabic ? 'مع وفر.' : 'with WAFR.'}</span>
               </h1>
               <p className="mt-6 max-w-lg text-base leading-8 text-slate-400 xl:text-lg">{isArabic ? 'منصة موحدة لإدارة الرواتب والموظفين والالتزامات المالية بدقة وأمان.' : 'One secure workspace for payroll, people, and financial compliance.'}</p>
               <div className="mt-9 flex flex-wrap gap-x-6 gap-y-3 text-sm text-slate-300">
@@ -253,19 +253,19 @@ export const LoginView: React.FC<LoginViewProps> = ({ defaultCompanyCode = '101'
             </div>
             <div className="flex items-center gap-3 text-xs text-slate-500"><ShieldCheck className="h-4 w-4 text-emerald-500" />{isArabic ? 'حماية وخصوصية على مستوى المؤسسات' : 'Enterprise-grade security and privacy'}</div>
           </div>
-          <div className="masar-currency-stage absolute inset-0 pointer-events-none" aria-hidden="true">
-            <div className="masar-orbit masar-orbit-outer" /><div className="masar-orbit masar-orbit-inner" />
-            {currencies.map(currency => <div key={currency.symbol} className={`masar-coin ${currency.pos}`}><span>{currency.symbol}</span><small>{isArabic ? currency.ar : currency.en}</small></div>)}
+          <div className="wafr-currency-stage absolute inset-0 pointer-events-none" aria-hidden="true">
+            <div className="wafr-orbit wafr-orbit-outer" /><div className="wafr-orbit wafr-orbit-inner" />
+            {currencies.map(currency => <div key={currency.symbol} className={`wafr-coin ${currency.pos}`}><span>{currency.symbol}</span><small>{isArabic ? currency.ar : currency.en}</small></div>)}
           </div>
         </section>
 
         <section className="flex min-h-[100dvh] min-w-0 items-center justify-center px-4 py-6 sm:px-8 lg:px-10 xl:px-16 2xl:px-20">
           <div className="w-full min-w-0 max-w-[460px] py-2 sm:py-4">
             <div className="mb-8 flex items-center justify-between lg:justify-end">
-              <div className="lg:hidden"><MasarLogo compact /></div>
+              <div className="lg:hidden"><WAFRLogo compact /></div>
               <button type="button" data-no-translate onClick={toggleLanguage} className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs font-bold text-slate-300 backdrop-blur-md transition hover:border-emerald-400/30 hover:bg-white/10 hover:text-white">{isArabic ? 'English' : 'العربية'}</button>
             </div>
-            <div className="masar-login-card w-full min-w-0 rounded-[2rem] border border-white/10 bg-slate-900/60 p-5 shadow-2xl shadow-black/30 backdrop-blur-2xl sm:p-8 xl:p-9">
+            <div className="wafr-login-card w-full min-w-0 rounded-[2rem] border border-white/10 bg-slate-900/60 p-5 shadow-2xl shadow-black/30 backdrop-blur-2xl sm:p-8 xl:p-9">
               <div className="mb-8">
                 <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-2xl border border-emerald-300/20 bg-emerald-400/10 text-emerald-300"><KeyRound className="h-5 w-5" /></div>
                 <h2 className="text-2xl font-black tracking-tight text-white">{mode === 'LOGIN' ? t('loginTitle') : ['VERIFY','EMPLOYEE_VERIFY'].includes(mode) ? (isArabic ? 'تحقق من بريدك' : 'Verify your email') : mode === 'CREATED' ? (isArabic ? 'تم إنشاء شركتك' : 'Company created') : mode === 'EMPLOYEE_CREATED' ? (isArabic ? 'تم إنشاء حساب الموظف' : 'Employee account created') : mode === 'EMPLOYEE_REGISTER' ? (isArabic ? 'إنشاء حساب موظف' : 'Create employee account') : (isArabic ? 'ابدأ تجربتك المجانية' : 'Start your free trial')}</h2>
@@ -382,10 +382,10 @@ export const LoginView: React.FC<LoginViewProps> = ({ defaultCompanyCode = '101'
   );
 };
 
-const MasarLogo: React.FC<{ compact?: boolean }> = ({ compact }) => (
-  <div className="flex items-center gap-3" aria-label="Masar">
+const WAFRLogo: React.FC<{ compact?: boolean }> = ({ compact }) => (
+  <div className="flex items-center gap-3" aria-label="WAFR">
     <div className={`${compact ? 'h-11 w-11 rounded-2xl' : 'h-13 w-13 rounded-[1.15rem]'} relative flex items-center justify-center overflow-hidden border border-emerald-300/25 bg-gradient-to-br from-emerald-400 to-teal-600 text-slate-950 shadow-lg shadow-emerald-950/30`}><Route className={compact ? 'h-6 w-6' : 'h-7 w-7'} strokeWidth={2.6} /><span className="absolute end-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-white/80" /></div>
-    <div className="leading-none"><div className={`${compact ? 'text-xl' : 'text-2xl'} font-black tracking-tight text-white`}>مسار <span className="font-semibold text-emerald-300">Masar</span></div>{!compact && <div className="mt-1.5 text-[10px] font-bold tracking-[.22em] text-slate-500">PAYROLL & PEOPLE</div>}</div>
+    <div className="leading-none"><div className={`${compact ? 'text-xl' : 'text-2xl'} font-black tracking-tight text-white`}>وفر <span className="font-semibold text-emerald-300">WAFR</span></div>{!compact && <div className="mt-1.5 text-[10px] font-bold tracking-[.22em] text-slate-500">PAYROLL & PEOPLE</div>}</div>
   </div>
 );
 

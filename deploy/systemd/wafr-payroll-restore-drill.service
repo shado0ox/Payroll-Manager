@@ -1,8 +1,8 @@
 [Unit]
-Description=Masar Payroll PostgreSQL restore drill
+Description=WAFR Payroll PostgreSQL restore drill
 Requires=docker.service
 After=docker.service
-OnFailure=masar-payroll-ops-alert@%n.service
+OnFailure=wafr-payroll-ops-alert@%n.service
 
 [Service]
 Type=oneshot

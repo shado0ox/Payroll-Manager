@@ -1,5 +1,5 @@
 [Unit]
-Description=Masar Payroll operational alert for %i
+Description=WAFR Payroll operational alert for %i
 
 [Service]
 Type=oneshot

@@ -53,7 +53,7 @@ test('user UI consumes committed records without legacy full-state helper writes
 
 test('every browser detects a new build and reload waits for pending saves', () => {
   assert.match(vite,/fileName: 'build-meta\.json'/);
-  assert.match(vite,/__MASAR_BUILD_ID__/);
+  assert.match(vite,/__WAFR_BUILD_ID__/);
   assert.match(server,/app\.use\('\/api', createSystemRouter/);
   assert.match(systemRoutes,/router\.get\('\/version'/);
   assert.match(systemRoutes,/no-store, no-cache, must-revalidate/);
@@ -61,10 +61,10 @@ test('every browser detects a new build and reload waits for pending saves', () 
   assert.match(api,/source\.addEventListener\('ready'/);
   assert.match(app,/window\.setInterval\(\(\) => \{ void checkVersion\(\); \}, 30_000\)/);
   assert.match(app,/document\.addEventListener\('visibilitychange'/);
-  assert.match(app,/current\.buildId !== __MASAR_BUILD_ID__/);
+  assert.match(app,/current\.buildId !== __WAFR_BUILD_ID__/);
   assert.match(app,/persistenceQueueRef\.current\.catch\(\(\) => undefined\)\.finally\(\(\) => window\.location\.reload\(\)\)/);
   assert.match(app,/BuildUpdateBanner/);
   assert.match(main,/window\.addEventListener\('vite:preloadError'/);
-  assert.match(main,/sessionStorage\.getItem\(FAILED_CHUNK_BUILD_KEY\) === __MASAR_BUILD_ID__/);
-  assert.match(main,/sessionStorage\.setItem\(FAILED_CHUNK_BUILD_KEY, __MASAR_BUILD_ID__\)/);
+  assert.match(main,/sessionStorage\.getItem\(FAILED_CHUNK_BUILD_KEY\) === __WAFR_BUILD_ID__/);
+  assert.match(main,/sessionStorage\.setItem\(FAILED_CHUNK_BUILD_KEY, __WAFR_BUILD_ID__\)/);
 });
