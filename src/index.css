@@ -27,6 +27,18 @@ body {
   background: #f3f7f6;
 }
 
+/* Public pages own their vertical scrolling while the authenticated app keeps body locked. */
+.wafr-public-site {
+  width: 100%;
+  height: 100dvh;
+  min-height: 100dvh;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: auto;
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
 /* WAFR product shell: one visual language shared by every operational screen. */
 .wafr-app-shell {
   --wafr-navy: #0a1628;
