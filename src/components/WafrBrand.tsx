@@ -9,12 +9,20 @@ interface WafrBrandProps {
 
 export const WafrMark: React.FC<{ className?: string; inverse?: boolean }> = ({ className = 'h-11 w-11', inverse = true }) => (
   <span
-    className={`${className} inline-flex shrink-0 items-end justify-center gap-[7%] rounded-[24%] p-[19%] shadow-sm ${inverse ? 'bg-[#0a1628]' : 'border border-slate-200 bg-white'}`}
+    className={`${className} inline-flex shrink-0 items-center justify-center overflow-hidden rounded-[24%] shadow-sm ${inverse ? 'bg-[#0a1628]' : 'border border-slate-200 bg-white'}`}
     aria-hidden="true"
   >
-    <span className="h-[43%] w-[22%] rounded-[30%] bg-gradient-to-tr from-emerald-700 to-emerald-300" />
-    <span className="h-[66%] w-[22%] rounded-[30%] bg-gradient-to-tr from-emerald-700 to-emerald-300" />
-    <span className="h-[89%] w-[22%] rounded-[30%] bg-gradient-to-tr from-emerald-700 to-emerald-300" />
+    <svg viewBox="0 0 64 64" className="block h-full w-full" focusable="false">
+      <defs>
+        <linearGradient id="wafr-mark-gradient" x1="10" y1="54" x2="54" y2="10" gradientUnits="userSpaceOnUse">
+          <stop stopColor="#047857" />
+          <stop offset="1" stopColor="#6ee7b7" />
+        </linearGradient>
+      </defs>
+      <rect x="12" y="34" width="10" height="18" rx="5" fill="url(#wafr-mark-gradient)" />
+      <rect x="27" y="24" width="10" height="28" rx="5" fill="url(#wafr-mark-gradient)" />
+      <rect x="42" y="12" width="10" height="40" rx="5" fill="url(#wafr-mark-gradient)" />
+    </svg>
   </span>
 );
 
