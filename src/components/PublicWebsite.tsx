@@ -62,13 +62,19 @@ const LegalPage = ({ kind,ar }:{ kind:'privacy'|'terms';ar:boolean }) => {
   </main>;
 };
 
-const PublicHeader = ({ ar }:{ ar:boolean }) => <header className="sticky top-0 z-40 border-b border-slate-200/80 bg-white/90 backdrop-blur-xl" dir={ar ? 'rtl' : 'ltr'}>
-  <div className="mx-auto flex h-18 max-w-7xl items-center justify-between gap-3 px-3 sm:px-8">
-    <button type="button" onClick={() => go('/')} className="min-w-fit shrink-0" aria-label={ar ? 'العودة إلى الرئيسية' : 'Back to home'}><WafrBrand compact inverse={false} showTagline={false} className="gap-2 sm:gap-3" /></button>
-    <nav className="hidden items-center gap-7 text-sm font-bold text-slate-600 md:flex"><a href="/#features">{ar ? 'المزايا' : 'Features'}</a><a href="/pricing">{ar ? 'الباقات' : 'Pricing'}</a><a href="/privacy">{ar ? 'الخصوصية' : 'Privacy'}</a></nav>
-    <a href="/login" className="shrink-0 whitespace-nowrap rounded-xl bg-slate-950 px-3 py-2.5 text-xs font-black text-white sm:px-5 sm:text-sm">{ar ? 'دخول النظام' : 'Sign in'}</a>
-  </div>
-</header>;
+const PublicHeader = ({ ar }:{ ar:boolean }) => {
+  const { toggleLanguage } = useLanguage();
+  return <header className="sticky top-0 z-40 border-b border-slate-200/80 bg-white/90 backdrop-blur-xl" dir={ar ? 'rtl' : 'ltr'}>
+    <div className="mx-auto flex h-18 max-w-7xl items-center gap-2 px-3 sm:gap-4 sm:px-8">
+      <button type="button" onClick={() => go('/')} className="me-auto flex-none" aria-label={ar ? 'العودة إلى الرئيسية' : 'Back to home'}><WafrBrand compact inverse={false} showTagline={false} className="gap-2 sm:gap-3" /></button>
+      <nav className="hidden items-center gap-7 text-sm font-bold text-slate-600 md:flex"><a href="/#features">{ar ? 'المزايا' : 'Features'}</a><a href="/pricing">{ar ? 'الباقات' : 'Pricing'}</a><a href="/privacy">{ar ? 'الخصوصية' : 'Privacy'}</a></nav>
+      <button type="button" onClick={toggleLanguage} className="inline-flex h-10 shrink-0 items-center gap-1 rounded-xl border border-slate-200 bg-white px-2.5 text-xs font-black text-slate-700 shadow-sm hover:bg-slate-50" aria-label={ar ? 'Switch to English' : 'التبديل إلى العربية'}>
+        <Globe2 className="h-4 w-4" /><span>{ar ? 'EN' : 'AR'}</span>
+      </button>
+      <a href="/login" className="shrink-0 whitespace-nowrap rounded-xl bg-slate-950 px-3 py-2.5 text-xs font-black text-white sm:px-5 sm:text-sm">{ar ? 'دخول النظام' : 'Sign in'}</a>
+    </div>
+  </header>;
+};
 
 const PublicFooter = ({ ar }:{ ar:boolean }) => <footer className="border-t border-slate-200 bg-white" dir={ar ? 'rtl' : 'ltr'}><div className="mx-auto flex max-w-7xl flex-col gap-4 px-5 py-8 text-sm text-slate-500 sm:flex-row sm:items-center sm:justify-between sm:px-8"><p>© 2026 {ar ? 'وفر للرواتب. جميع الحقوق محفوظة.' : 'WAFR Payroll. All rights reserved.'}</p><div className="flex gap-5"><a href="/privacy">{ar ? 'الخصوصية' : 'Privacy'}</a><a href="/terms">{ar ? 'الشروط' : 'Terms'}</a></div></div></footer>;
 

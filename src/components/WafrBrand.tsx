@@ -19,13 +19,13 @@ export const WafrMark: React.FC<{ className?: string; inverse?: boolean }> = ({ 
 );
 
 export const WafrBrand: React.FC<WafrBrandProps> = ({ compact = false, inverse = true, showTagline = true, className = '' }) => (
-  <div className={`inline-flex min-w-0 items-center gap-3 ${className}`} aria-label="WAFR - وفر">
+  <div className={`inline-flex flex-none items-center gap-3 whitespace-nowrap ${className}`} aria-label="WAFR - وفر">
     <WafrMark className={compact ? 'h-10 w-10' : 'h-12 w-12'} inverse={inverse} />
-    <div className="min-w-0 leading-none">
-      <div className={`${compact ? 'text-lg' : 'text-2xl'} truncate font-black tracking-tight ${inverse ? 'text-white' : 'text-[#0a1628]'}`}>
+    <div className="flex-none leading-none">
+      <div className={`${compact ? 'text-lg' : 'text-2xl'} whitespace-nowrap font-black tracking-tight ${inverse ? 'text-white' : 'text-[#0a1628]'}`}>
         WAFR <span className="font-bold text-emerald-400">وفر</span>
       </div>
-      {showTagline && <div className={`mt-1.5 truncate text-[9px] font-extrabold tracking-[.19em] ${inverse ? 'text-slate-400' : 'text-slate-500'}`}>PAYROLL &amp; PEOPLE</div>}
+      {showTagline && <div className={`mt-1.5 whitespace-nowrap text-[9px] font-extrabold tracking-[.19em] ${inverse ? 'text-slate-400' : 'text-slate-500'}`}>PAYROLL &amp; PEOPLE</div>}
     </div>
   </div>
 );
