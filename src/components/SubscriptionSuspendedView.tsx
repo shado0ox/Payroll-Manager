@@ -32,7 +32,7 @@ export const SubscriptionSuspendedView: React.FC<SubscriptionSuspendedViewProps>
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `Masar_Backup_${company.companyCode}_${new Date().toISOString().slice(0,10)}.json`;
+    link.download = `WAFR_Backup_${company.companyCode}_${new Date().toISOString().slice(0,10)}.json`;
     document.body.appendChild(link);
     link.click();
     link.remove();
@@ -51,7 +51,7 @@ export const SubscriptionSuspendedView: React.FC<SubscriptionSuspendedViewProps>
       employee.department,employee.jobTitle,employee.status,employee.salaryPackage.baseSalary,employee.bankIban,
     ]);
     downloadCsvFile(
-      `Masar_Employees_${company.companyCode}_${new Date().toISOString().slice(0,10)}.csv`,
+      `WAFR_Employees_${company.companyCode}_${new Date().toISOString().slice(0,10)}.csv`,
       [headers,...rows].map(row => row.map(csvCell).join(',')).join('\r\n'),
     );
   };

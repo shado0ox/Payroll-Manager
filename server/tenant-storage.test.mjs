@@ -18,7 +18,7 @@ test('scopeStateForCompanies keeps only assigned tenant data and drops client au
 test('tenant client rewrites destructive employee delete to company-scoped SQL', async () => {
   const calls = [];
   const client = { query: async (text, params) => { calls.push([String(text), params]); return { rowCount:0, rows:[] }; } };
-  const q = name => `"masar_payroll".${name}`;
+  const q = name => `"wafr_payroll".${name}`;
   const guarded = createTenantScopedClient(client, q, ['company-a']);
   await guarded.query(`DELETE FROM ${q('employees')}`);
   assert.match(calls[0][0], /WHERE company_id=ANY\(\$1::text\[\]\)/);
@@ -28,7 +28,7 @@ test('tenant client rewrites destructive employee delete to company-scoped SQL',
 test('tenant client never rewrites application audit history', async () => {
   const calls = [];
   const client = { query: async (...args) => { calls.push(args); return { rowCount:0, rows:[] }; } };
-  const q = name => `"masar_payroll".${name}`;
+  const q = name => `"wafr_payroll".${name}`;
   const guarded = createTenantScopedClient(client, q, ['company-a']);
   const result = await guarded.query(`DELETE FROM ${q('application_audit_logs')}`);
   assert.equal(result.command, 'SKIP');

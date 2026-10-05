@@ -27,5 +27,5 @@ for (const file of walkFiles(root)) {
   visit(source);
 }
 
-fs.writeFileSync('/tmp/masar-ui-arabic.json', JSON.stringify([...values].sort((a, b) => b.length - a.length), null, 2));
+fs.writeFileSync('/tmp/wafr-ui-arabic.json', JSON.stringify([...values].sort((a, b) => b.length - a.length), null, 2));
 console.log(`Extracted ${values.size} Arabic UI text fragments`);

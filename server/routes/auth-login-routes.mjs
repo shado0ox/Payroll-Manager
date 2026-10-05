@@ -42,7 +42,7 @@ export function createAuthLoginRouter({ loginLimiter, pool, q, sha256, permissio
         client.release();
       }
 
-      res.setHeader('Set-Cookie', `masar_session=${token}; Path=/; HttpOnly; SameSite=Strict${process.env.COOKIE_SECURE === 'false' ? '' : '; Secure'}`);
+      res.setHeader('Set-Cookie', `wafr_session=${token}; Path=/; HttpOnly; SameSite=Strict${process.env.COOKIE_SECURE === 'false' ? '' : '; Secure'}`);
       res.json({
         user: {
           id:user.id,

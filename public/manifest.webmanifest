@@ -1,8 +1,8 @@
 {
   "id": "/",
-  "name": "مسار للرواتب | Masar Payroll",
-  "short_name": "مسار",
-  "description": "نظام مسار لإدارة الرواتب والموظفين والحضور والعمليات المالية.",
+  "name": "وفر للرواتب | WAFR Payroll",
+  "short_name": "وفر",
+  "description": "نظام وفر لإدارة الرواتب والموظفين والحضور والعمليات المالية.",
   "lang": "ar",
   "dir": "rtl",
   "start_url": "/",
@@ -14,13 +14,13 @@
   "categories": ["business", "finance", "productivity"],
   "icons": [
     {
-      "src": "/masar-favicon.svg",
+      "src": "/wafr-favicon.svg",
       "sizes": "any",
       "type": "image/svg+xml",
       "purpose": "any"
     },
     {
-      "src": "/masar-favicon.svg",
+      "src": "/wafr-favicon.svg",
       "sizes": "any",
       "type": "image/svg+xml",
       "purpose": "maskable"

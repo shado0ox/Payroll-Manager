@@ -1,4 +1,4 @@
-# Masar Payroll Manager — production deployment
+# WAFR Payroll Manager — production deployment
 
 The application uses a server-side PostgreSQL connection. Browser storage is only a local cache; authentication and central state are handled by the Node server.
 
@@ -13,14 +13,14 @@ docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Networks}}'
 Using the current PostgreSQL administrator, create an isolated login and schema. Never give the app the `postgres` superuser:
 
 ```sql
-CREATE ROLE masar_app LOGIN PASSWORD 'A_LONG_RANDOM_PASSWORD'
+CREATE ROLE wafr_app LOGIN PASSWORD 'A_LONG_RANDOM_PASSWORD'
   NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT;
-CREATE SCHEMA masar_payroll AUTHORIZATION masar_app;
-REVOKE ALL ON SCHEMA masar_payroll FROM PUBLIC;
-GRANT CONNECT ON DATABASE your_database TO masar_app;
+CREATE SCHEMA wafr_payroll AUTHORIZATION wafr_app;
+REVOKE ALL ON SCHEMA wafr_payroll FROM PUBLIC;
+GRANT CONNECT ON DATABASE your_database TO wafr_app;
 ```
 
-A separate database is preferred. If other programs share the same database, the dedicated `masar_payroll` schema and login isolate this app from their tables.
+A separate database is preferred. If other programs share the same database, the dedicated `wafr_payroll` schema and login isolate this app from their tables.
 
 ## Configure and deploy
 
@@ -31,7 +31,7 @@ docker compose config
 docker compose build --pull
 docker compose up -d
 docker compose ps
-docker compose logs --tail=100 masar-app
+docker compose logs --tail=100 wafr-app
 ```
 
 Set `POSTGRES_DOCKER_NETWORK` to the existing network. In `DATABASE_URL`, use the PostgreSQL container/service name—not `localhost`. Set a unique `ADMIN_PASSWORD` of at least 12 characters. Keep `COOKIE_SECURE=true` behind HTTPS.
@@ -51,7 +51,7 @@ sudo systemctl status cloudflared --no-pager
 ## Backup
 
 ```bash
-docker exec YOUR_POSTGRES_CONTAINER pg_dump -U YOUR_ADMIN -d YOUR_DATABASE -n masar_payroll -Fc > masar-payroll.dump
+docker exec YOUR_POSTGRES_CONTAINER pg_dump -U YOUR_ADMIN -d YOUR_DATABASE -n wafr_payroll -Fc > wafr-payroll.dump
 ```
 
 Test restoration periodically. The runtime container is non-root, read-only, capability-free, resource-limited, and protected with `no-new-privileges`. Sessions are random, hashed, HttpOnly, SameSite cookies with a 12-hour expiry. Login and write endpoints are rate-limited.

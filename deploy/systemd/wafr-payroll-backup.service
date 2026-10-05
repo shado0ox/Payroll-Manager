@@ -1,8 +1,8 @@
 [Unit]
-Description=Masar Payroll PostgreSQL backup
+Description=WAFR Payroll PostgreSQL backup
 Requires=docker.service
 After=docker.service
-OnFailure=masar-payroll-ops-alert@%n.service
+OnFailure=wafr-payroll-ops-alert@%n.service
 
 [Service]
 Type=oneshot

@@ -3,11 +3,11 @@ set -Eeuo pipefail
 
 project_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 container="${PAYROLL_DB_CONTAINER:-labor_postgres_db}"
-production_database="${PAYROLL_DB_NAME:-masar_payroll_db}"
-database_user="${PAYROLL_DB_USER:-masar_payroll_user}"
+production_database="${PAYROLL_DB_NAME:-wafr_payroll_db}"
+database_user="${PAYROLL_DB_USER:-wafr_payroll_user}"
 database_admin_user="${PAYROLL_DB_ADMIN_USER:-${database_user}}"
-restore_database="${PAYROLL_RESTORE_TEST_DB:-masar_payroll_restore_test}"
-database_schema="${PAYROLL_DB_SCHEMA:-masar_payroll}"
+restore_database="${PAYROLL_RESTORE_TEST_DB:-wafr_payroll_restore_test}"
+database_schema="${PAYROLL_DB_SCHEMA:-wafr_payroll}"
 backup_dir="${PAYROLL_BACKUP_DIR:-${project_root}/backups/postgres}"
 keep_database="${PAYROLL_RESTORE_KEEP_DB:-NO}"
 
@@ -39,7 +39,7 @@ fi
 
 backup_file="${PAYROLL_RESTORE_BACKUP_FILE:-}"
 if [[ -z "${backup_file}" ]]; then
-  backup_file="$(find "${backup_dir}" -maxdepth 1 -type f -name 'masar-payroll-*.dump' -printf '%T@ %p\n' | sort -nr | head -n 1 | cut -d' ' -f2-)"
+  backup_file="$(find "${backup_dir}" -maxdepth 1 -type f -name 'wafr-payroll-*.dump' -printf '%T@ %p\n' | sort -nr | head -n 1 | cut -d' ' -f2-)"
 fi
 if [[ -z "${backup_file}" || ! -f "${backup_file}" || ! -s "${backup_file}" ]]; then
   echo "No non-empty PostgreSQL backup was found." >&2

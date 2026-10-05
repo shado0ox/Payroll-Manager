@@ -1,10 +1,10 @@
 services:
-  masar-app:
+  wafr-app:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: masar_payroll_app
-    image: masar-payroll:local
+    container_name: wafr_payroll_app
+    image: wafr-payroll:local
     restart: unless-stopped
     init: true
     env_file: [.env]

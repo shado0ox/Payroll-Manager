@@ -196,7 +196,7 @@ export function clearSensitiveLocalState(): void {
     STORAGE_KEYS.JOURNALS, STORAGE_KEYS.AUDIT_LOGS, STORAGE_KEYS.QOYOD_CONFIG]) {
     localStorage.removeItem(key);
   }
-  if (typeof indexedDB !== 'undefined') indexedDB.deleteDatabase('MasarPayrollDB');
+  if (typeof indexedDB !== 'undefined') indexedDB.deleteDatabase('WAFRPayrollDB');
 }
 
 export function saveCurrentUser(user: UserAccount | null): void {

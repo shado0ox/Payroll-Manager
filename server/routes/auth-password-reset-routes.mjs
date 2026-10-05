@@ -46,13 +46,13 @@ export function createAuthPasswordResetRouter({
     const passwordReset = purpose === 'PASSWORD_RESET';
     return {
       subject:isArabic
-        ? (passwordReset ? 'مسار - رمز إعادة تعيين كلمة المرور' : 'مسار - رمز الدخول السريع')
-        : (passwordReset ? 'Masar - Password reset code' : 'Masar - Quick sign-in code'),
+        ? (passwordReset ? 'وفر - رمز إعادة تعيين كلمة المرور' : 'وفر - رمز الدخول السريع')
+        : (passwordReset ? 'WAFR - Password reset code' : 'WAFR - Quick sign-in code'),
       html:`<div dir="${isArabic ? 'rtl' : 'ltr'}" style="font-family:Arial,sans-serif;max-width:560px;margin:auto;padding:24px">
         <h2>${isArabic ? `مرحبًا ${escapeHtml(name)}` : `Hello ${escapeHtml(name)}`}</h2>
         <p>${isArabic
-          ? (passwordReset ? 'استخدم الرمز التالي لإعادة تعيين كلمة المرور داخل شاشة الدخول.' : 'استخدم الرمز التالي للدخول السريع إلى مسار.')
-          : (passwordReset ? 'Use this code to reset your password on the sign-in screen.' : 'Use this code to sign in quickly to Masar.')}</p>
+          ? (passwordReset ? 'استخدم الرمز التالي لإعادة تعيين كلمة المرور داخل شاشة الدخول.' : 'استخدم الرمز التالي للدخول السريع إلى وفر.')
+          : (passwordReset ? 'Use this code to reset your password on the sign-in screen.' : 'Use this code to sign in quickly to WAFR.')}</p>
         <div style="font-size:32px;font-weight:800;letter-spacing:8px;background:#ecfdf5;padding:18px;text-align:center;border-radius:12px">${code}</div>
         <p style="color:#64748b;font-size:12px">${isArabic
           ? `الرمز صالح لمدة ${EMAIL_CODE_TTL_MINUTES} دقائق ولمرة واحدة فقط. لا تشاركه مع أي شخص.`
@@ -158,7 +158,7 @@ export function createAuthPasswordResetRouter({
       await client.query(`UPDATE ${q('users')} SET last_login=now() WHERE id=$1`, [user.id]);
       await client.query(`INSERT INTO ${q('audit_log')} (user_id,action,ip) VALUES ($1,'LOGIN_EMAIL_CODE',$2)`, [user.id,req.ip]);
       await client.query('COMMIT');
-      res.setHeader('Set-Cookie',`masar_session=${token}; Path=/; HttpOnly; SameSite=Strict${process.env.COOKIE_SECURE === 'false' ? '' : '; Secure'}`);
+      res.setHeader('Set-Cookie',`wafr_session=${token}; Path=/; HttpOnly; SameSite=Strict${process.env.COOKIE_SECURE === 'false' ? '' : '; Secure'}`);
       res.json({
         user:{ id:user.id,username:user.username,name:user.name,email:user.email,phone:user.phone,role:user.role,
           companyIds:user.company_ids,employeeId:user.employee_id || undefined,permissions:permissionsFor(user),isActive:true,createdAt:user.created_at,lastLogin:new Date().toISOString() },
@@ -181,7 +181,7 @@ export function createAuthPasswordResetRouter({
       const user = result.rows[0];
       await sendAccountEmail({
         to:user.email,
-        subject:language === 'ar' ? 'مسار - استرجاع اسم المستخدم' : 'Masar - Username recovery',
+        subject:language === 'ar' ? 'وفر - استرجاع اسم المستخدم' : 'WAFR - Username recovery',
         html:language === 'ar'
           ? `<p>مرحبًا ${escapeHtml(user.name)}</p><p>اسم المستخدم الخاص بك هو:</p><p><strong>${escapeHtml(user.username)}</strong></p>`
           : `<p>Hello ${escapeHtml(user.name)}</p><p>Your username is:</p><p><strong>${escapeHtml(user.username)}</strong></p>`,
@@ -207,7 +207,7 @@ export function createAuthPasswordResetRouter({
       }).join('');
       await sendAccountEmail({
         to:user.email,
-        subject:language === 'ar' ? 'مسار - استرجاع رمز المنشأة' : 'Masar - Company code recovery',
+        subject:language === 'ar' ? 'وفر - استرجاع رمز المنشأة' : 'WAFR - Company code recovery',
         html:language === 'ar'
           ? `<p>مرحبًا ${escapeHtml(user.name)}</p><p>رموز المنشآت المتاحة لحسابك:</p><ul>${companyItems}</ul>`
           : `<p>Hello ${escapeHtml(user.name)}</p><p>Company codes available to your account:</p><ul>${companyItems}</ul>`,

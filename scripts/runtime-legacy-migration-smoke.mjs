@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import pg from 'pg';
 
 const { Pool } = pg;
-const schema = process.env.DB_SCHEMA || 'masar_payroll';
+const schema = process.env.DB_SCHEMA || 'wafr_payroll';
 const companyId = process.env.COMPANY_ID || 'comp-1';
 const mode = process.argv[2];
 const employeeId = 'ci-legacy-employee-1';

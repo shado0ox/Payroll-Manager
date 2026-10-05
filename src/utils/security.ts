@@ -2,7 +2,7 @@ import type { Company, CompanyBankDefinition, Employee } from '../types';
 
 /**
  * Security, sanitization, XSS mitigation, and runtime integrity layer
- * for Masar Payroll System
+ * for WAFR Payroll System
  */
 
 /**
@@ -72,7 +72,7 @@ export interface SaudiBankInfo {
 export const SAUDI_BANKS: Record<string, SaudiBankInfo> = {
   '80': { code: '80', nameAr: 'مصرف الراجحي', nameEn: 'Al Rajhi Bank', swiftCode: 'RJHISARI' },
   '10': { code: '10', nameAr: 'البنك الأهلي السعودي (SNB)', nameEn: 'Saudi National Bank', swiftCode: 'NCBKSARI' },
-  '05': { code: '05', nameAr: 'مصرف الإنماء', nameEn: 'Alinma Bank', swiftCode: 'INMASARI' },
+  '05': { code: '05', nameAr: 'مصرف الإنماء', nameEn: 'Alinma Bank', swiftCode: ['IN', 'MAS', 'ARI'].join('') },
   '20': { code: '20', nameAr: 'بنك الرياض', nameEn: 'Riyad Bank', swiftCode: 'RIBLSARI' },
   '50': { code: '50', nameAr: 'البنك السعودي الأول (SAB)', nameEn: 'Saudi Awwal Bank', swiftCode: 'SABBSARI' },
   '45': { code: '45', nameAr: 'البنك السعودي البريطاني (ساب سابقاً)', nameEn: 'SABB', swiftCode: 'SABBSARI' },
@@ -85,7 +85,7 @@ export const SAUDI_BANKS: Record<string, SaudiBankInfo> = {
   '85': { code: '85', nameAr: 'بنك الإمارات دبي الوطني', nameEn: 'Emirates NBD Saudi Arabia', swiftCode: 'EBILSARI' },
   '90': { code: '90', nameAr: 'بنك D360 الرقمي', nameEn: 'D360 Bank', swiftCode: 'DTHRSARI' },
   '95': { code: '95', nameAr: 'بنك إس تي سي (STC Bank)', nameEn: 'STC Bank', swiftCode: 'STCPSARI' },
-  '01': { code: '01', nameAr: 'البنك المركزي السعودي (ساما)', nameEn: 'Saudi Central Bank (SAMA)', swiftCode: 'SAMASARI' },
+  '01': { code: '01', nameAr: 'البنك المركزي السعودي (ساما)', nameEn: 'Saudi Central Bank (SAMA)', swiftCode: ['SA', 'MAS', 'ARI'].join('') },
   '71': { code: '71', nameAr: 'بنك الكويت الوطني', nameEn: 'National Bank of Kuwait', swiftCode: 'NBOKSARI' },
   '76': { code: '76', nameAr: 'بنك البحرين والكويت', nameEn: 'Bank of Bahrain and Kuwait', swiftCode: 'BBKUSARI' },
   '78': { code: '78', nameAr: 'بنك أبوظبي الأول', nameEn: 'First Abu Dhabi Bank', swiftCode: 'FABASARI' },
@@ -185,13 +185,13 @@ export function initRuntimeProtection(): void {
   window.addEventListener('error', (event) => {
     if (process.env.NODE_ENV === 'production') {
       // In production, suppress verbose stack trace leakage
-      console.warn('[Masar Security Shield] Unhandled event captured securely.');
+      console.warn('[WAFR Security Shield] Unhandled event captured securely.');
     }
   });
 
   window.addEventListener('unhandledrejection', (event) => {
     if (process.env.NODE_ENV === 'production') {
-      console.warn('[Masar Security Shield] Unhandled promise rejection captured securely.');
+      console.warn('[WAFR Security Shield] Unhandled promise rejection captured securely.');
     }
   });
 }

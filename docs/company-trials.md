@@ -1,6 +1,6 @@
 # Company registration and trial subscriptions
 
-Masar can accept public company registrations after email ownership is verified.
+WAFR can accept public company registrations after email ownership is verified.
 New companies receive an isolated company ID, a generated six-digit company
 code, a company-manager account, and a configurable trial period (14 days by
 default).
@@ -12,7 +12,7 @@ ALLOW_PUBLIC_REGISTRATION=true
 TRIAL_DAYS=14
 DEVELOPER_CONTACT_PHONE=+9665XXXXXXXX
 RESEND_API_KEY=re_xxxxxxxxx
-EMAIL_FROM=Masar <no-reply@your-domain.example>
+EMAIL_FROM=WAFR <no-reply@your-domain.example>
 ```
 
 Verify the sending domain in Resend before enabling registration. Never commit
@@ -70,7 +70,7 @@ metadata-only endpoint and does not grant access to tenant operational data.
 For emergency recovery, the equivalent SQL is:
 
 ```sql
-UPDATE masar_payroll.companies
+UPDATE wafr_payroll.companies
 SET subscription_status='ACTIVE',
     subscription_ends_at='2027-08-28 23:59:59+03',
     updated_at=now()

@@ -82,7 +82,7 @@ export const EmployeePortalView: React.FC<Props> = ({ onLogout }) => {
     finally { setPayslipsLoading(false); }
   };
 
-  if (!data) return <div dir={language === 'ar' ? 'rtl' : 'ltr'} className="masar-employee-portal flex h-[100dvh] w-full items-center justify-center overflow-x-hidden overflow-y-auto bg-slate-950 p-4 text-white sm:p-6">
+  if (!data) return <div dir={language === 'ar' ? 'rtl' : 'ltr'} className="wafr-employee-portal flex h-[100dvh] w-full items-center justify-center overflow-x-hidden overflow-y-auto bg-slate-950 p-4 text-white sm:p-6">
     <div className="w-full max-w-md rounded-3xl border border-slate-800 bg-slate-900 p-8 text-center shadow-2xl">
       {error ? <>
         <ShieldCheck className="mx-auto h-10 w-10 text-rose-400" />
@@ -111,7 +111,7 @@ export const EmployeePortalView: React.FC<Props> = ({ onLogout }) => {
     { icon:CalendarDays,titleAr:'الإجازات',titleEn:'Leave',textAr:leaveReport ? `${leaveReport.annualBalance.remainingDays} يوم سنوي متبقي` : 'الرصيد والطلبات وسجل الإجازات',textEn:leaveReport ? `${leaveReport.annualBalance.remainingDays} annual days remaining` : 'Balance, requests, and leave history',ready:true },
   ];
 
-  return <div dir={language === 'ar' ? 'rtl' : 'ltr'} className="masar-employee-portal h-[100dvh] w-full overflow-x-hidden overflow-y-auto bg-slate-100 text-slate-900">
+  return <div dir={language === 'ar' ? 'rtl' : 'ltr'} className="wafr-employee-portal h-[100dvh] w-full overflow-x-hidden overflow-y-auto bg-slate-100 text-slate-900">
     <header className="sticky top-0 z-30 border-b border-slate-800 bg-slate-950/95 text-white backdrop-blur">
       <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-3 py-3 sm:gap-4 sm:px-5 sm:py-4">
         <div className="flex items-center gap-3">

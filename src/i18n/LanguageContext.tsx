@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 export type AppLanguage = 'ar' | 'en';
 const translations = {
-  payrollSystem: { ar: 'نظام مسار للرواتب', en: 'Masar Payroll System' }, payrollSummary: { ar: 'ملخص الرواتب - مسار', en: 'Payroll Summary - Masar' },
+  payrollSystem: { ar: 'نظام وفر للرواتب', en: 'WAFR Payroll System' }, payrollSummary: { ar: 'ملخص الرواتب - وفر', en: 'Payroll Summary - WAFR' },
   wageCompliance: { ar: 'إدارة الأجور والامتثال', en: 'Payroll & Compliance Management' }, dashboard: { ar: 'لوحة التحكم', en: 'Dashboard' },
   companyProfile: { ar: 'ملف المنشأة', en: 'Company Profile' }, payrollRuns: { ar: 'مسيرات الرواتب', en: 'Payroll Runs' }, employees: { ar: 'الموظفون', en: 'Employees' },
   attendance: { ar: 'الحضور والإجازات', en: 'Attendance & Leave' }, loans: { ar: 'السلف والخصومات', en: 'Loans & Deductions' }, journals: { ar: 'القيود وتكامل قيود', en: 'Journals & Qoyod' },
@@ -16,7 +16,7 @@ const translations = {
   companyCodeLabel: { ar: 'رمز المنشأة / الشركة', en: 'Company code' },
   companyCodePlaceholder: { ar: 'أدخل رمز المنشأة (مثال: 101)', en: 'Enter company code (example: 101)' },
   designedBy: { ar: 'تم التصميم والتطوير بواسطة الأستاذ:', en: 'Designed and developed by:' },
-  loginFooter: { ar: 'نظام مسار لإدارة الرواتب والأجور المتوافق مع نظام العمل السعودي ومنصة مدد', en: 'Masar payroll management system aligned with Saudi labor requirements and Mudad' },
+  loginFooter: { ar: 'نظام وفر لإدارة الرواتب والأجور المتوافق مع نظام العمل السعودي ومنصة مدد', en: 'WAFR payroll management system aligned with Saudi labor requirements and Mudad' },
   primarySystemAdmin: { ar: 'مسؤول النظام الرئيسي', en: 'Primary system administrator' },
   systemAdmin: { ar: 'مسؤول النظام', en: 'System administrator' },
   generalManager: { ar: 'المدير العام', en: 'General manager' },
@@ -39,12 +39,12 @@ type ContextValue = { language: AppLanguage; toggleLanguage: () => void; t: (key
 const LanguageContext = createContext<ContextValue | null>(null);
 
 export const LanguageProvider: React.FC<React.PropsWithChildren> = ({ children }) => {
-  const [language, setLanguage] = useState<AppLanguage>(() => localStorage.getItem('masar_language') === 'en' ? 'en' : 'ar');
+  const [language, setLanguage] = useState<AppLanguage>(() => localStorage.getItem('wafr_language') === 'en' ? 'en' : 'ar');
   useEffect(() => {
-    localStorage.setItem('masar_language', language);
+    localStorage.setItem('wafr_language', language);
     document.documentElement.lang = language;
     document.documentElement.dir = language === 'ar' ? 'rtl' : 'ltr';
-    document.title = language === 'ar' ? 'مسار للرواتب' : 'Masar Payroll';
+    document.title = language === 'ar' ? 'وفر للرواتب' : 'WAFR Payroll';
   }, [language]);
   const value = useMemo<ContextValue>(() => ({ language, toggleLanguage: () => setLanguage(v => v === 'ar' ? 'en' : 'ar'), t: key => translations[key][language] }), [language]);
   return <LanguageContext.Provider value={value}>{children}</LanguageContext.Provider>;

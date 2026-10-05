@@ -108,7 +108,7 @@ export function createHrLifecycleAlertService({
       body:JSON.stringify({
         from:emailFrom,
         to,
-        subject:'مسار - تنبيهات الموارد البشرية - ' + (company?.nameAr || company?.nameEn || company?.id || ''),
+        subject:'وفر - تنبيهات الموارد البشرية - ' + (company?.nameAr || company?.nameEn || company?.id || ''),
         html:'<div dir="rtl" style="font-family:Arial,sans-serif;max-width:760px;margin:auto;padding:24px">'
           + '<h2 style="margin:0 0 12px">تنبيهات الموارد البشرية</h2>'
           + '<p>هذه الرسالة أُرسلت للمستخدمين المصرح لهم باستقبال تنبيهات انتهاء الوثائق والقادمين الجدد.</p>'

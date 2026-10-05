@@ -1,5 +1,5 @@
-const CACHE_NAME = 'masar-shell-v1';
-const APP_SHELL = ['/', '/manifest.webmanifest', '/masar-favicon.svg'];
+const CACHE_NAME = 'wafr-shell-v1';
+const APP_SHELL = ['/', '/manifest.webmanifest', '/wafr-favicon.svg'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(

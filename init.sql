@@ -2,8 +2,8 @@
 -- Replace placeholders before use. The application creates its own tables inside
 -- DB_SCHEMA on first start; it must never receive superuser privileges.
 --
--- CREATE ROLE masar_app LOGIN PASSWORD 'REPLACE_WITH_A_LONG_RANDOM_PASSWORD'
+-- CREATE ROLE wafr_app LOGIN PASSWORD 'REPLACE_WITH_A_LONG_RANDOM_PASSWORD'
 --   NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT;
--- CREATE DATABASE payroll OWNER masar_app;
+-- CREATE DATABASE payroll OWNER wafr_app;
 -- REVOKE ALL ON DATABASE payroll FROM PUBLIC;
--- GRANT CONNECT, TEMPORARY ON DATABASE payroll TO masar_app;
+-- GRANT CONNECT, TEMPORARY ON DATABASE payroll TO wafr_app;

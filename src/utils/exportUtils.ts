@@ -1,6 +1,6 @@
 import { Company, PayrollRun, JournalBatch, Employee, PayrollRunItem } from '../types';
 
-const isEnglish = () => localStorage.getItem('masar_language') === 'en';
+const isEnglish = () => localStorage.getItem('wafr_language') === 'en';
 
 /**
  * Downloads a string content as a UTF-8 file with BOM for perfect Arabic Excel rendering.

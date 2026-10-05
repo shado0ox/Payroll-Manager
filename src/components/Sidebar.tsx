@@ -99,7 +99,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </div>
 
       {/* Navigation: vertical on desktop, horizontally scrollable bottom bar on mobile. */}
-      <nav className="masar-mobile-nav flex min-w-0 flex-1 gap-1 overflow-x-auto px-2 pb-[calc(.5rem+env(safe-area-inset-bottom))] pt-2 md:block md:space-y-1 md:overflow-y-auto md:p-4">
+      <nav className="wafr-mobile-nav flex min-w-0 flex-1 gap-1 overflow-x-auto px-2 pb-[calc(.5rem+env(safe-area-inset-bottom))] pt-2 md:block md:space-y-1 md:overflow-y-auto md:p-4">
         {visibleNavItems.map((item) => {
           const Icon = item.icon;
           const isActive = activeTab === item.id;

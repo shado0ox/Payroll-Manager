@@ -35,19 +35,19 @@ jobs:
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: masar_runtime_test
+          POSTGRES_DB: wafr_runtime_test
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U postgres -d masar_runtime_test"
+          --health-cmd "pg_isready -U postgres -d wafr_runtime_test"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
     env:
       PORT: 3034
       CI_BASE_URL: http://127.0.0.1:3034
-      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/masar_runtime_test
-      DB_SCHEMA: masar_payroll
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/wafr_runtime_test
+      DB_SCHEMA: wafr_payroll
       DB_SSL: 'false'
       ADMIN_USERNAME: admin
       ADMIN_PASSWORD: 'TestAdmin1!'
@@ -71,7 +71,7 @@ jobs:
       - run: npm ci
       - run: npm run prepare:security
 
-      - name: Start isolated Masar server
+      - name: Start isolated WAFR server
         run: |
           set -euo pipefail
           node server/index.mjs > runtime-server.log 2>&1 &
@@ -103,7 +103,7 @@ jobs:
       - name: Show server log on failure
         if: failure()
         run: cat runtime-server.log || true
-      - name: Stop isolated Masar server
+      - name: Stop isolated WAFR server
         if: always()
         run: kill "$(cat runtime-server.pid)" 2>/dev/null || true
 
@@ -117,19 +117,19 @@ jobs:
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: masar_browser_test
+          POSTGRES_DB: wafr_browser_test
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U postgres -d masar_browser_test"
+          --health-cmd "pg_isready -U postgres -d wafr_browser_test"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
     env:
       PORT: 3036
       E2E_BASE_URL: http://127.0.0.1:3036
-      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/masar_browser_test
-      DB_SCHEMA: masar_payroll
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/wafr_browser_test
+      DB_SCHEMA: wafr_payroll
       DB_SSL: 'false'
       ADMIN_USERNAME: admin
       ADMIN_PASSWORD: 'TestAdmin1!'
@@ -152,7 +152,7 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: npx playwright install --with-deps chromium
-      - name: Start isolated Masar server
+      - name: Start isolated WAFR server
         run: |
           set -euo pipefail
           node server/index.mjs > browser-server.log 2>&1 &
@@ -167,7 +167,7 @@ jobs:
       - name: Show server log on failure
         if: failure()
         run: cat browser-server.log || true
-      - name: Stop isolated Masar server
+      - name: Stop isolated WAFR server
         if: always()
         run: kill "$(cat browser-server.pid)" 2>/dev/null || true
 
@@ -177,8 +177,8 @@ jobs:
     timeout-minutes: 10
     env:
       PORT: 3037
-      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:55432/masar_backup_test
-      DB_SCHEMA: masar_payroll
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:55432/wafr_backup_test
+      DB_SCHEMA: wafr_payroll
       DB_SSL: 'false'
       ADMIN_USERNAME: admin
       ADMIN_PASSWORD: 'TestAdmin1!'
@@ -204,11 +204,11 @@ jobs:
       - name: Start dedicated PostgreSQL container
         run: |
           set -euo pipefail
-          docker run -d --name masar-backup-ci \
+          docker run -d --name wafr-backup-ci \
             -e POSTGRES_USER=postgres \
             -e POSTGRES_PASSWORD=postgres \
-            -e POSTGRES_DB=masar_backup_test \
-            --health-cmd="pg_isready -U postgres -d masar_backup_test" \
+            -e POSTGRES_DB=wafr_backup_test \
+            --health-cmd="pg_isready -U postgres -d wafr_backup_test" \
             --health-interval=2s \
             --health-timeout=3s \
             --health-retries=30 \
@@ -217,7 +217,7 @@ jobs:
 
           status="starting"
           for i in $(seq 1 60); do
-            status=$(docker inspect --format='{{.State.Health.Status}}' masar-backup-ci 2>/dev/null || echo "unknown")
+            status=$(docker inspect --format='{{.State.Health.Status}}' wafr-backup-ci 2>/dev/null || echo "unknown")
             echo "  attempt $i/60 → health: $status"
             [ "$status" = "healthy" ] && break
             sleep 2
@@ -225,7 +225,7 @@ jobs:
 
           if [ "$status" != "healthy" ]; then
             echo "❌ PostgreSQL did not become healthy in time."
-            docker logs masar-backup-ci || true
+            docker logs wafr-backup-ci || true
             exit 1
           fi
           echo "✅ PostgreSQL is healthy."
@@ -245,12 +245,12 @@ jobs:
 
       - name: Create and restore a verified backup
         env:
-          PAYROLL_DB_CONTAINER: masar-backup-ci
-          PAYROLL_DB_NAME: masar_backup_test
+          PAYROLL_DB_CONTAINER: wafr-backup-ci
+          PAYROLL_DB_NAME: wafr_backup_test
           PAYROLL_DB_USER: postgres
           PAYROLL_DB_ADMIN_USER: postgres
-          PAYROLL_BACKUP_DIR: ${{ runner.temp }}/masar-backups
-          PAYROLL_RESTORE_TEST_DB: masar_payroll_restore_test
+          PAYROLL_BACKUP_DIR: ${{ runner.temp }}/wafr-backups
+          PAYROLL_RESTORE_TEST_DB: wafr_payroll_restore_test
           RESTORE_DRILL_CONFIRM: 'YES'
         run: |
           ./scripts/postgres-backup.sh
@@ -263,7 +263,7 @@ jobs:
         if: always()
         run: |
           kill "$(cat backup-test-server.pid)" 2>/dev/null || true
-          docker rm -f masar-backup-ci 2>/dev/null || true
+          docker rm -f wafr-backup-ci 2>/dev/null || true
 
   legacy-migration-postgres:
     needs: verify
@@ -275,18 +275,18 @@ jobs:
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: masar_legacy_migration_test
+          POSTGRES_DB: wafr_legacy_migration_test
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U postgres -d masar_legacy_migration_test"
+          --health-cmd "pg_isready -U postgres -d wafr_legacy_migration_test"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
     env:
       PORT: 3035
-      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/masar_legacy_migration_test
-      DB_SCHEMA: masar_payroll
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/wafr_legacy_migration_test
+      DB_SCHEMA: wafr_payroll
       DB_SSL: 'false'
       ADMIN_USERNAME: admin
       ADMIN_PASSWORD: 'TestAdmin1!'

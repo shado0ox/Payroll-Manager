@@ -22,7 +22,7 @@ export function subscriptionState(company, now = Date.now()) {
 export function createAuthorizationService({ pool,q,cookieValue,sha256,developerContactPhone }) {
   async function auth(req, res, next) {
     try {
-      const token = cookieValue(req, 'masar_session');
+      const token = cookieValue(req, 'wafr_session');
       if (!token) return res.status(401).json({ error:'AUTH_REQUIRED' });
       const tokenHash = sha256(token);
       const result = await pool.query(`SELECT u.id,u.username,u.name,u.email,u.phone,u.role,u.company_ids,u.permissions,u.employee_id,u.is_active FROM (SELECT

@@ -70,8 +70,8 @@ const EmployeePortalView = lazy(() => import('./components/EmployeePortalView').
 const PublicWebsite = lazy(() => import('./components/PublicWebsite').then(module => ({ default:module.PublicWebsite })));
 const PublicAttendanceReport = lazy(() => import('./components/PublicAttendanceReport').then(module => ({ default:module.PublicAttendanceReport })));
 
-const TAB_SESSION_KEY = 'masar_tab_session_v1';
-const LAST_ACTIVITY_KEY = 'masar_last_activity_v1';
+const TAB_SESSION_KEY = 'wafr_tab_session_v1';
+const LAST_ACTIVITY_KEY = 'wafr_last_activity_v1';
 const IDLE_TIMEOUT_MS = 60 * 60 * 1000;
 const TAB_PATHS: Record<NavigationTab, string> = {
   dashboard: '/dashboard',
@@ -91,13 +91,13 @@ const TAB_PATHS: Record<NavigationTab, string> = {
 };
 const PATH_TABS = Object.fromEntries(Object.entries(TAB_PATHS).map(([tab, pathname]) => [pathname, tab])) as Record<string, NavigationTab>;
 const tabFromLocation = (): NavigationTab => PATH_TABS[window.location.pathname.replace(/\/$/, '') || '/'] || 'dashboard';
-type MasarAppState = ReturnType<typeof loadInitialState> & { temporaryEarnings: TemporaryEarningRecord[] };
+type WAFRAppState = ReturnType<typeof loadInitialState> & { temporaryEarnings: TemporaryEarningRecord[] };
 const payrollInputLockMessage = (language: 'ar' | 'en') => language === 'ar'
   ? 'هذه العملية مرتبطة بمسير رواتب معتمد/مرحل. يجب إرجاع المسير أولاً قبل تعديلها أو حذفها.'
   : 'This entry is linked to an approved/posted payroll run. Reopen the payroll run before editing or deleting it.';
 
-function applyRemoteRecordChanges(state: MasarAppState, changes: StateRecordChange[]): MasarAppState {
-  const next = { ...state } as MasarAppState;
+function applyRemoteRecordChanges(state: WAFRAppState, changes: StateRecordChange[]): WAFRAppState {
+  const next = { ...state } as WAFRAppState;
   for (const change of changes) {
     const collection = [...((next as any)[change.collection] || [])];
     if (change.operation === 'upsert') {
@@ -185,13 +185,13 @@ export const App: React.FC = () => {
   const { t, language } = useLanguage();
   const tr = (ar: string, en: string) => language === 'ar' ? ar : en;
   // Initialize full application state
-  const [state, setState] = useState<MasarAppState>(() => ({ ...loadInitialState(), temporaryEarnings: [] }));
+  const [state, setState] = useState<WAFRAppState>(() => ({ ...loadInitialState(), temporaryEarnings: [] }));
 
   const [activeTab, setActiveTabState] = useState<NavigationTab>(() => tabFromLocation());
   const navigateToTab = (tab: NavigationTab, options?: { replace?: boolean }) => {
     const pathname = TAB_PATHS[tab];
     if (window.location.pathname !== pathname) {
-      window.history[options?.replace ? 'replaceState' : 'pushState']({ masarTab: tab }, '', pathname);
+      window.history[options?.replace ? 'replaceState' : 'pushState']({ wafrTab: tab }, '', pathname);
     }
     setActiveTabState(tab);
   };
@@ -216,7 +216,7 @@ export const App: React.FC = () => {
     const checkVersion = async () => {
       try {
         const current = await api.version();
-        if (!cancelled && current.buildId && current.buildId !== __MASAR_BUILD_ID__) setUpdateAvailable(true);
+        if (!cancelled && current.buildId && current.buildId !== __WAFR_BUILD_ID__) setUpdateAvailable(true);
       } catch {
         // A deployment may briefly restart the container; the next poll/focus retries.
       }
@@ -326,7 +326,7 @@ export const App: React.FC = () => {
     const currentUser = state.currentUser;
     if (!currentUser || currentUser.role === 'EMPLOYEE') return;
     return api.subscribeStateEvents((event) => {
-      if (event.buildId && event.buildId !== __MASAR_BUILD_ID__) {
+      if (event.buildId && event.buildId !== __WAFR_BUILD_ID__) {
         setUpdateAvailable(true);
         return;
       }
@@ -341,12 +341,12 @@ export const App: React.FC = () => {
           const remote = await api.getState();
           if (!remote.state) return;
           setState(prev => {
-            const base = { ...prev, ...remote.state } as MasarAppState;
+            const base = { ...prev, ...remote.state } as WAFRAppState;
             const companies = base.companies || [];
             const activeCompanyId = companies.some(company => company.id === prev.activeCompanyId)
               ? prev.activeCompanyId
               : base.activeCompanyId || companies[0]?.id || '';
-            const next: MasarAppState = {
+            const next: WAFRAppState = {
               ...base,
               currentUser: prev.currentUser,
               activeRole: prev.currentUser?.role || prev.activeRole,
@@ -378,7 +378,7 @@ export const App: React.FC = () => {
     const onPopState = () => setActiveTabState(tabFromLocation());
     window.addEventListener('popstate', onPopState);
     if (window.location.pathname !== '/portal' && !window.location.pathname.startsWith('/attendance-report/') && (window.location.pathname === '/' || !PATH_TABS[window.location.pathname.replace(/\/$/, '')])) {
-      window.history.replaceState({ masarTab: activeTab }, '', TAB_PATHS[activeTab]);
+      window.history.replaceState({ wafrTab: activeTab }, '', TAB_PATHS[activeTab]);
     }
     return () => window.removeEventListener('popstate', onPopState);
   }, []);
@@ -493,7 +493,7 @@ export const App: React.FC = () => {
         const users = exists ? prev.users.map(candidate => candidate.id === result.record.id ? result.record : candidate) : [result.record,...prev.users];
         const currentUser = prev.currentUser?.id === result.record.id ? result.record : prev.currentUser;
         if (currentUser?.id === result.record.id) saveCurrentUser(result.record);
-        const next = { ...prev,users,currentUser } as MasarAppState;
+        const next = { ...prev,users,currentUser } as WAFRAppState;
         return next;
       });
       setDbStatus(prev => ({ ...prev,isCloudConnected:true,isChecking:false,lastError:null,lastSavedAt:result.updated_at }));
@@ -517,7 +517,7 @@ export const App: React.FC = () => {
       setDbStatus(prev => ({ ...prev,isChecking:true }));
       const result = await operation;
       setState(prev => {
-        const next = { ...prev,users:prev.users.filter(candidate => candidate.id !== result.id) } as MasarAppState;
+        const next = { ...prev,users:prev.users.filter(candidate => candidate.id !== result.id) } as WAFRAppState;
         return next;
       });
       setDbStatus(prev => ({ ...prev,isCloudConnected:true,isChecking:false,lastError:null,lastSavedAt:result.updated_at }));
@@ -558,7 +558,7 @@ export const App: React.FC = () => {
         const employees = result.archived ? (prev.employees || []).filter(candidate => candidate.id !== result.employee.id) : exists
           ? (prev.employees || []).map(candidate => candidate.id === result.employee.id ? result.employee as Employee : candidate)
           : [result.employee as Employee, ...(prev.employees || [])];
-        const next: MasarAppState = {
+        const next: WAFRAppState = {
           ...prev,
           employees: synchronizeEmployeeBankDetails(prev.companies || [], employees),
           archivedEmployees: result.archived
@@ -1025,8 +1025,8 @@ export const App: React.FC = () => {
     try {
       const { result, remote } = await deletion;
       setState(prev => {
-        const base = { ...prev,...remote.state } as MasarAppState;
-        const next:MasarAppState = {
+        const base = { ...prev,...remote.state } as WAFRAppState;
+        const next:WAFRAppState = {
           ...base,
           currentUser:prev.currentUser,
           activeRole:prev.currentUser?.role || prev.activeRole,
@@ -1191,7 +1191,7 @@ export const App: React.FC = () => {
       setDbStatus(prev => ({ ...prev,isChecking:true }));
       const remote = await operation;
       setState(prev => {
-        const base = { ...prev,...remote.state } as MasarAppState;
+        const base = { ...prev,...remote.state } as WAFRAppState;
         const companies = base.companies || [];
         return {
           ...base,
