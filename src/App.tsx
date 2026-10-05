@@ -1274,7 +1274,7 @@ export const App: React.FC = () => {
   }
 
   return (
-    <div className="flex h-screen w-full overflow-hidden bg-[#f8fafc] font-sans antialiased text-slate-900 selection:bg-emerald-500 selection:text-white">
+    <div className="wafr-app-shell flex h-[100dvh] w-full overflow-hidden bg-[#f3f7f6] font-sans antialiased text-slate-900 selection:bg-emerald-500 selection:text-white">
       {buildUpdateBanner}
       
       {/* Dark Sidebar */}
@@ -1289,7 +1289,7 @@ export const App: React.FC = () => {
       />
 
       {/* Main Column */}
-      <main className="flex-1 flex flex-col overflow-hidden bg-[#f8fafc]">
+      <main className="flex min-w-0 flex-1 flex-col overflow-hidden bg-transparent">
         
         {/* Top Header Navbar */}
         <Navbar
@@ -1339,8 +1339,8 @@ export const App: React.FC = () => {
         )}
 
         {/* Scrollable Workspace Content */}
-        <div className="flex-1 overflow-y-auto p-6 sm:p-8">
-          <div className="max-w-7xl mx-auto w-full">
+        <div className="wafr-workspace flex-1 overflow-y-auto p-6 sm:p-8">
+          <div className="mx-auto w-full max-w-[1600px]">
             <Suspense fallback={<ViewLoadingFallback language={language} />}>
             {activeTab === 'dashboard' && hasPermission(state.currentUser, 'VIEW_DASHBOARD') && (
               <DashboardView

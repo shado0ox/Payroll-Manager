@@ -12,6 +12,7 @@ import { Company, UserAccount, NavigationTab, UserRole } from '../types';
 import { DatabaseStatus } from '../utils/databaseService';
 import { useLanguage } from '../i18n/LanguageContext';
 import { isDeveloperAccount } from '../utils/permissions';
+import { WafrMark } from './WafrBrand';
 
 interface NavbarProps {
   companies: Company[];
@@ -48,10 +49,11 @@ export const Navbar: React.FC<NavbarProps> = ({
   const canViewDatabaseStatus = isDeveloperAccount(currentUser);
 
   return (
-    <header className="min-h-16 bg-white border-b border-slate-200 flex items-center justify-between gap-2 px-3 py-2 sm:px-5 lg:px-8 shadow-xs shrink-0 z-20">
+    <header className="min-h-16 border-b border-slate-200/80 bg-white/90 flex items-center justify-between gap-2 px-3 py-2 sm:px-5 lg:px-8 shadow-sm backdrop-blur-xl shrink-0 z-20">
       
       {/* Left: Summary Title & Company Badge */}
       <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-4">
+        <WafrMark className="h-9 w-9 md:hidden" />
         <h2 className="hidden text-base font-semibold text-slate-800 truncate xl:block xl:text-lg">
           {t('payrollSummary')}
         </h2>

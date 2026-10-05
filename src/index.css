@@ -24,6 +24,37 @@ html {
 body {
   min-height: 100dvh;
   overflow: hidden;
+  background: #f3f7f6;
+}
+
+/* WAFR product shell: one visual language shared by every operational screen. */
+.wafr-app-shell {
+  --wafr-navy: #0a1628;
+  --wafr-emerald: #10b981;
+  --wafr-surface: #ffffff;
+  background:
+    radial-gradient(circle at 88% 0%, rgba(16, 185, 129, .08), transparent 30rem),
+    #f3f7f6;
+}
+
+.wafr-workspace {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  scroll-behavior: smooth;
+}
+
+.wafr-workspace :where(section, article, .rounded-xl, .rounded-2xl) {
+  --tw-ring-color: rgba(16, 185, 129, .18);
+}
+
+.wafr-workspace :where(input, select, textarea):focus {
+  border-color: rgba(16, 185, 129, .72);
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, .11);
+  outline: none;
+}
+
+.wafr-workspace :where(button, a) {
+  -webkit-tap-highlight-color: transparent;
 }
 
 /* The employee portal owns its scroll container because the app shell locks body scrolling. */
@@ -96,8 +127,24 @@ html[dir="ltr"] .text-right {
 
   /* The mobile navigation is fixed at the bottom. Keep the last rows/buttons visible above it. */
   #root > div > main > .flex-1.overflow-y-auto {
-    padding: 1rem !important;
-    padding-bottom: calc(6.75rem + env(safe-area-inset-bottom)) !important;
+    padding: .85rem !important;
+    padding-bottom: calc(6.9rem + env(safe-area-inset-bottom)) !important;
+  }
+
+  .wafr-app-shell header {
+    padding-top: calc(.5rem + env(safe-area-inset-top));
+  }
+
+  .wafr-mobile-nav {
+    scroll-snap-type: x proximity;
+  }
+
+  .wafr-mobile-nav > button {
+    scroll-snap-align: center;
+  }
+
+  .wafr-workspace :where(.rounded-xl, .rounded-2xl, .rounded-3xl) {
+    border-radius: 1rem;
   }
 
   /* Prevent wide content cards/tables from forcing the entire application off-screen. */

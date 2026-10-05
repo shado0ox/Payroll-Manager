@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { useLanguage } from '../i18n/LanguageContext';
-import { AlertCircle, ArrowRight, Building2, CheckCircle2, Eye, EyeOff, Hash, KeyRound, Lock, Mail, Phone, Route, ShieldCheck, Sparkles, User as UserIcon } from 'lucide-react';
+import { AlertCircle, ArrowRight, Building2, CheckCircle2, Eye, EyeOff, Hash, KeyRound, Lock, Mail, Phone, ShieldCheck, Sparkles, User as UserIcon } from 'lucide-react';
 import { api } from '../utils/api';
 import { isStrongPassword, passwordPolicyMessage } from '../utils/passwordPolicy';
+import { WafrBrand } from './WafrBrand';
 
 interface LoginViewProps {
   defaultCompanyCode?: string;
@@ -235,7 +236,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ defaultCompanyCode = '101'
       <div className="relative z-10 mx-auto grid min-h-[100dvh] w-full max-w-[1440px] lg:grid-cols-[1.08fr_.92fr]">
         <section className="relative hidden min-w-0 overflow-hidden border-e border-white/5 px-8 py-8 lg:flex xl:px-14 xl:py-12 2xl:px-20 2xl:py-16">
           <div className="relative z-10 flex w-full flex-col">
-            <WAFRLogo />
+            <WafrBrand />
             <div className="my-auto max-w-xl py-8 xl:py-12 2xl:py-16">
               <div className="mb-7 inline-flex items-center gap-2 rounded-full border border-emerald-300/20 bg-emerald-400/10 px-3.5 py-2 text-xs font-bold text-emerald-200 backdrop-blur-sm">
                 <Sparkles className="h-3.5 w-3.5" />{isArabic ? 'رحلة مالية أكثر وضوحًا' : 'A clearer financial journey'}
@@ -262,7 +263,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ defaultCompanyCode = '101'
         <section className="flex min-h-[100dvh] min-w-0 items-center justify-center px-4 py-6 sm:px-8 lg:px-10 xl:px-16 2xl:px-20">
           <div className="w-full min-w-0 max-w-[460px] py-2 sm:py-4">
             <div className="mb-8 flex items-center justify-between lg:justify-end">
-              <div className="lg:hidden"><WAFRLogo compact /></div>
+              <div className="lg:hidden"><WafrBrand compact /></div>
               <button type="button" data-no-translate onClick={toggleLanguage} className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs font-bold text-slate-300 backdrop-blur-md transition hover:border-emerald-400/30 hover:bg-white/10 hover:text-white">{isArabic ? 'English' : 'العربية'}</button>
             </div>
             <div className="wafr-login-card w-full min-w-0 rounded-[2rem] border border-white/10 bg-slate-900/60 p-5 shadow-2xl shadow-black/30 backdrop-blur-2xl sm:p-8 xl:p-9">
@@ -381,13 +382,6 @@ export const LoginView: React.FC<LoginViewProps> = ({ defaultCompanyCode = '101'
     </main>
   );
 };
-
-const WAFRLogo: React.FC<{ compact?: boolean }> = ({ compact }) => (
-  <div className="flex items-center gap-3" aria-label="WAFR">
-    <div className={`${compact ? 'h-11 w-11 rounded-2xl' : 'h-13 w-13 rounded-[1.15rem]'} relative flex items-center justify-center overflow-hidden border border-emerald-300/25 bg-gradient-to-br from-emerald-400 to-teal-600 text-slate-950 shadow-lg shadow-emerald-950/30`}><Route className={compact ? 'h-6 w-6' : 'h-7 w-7'} strokeWidth={2.6} /><span className="absolute end-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-white/80" /></div>
-    <div className="leading-none"><div className={`${compact ? 'text-xl' : 'text-2xl'} font-black tracking-tight text-white`}>وفر <span className="font-semibold text-emerald-300">WAFR</span></div>{!compact && <div className="mt-1.5 text-[10px] font-bold tracking-[.22em] text-slate-500">PAYROLL & PEOPLE</div>}</div>
-  </div>
-);
 
 const LoginField: React.FC<{ label: string; icon: React.ReactNode; children: React.ReactNode }> = ({ label, icon, children }) => (
   <label className="block"><span className="mb-2 block text-xs font-bold text-slate-300">{label}</span><span className="relative block"><span className="absolute start-4 top-1/2 z-10 -translate-y-1/2 text-slate-500">{icon}</span>{children}</span></label>

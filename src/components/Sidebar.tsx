@@ -18,6 +18,7 @@ import {
 import { NavigationTab, UserRole, UserAccount, Company } from '../types';
 import { useLanguage } from '../i18n/LanguageContext';
 import { hasPermission, TAB_PERMISSION } from '../utils/permissions';
+import { WafrBrand } from './WafrBrand';
 
 interface SidebarProps {
   activeTab: NavigationTab;
@@ -70,31 +71,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const avatarLetter = currentUser?.name ? currentUser.name.charAt(0) : (language === 'ar' ? 'م' : 'U');
 
   return (
-    <aside className="fixed inset-x-0 bottom-0 z-50 flex h-auto w-full shrink-0 flex-row border-t border-slate-700/80 bg-[#1e293b] text-white shadow-2xl md:sticky md:top-0 md:z-auto md:h-screen md:w-64 md:flex-col md:border-t-0 md:shadow-xl">
+    <aside className="fixed inset-x-0 bottom-0 z-50 flex h-auto w-full shrink-0 flex-row border-t border-white/10 bg-[#0a1628]/95 text-white shadow-[0_-12px_40px_rgba(2,8,23,.22)] backdrop-blur-xl md:sticky md:top-0 md:z-auto md:h-screen md:w-72 md:flex-col md:border-t-0 md:bg-[#0a1628] md:shadow-2xl">
       {/* Brand Header: desktop only. On phones the bottom navigation keeps the workspace wide. */}
-      <div className="hidden border-b border-slate-700/80 p-5 md:block">
-        <div className="flex items-center gap-3">
-          {company?.logo ? (
-            <div className="w-10 h-10 rounded-xl bg-white p-1 border border-slate-600 shadow-sm flex items-center justify-center shrink-0 overflow-hidden">
-              <img 
-                src={company.logo} 
-                alt={company.nameAr} 
-                className="w-full h-full object-contain" 
-              />
-            </div>
-          ) : (
-            <div className="w-10 h-10 rounded-xl bg-emerald-600 border border-emerald-500/40 shadow-sm flex items-center justify-center text-white shrink-0 font-bold">
-              <Building2 className="w-5 h-5" />
-            </div>
-          )}
-          <div className="min-w-0">
-            <h1 className="text-base font-bold tracking-tight text-white truncate">
-              {t('payrollSystem')}
-            </h1>
-            <p className="text-[11px] text-slate-400 truncate font-medium">
-              {company ? (language === 'en' ? company.nameEn || company.nameAr : company.nameAr) : t('wageCompliance')}
-            </p>
-          </div>
+      <div className="hidden border-b border-white/10 p-5 md:block">
+        <WafrBrand />
+        <div className="mt-4 flex items-center gap-2 rounded-2xl border border-white/10 bg-white/[.055] p-2.5">
+          {company?.logo ? <img src={company.logo} alt={company.nameAr} className="h-8 w-8 rounded-lg bg-white object-contain p-0.5" /> : <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-400/15 text-emerald-300"><Building2 className="h-4 w-4" /></span>}
+          <p className="min-w-0 truncate text-xs font-bold text-slate-200">{company ? (language === 'en' ? company.nameEn || company.nameAr : company.nameAr) : t('wageCompliance')}</p>
         </div>
       </div>
 
@@ -111,17 +94,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
               onClick={() => onTabChange(item.id)}
               title={item.label}
               aria-current={isActive ? 'page' : undefined}
-              className={`flex min-w-[76px] flex-col items-center justify-center gap-1 rounded-xl px-2 py-2 text-center text-[10px] transition-colors cursor-pointer md:w-full md:min-w-0 md:flex-row md:justify-between md:p-3 md:text-right md:text-sm ${
+              className={`flex min-w-[76px] flex-col items-center justify-center gap-1 rounded-2xl px-2 py-2 text-center text-[10px] transition-all cursor-pointer md:w-full md:min-w-0 md:flex-row md:justify-between md:p-3 md:text-right md:text-sm ${
                 isActive
-                  ? 'bg-emerald-600 text-white font-medium shadow-sm'
-                  : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                  ? 'bg-emerald-500 text-[#071521] font-black shadow-lg shadow-emerald-950/30 md:translate-x-0.5'
+                  : 'text-slate-300 hover:bg-white/[.07] hover:text-white'
               }`}
             >
               <div className="flex min-w-0 flex-col items-center gap-1 md:flex-row md:space-x-3 md:space-x-reverse">
                 <Icon className="h-5 w-5 shrink-0 md:hidden" />
                 <span 
                   className={`hidden w-2 h-2 rounded-full shrink-0 md:block ${
-                    isActive ? 'bg-white' : 'bg-slate-500'
+                    isActive ? 'bg-[#071521]' : 'bg-slate-500'
                   }`} 
                 />
                 <span className="max-w-[72px] truncate md:max-w-none">{item.label}</span>

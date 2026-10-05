@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { ArrowLeft, BarChart3, Building2, Check, FileCheck2, Fingerprint, Globe2, LockKeyhole, Route, ShieldCheck, Users } from 'lucide-react';
+import { ArrowLeft, BarChart3, Building2, Check, FileCheck2, Fingerprint, Globe2, LockKeyhole, ShieldCheck, Users } from 'lucide-react';
 import { useLanguage } from '../i18n/LanguageContext';
+import { WafrBrand } from './WafrBrand';
 
 const publicPages = ['/','/pricing','/privacy','/terms'];
 const go = (path:string) => { window.location.assign(path); };
@@ -63,7 +64,7 @@ const LegalPage = ({ kind,ar }:{ kind:'privacy'|'terms';ar:boolean }) => {
 
 const PublicHeader = ({ ar }:{ ar:boolean }) => <header className="sticky top-0 z-40 border-b border-slate-200/80 bg-white/90 backdrop-blur-xl" dir={ar ? 'rtl' : 'ltr'}>
   <div className="mx-auto flex h-18 max-w-7xl items-center justify-between px-5 sm:px-8">
-    <button type="button" onClick={() => go('/')} className="flex items-center gap-3"><span className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500 text-slate-950"><Route className="h-5 w-5" /></span><span className="text-lg font-black">وفر <span className="text-emerald-600">WAFR</span></span></button>
+    <button type="button" onClick={() => go('/')}><WafrBrand compact inverse={false} showTagline={false} /></button>
     <nav className="hidden items-center gap-7 text-sm font-bold text-slate-600 md:flex"><a href="/#features">{ar ? 'المزايا' : 'Features'}</a><a href="/pricing">{ar ? 'الباقات' : 'Pricing'}</a><a href="/privacy">{ar ? 'الخصوصية' : 'Privacy'}</a></nav>
     <a href="/login" className="rounded-xl bg-slate-950 px-5 py-2.5 text-sm font-black text-white">{ar ? 'دخول النظام' : 'Sign in'}</a>
   </div>
