@@ -73,6 +73,7 @@ const PublicAttendanceReport = lazy(() => import('./components/PublicAttendanceR
 const TAB_SESSION_KEY = 'wafr_tab_session_v1';
 const LAST_ACTIVITY_KEY = 'wafr_last_activity_v1';
 const IDLE_TIMEOUT_MS = 60 * 60 * 1000;
+const PUBLIC_WEBSITE_PATHS = ['/','/pricing','/privacy','/terms'] as const;
 const TAB_PATHS: Record<NavigationTab, string> = {
   dashboard: '/dashboard',
   company_profile: '/company',
@@ -377,7 +378,9 @@ export const App: React.FC = () => {
   useEffect(() => {
     const onPopState = () => setActiveTabState(tabFromLocation());
     window.addEventListener('popstate', onPopState);
-    if (window.location.pathname !== '/portal' && !window.location.pathname.startsWith('/attendance-report/') && (window.location.pathname === '/' || !PATH_TABS[window.location.pathname.replace(/\/$/, '')])) {
+    const pathname = window.location.pathname.replace(/\/$/, '') || '/';
+    const isPublicWebsitePath = PUBLIC_WEBSITE_PATHS.includes(pathname as typeof PUBLIC_WEBSITE_PATHS[number]);
+    if (!isPublicWebsitePath && window.location.pathname !== '/portal' && !window.location.pathname.startsWith('/attendance-report/') && !PATH_TABS[pathname]) {
       window.history.replaceState({ wafrTab: activeTab }, '', TAB_PATHS[activeTab]);
     }
     return () => window.removeEventListener('popstate', onPopState);
@@ -1217,7 +1220,7 @@ export const App: React.FC = () => {
   const buildUpdateBanner = updateAvailable ? <BuildUpdateBanner language={language} onReload={handleBuildReload} /> : null;
 
   if (window.location.pathname.startsWith('/attendance-report/')) return <Suspense fallback={<div className="min-h-screen bg-slate-100"/>}><PublicAttendanceReport/></Suspense>;
-  if (['/','/pricing','/privacy','/terms'].includes(window.location.pathname)) {
+  if (PUBLIC_WEBSITE_PATHS.includes(window.location.pathname as typeof PUBLIC_WEBSITE_PATHS[number])) {
     return <Suspense fallback={<div className="min-h-screen bg-slate-950" />}><PublicWebsite /></Suspense>;
   }
 

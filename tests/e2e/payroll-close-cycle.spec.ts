@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 
 const login = async (page:any) => {
-  await page.goto('/');
+  await page.goto('/login');
   const form = page.locator('form').first();
   await form.locator('input[autocomplete="organization"]').fill('101');
   await form.locator('input[autocomplete="username"]').fill('admin');
