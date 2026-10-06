@@ -49,7 +49,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   const canViewDatabaseStatus = isDeveloperAccount(currentUser);
 
   return (
-    <header className="min-h-16 border-b border-slate-200/80 bg-white/90 flex items-center justify-between gap-2 px-3 py-2 sm:px-5 lg:px-8 shadow-sm backdrop-blur-xl shrink-0 z-20">
+    <header className="wafr-topbar min-h-16 shrink-0 z-20 flex items-center justify-between gap-2 border-b border-slate-200/80 px-3 py-2 backdrop-blur-xl sm:px-5 lg:px-8">
       
       {/* Left: Summary Title & Company Badge */}
       <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-4">
@@ -59,7 +59,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         </h2>
 
         {/* Company Info Badge (Fixed per Login) */}
-        <div className="flex min-w-0 max-w-full items-center gap-2 rounded-xl border border-slate-200 bg-slate-100/90 px-2 py-1.5 text-xs font-semibold text-slate-800 sm:px-3">
+        <div className="flex min-w-0 max-w-full items-center gap-2 rounded-lg border border-slate-200 bg-[#edf3f1] px-2 py-1.5 text-xs font-semibold text-slate-800 sm:px-3">
           {activeCompany.logo ? (
             <img 
               src={activeCompany.logo} 
@@ -135,7 +135,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         {/* Real Logged In User Pill */}
         {currentUser && (
           <div className="hidden items-center gap-2 px-3 py-1.5 bg-slate-50 rounded-xl border border-slate-200 sm:flex">
-            <div className="w-6 h-6 rounded-lg bg-emerald-600 text-white text-[11px] font-bold flex items-center justify-center">
+            <div className="w-6 h-6 rounded-lg bg-[#0f766e] text-white text-[11px] font-bold flex items-center justify-center">
               {currentUser.name.charAt(0)}
             </div>
             <div className="hidden lg:block text-right">
