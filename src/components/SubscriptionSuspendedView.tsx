@@ -57,7 +57,7 @@ export const SubscriptionSuspendedView: React.FC<SubscriptionSuspendedViewProps>
   };
 
   return (
-    <main className="min-h-screen bg-slate-100 p-4 text-slate-900 sm:p-7" dir={ar ? 'rtl' : 'ltr'}>
+    <main className="wafr-page-scroll bg-slate-100 p-4 text-slate-900 sm:p-7" dir={ar ? 'rtl' : 'ltr'}>
       <div className="mx-auto max-w-7xl space-y-5">
         <section className="rounded-3xl border border-amber-300 bg-gradient-to-br from-amber-50 to-white p-6 shadow-sm">
           <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
