@@ -22,13 +22,13 @@ interface Props {
 
 export const PayrollPaymentBatchModal = React.memo(function PayrollPaymentBatchModal({ form, selectedCount, total, onChange, onClose, onSubmit, tr }: Props) {
   return (
-    <div className="fixed inset-0 z-[100] bg-slate-950/65 backdrop-blur-sm flex items-center justify-center p-4">
-      <div data-no-translate className="bg-white rounded-3xl max-w-lg w-full shadow-2xl border border-slate-200 overflow-hidden">
+    <div className="fixed inset-0 z-[100] flex items-start justify-center overflow-x-hidden overflow-y-auto bg-slate-950/65 p-3 backdrop-blur-sm sm:items-center sm:p-4">
+      <div data-no-translate className="my-auto flex max-h-[calc(100dvh-1.5rem)] w-full max-w-lg flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl sm:max-h-[calc(100dvh-2rem)]">
         <div className="bg-slate-900 text-white p-5 flex items-center justify-between">
           <div className="flex items-center gap-3"><CircleDollarSign className="w-6 h-6 text-emerald-400" /><div><h3 className="font-black">{tr('إنشاء دفعة تحويل رواتب', 'Create Payroll Payment Batch')}</h3><p className="text-xs text-slate-400">{selectedCount} {tr('موظف', 'employees')} • {formatSAR(total)}</p></div></div>
           <button type="button" onClick={onClose} className="p-1.5 hover:bg-white/10 rounded-lg"><X className="w-5 h-5" /></button>
         </div>
-        <div className="p-6 space-y-4 text-xs">
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-6 text-xs">
           <div><label className="block font-bold text-slate-700 mb-1">{tr('طريقة التحويل *', 'Payment method *')}</label><select value={form.method} onChange={event => onChange({ ...form, method: event.target.value as PaymentMethod })} className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold"><option value="WPS">{tr('حماية الأجور WPS', 'WPS')}</option><option value="BANK_TRANSFER">{tr('تحويل بنكي', 'Bank transfer')}</option><option value="CASH">{tr('دفع نقدي', 'Cash')}</option></select></div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div><label className="block font-bold text-slate-700 mb-1">{tr('تاريخ التحويل المجدول *', 'Scheduled payment date *')}</label><input type="date" required value={form.scheduledDate} onChange={event => onChange({ ...form, scheduledDate: event.target.value })} className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl" /></div>
