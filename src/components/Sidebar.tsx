@@ -71,7 +71,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const avatarLetter = currentUser?.name ? currentUser.name.charAt(0) : (language === 'ar' ? 'م' : 'U');
 
   return (
-    <aside className="fixed inset-x-0 bottom-0 z-50 flex h-auto w-full shrink-0 flex-row border-t border-white/10 bg-[#0a1628]/95 text-white shadow-[0_-12px_40px_rgba(2,8,23,.22)] backdrop-blur-xl md:sticky md:top-0 md:z-auto md:h-screen md:w-72 md:flex-col md:border-t-0 md:bg-[#0a1628] md:shadow-2xl">
+    <aside className="wafr-sidebar fixed inset-x-0 bottom-0 z-50 flex h-auto w-full shrink-0 flex-row border-t border-white/10 bg-[#081a27]/95 text-white backdrop-blur-xl md:sticky md:top-0 md:z-auto md:h-screen md:w-72 md:flex-col md:border-t-0">
       {/* Brand Header: desktop only. On phones the bottom navigation keeps the workspace wide. */}
       <div className="hidden border-b border-white/10 p-5 md:block">
         <WafrBrand />
@@ -94,17 +94,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
               onClick={() => onTabChange(item.id)}
               title={item.label}
               aria-current={isActive ? 'page' : undefined}
-              className={`flex min-w-[76px] flex-col items-center justify-center gap-1 rounded-2xl px-2 py-2 text-center text-[10px] transition-all cursor-pointer md:w-full md:min-w-0 md:flex-row md:justify-between md:p-3 md:text-right md:text-sm ${
+              className={`wafr-sidebar-item flex min-w-[76px] flex-col items-center justify-center gap-1 px-2 py-2 text-center text-[10px] transition-colors cursor-pointer md:w-full md:min-w-0 md:flex-row md:justify-between md:px-4 md:py-3 md:text-right md:text-sm ${
                 isActive
-                  ? 'bg-emerald-500 text-[#071521] font-black shadow-lg shadow-emerald-950/30 md:translate-x-0.5'
-                  : 'text-slate-300 hover:bg-white/[.07] hover:text-white'
+                  ? 'bg-white/[.075] text-teal-200 font-black'
+                  : 'text-slate-300 hover:bg-white/[.045] hover:text-white'
               }`}
             >
               <div className="flex min-w-0 flex-col items-center gap-1 md:flex-row md:space-x-3 md:space-x-reverse">
                 <Icon className="h-5 w-5 shrink-0 md:hidden" />
                 <span 
                   className={`hidden w-2 h-2 rounded-full shrink-0 md:block ${
-                    isActive ? 'bg-[#071521]' : 'bg-slate-500'
+                    isActive ? 'bg-teal-300' : 'bg-slate-600'
                   }`} 
                 />
                 <span className="max-w-[72px] truncate md:max-w-none">{item.label}</span>
@@ -115,7 +115,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </nav>
 
       {/* User Profile Footer: desktop only; mobile uses the top navbar for session actions. */}
-      <div className="hidden p-4 border-t border-slate-700/80 bg-[#1e293b] space-y-2.5 md:block">
+      <div className="hidden space-y-2.5 border-t border-white/10 bg-black/10 p-4 md:block">
         <div className="flex items-center justify-between p-2.5 bg-slate-800/90 rounded-xl border border-slate-700/60">
           <div className="flex items-center min-w-0">
             <div className="w-8 h-8 rounded-lg bg-emerald-500 flex items-center justify-center font-bold text-white shrink-0 shadow-sm text-xs">
