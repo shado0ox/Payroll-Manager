@@ -353,3 +353,48 @@ html[dir="ltr"] .text-right {
     align-items: flex-start;
   }
 }
+
+
+/* Uizze UI craft pass: interaction clarity, financial readability, and motion preferences. */
+.wafr-app-shell :where(button, a, input, select, textarea):focus-visible,
+.wafr-login :where(button, a, input, select, textarea):focus-visible,
+.wafr-public-site :where(button, a, input, select, textarea):focus-visible {
+  outline: 3px solid rgba(45, 212, 191, .72);
+  outline-offset: 3px;
+}
+
+.wafr-app-shell :where(button, [role="button"], input, select, textarea):disabled,
+.wafr-login :where(button, [role="button"], input, select, textarea):disabled {
+  cursor: not-allowed;
+}
+
+.wafr-app-shell :where([aria-busy="true"], .animate-spin),
+.wafr-login :where([aria-busy="true"], .animate-spin) {
+  cursor: progress;
+}
+
+.wafr-workspace :where(table, .font-mono),
+.wafr-login :where(.font-mono) {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1, "zero" 1;
+}
+
+.wafr-login .text-slate-600 {
+  color: #94a3b8;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wafr-workspace,
+  .wafr-page-scroll,
+  .wafr-public-site,
+  .wafr-login {
+    scroll-behavior: auto;
+  }
+
+  .wafr-app-shell *,
+  .wafr-login *,
+  .wafr-public-site * {
+    transition-duration: .01ms !important;
+    transition-delay: 0ms !important;
+  }
+}

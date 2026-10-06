@@ -27,3 +27,13 @@ test('application dialogs remain scrollable on short screens', () => {
   assert.match(paymentModal, /max-h-\[calc\(100dvh-/);
   assert.match(paymentModal, /overflow-y-auto/);
 });
+
+
+test('interaction states remain visible and motion preferences are respected', () => {
+  const css = read('src/index.css');
+
+  assert.match(css, /:focus-visible/);
+  assert.match(css, /font-variant-numeric:\s*tabular-nums/);
+  assert.match(css, /@media \(prefers-reduced-motion:\s*reduce\)/);
+  assert.match(css, /cursor:\s*not-allowed/);
+});
