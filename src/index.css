@@ -338,3 +338,18 @@ html[dir="ltr"] .text-right {
     margin-block-end: .7rem;
   }
 }
+
+
+/* Every full-screen dialog remains reachable on short displays and browser zoom. */
+.wafr-app-shell :where(.fixed.inset-0) {
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+@media (max-height: 760px) {
+  .wafr-app-shell :where(.fixed.inset-0) {
+    align-items: flex-start;
+  }
+}
