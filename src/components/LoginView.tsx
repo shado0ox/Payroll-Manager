@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useLanguage } from '../i18n/LanguageContext';
-import { AlertCircle, ArrowRight, Building2, CheckCircle2, Eye, EyeOff, Hash, KeyRound, Lock, Mail, Phone, ShieldCheck, Sparkles, User as UserIcon } from 'lucide-react';
+import { AlertCircle, ArrowRight, Building2, CheckCircle2, Eye, EyeOff, Hash, KeyRound, Lock, Mail, Phone, ShieldCheck, User as UserIcon } from 'lucide-react';
 import { api } from '../utils/api';
 import { isStrongPassword, passwordPolicyMessage } from '../utils/passwordPolicy';
 import { WafrBrand } from './WafrBrand';
@@ -10,14 +10,6 @@ interface LoginViewProps {
   onLogin: (companyCode: string,username: string,password: string) => Promise<void>;
   onEmailCodeLogin: (requestId: string,code: string) => Promise<void>;
 }
-
-const currencies = [
-  { symbol: 'SR', ar: 'ريال سعودي', en: 'Saudi Riyal', pos: 'wafr-coin-one' },
-  { symbol: '$', ar: 'دولار أمريكي', en: 'US Dollar', pos: 'wafr-coin-two' },
-  { symbol: 'E£', ar: 'جنيه مصري', en: 'Egyptian Pound', pos: 'wafr-coin-three' },
-  { symbol: '€', ar: 'يورو', en: 'Euro', pos: 'wafr-coin-four' },
-  { symbol: '£', ar: 'جنيه إسترليني', en: 'Pound Sterling', pos: 'wafr-coin-five' },
-];
 
 const normalizeArabicNumbers = (val: string): string => {
   const digits = ['٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩'];
@@ -234,29 +226,26 @@ export const LoginView: React.FC<LoginViewProps> = ({ defaultCompanyCode = '101'
       <div className="absolute -top-48 -start-40 h-[32rem] w-[32rem] rounded-full bg-emerald-500/15 blur-[110px] pointer-events-none" />
       <div className="absolute -bottom-56 -end-32 h-[34rem] w-[34rem] rounded-full bg-cyan-500/10 blur-[120px] pointer-events-none" />
       <div className="relative z-10 mx-auto grid min-h-[100dvh] w-full max-w-[1440px] lg:grid-cols-[1.08fr_.92fr]">
-        <section className="relative hidden min-w-0 overflow-hidden border-e border-white/5 px-8 py-8 lg:flex xl:px-14 xl:py-12 2xl:px-20 2xl:py-16">
+        <section className="wafr-login-ledger relative hidden min-w-0 overflow-hidden border-e border-white/5 px-8 py-8 lg:flex xl:px-14 xl:py-12 2xl:px-20 2xl:py-16">
           <div className="relative z-10 flex w-full flex-col">
             <WafrBrand />
             <div className="my-auto max-w-xl py-8 xl:py-12 2xl:py-16">
-              <div className="mb-7 inline-flex items-center gap-2 rounded-full border border-emerald-300/20 bg-emerald-400/10 px-3.5 py-2 text-xs font-bold text-emerald-200 backdrop-blur-sm">
-                <Sparkles className="h-3.5 w-3.5" />{isArabic ? 'رحلة مالية أكثر وضوحًا' : 'A clearer financial journey'}
-              </div>
-              <h1 className="text-5xl font-black leading-[1.15] tracking-tight text-white xl:text-6xl">
-                {isArabic ? 'رواتبك على' : 'Your payroll,'}
-                <span className="block bg-gradient-to-l from-emerald-300 via-teal-200 to-cyan-300 bg-clip-text text-transparent">{isArabic ? 'مع وفر.' : 'with WAFR.'}</span>
+              <h1 className="max-w-xl text-5xl font-black leading-[1.12] tracking-tight text-white xl:text-6xl">
+                {isArabic ? 'من الموظف إلى القيد، كل ريال له مسار واضح.' : 'From employee to journal, every riyal stays traceable.'}
               </h1>
-              <p className="mt-6 max-w-lg text-base leading-8 text-slate-400 xl:text-lg">{isArabic ? 'منصة موحدة لإدارة الرواتب والموظفين والالتزامات المالية بدقة وأمان.' : 'One secure workspace for payroll, people, and financial compliance.'}</p>
-              <div className="mt-9 flex flex-wrap gap-x-6 gap-y-3 text-sm text-slate-300">
-                {[isArabic ? 'حسابات دقيقة' : 'Accurate calculations', isArabic ? 'بيانات آمنة' : 'Secure data', isArabic ? 'تقارير فورية' : 'Instant reports'].map(feature => (
-                  <span key={feature} className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-emerald-400" />{feature}</span>
-                ))}
+              <p className="mt-6 max-w-lg text-base leading-8 text-slate-300 xl:text-lg">{isArabic ? 'وفر يجمع المسير والحضور والإجازات والتأمينات في سجل عمل واحد قابل للمراجعة.' : 'WAFR joins payroll, attendance, leave and GOSI in one reviewable operating record.'}</p>
+              <div className="mt-10 max-w-lg border-s border-teal-400/30 ps-5">
+                {[
+                  [isArabic ? 'جهّز' : 'Prepare',isArabic ? 'بيانات الموظفين والحضور' : 'Employee and attendance data'],
+                  [isArabic ? 'راجع' : 'Review',isArabic ? 'الاستحقاقات والخصومات' : 'Earnings and deductions'],
+                  [isArabic ? 'اعتمد' : 'Approve',isArabic ? 'المسير والقيد وملف الدفع' : 'Payroll, journal and payment file'],
+                ].map(([title,body],index) => <div key={title} className="wafr-cycle-step">
+                  <span className="wafr-cycle-mark">{index + 1}</span>
+                  <div><strong className="block text-sm text-white">{title}</strong><span className="mt-1 block text-sm text-slate-400">{body}</span></div>
+                </div>)}
               </div>
             </div>
             <div className="flex items-center gap-3 text-xs text-slate-500"><ShieldCheck className="h-4 w-4 text-emerald-500" />{isArabic ? 'حماية وخصوصية على مستوى المؤسسات' : 'Enterprise-grade security and privacy'}</div>
-          </div>
-          <div className="wafr-currency-stage absolute inset-0 pointer-events-none" aria-hidden="true">
-            <div className="wafr-orbit wafr-orbit-outer" /><div className="wafr-orbit wafr-orbit-inner" />
-            {currencies.map(currency => <div key={currency.symbol} className={`wafr-coin ${currency.pos}`}><span>{currency.symbol}</span><small>{isArabic ? currency.ar : currency.en}</small></div>)}
           </div>
         </section>
 
@@ -264,9 +253,9 @@ export const LoginView: React.FC<LoginViewProps> = ({ defaultCompanyCode = '101'
           <div className="w-full min-w-0 max-w-[460px] py-2 sm:py-4">
             <div className="mb-8 flex items-center justify-between lg:justify-end">
               <div className="lg:hidden"><WafrBrand compact /></div>
-              <button type="button" data-no-translate onClick={toggleLanguage} className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs font-bold text-slate-300 backdrop-blur-md transition hover:border-emerald-400/30 hover:bg-white/10 hover:text-white">{isArabic ? 'English' : 'العربية'}</button>
+              <button type="button" data-no-translate onClick={toggleLanguage} className="rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-xs font-bold text-slate-300 backdrop-blur-md transition hover:border-emerald-400/30 hover:bg-white/10 hover:text-white">{isArabic ? 'English' : 'العربية'}</button>
             </div>
-            <div className="wafr-login-card w-full min-w-0 rounded-[2rem] border border-white/10 bg-slate-900/60 p-5 shadow-2xl shadow-black/30 backdrop-blur-2xl sm:p-8 xl:p-9">
+            <div className="wafr-login-card w-full min-w-0 border border-white/10 bg-slate-900/60 p-5 shadow-2xl shadow-black/30 backdrop-blur-2xl sm:p-8 xl:p-9">
               <div className="mb-8">
                 <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-2xl border border-emerald-300/20 bg-emerald-400/10 text-emerald-300"><KeyRound className="h-5 w-5" /></div>
                 <h2 className="text-2xl font-black tracking-tight text-white">{mode === 'LOGIN' ? t('loginTitle') : ['VERIFY','EMPLOYEE_VERIFY'].includes(mode) ? (isArabic ? 'تحقق من بريدك' : 'Verify your email') : mode === 'CREATED' ? (isArabic ? 'تم إنشاء شركتك' : 'Company created') : mode === 'EMPLOYEE_CREATED' ? (isArabic ? 'تم إنشاء حساب الموظف' : 'Employee account created') : mode === 'EMPLOYEE_REGISTER' ? (isArabic ? 'إنشاء حساب موظف' : 'Create employee account') : (isArabic ? 'ابدأ تجربتك المجانية' : 'Start your free trial')}</h2>
@@ -280,7 +269,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ defaultCompanyCode = '101'
                   <input type={showPassword ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)} placeholder={t('password')} required className={`${inputClass} pe-11`} dir="ltr" autoComplete="current-password" />
                   <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute end-4 top-1/2 -translate-y-1/2 text-slate-500 transition hover:text-slate-200" tabIndex={-1} aria-label={showPassword ? 'Hide password' : 'Show password'}>{showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}</button>
                 </LoginField>
-                <button type="submit" disabled={isLoading} className="group mt-2 flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-l from-emerald-500 to-teal-500 text-sm font-black text-slate-950 shadow-lg shadow-emerald-950/40 transition hover:brightness-110 active:scale-[.99] disabled:cursor-not-allowed disabled:opacity-50">
+                <button type="submit" disabled={isLoading} className="group mt-2 flex h-12 w-full items-center justify-center gap-2 rounded-lg bg-teal-400 text-sm font-black text-slate-950 shadow-lg shadow-emerald-950/40 transition hover:brightness-110 active:scale-[.99] disabled:cursor-not-allowed disabled:opacity-50">
                   {isLoading ? <span className="h-5 w-5 animate-spin rounded-full border-2 border-slate-900/25 border-t-slate-900" /> : <><span>{t('signIn')}</span><ArrowRight className={`h-4 w-4 transition-transform ${isArabic ? 'rotate-180' : ''}`} /></>}
                 </button>
                 {registrationEnabled && <button type="button" onClick={() => { setError(null); setMode('REGISTER'); }} className="w-full text-center text-xs font-bold text-emerald-300 hover:text-emerald-200">{isArabic ? `شركة جديدة؟ ابدأ تجربة ${trialDays} يومًا` : `New company? Start a ${trialDays}-day trial`}</button>}
