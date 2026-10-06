@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useLanguage } from '../i18n/LanguageContext';
-import { AlertCircle, ArrowRight, Building2, CheckCircle2, Eye, EyeOff, Hash, KeyRound, Lock, Mail, Phone, ShieldCheck, User as UserIcon } from 'lucide-react';
+import { AlertCircle, ArrowRight, Building2, Eye, EyeOff, Hash, KeyRound, Lock, Mail, Phone, ShieldCheck, User as UserIcon } from 'lucide-react';
 import { api } from '../utils/api';
 import { isStrongPassword, passwordPolicyMessage } from '../utils/passwordPolicy';
 import { WafrBrand } from './WafrBrand';
@@ -223,8 +223,6 @@ export const LoginView: React.FC<LoginViewProps> = ({ defaultCompanyCode = '101'
   return (
     <main className="wafr-login min-h-[100dvh] w-full text-slate-100 relative overflow-x-hidden overflow-y-auto" dir={isArabic ? 'rtl' : 'ltr'}>
       <div className="wafr-grid absolute inset-0 pointer-events-none" />
-      <div className="absolute -top-48 -start-40 h-[32rem] w-[32rem] rounded-full bg-emerald-500/15 blur-[110px] pointer-events-none" />
-      <div className="absolute -bottom-56 -end-32 h-[34rem] w-[34rem] rounded-full bg-cyan-500/10 blur-[120px] pointer-events-none" />
       <div className="relative z-10 mx-auto grid min-h-[100dvh] w-full max-w-[1440px] lg:grid-cols-[1.08fr_.92fr]">
         <section className="wafr-login-ledger relative hidden min-w-0 overflow-hidden border-e border-white/5 px-8 py-8 lg:flex xl:px-14 xl:py-12 2xl:px-20 2xl:py-16">
           <div className="relative z-10 flex w-full flex-col">
