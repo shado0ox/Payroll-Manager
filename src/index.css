@@ -4,6 +4,12 @@
   color-scheme: light;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
+  --wafr-ink: #081a27;
+  --wafr-palm: #0f766e;
+  --wafr-mint: #2dd4bf;
+  --wafr-paper: #edf3f1;
+  --wafr-report: #176b87;
+  --wafr-saffron: #c9891b;
 }
 
 html,
@@ -24,7 +30,8 @@ html {
 body {
   min-height: 100dvh;
   overflow: hidden;
-  background: #f3f7f6;
+  background: var(--wafr-paper);
+  font-family: "IBM Plex Sans Arabic", "Noto Sans Arabic", Tahoma, Arial, sans-serif;
 }
 
 /* Public pages own their vertical scrolling while the authenticated app keeps body locked. */
@@ -41,12 +48,14 @@ body {
 
 /* WAFR product shell: one visual language shared by every operational screen. */
 .wafr-app-shell {
-  --wafr-navy: #0a1628;
-  --wafr-emerald: #10b981;
+  --wafr-navy: var(--wafr-ink);
+  --wafr-emerald: var(--wafr-palm);
   --wafr-surface: #ffffff;
-  background:
-    radial-gradient(circle at 88% 0%, rgba(16, 185, 129, .08), transparent 30rem),
-    #f3f7f6;
+  background-color: var(--wafr-paper);
+  background-image:
+    linear-gradient(rgba(8, 26, 39, .026) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(8, 26, 39, .018) 1px, transparent 1px);
+  background-size: 100% 32px, 32px 100%;
 }
 
 .wafr-workspace {
@@ -252,5 +261,106 @@ html[dir="ltr"] .text-right {
 @media (max-height: 620px) {
   .wafr-login {
     align-items: flex-start;
+  }
+}
+
+
+/* WAFR ledger system — financial structure without decorative card clutter. */
+.wafr-sidebar {
+  background:
+    linear-gradient(180deg, rgba(45, 212, 191, .08), transparent 12rem),
+    var(--wafr-ink);
+  box-shadow: 12px 0 36px rgba(8, 26, 39, .14);
+}
+
+.wafr-sidebar-item {
+  position: relative;
+  border-radius: .65rem;
+}
+
+.wafr-sidebar-item[aria-current="page"]::before {
+  position: absolute;
+  inset-block: .55rem;
+  inset-inline-start: 0;
+  width: 3px;
+  border-radius: 999px;
+  background: var(--wafr-mint);
+  content: "";
+}
+
+.wafr-topbar {
+  background: rgba(255, 255, 255, .94);
+  box-shadow: 0 1px 0 rgba(8, 26, 39, .08);
+}
+
+.wafr-workspace > div {
+  position: relative;
+}
+
+.wafr-workspace > div::before {
+  display: block;
+  width: 3.5rem;
+  height: 3px;
+  margin-block-end: 1rem;
+  border-radius: 999px;
+  background: var(--wafr-palm);
+  content: "";
+}
+
+.wafr-workspace :where(section, article) {
+  box-shadow: 0 1px 0 rgba(8, 26, 39, .04);
+}
+
+.wafr-login-ledger {
+  background:
+    linear-gradient(90deg, transparent 0 4.5rem, rgba(45, 212, 191, .3) 4.5rem 4.65rem, transparent 4.65rem),
+    repeating-linear-gradient(180deg, transparent 0 43px, rgba(148, 163, 184, .075) 43px 44px);
+}
+
+.wafr-login-card {
+  border-radius: 1.15rem;
+  border-inline-start: 3px solid var(--wafr-mint);
+}
+
+.wafr-cycle-step {
+  display: grid;
+  grid-template-columns: 2.2rem 1fr;
+  gap: .85rem;
+  align-items: start;
+}
+
+.wafr-cycle-step + .wafr-cycle-step {
+  margin-top: 1.1rem;
+}
+
+.wafr-cycle-mark {
+  display: flex;
+  width: 2.2rem;
+  height: 2.2rem;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(45, 212, 191, .35);
+  border-radius: .55rem;
+  background: rgba(15, 118, 110, .16);
+  color: #99f6e4;
+  font-weight: 800;
+}
+
+@media (max-width: 767px) {
+  .wafr-sidebar {
+    box-shadow: 0 -10px 28px rgba(8, 26, 39, .2);
+  }
+
+  .wafr-sidebar-item[aria-current="page"]::before {
+    inset-block-start: 0;
+    inset-block-end: auto;
+    inset-inline: .9rem;
+    width: auto;
+    height: 3px;
+  }
+
+  .wafr-workspace > div::before {
+    width: 2.5rem;
+    margin-block-end: .7rem;
   }
 }
