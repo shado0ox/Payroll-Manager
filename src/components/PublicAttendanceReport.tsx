@@ -105,14 +105,14 @@ export const PublicAttendanceReport: React.FC = () => {
     return (
       <main
         dir="rtl"
-        className="min-h-screen bg-slate-100 p-6 flex items-center justify-center"
+        className="wafr-page-scroll flex items-center justify-center bg-slate-100 p-6"
       >
         <div className="rounded-3xl bg-white p-8 font-bold text-rose-700 shadow">
           {error}
         </div>
       </main>
     );
-  if (!report) return <main className="min-h-screen bg-slate-100" />;
+  if (!report) return <main className="wafr-page-scroll bg-slate-100" />;
   return (
     <main
       dir="rtl"
