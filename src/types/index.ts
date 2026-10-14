@@ -121,6 +121,9 @@ export interface CompanyBankDefinition {
 }
 
 export interface CostCenter {
+  salariesExpenseAccount?: string;
+  administrativeSalariesExpenseAccount?: string;
+  workerWagesExpenseAccount?: string;
   id: string;
   code: string;
   nameAr: string;
@@ -651,6 +654,7 @@ export type NavigationTab =
   | 'loans_penalties' 
   | 'journals' 
   | 'reports' 
+  | 'salary_accounts'
   | 'users'
   | 'settings' 
   | 'audit_logs';

@@ -26,3 +26,12 @@ test('administrative and worker salary costs use separate configured expenses wi
  assert.ok(!journal.balanceDiagnostics.some(row=>row.severity==='ERROR'));
  const missing=engine.generatePayrollJournalBatch({...company,chartOfAccounts:{}},run);assert.equal(missing.balanceDiagnostics.filter(row=>row.code==='SALARY_CATEGORY_ACCOUNT_MISSING').length,2);
 });
+test('cost center account overrides company expense mapping without changing salary payable or losing category diagnostics',async()=>{
+ const bundle=await build({entryPoints:['src/utils/accountingEngine.ts'],bundle:true,platform:'node',format:'esm',write:false});const engine=await import(`data:text/javascript;base64,${Buffer.from(bundle.outputFiles[0].text).toString('base64')}`);
+ const company={id:'c',chartOfAccounts:{salariesPayableAccount:'2101'},costCenters:[{id:'cc',code:'D',nameAr:'الدمام',administrativeSalariesExpenseAccount:'510111',workerWagesExpenseAccount:'610111'}]};
+ const item=(id,category)=>({id,employeeId:id,costCenterId:'cc',payrollCategory:category,baseSalary:1000,housingAllowance:200,totalGrossSalary:1200,totalDeductions:0,netSalary:1200});
+ const run={id:'r',companyId:'c',periodMonth:'2026-10',status:'APPROVED',items:[item('a','ADMINISTRATIVE'),item('w','WORKER')]};
+ const result=engine.generatePayrollJournalBatch(company,run);assert.equal(result.totalDebit,2400);assert.equal(result.totalCredit,2400);assert.ok(!result.balanceDiagnostics.some(row=>row.severity==='ERROR'));
+ for(const account of ['510111','610111'])assert.equal(result.lines.filter(row=>row.accountCode===account).reduce((sum,row)=>sum+row.debit,0),1200);
+ assert.ok(result.lines.filter(row=>row.debit).every(row=>row.costCenterCode==='D'));assert.equal(result.lines.find(row=>row.credit).accountCode,'2101');
+});

@@ -1,4 +1,5 @@
-import { getCurrentDate } from '../utils/period';
+import { validateBalancedJournal } from '../../server/journal-validation.mjs';
+import { getCurrentDate, getCurrentPeriod, getJournalPeriods } from '../utils/period';
 import React, { useState, useMemo, useEffect } from 'react';
 import { 
   Layers, 
@@ -28,7 +29,7 @@ interface AccountingJournalsViewProps {
   journals: JournalBatch[];
   settlements?: PayrollSettlement[];
   activeRole: UserRole;
-  onUpdateCompany: (company: Company) => void;
+  onUpdateCompany: (company: Company) => Promise<boolean | void> | boolean | void;
   onSaveJournal: (journal: JournalBatch) => Promise<void>;
   onOpenQoyodModal: (batch: JournalBatch) => void;
 }
@@ -59,10 +60,11 @@ export const AccountingJournalsView: React.FC<AccountingJournalsViewProps> = ({
   },[companyRuns,settlements,company,journals]);
   const paymentJournals=paymentJournalPlan.batches;
   const settlementJournals=useMemo(()=>generateEntitlementSettlementJournals(company,companyRuns,settlements),[company,companyRuns,settlements]);
-  const availablePeriods = useMemo(() => [...new Set([
+  const availablePeriods = useMemo(() => getJournalPeriods([
     ...companyRuns.map(run => run.periodMonth),...paymentJournals.map(batch=>batch.periodMonth),...settlementJournals.map(batch=>batch.periodMonth),
+    ...journals.filter(batch=>batch.companyId===company.id).map(batch=>batch.periodMonth),
     ...companyRuns.flatMap(run=>run.items.map(item=>item.entitlementSettlementDate?.slice(0,7)).filter(Boolean))
-  ])].sort((a,b)=>b.localeCompare(a)), [companyRuns,paymentJournals,settlementJournals]);
+  ],getCurrentPeriod(company.timezone||'Asia/Riyadh')), [companyRuns,paymentJournals,settlementJournals,journals,company.id,company.timezone]);
   const [journalType, setJournalType] = useState<'PAYROLL_ACCRUAL' | 'GOSI_ACCRUAL' | 'PAYROLL_PAYMENT' | 'GOSI_PAYMENT' | 'PAYROLL_SETTLEMENT'>('PAYROLL_ACCRUAL');
   const [selectedPaymentJournalId,setSelectedPaymentJournalId]=useState('');
   const periodPaymentJournals=(journalType==='PAYROLL_SETTLEMENT'?settlementJournals:paymentJournals).filter(batch=>batch.periodMonth===selectedPeriod);
@@ -109,9 +111,9 @@ export const AccountingJournalsView: React.FC<AccountingJournalsViewProps> = ({
   const displayedTotalDebit=roundAmount(displayedLines.reduce((sum,line)=>sum+Number(line.debit||0),0));
   const displayedTotalCredit=roundAmount(displayedLines.reduce((sum,line)=>sum+Number(line.credit||0),0));
   const isLocked=Boolean(persistedBatch?.qoyodSyncStatus?.synced);
-  const isBalanced=activeBatch?Math.abs(displayedTotalDebit-displayedTotalCredit)<0.01:false;
+  const isBalanced=activeBatch?validateBalancedJournal({...activeBatch,lines:displayedLines,totalDebit:displayedTotalDebit,totalCredit:displayedTotalCredit}).valid:false;
 
-  const saveDraft=async()=>{if(!freshBatch||!editingLines||!changeReason.trim()||!isBalanced)return;setSaving(true);try{await onSaveJournal(buildJournalDraft(freshBatch,editingLines,changeReason.trim()));setEditingLines(null);setChangeReason('');}finally{setSaving(false);}};
+  const saveDraft=async()=>{if(!freshBatch||!editingLines||!changeReason.trim()||!isBalanced)return;setSaving(true);try{await onSaveJournal(buildJournalDraft(freshBatch,editingLines,changeReason.trim()));setEditingLines(null);setChangeReason('');}catch(error:any){alert(ui('تعذر حفظ تعديل القيد: ','Could not save journal changes: ')+(error?.message||''));}finally{setSaving(false);}};
   const diagnosticLabel=(code:NonNullable<JournalBatch['balanceDiagnostics']>[number]['code'])=>({
     SALARY_CATEGORY_ACCOUNT_MISSING:ui('يلزم ربط حساب مصروف فئة الموظف في دليل الحسابات','Map the employee category expense account in company accounts'),
     PRIOR_PERIOD_BALANCE_EXCLUDED:ui('رصيد سابق مستبعد من استحقاق الشهر الحالي','Prior balance excluded from current accrual'),
@@ -124,14 +126,15 @@ export const AccountingJournalsView: React.FC<AccountingJournalsViewProps> = ({
   // Chart of accounts form state
   const [accountsForm, setAccountsForm] = useState({ ...company.chartOfAccounts });
 
-  const handleSaveAccounts = (e: React.FormEvent) => {
+  const handleSaveAccounts = async (e: React.FormEvent) => {
     e.preventDefault();
-    onUpdateCompany({
+    const saved = await onUpdateCompany({
       ...company,
       chartOfAccounts: accountsForm,
     });
+    if (saved !== true) return;
     setIsAccountsMapModalOpen(false);
-    alert(ui('تم تحديث خريطة الحسابات بنجاح ومطابقتها مع دليل حسابات قيود!', 'The account mapping was saved and aligned with the Qoyod chart of accounts.'));
+    alert(ui('تم حفظ خريطة الحسابات. تأكد أن الرموز تطابق دليل حسابات منشأتك في قيود.', 'Account mapping saved. Verify these codes against your Qoyod chart of accounts.'));
   };
 
   return (
@@ -158,9 +161,7 @@ export const AccountingJournalsView: React.FC<AccountingJournalsViewProps> = ({
               onChange={(e) => setSelectedPeriod(e.target.value)}
               aria-label={ui("فترة القيد", "Journal period")} className="w-full min-w-52 bg-transparent text-sm font-bold text-slate-800 border-none focus:ring-0 cursor-pointer"
             >
-              {availablePeriods.map(period => (
-                <option key={period} value={period}>{new Intl.DateTimeFormat(language === 'ar' ? 'ar-SA-u-ca-gregory-nu-latn' : 'en-GB', {month:'long',year:'numeric',timeZone:'UTC'}).format(new Date(`${period}-01T00:00:00Z`))} — {period}</option>
-              ))}
+              {[...new Set(availablePeriods.map(period=>period.slice(0,4)))].map(year=><optgroup key={year} label={year}>{availablePeriods.filter(period=>period.startsWith(year+'-')).map(period=><option key={period} value={period}>{new Intl.DateTimeFormat(language === 'ar' ? 'ar-SA-u-ca-gregory-nu-latn' : 'en-GB', {month:'long',year:'numeric',timeZone:'UTC'}).format(new Date(`${period}-01T00:00:00Z`))} — {period}</option>)}</optgroup>)}
             </select>
           </div>
 
@@ -217,6 +218,7 @@ export const AccountingJournalsView: React.FC<AccountingJournalsViewProps> = ({
       {(journalType==='PAYROLL_ACCRUAL'||journalType==='GOSI_ACCRUAL')&&accrualPlan.batches.length>1&&<div className="rounded-2xl border bg-white p-3"><label className="text-xs font-bold">{ui('قيد الاستحقاق الأصلي أو التكميلي','Original or supplemental accrual')}<select value={effectiveAccrualId} onChange={event=>setSelectedAccrualId(event.target.value)} className="ms-2 rounded-xl border px-3 py-2">{accrualPlan.batches.map(batch=><option key={batch.id} value={batch.id}>{batch.batchNumber} · {batch.date} · {formatSAR(batch.totalDebit)}</option>)}</select></label></div>}
       {(journalType==='PAYROLL_ACCRUAL'||journalType==='GOSI_ACCRUAL')&&accrualPlan.blocked&&<div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs">{ui('القيد السابق معدّل يدويًا أو لا يسمح باشتقاق فرق متوازن؛ راجع القيد التكميلي محاسبيًا قبل ترحيل الإضافة المتأخرة.','The previous journal was manually edited or cannot yield a balanced difference; reconcile the supplemental accrual before posting late additions.')}</div>}
       {journalType==='PAYROLL_ACCRUAL'&&<p className="rounded-xl border border-blue-200 bg-blue-50 p-3 text-xs text-blue-900">{ui('قيد الاستحقاق يثبت تكلفة هذا الشهر فقط. الأرصدة السابقة تبقى في شهور استحقاقها، وقيد الصرف يثبت مبلغ التحويل الفعلي لكل دفعة.','Accrual records this month’s cost only. Prior balances remain in their source months; payment journals record actual paid batch amounts.')}</p>}
+      {!activeBatch&&<div className="rounded-xl border border-slate-200 bg-white p-5 text-sm text-slate-600">{ui('لا يوجد قيد من هذا النوع في الشهر المختار. اختيار الشهر لا ينشئ قيدًا تلقائيًا.','No journal of this type exists for the selected month. Selecting a month does not create a journal.')}</div>}
       {/* Batch Header Information Card */}
       {activeBatch && (
         <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -269,7 +271,7 @@ export const AccountingJournalsView: React.FC<AccountingJournalsViewProps> = ({
         <div className="flex items-start gap-2">
           <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-700"/>
           <div>
-            <div className="text-xs font-black text-amber-950">{ui('تحليل فروقات قيد الرواتب','Payroll journal diagnostics')}</div>
+            <div className="text-xs font-black text-amber-950">{activeBatch.balanceDiagnostics.some(row=>row.severity==='ERROR')?ui('أخطاء تحتاج إلى مراجعة','Errors requiring review'):ui('معلومات عن الأرصدة السابقة — ليست أخطاء','Prior balance information — no calculation errors')}</div>
             <p className="mt-1 text-[11px] leading-5 text-amber-800">{ui('الأرصدة المرحلة تظهر للتفسير فقط ولا يعاد إثباتها كمصروف في الشهر الحالي. أخطاء الحساب تمنع الحفظ والتصدير والترحيل حتى تصحيح المسير.','Carried balances are shown for explanation only and are not accrued again in the current month. Calculation errors block saving, export, and posting until payroll is corrected.')}</p>
           </div>
         </div>

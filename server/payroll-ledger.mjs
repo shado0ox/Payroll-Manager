@@ -183,3 +183,24 @@ export function salaryAccountStatement(runs,companyId,employeeId,settlements=[])
  let balance=0;for(const row of entries){balance=salaryMoney(balance+row.credit-row.debit);row.balance=balance;}
  return {entries,balance,reserved,totalCredit:salaryMoney(entries.reduce((sum,row)=>sum+row.credit,0)),totalDebit:salaryMoney(entries.reduce((sum,row)=>sum+row.debit,0))};
 }
+
+
+// Monthly subsidiary ledger: opening balance + credits - debits = closing payable.
+export function monthlySalaryAccountReport(runs,companyId,periodMonth,settlements=[]) {
+ const own=rows(runs).filter(run=>run.companyId===companyId&&['APPROVED','POSTED'].includes(run.status));
+ const people=new Map();
+ for(const run of own.filter(run=>run.periodMonth<=periodMonth).sort((a,b)=>a.periodMonth.localeCompare(b.periodMonth)))for(const item of rows(run.items))people.set(item.employeeId,item);
+ return [...people].map(([employeeId,item])=>{
+  const statement=salaryAccountStatement(own,companyId,employeeId,settlements);
+  const previous=statement.entries.filter(entry=>entry.date.slice(0,7)<periodMonth);
+  const current=statement.entries.filter(entry=>entry.date.slice(0,7)===periodMonth);
+  const sum=(entries,key)=>salaryMoney(entries.reduce((total,entry)=>total+entry[key],0));
+  const opening=salaryMoney(sum(previous,'credit')-sum(previous,'debit'));
+  const debit=sum(current,'debit'),credit=sum(current,'credit');
+  return {employeeId,employeeNo:item.employeeNo||'',employeeName:item.employeeName||'',costCenterId:item.costCenterId||'',
+   opening,debit,credit,closing:salaryMoney(opening+credit-debit),
+   wages:sum(current.filter(entry=>entry.kind==='WAGE'),'credit'),paid:sum(current.filter(entry=>entry.kind==='PAYMENT'),'debit'),
+   offsets:sum(current.filter(entry=>entry.kind==='OFFSET'),'debit'),reversals:sum(current.filter(entry=>entry.kind==='OFFSET_REVERSAL'),'credit'),
+  };
+ }).filter(row=>row.opening||row.debit||row.credit||row.closing).sort((a,b)=>a.employeeNo.localeCompare(b.employeeNo));
+}

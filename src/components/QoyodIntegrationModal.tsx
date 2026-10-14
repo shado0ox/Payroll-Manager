@@ -1,3 +1,4 @@
+import { validateBalancedJournal } from '../../server/journal-validation.mjs';
 import { getCurrentDate } from '../utils/period';
 import React, { useState } from 'react';
 import { 
@@ -22,7 +23,7 @@ import {
   FileCode
 } from 'lucide-react';
 import { Company, PayrollRun, QoyodApiConfig, JournalBatch, QoyodJournalEntryResponse } from '../types';
-import { generatePayrollJournalBatch, buildAccrualJournalPlan } from '../utils/accountingEngine';
+import { generatePayrollJournalBatch, buildAccrualJournalPlan, mergeFreshJournalWithDraft } from '../utils/accountingEngine';
 import { exportQoyodJournalCsv } from '../utils/exportUtils';
 import { buildQoyodJournalPayload, generateQoyodCurlCommand, sendJournalEntryToQoyod } from '../utils/qoyodApi';
 import { useLanguage } from '../i18n/LanguageContext';
@@ -61,6 +62,7 @@ export const QoyodIntegrationModal: React.FC<QoyodIntegrationModalProps> = ({
   const [testResult, setTestResult] = useState<{ status: 'SUCCESS' | 'FAILED'; message: string } | null>(
     qoyodConfig.lastTestStatus ? { status: qoyodConfig.lastTestStatus, message: qoyodConfig.lastTestMessage || '' } : null
   );
+  const [pendingPostedJournal, setPendingPostedJournal] = useState<JournalBatch | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncSuccess, setSyncSuccess] = useState<string | null>(null);
   const [lastResponse, setLastResponse] = useState<QoyodJournalEntryResponse | null>(null);
@@ -69,11 +71,12 @@ export const QoyodIntegrationModal: React.FC<QoyodIntegrationModalProps> = ({
   const [activeViewTab, setActiveViewTab] = useState<'config' | 'curl' | 'payload' | 'response'>('config');
 
   const defaultPlan=latestRun?buildAccrualJournalPlan(generatePayrollJournalBatch(company,latestRun),journals,getCurrentDate(company.timezone||'Asia/Riyadh')):{batches:[],blocked:false};
-  const activeBatch: JournalBatch | null = journalBatch || defaultPlan.batches.at(-1) || null;
+  const candidateBatch = journalBatch || defaultPlan.batches.at(-1) || null;
+  const activeBatch: JournalBatch | null = candidateBatch ? mergeFreshJournalWithDraft(candidateBatch, existingJournal || journals.find(row=>row.id===candidateBatch.id)) : null;
   const postedExisting=existingJournal || journals.find(row=>row.id===activeBatch?.id);
-  const isAlreadyPosted=Boolean(postedExisting?.qoyodSyncStatus?.synced||activeBatch?.qoyodSyncStatus?.synced);
+  const isAlreadyPosted=Boolean(pendingPostedJournal || postedExisting?.qoyodSyncStatus?.synced||activeBatch?.qoyodSyncStatus?.synced);
   const hasDiagnosticErrors=Boolean(activeBatch?.balanceDiagnostics?.some(row=>row.severity==='ERROR'));
-  const currentPayload = activeBatch&&!hasDiagnosticErrors ? buildQoyodJournalPayload(activeBatch, company) : null;
+  const currentPayload = activeBatch&&!hasDiagnosticErrors&&validateBalancedJournal(activeBatch).valid ? buildQoyodJournalPayload(activeBatch, company) : null;
   const currentCurl = currentPayload ? generateQoyodCurlCommand(currentPayload, config.apiKey, config.baseUrl) : '';
 
   // Test Qoyod API Endpoint
@@ -84,7 +87,7 @@ export const QoyodIntegrationModal: React.FC<QoyodIntegrationModalProps> = ({
     // Simulate endpoint test or ping
     setTimeout(() => {
       setIsTesting(false);
-      if (config.apiKey && config.apiKey.trim().length > 6) {
+      if ((config.apiKey && config.apiKey.trim().length > 6) || config.apiKeyConfigured) {
         setTestResult({
           status: 'SUCCESS',
           message: `${tr('تم التحقق من اكتمال إعدادات الربط لمنشأة', 'Integration settings are complete for')} (${language === 'ar' ? company.nameAr : company.nameEn || company.nameAr})`,
@@ -111,7 +114,7 @@ export const QoyodIntegrationModal: React.FC<QoyodIntegrationModalProps> = ({
       alert(tr('لا يوجد مسير رواتب معتمد للترحيل', 'There is no approved payroll run to post.'));
       return;
     }
-    if (Math.abs(Number(activeBatch.totalDebit||0)-Number(activeBatch.totalCredit||0))>=0.01) {
+    if (!validateBalancedJournal(activeBatch).valid) {
       alert(tr('لا يمكن ترحيل قيد غير متوازن. شغّل فحص وإصلاح الرواتب وراجع تفاصيل الفرق أولاً.', 'An unbalanced journal cannot be posted. Run payroll scan and repair, then review the difference details first.'));
       return;
     }
@@ -124,7 +127,13 @@ export const QoyodIntegrationModal: React.FC<QoyodIntegrationModalProps> = ({
     setIsSyncing(true);
     setSyncSuccess(null);
 
+    let externalAttempted=false;
     try {
+      // Commit settings and validate the local journal before creating an external entry.
+      const saved = await onSaveConfig(config);
+      if (saved === false) return;
+      await onJournalSynced(activeBatch);
+      externalAttempted=true;
       const res = await sendJournalEntryToQoyod(activeBatch, company, config);
       if (res.success) {
         const qoyodSnapshot = {
@@ -144,7 +153,9 @@ export const QoyodIntegrationModal: React.FC<QoyodIntegrationModalProps> = ({
             qoyodJournalId: String(res.responseData?.id || ''),
           },
         };
+        setPendingPostedJournal(postedJournal);
         await onJournalSynced(postedJournal);
+        setPendingPostedJournal(null);
         setSyncSuccess(res.message);
         if (res.responseData) {
           setLastResponse(res.responseData);
@@ -154,7 +165,7 @@ export const QoyodIntegrationModal: React.FC<QoyodIntegrationModalProps> = ({
         alert(res.message);
       }
     } catch (e: any) {
-      alert(`${tr('تم الاتصال بقيود لكن تعذر تثبيت حالة القيد محلياً:', 'Qoyod was contacted but the local journal status could not be committed:')} ${e.message || e}`);
+      alert(`${externalAttempted?tr('تم الاتصال بقيود لكن تعذر تثبيت حالة القيد محلياً:', 'Qoyod was contacted but the local journal status could not be committed:'):tr('تعذر حفظ الإعدادات أو القيد قبل الترحيل:', 'Could not save settings or journal before posting:')} ${e.message || e}`);
     } finally {
       setIsSyncing(false);
     }
@@ -288,6 +299,10 @@ export const QoyodIntegrationModal: React.FC<QoyodIntegrationModalProps> = ({
             </div>
           )}
 
+          {pendingPostedJournal && <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
+            <p>{tr('تم إنشاء القيد في قيود. تعذر حفظ حالته محليًا؛ لا تعِد الترحيل.','The entry was created in Qoyod. Local status could not be saved; do not post again.')}</p>
+            <button type="button" disabled={isSyncing} onClick={async()=>{setIsSyncing(true);try{await onJournalSynced(pendingPostedJournal);setPendingPostedJournal(null);}catch(error:any){alert(error?.message);}finally{setIsSyncing(false);}}}>{tr('إعادة حفظ الحالة المحلية','Retry saving local status')}</button>
+          </div>}
           {/* Sync Success Alert */}
           {syncSuccess && (
             <div className="p-3.5 rounded-2xl bg-emerald-50 text-emerald-900 border border-emerald-200 flex items-start gap-2.5 font-bold">
@@ -335,10 +350,10 @@ export const QoyodIntegrationModal: React.FC<QoyodIntegrationModalProps> = ({
                 <div className="relative flex items-center">
                   <input
                     type={showApiKey ? 'text' : 'password'}
-                    required
+                    required={!config.apiKeyConfigured}
                     value={config.apiKey}
                     onChange={(e) => setConfig({ ...config, apiKey: e.target.value })}
-                    placeholder={tr('مثال: 9a78f2bc904845b4b76e271...', 'Example: 9a78f2bc904845b4b76e271...')}
+                    placeholder={config.apiKeyConfigured ? tr('المفتاح محفوظ؛ اترك الحقل فارغًا للإبقاء عليه','Key saved; leave blank to keep it') : tr('مثال: 9a78f2bc904845b4b76e271...', 'Example: 9a78f2bc904845b4b76e271...')}
                     className="w-full pl-10 pr-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-mono text-xs focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
                   />
                   <button
@@ -375,19 +390,7 @@ export const QoyodIntegrationModal: React.FC<QoyodIntegrationModalProps> = ({
                 </div>
               </div>
 
-              <div className="flex items-center justify-between bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
-                <div>
-                  <div className="font-bold text-slate-800">{tr('المزامنة التلقائية عند اعتماد المسير', 'Automatic Sync on Payroll Approval')}</div>
-                  <div className="text-[11px] text-slate-500">{tr('ترحيل قيد اليومية تلقائياً لبرنامج قيود فور اعتماد مسير الرواتب', 'Post the journal to Qoyod automatically when the payroll run is approved.')}</div>
-                </div>
-                <input
-                  type="checkbox"
-                  checked={config.autoSyncOnApprove}
-                  onChange={(e) => setConfig({ ...config, autoSyncOnApprove: e.target.checked })}
-                  className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 cursor-pointer"
-                />
-              </div>
-
+              <p className="rounded-xl bg-slate-50 p-3 text-xs text-slate-600">{tr('الترحيل إلى قيود يدوي بعد مراجعة القيد المتوازن؛ اعتماد المسير وحده لا يرحّل قيدًا.','Qoyod posting is manual after reviewing a balanced journal; payroll approval alone does not post an entry.')}</p>
               {/* Action Bar */}
               <div className="p-4 bg-sky-50/70 rounded-2xl border border-sky-100 flex flex-wrap items-center justify-between gap-3">
                 <div className="text-slate-700">
@@ -411,7 +414,7 @@ export const QoyodIntegrationModal: React.FC<QoyodIntegrationModalProps> = ({
                   <button
                     type="button"
                     onClick={handleSyncToQoyod}
-                    disabled={isSyncing || !activeBatch || isAlreadyPosted}
+                    disabled={isSyncing || !activeBatch || isAlreadyPosted || hasDiagnosticErrors || !validateBalancedJournal(activeBatch).valid}
                     className="px-4 py-2 bg-sky-600 hover:bg-sky-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white rounded-xl font-bold flex items-center gap-1.5 transition-all shadow-md cursor-pointer"
                   >
                     <Send className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />

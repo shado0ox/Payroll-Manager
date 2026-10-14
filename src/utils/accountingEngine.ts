@@ -86,8 +86,10 @@ export function generatePayrollJournalBatch(company:Company,payrollRun:PayrollRu
   ] as const;
   for (const [bucketId,bucket] of buckets) {
     const ccId=bucket.ccId;
-    const categoryAccount=bucket.category==='ADMINISTRATIVE'?accounts.administrativeSalariesExpenseAccount:bucket.category==='WORKER'?accounts.workerWagesExpenseAccount:undefined;
-    const categoryName=bucket.category==='ADMINISTRATIVE'?'مصروف رواتب إدارية':'مصروف أجور العاملين';
+    const center=costCenters.find(candidate=>candidate.id===ccId);
+    const centerAccount=(bucket.category==='ADMINISTRATIVE'?center?.administrativeSalariesExpenseAccount:bucket.category==='WORKER'?center?.workerWagesExpenseAccount:undefined)?.trim()||center?.salariesExpenseAccount?.trim();
+    const categoryAccount=centerAccount||(bucket.category==='ADMINISTRATIVE'?accounts.administrativeSalariesExpenseAccount:bucket.category==='WORKER'?accounts.workerWagesExpenseAccount:undefined);
+    const categoryName=bucket.category==='ADMINISTRATIVE'?'مصروف رواتب إدارية':bucket.category==='WORKER'?'مصروف أجور العاملين':'مصروف رواتب مركز التكلفة';
     const cc=costCenters.find(candidate=>candidate.id===ccId)||{code:'CC-GEN',nameAr:'المركز العام',nameEn:'General cost center'};
     for(const [key,idPart,accountCode,nameAr,nameEn] of definitions){const amount=roundAmount(bucket[key]);if(amount<=0)continue;
       lines.push({id:`line-debit-${idPart}-${bucketId}`,accountCode:categoryAccount||accountCode,accountNameAr:categoryAccount?categoryName:nameAr,accountNameEn:categoryAccount?(bucket.category==='ADMINISTRATIVE'?'Administrative salaries':'Worker wages'):nameEn,
@@ -95,7 +97,11 @@ export function generatePayrollJournalBatch(company:Company,payrollRun:PayrollRu
         debit:amount,credit:0,costCenterCode:cc.code,costCenterName:cc.nameAr,costCenterNameEn:cc.nameEn||cc.nameAr});}
   }
   const items=payrollRun.items||[];
-  const categoryDiagnostics:JournalBalanceDiagnostic[]=items.filter(item=>item.totalGrossSalary>0&&((item.payrollCategory==='ADMINISTRATIVE'&&!accounts.administrativeSalariesExpenseAccount?.trim())||(item.payrollCategory==='WORKER'&&!accounts.workerWagesExpenseAccount?.trim())))
+  const categoryDiagnostics:JournalBalanceDiagnostic[]=items.filter(item=>{
+    const center=costCenters.find(cc=>cc.id===(costCenters.some(cc=>cc.id===item.costCenterId)?item.costCenterId:defaultCCId));
+    const mapped=center?.salariesExpenseAccount?.trim()||(item.payrollCategory==='ADMINISTRATIVE'?(center?.administrativeSalariesExpenseAccount?.trim()||accounts.administrativeSalariesExpenseAccount?.trim()):item.payrollCategory==='WORKER'?(center?.workerWagesExpenseAccount?.trim()||accounts.workerWagesExpenseAccount?.trim()):true);
+    return item.totalGrossSalary>0&&!mapped;
+  })
     .map(item=>({employeeId:item.employeeId,employeeNo:item.employeeNo,employeeName:item.employeeName,code:'SALARY_CATEGORY_ACCOUNT_MISSING',severity:'ERROR',recorded:item.totalGrossSalary,expected:0,difference:item.totalGrossSalary}));
   const salariesPayable=roundAmount(items.reduce((sum,item)=>sum+currentPeriodNet(item)+Number(item.gosiEmployeeShare||0),0));
   const loans=roundAmount(items.reduce((sum,item)=>sum+Number(item.loanDeduction||0),0));

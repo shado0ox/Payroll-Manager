@@ -17,6 +17,9 @@ export function createCompanyRecordService({ q,asArray,clone,subscriptionState,w
     if (departments.some(item => !validChild(item)) || costCenters.some(item => !validChild(item))) {
       throw workflowError(400, 'INVALID_COMPANY_STRUCTURE');
     }
+    for (const center of costCenters) for (const field of ['salariesExpenseAccount','administrativeSalariesExpenseAccount','workerWagesExpenseAccount']) {
+      if (center[field] != null && (typeof center[field] !== 'string' || center[field].length > 100)) throw workflowError(400,'INVALID_COST_CENTER_ACCOUNT');
+    }
     const departmentIds = new Set(departments.map(item => item.id));
     const costCenterIds = new Set(costCenters.map(item => item.id));
     if (departmentIds.size !== departments.length || costCenterIds.size !== costCenters.length) {

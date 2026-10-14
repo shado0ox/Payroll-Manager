@@ -1,3 +1,4 @@
+import { validateBalancedJournal } from '../../server/journal-validation.mjs';
 import { monthlySalaryNet, salaryBatchAllocations, salaryBatchEmployeeComponents } from '../../server/payroll-ledger.mjs';
 import { Company, PayrollRun, JournalBatch, Employee, PayrollRunItem } from '../types';
 
@@ -26,6 +27,7 @@ export function downloadCsvFile(filename: string, csvContent: string): void {
  * Date, Description, AccountCode, AccountName, Debit, Credit, CostCenter, ContactName, Reference
  */
 export function exportQoyodJournalCsv(batch: JournalBatch, company: Company): void {
+  if(!validateBalancedJournal(batch).valid){alert(isEnglish()?'Only a valid balanced journal can be exported.':'لا يمكن تصدير قيد غير متوازن أو يحتوي على أسطر غير صالحة.');return;}
   if(batch.balanceDiagnostics?.some(row=>row.severity==='ERROR')){alert(isEnglish()?'Resolve journal diagnostics and expense account mapping before export.':'راجع أخطاء القيد وربط حسابات المصروف قبل التصدير.');return;}
   const en = isEnglish();
   const headers = en
@@ -37,8 +39,8 @@ export function exportQoyodJournalCsv(batch: JournalBatch, company: Company): vo
     `"${en ? line.descriptionEn || line.descriptionAr || batch.descriptionEn || batch.description : line.descriptionAr || batch.description}"`,
     `"${line.accountCode}"`,
     `"${en ? line.accountNameEn || line.accountNameAr : line.accountNameAr}"`,
-    line.debit > 0 ? line.debit.toFixed(2) : '0.00',
-    line.credit > 0 ? line.credit.toFixed(2) : '0.00',
+    line.debit > 0 ? Number(line.debit).toFixed(2) : '0.00',
+    line.credit > 0 ? Number(line.credit).toFixed(2) : '0.00',
     `"${line.costCenterCode || ''}"`,
     `"${line.contactName || (en ? company.nameEn || company.nameAr : company.nameAr)}"`,
     `"${batch.batchNumber}"`

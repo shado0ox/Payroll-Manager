@@ -19,7 +19,7 @@ import {
 import type { Company, PayrollRun, QoyodApiConfig } from '../../types';
 import { generatePayrollJournalBatch } from '../../utils/accountingEngine';
 import { exportQoyodJournalCsv } from '../../utils/exportUtils';
-import { buildQoyodJournalPayload, generateQoyodCurlCommand, sendJournalEntryToQoyod } from '../../utils/qoyodApi';
+import { buildQoyodJournalPayload, generateQoyodCurlCommand } from '../../utils/qoyodApi';
 
 interface CompanyQoyodTabProps {
   formData: Company;
@@ -143,10 +143,10 @@ const handleTestQoyodConnection = () => {
   setQoyodTestResult(null);
   setTimeout(() => {
     setIsTestingQoyod(false);
-    if (qConfig.apiKey && qConfig.apiKey.trim().length > 6) {
+    if ((qConfig.apiKey && qConfig.apiKey.trim().length > 6) || qConfig.apiKeyConfigured) {
       setQoyodTestResult({
         status: 'SUCCESS',
-        message: tr(`صيغة مفتاح API-KEY والإعدادات مكتملة لمنشأة: ${formData.nameAr}. استخدم الترحيل التجريبي للتحقق الفعلي من الخادم.`, `The API key format and settings are complete for ${formData.nameEn || formData.nameAr}. Use the test journal action to verify the server connection.`),
+        message: tr(`صيغة مفتاح API-KEY والإعدادات مكتملة لمنشأة: ${formData.nameAr}. افتح قيد المسير الحقيقي للترحيل.`, `The API key format and settings are complete for ${formData.nameEn || formData.nameAr}. Open the actual payroll journal for posting.`),
       });
       const updatedConfig = { ...qConfig, lastTestStatus: 'SUCCESS' as const, lastTestMessage: tr('الإعدادات مكتملة', 'Settings complete') };
       setQConfig(updatedConfig);
@@ -160,27 +160,7 @@ const handleTestQoyodConnection = () => {
   }, 600);
 };
 
-const handleDirectSync = async () => {
-  if ((!qConfig.apiKey || qConfig.apiKey.trim().length < 5) && !qConfig.apiKeyConfigured) {
-    alert(tr('يرجى حفظ وإدخال مفتاح API-KEY أولاً', 'Enter and save the API-KEY first.'));
-    return;
-  }
-
-  setIsSyncingQoyod(true);
-  setQoyodSyncSuccess(null);
-  try {
-    const res = await sendJournalEntryToQoyod(sampleBatch, formData, qConfig);
-    setIsSyncingQoyod(false);
-    if (res.success) {
-      setQoyodSyncSuccess(res.message);
-    } else {
-      alert(res.message);
-    }
-  } catch (err: any) {
-    setIsSyncingQoyod(false);
-    alert(`${tr('خطأ أثناء الاتصال بخادم قيود', 'Error connecting to Qoyod')}: ${err.message || err}`);
-  }
-};
+const handleDirectSync = () => onOpenQoyodModal?.();
 
 return (
   <div data-no-translate className="bg-white rounded-2xl p-6 border border-slate-200/80 shadow-sm space-y-6">
@@ -223,11 +203,12 @@ return (
           className="px-3.5 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
         >
           <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
-          <span>{tr('تصدير قيد CSV لقيود', 'Export Qoyod journal CSV')}</span>
+          <span>{tr('تنزيل نموذج CSV للمعاينة فقط', 'Download preview CSV only')}</span>
         </button>
       </div>
     </div>
 
+    <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs">{tr('الأرقام في معاينة JSON وCSV نموذج توضيحي وليست رواتب المنشأة. الترحيل متاح للقيد الفعلي فقط.','JSON and CSV previews are illustrative samples, not company payroll. Only actual journals can be posted.')}</p>
     {/* Test or Sync Alert */}
     {qoyodTestResult && (
       <div className={`p-4 rounded-2xl border flex items-start gap-3 ${
@@ -370,20 +351,7 @@ return (
           </div>
         </div>
 
-        {/* Auto Sync Toggle */}
-        <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 flex items-center justify-between">
-          <div>
-            <div className="text-xs font-bold text-slate-900">{tr('المزامنة التلقائية عند اعتماد مسير الرواتب', 'Automatically sync approved payroll')}</div>
-            <div className="text-[11px] text-slate-500 mt-0.5">{tr('ترحيل قيد اليومية آلياً إلى قيود فور اعتماد المسير الشهري من قبل المعتمدين', 'Post the payroll journal to Qoyod automatically after authorized approval')}</div>
-          </div>
-          <input
-            type="checkbox"
-            checked={qConfig.autoSyncOnApprove || false}
-            onChange={(e) => setQConfig({ ...qConfig, autoSyncOnApprove: e.target.checked })}
-            className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 cursor-pointer"
-          />
-        </div>
-
+        <p className="rounded-xl bg-slate-50 p-3 text-xs text-slate-600">{tr('ترحيل قيود الرواتب يدوي بعد مراجعة القيد المتوازن. اعتماد المسير لا يرحّل قيدًا تلقائيًا.','Payroll journals are posted manually after reviewing balance. Approval does not automatically post a journal.')}</p>
         {/* Actions */}
         <div className="pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2">
@@ -400,11 +368,11 @@ return (
             <button
               type="button"
               onClick={handleDirectSync}
-              disabled={isSyncingQoyod}
+              disabled={!onOpenQoyodModal}
               className="px-4 py-2.5 bg-sky-600 hover:bg-sky-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-md cursor-pointer"
             >
               <Send className={`w-3.5 h-3.5 ${isSyncingQoyod ? 'animate-spin' : ''}`} />
-              <span>{isSyncingQoyod ? tr('جاري الترحيل...', 'Posting...') : tr('ترحيل قيد تجريبي للتحقق الفعلي', 'Post test journal to verify connection')}</span>
+              <span>{isSyncingQoyod ? tr('جاري الترحيل...', 'Posting...') : tr('فتح ترحيل قيد المسير الحقيقي', 'Open actual payroll journal')}</span>
             </button>
           </div>
 
