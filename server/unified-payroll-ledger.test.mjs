@@ -46,9 +46,9 @@ test('a cumulative later payment is visible and locked in every covered source m
 });
 
 test('period-specific deductions remain editable until that employee enters a transfer batch', () => {
-  assert.match(app, /const employeePaymentLocked = payrollRuns/);
+  assert.match(app, /const employeePaymentLocked = \(run\.entitlementOffsets/);
   assert.match(app, /if \(!employeePaymentLocked\) return false/);
-  assert.match(server, /const employeePaymentLocked = asArray\(stored\.payrollRuns\)/);
+  assert.match(server, /const employeePaymentLocked = asArray\(run\.entitlementOffsets\)/);
   assert.match(server, /if \(!employeePaymentLocked\) return false/);
 });
 

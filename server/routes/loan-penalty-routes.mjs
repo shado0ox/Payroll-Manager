@@ -144,6 +144,7 @@ router.delete('/loans/:id', auth, writeLimiter, async (req, res, next) => {
     if (!row.rowCount) throw workflowError(404, 'LOAN_NOT_FOUND');
     if (!req.user.company_ids.includes(row.rows[0].company_id)) throw workflowError(403, 'FORBIDDEN');
     const stored = await readLockedNormalizedState(client);
+    if (asArray(stored.payrollRuns).some(run => asArray(run.entitlementOffsets).some(offset => offset.loanId === req.params.id))) throw workflowError(409,'LOAN_HAS_SETTLEMENT_HISTORY');
     if (payrollSourceLocked(stored,'loan',row.rows[0].payload)) throw workflowError(409, 'PAYROLL_SOURCE_ENTRY_LOCKED');
     await client.query(`DELETE FROM ${q('loans')} WHERE id=$1`, [req.params.id]);
     const updated = await bumpStateVersion(client,req.user.id);

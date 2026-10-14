@@ -42,7 +42,7 @@ export function unpaidSalaryDetails(runs, targetRun, employeeId) {
       const item = rows(run.items).find(row => row.employeeId === employeeId);
       if (!item || ['SETTLED','CANCELLED_WITH_DOCUMENT','UNDER_SETTLEMENT'].includes(item.entitlementStatus)) return [];
       const originalNet = monthlySalaryNet(item);
-      const net = salaryMoney(originalNet - (covered.get(run.periodMonth) || 0));
+      const net = salaryMoney(originalNet - salaryOffsetTotal(run,item) - (covered.get(run.periodMonth) || 0));
       if (!(net > 0)) return [];
       return [{ periodMonth:run.periodMonth, gross:salaryMoney(Number(item.totalGrossSalary || 0) * net / originalNet), deductions:salaryMoney(Number(item.totalDeductions || 0) * net / originalNet), net }];
     });
@@ -78,7 +78,7 @@ export function availableSalaryAllocations(runs, targetRun, employeeId) {
       || ['SETTLED','CANCELLED_WITH_DOCUMENT','UNDER_SETTLEMENT'].includes(item.entitlementStatus)) return [];
     // A hold must be explicitly released in its original month before payment.
     if ((item.entitlementStatus || 'PAYABLE') !== 'PAYABLE' && item.entitlementReason !== 'MISSING_BANK_ACCOUNT') return [];
-    const amount = salaryMoney(monthlySalaryNet(item) - (covered.get(periodMonth) || 0));
+    const amount = salaryMoney(monthlySalaryNet(item) - salaryOffsetTotal(source,item) - (covered.get(periodMonth) || 0));
     if (!(amount > 0)) return [];
     return [{employeeId,periodMonth,sourcePayrollRunId:source.id,sourcePayrollItemId:item.id,amount}];
   });
@@ -107,4 +107,41 @@ export function salaryBatchEmployeeComponents(run,batch,employeeId) {
   }else{const ratio=amount/Number(item?.netSalary||1);basic=Number(item?.baseSalary||0)*ratio;housing=Number(item?.housingAllowance||0)*ratio;deductions=Number(item?.totalDeductions||0)*ratio;}
   basic=salaryMoney(basic);housing=salaryMoney(housing);deductions=salaryMoney(deductions);
   return {amount,basic,housing,deductions,otherIncome:salaryMoney(amount+deductions-basic-housing)};
+}
+
+export const salaryOffsetTotal=(run,item)=>salaryMoney(rows(run?.entitlementOffsets).filter(offset=>offset.employeeId===item?.employeeId
+  && offset.sourcePayrollItemId===item?.id).reduce((sum,offset)=>sum+Number(offset.amount||0),0));
+
+export function availableSalarySourceBalance(runs,run,item){
+  const covered=rows(runs).filter(candidate=>candidate.companyId===run.companyId).reduce((sum,candidate)=>sum+
+    rows(candidate.paymentBatches).filter(batch=>['PAID','SCHEDULED'].includes(batch.status)).reduce((sum,batch)=>sum+
+      salaryBatchAllocations(candidate,batch).filter(row=>row.employeeId===item.employeeId&&row.periodMonth===run.periodMonth).reduce((sum,row)=>sum+row.amount,0),0),0);
+  return salaryMoney(monthlySalaryNet(item)-salaryOffsetTotal(run,item)-covered);
+}
+
+export function effectiveEmployeeSalaryLoans(loans,runs,companyId,employeeId){
+  const sorted=rows(loans).filter(loan=>loan.companyId===companyId&&loan.employeeId===employeeId).sort((a,b)=>a.startDate.localeCompare(b.startDate)||a.id.localeCompare(b.id));
+  const balances=new Map(sorted.map(loan=>[loan.id,Math.max(0,Number(loan.remainingAmount)||0)]));
+  for(const run of rows(runs).filter(run=>run.companyId===companyId&&['APPROVED','POSTED'].includes(run.status)).sort((a,b)=>a.periodMonth.localeCompare(b.periodMonth))){
+    let deduction=Number(rows(run.items).find(item=>item.employeeId===employeeId)?.loanDeduction)||0;
+    for(const loan of sorted){if(loan.startDate>run.periodMonth||deduction<=0)continue;
+      const applied=Math.min(balances.get(loan.id)||0,deduction);balances.set(loan.id,salaryMoney((balances.get(loan.id)||0)-applied));deduction=salaryMoney(deduction-applied);}
+  }
+  return sorted.map(loan=>({...loan,effectiveRemaining:balances.get(loan.id)||0}));
+}
+
+export function salarySourceSummary(runs,run,item,settlements=[]){
+  let paid=0,reserved=0;
+  for(const candidate of rows(runs).filter(candidate=>candidate.companyId===run.companyId))for(const batch of rows(candidate.paymentBatches)){
+    if(!['PAID','SCHEDULED'].includes(batch.status))continue;
+    const amount=salaryBatchAllocations(candidate,batch).filter(row=>row.employeeId===item.employeeId&&row.periodMonth===run.periodMonth).reduce((sum,row)=>sum+row.amount,0);
+    if(batch.status==='PAID')paid+=amount;else reserved+=amount;
+  }
+  const legacyPaid=rows(settlements).filter(settlement=>settlement.companyId===run.companyId&&settlement.status==='PAID'
+    &&settlement.sourcePayrollRunId===run.id&&settlement.sourcePayrollItemId===item.id).reduce((sum,row)=>sum+Number(row.amount||0),0);
+  paid=salaryMoney(paid+legacyPaid);
+  const entitlement=monthlySalaryNet(item);
+  const terminalOffset=['SETTLED','CANCELLED_WITH_DOCUMENT'].includes(item.entitlementStatus)&&!legacyPaid?entitlement:0;
+  const offsets=salaryMoney(salaryOffsetTotal(run,item)+terminalOffset);
+  return {entitlement,paid,reserved:salaryMoney(reserved),offsets,outstanding:salaryMoney(Math.max(0,entitlement-paid-offsets))};
 }

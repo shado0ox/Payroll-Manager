@@ -39,6 +39,12 @@ export async function appendPayrollFinancialAudit(client, q, { stored, next, use
   for (const [runId, oldRun] of beforeRuns) {
     const newRun = nextRuns.get(runId);
     if (!newRun) continue;
+    const oldOffsetIds=new Set(asArray(oldRun.entitlementOffsets).map(offset=>offset.id));
+    for(const offset of asArray(newRun.entitlementOffsets).filter(offset=>!oldOffsetIds.has(offset.id))){
+      const {id:offsetId,...offsetDetails}=offset;
+      await insertAudit(client,q,{companyId:newRun.companyId,user,action:offset.reversesOffsetId?'PAYROLL_OFFSET_REVERSED':'PAYROLL_OFFSET_CREATED',entityType:'PAYROLL_OFFSET',entityId:offset.id,
+        details:`${offset.amount} SR | ${newRun.periodMonth} | ${offset.reason} | ${offset.documentRef}`,payload:{payrollRunId:runId,periodMonth:newRun.periodMonth,offsetId,...offsetDetails}});
+    }
     const oldItems = new Map(asArray(oldRun.items).map(item => [item.id,item]));
     for (const item of asArray(newRun.items)) {
       const before = oldItems.get(item.id);

@@ -12,7 +12,7 @@ const deductions = fs.readFileSync('src/components/LoansPenaltiesView.tsx', 'utf
 test('payment batch selection is limited to currently eligible selected employees', () => {
   assert.match(payroll, /selectedPaymentEmployeeIds\.includes\(item\.employeeId\)/);
   assert.match(payroll, /\(item\.entitlementStatus \|\| 'PAYABLE'\) === 'PAYABLE'/);
-  assert.match(payroll, /!committedEmployeeIds\.has\(item\.employeeId\)/);
+  assert.match(payroll, /remainingPaymentAmounts\[item\.employeeId\] > 0/);
   assert.match(payroll, /const stillEligible = selectedPaymentItems/);
   assert.match(payroll, /\(\{selectedPaymentItems\.length\}\)/);
 });

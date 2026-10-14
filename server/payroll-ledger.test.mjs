@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { build } from 'esbuild';
-import { salaryBatchAllocations, unpaidSalaryDetails, availableSalaryAllocations, allocateSalaryAmount } from './payroll-ledger.mjs';
+import { salaryBatchAllocations, unpaidSalaryDetails, availableSalaryAllocations, allocateSalaryAmount, salarySourceSummary } from './payroll-ledger.mjs';
+import { buildPayrollEntitlementOffset } from './payroll-entitlement-offsets.mjs';
 import { validatePayrollCarryForwardState } from './payroll-carryforward-validation.mjs';
 import { createPayrollWorkflowGuards } from './payroll-workflow-guards.mjs';
 import { reconcilePaidPayrollCarryForward, reconcileReleasedPayrollCarryForward } from './payroll-paid-carryforward.mjs';
@@ -174,4 +175,98 @@ test('late payment and each documented settlement have independent journals on t
   assert.equal(offsets[0].date,'2026-06-11');assert.equal(offsets[0].periodMonth,'2026-06');
   assert.equal(offsets[0].totalDebit,50000);assert.equal(offsets[0].totalCredit,50000);
   assert.equal(offsets[0].lines[1].accountCode,'1105');
+});
+
+const offsetInput=(patch={})=>({id:'o1',employeeId:'e',sourcePayrollItemId:'jan-e',amount:10000,reason:'Documented receivable offset',documentRef:'DOC-1',counterAccount:'1105',date:'2026-06-12',...patch});
+
+test('50000 salary, 40000 paid, 10000 documented offset clears the balance without rewriting salary',()=>{
+  const jan=source();jan.paymentBatches=[batch(40000)];
+  const stored={payrollRuns:[jan],loans:[]};
+  const result=buildPayrollEntitlementOffset(stored,jan,offsetInput(),{id:'u'});
+  assert.equal(result.record.items[0].netSalary,50000);
+  assert.deepEqual(salarySourceSummary([result.record],result.record,result.record.items[0]),{entitlement:50000,paid:40000,reserved:0,offsets:10000,outstanding:0});
+  assert.doesNotThrow(()=>validatePayrollCarryForwardState([jan],[result.record]));
+  assert.deepEqual(unpaidSalaryDetails([result.record],target(),'e'),[]);
+  assert.deepEqual(availableSalaryAllocations([result.record],result.record,'e'),[]);
+});
+
+test('offset cannot consume a scheduled amount or repeat a document or exceed the debt',()=>{
+  const jan=source();jan.paymentBatches=[batch(40000,'SCHEDULED')];
+  code(()=>buildPayrollEntitlementOffset({payrollRuns:[jan]},jan,offsetInput({amount:10000.5}),{}),'OFFSET_EXCEEDS_UNRESERVED_BALANCE');
+  code(()=>buildPayrollEntitlementOffset({payrollRuns:[jan]},jan,offsetInput({documentRef:''}),{}),'OFFSET_DOCUMENT_REQUIRED');
+  const settled=buildPayrollEntitlementOffset({payrollRuns:[jan]},jan,offsetInput(),{}).record;
+  code(()=>buildPayrollEntitlementOffset({payrollRuns:[settled]},settled,offsetInput({id:'retry'}),{}),'OFFSET_DUPLICATE_DOCUMENT');
+  settled.paymentBatches.push(batch(1,'SCHEDULED','overpaid'));
+  code(()=>validatePayrollCarryForwardState([], [settled]),'PAYROLL_ENTITLEMENT_OVERPAID');
+});
+
+test('offset against a loan reduces effective principal once; reversal restores loan and salary independently',()=>{
+  const jan=source();jan.items[0].loanDeduction=0;jan.paymentBatches=[batch(40000)];
+  const loan={id:'l',companyId:'c',employeeId:'e',remainingAmount:10000,monthlyInstallment:1000,remainingInstallments:10,status:'ACTIVE',startDate:'2026-01',adjustments:[]};
+  const stored={payrollRuns:[jan],loans:[loan]};
+  const settled=buildPayrollEntitlementOffset(stored,jan,offsetInput({loanId:'l'}),{id:'u'});
+  assert.equal(settled.loan.remainingAmount,0);assert.equal(settled.loan.adjustments[0].amount,-10000);
+  const reversed=buildPayrollEntitlementOffset({...stored,payrollRuns:[settled.record],loans:[settled.loan]},settled.record,
+    offsetInput({id:'r1',amount:-10000,documentRef:'DOC-R',reversesOffsetId:'o1'}),{id:'u'});
+  assert.equal(reversed.loan.remainingAmount,10000);assert.equal(reversed.loan.status,'ACTIVE');
+  assert.equal(reversed.loan.adjustments.length,2);assert.equal(reversed.loan.adjustments[1].amount,10000);
+  assert.equal(salarySourceSummary([reversed.record],reversed.record,reversed.record.items[0]).outstanding,10000);
+  code(()=>buildPayrollEntitlementOffset({...stored,payrollRuns:[reversed.record]},reversed.record,
+    offsetInput({id:'r2',amount:-10000,documentRef:'DOC-R2',reversesOffsetId:'o1'}),{}),'OFFSET_REVERSAL_INVALID');
+});
+
+test('loan offset uses balance after approved deductions, preventing a second repayment of the same principal',()=>{
+  const jan=source();jan.paymentBatches=[batch(40000)];
+  const loan={id:'l',companyId:'c',employeeId:'e',remainingAmount:100,monthlyInstallment:70,remainingInstallments:2,status:'ACTIVE',startDate:'2026-01',adjustments:[]};
+  const stored={payrollRuns:[jan],loans:[loan]};
+  code(()=>buildPayrollEntitlementOffset(stored,jan,offsetInput({amount:31,loanId:'l'}),{}),'OFFSET_LOAN_BALANCE_INVALID');
+  const settled=buildPayrollEntitlementOffset(stored,jan,offsetInput({amount:30,loanId:'l'}),{});
+  assert.equal(settled.loan.remainingAmount,70);
+  assert.equal(settled.loan.adjustments[0].amount,-30);
+});
+
+test('offset events require dedicated commands and cannot mutate prior events',()=>{
+  const jan=source();jan.paymentBatches=[batch(40000)];
+  const result=buildPayrollEntitlementOffset({payrollRuns:[jan]},jan,offsetInput(),{id:'u'});
+  code(()=>guards.validatePayrollWorkflowChanges([jan],[result.record],{id:'u'}),'ENTITLEMENT_OFFSET_COMMAND_REQUIRED');
+  assert.doesNotThrow(()=>guards.validatePayrollWorkflowChanges([jan],[result.record],{id:'u'},{allowEntitlementOffsets:true}));
+  const changed=structuredClone(result.record);changed.entitlementOffsets[0].amount=9000;
+  code(()=>guards.validatePayrollWorkflowChanges([result.record],[changed],{id:'u'},{allowEntitlementOffsets:true}),'ENTITLEMENT_OFFSET_COMMAND_REQUIRED');
+});
+
+test('offset and reversal have opposite balanced journals while the original posted snapshot remains intact',async()=>{
+  const bundle=await build({entryPoints:['src/utils/accountingEngine.ts'],bundle:true,platform:'node',format:'esm',write:false});
+  const engine=await import(`data:text/javascript;base64,${Buffer.from(bundle.outputFiles[0].text).toString('base64')}`);
+  const jan=source();jan.entitlementOffsets=[offsetInput(),offsetInput({id:'reverse',amount:-10000,reversesOffsetId:'o1',documentRef:'DOC-R',date:'2026-07-01'})];
+  const journals=engine.generateEntitlementSettlementJournals({id:'c',chartOfAccounts:{salariesPayableAccount:'2101'}},[jan]);
+  assert.equal(journals.length,2);assert.notEqual(journals[0].id,journals[1].id);
+  assert.equal(journals[0].lines[0].debit,10000);assert.equal(journals[1].lines[0].credit,10000);
+  assert.equal(journals[0].totalDebit,journals[0].totalCredit);assert.equal(journals[1].totalDebit,journals[1].totalCredit);
+  const posted={...journals[0],qoyodSyncStatus:{synced:true,qoyodJournalId:'Q-1'},qoyodSnapshot:structuredClone(journals[0])};
+  assert.equal(engine.mergeFreshJournalWithDraft({...journals[0],totalDebit:1},posted).totalDebit,10000);
+});
+
+test('legacy paid cash settlements remain available in portal receipts and source balances',()=>{
+  const row={id:'jan-e',payroll_run_id:'jan',period_month:'2026-01',company_id:'c',net_salary:1000,payload:{employeeId:'e',netSalary:1000,totalGrossSalary:1000,entitlementStatus:'SETTLED'},run_payload:{companyId:'c'}};
+  const settlement={id:'old-cash',companyId:'c',employeeId:'e',sourcePayrollRunId:'jan',sourcePayrollItemId:'jan-e',periodMonth:'2026-01',amount:1000,status:'PAID',paymentMethod:'CASH',paymentDate:'2026-06-10'};
+  const receipts=buildEmployeePaidPayslips([], [row],'e',[settlement]);
+  assert.equal(receipts.length,1);assert.equal(receipts[0].paidAmount,1000);assert.equal(receipts[0].snapshot.balance.paid,1000);
+  assert.equal(receipts[0].snapshot.balance.offsets,0);assert.equal(receipts[0].snapshot.balance.outstanding,0);
+});
+
+test('legacy posted aggregate prevents duplicate per-batch journals and permits only proven later batches',async()=>{
+  const bundle=await build({entryPoints:['src/utils/accountingEngine.ts'],bundle:true,platform:'node',format:'esm',write:false});
+  const engine=await import(`data:text/javascript;base64,${Buffer.from(bundle.outputFiles[0].text).toString('base64')}`);
+  const company={id:'c',crNumber:'1234',chartOfAccounts:{}};
+  const jan=source();jan.paymentBatches=[{...batch(40000),createdAt:'2026-06-01T00:00:00Z'}];
+  const legacy={...engine.generatePaymentJournalBatch(company,jan),qoyodSyncStatus:{synced:true,syncedAt:'2026-06-10T00:00:00Z',qoyodJournalId:'Q-1'}};
+  legacy.qoyodSnapshot=structuredClone(legacy);
+  let plan=engine.buildPayrollPaymentJournalPlan(company,[jan],[legacy]);
+  assert.deepEqual(plan.batches.map(row=>row.id),[legacy.id]);assert.deepEqual(plan.blockedRunIds,[]);
+  jan.paymentBatches.push({...batch(10000,'PAID','new'),createdAt:'2026-06-12T00:00:00Z'});
+  plan=engine.buildPayrollPaymentJournalPlan(company,[jan],[legacy]);
+  assert.deepEqual(plan.batches.map(row=>row.id),[legacy.id,'batch-payment-new']);
+  jan.paymentBatches[1].createdAt='2026-06-02T00:00:00Z';
+  plan=engine.buildPayrollPaymentJournalPlan(company,[jan],[legacy]);
+  assert.deepEqual(plan.batches.map(row=>row.id),[legacy.id]);assert.deepEqual(plan.blockedRunIds,['jan']);
 });

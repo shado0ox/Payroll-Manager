@@ -231,6 +231,26 @@ await request(`/api/payroll-runs/${laterId}/payment-batches/${finalPartial.id}/s
 state = await loadState();
 assert.deepEqual(findRun(state,laterId).paymentBatches[0].allocations.map(({salarySnapshot,...allocation})=>allocation),[sourceAllocation(10000)],'Allocations must survive status changes and reload');
 
+const offsetLoanId = `offset-loan-${key}`;
+await request(`/api/loans/${offsetLoanId}`,{method:'PUT',body:JSON.stringify({id:offsetLoanId,companyId,employeeId:ids.employee,totalAmount:10000,
+  monthlyInstallment:1000,totalInstallments:10,remainingInstallments:10,remainingAmount:10000,startDate:priorPeriod,status:'ACTIVE',reason:'سلفة اختبار تسوية الرصيد',adjustments:[]})});
+const offset = {id:`offset-${key}`,employeeId:ids.employee,sourcePayrollItemId:ids.augustItem,amount:10000,reason:'تسوية مقابل سلفة موثقة',
+  documentRef:`DOC-${key}`,counterAccount:'1105',date:`${laterPeriod}-12`,loanId:offsetLoanId};
+const offsetResult = (await request(`/api/payroll-runs/${ids.augustRun}/entitlement-offsets`,{method:'POST',body:JSON.stringify(offset)})).body;
+assert.equal(offsetResult.record.items[0].netSalary,50000,'Offset must not rewrite the earned salary snapshot');
+assert.equal(offsetResult.loan.remainingAmount,0,'Offset must clear the linked loan in the same transaction');
+state=await loadState();
+assert.equal(findRun(state,ids.septemberRun).items[0].priorPeriodNet,0);
+assert.equal(findLoan(state,offsetLoanId).remainingAmount,0);
+await assert.rejects(request(`/api/payroll-runs/${ids.augustRun}/entitlement-offsets`,{method:'POST',body:JSON.stringify({...offset,id:`retry-${key}`})}),/409.*OFFSET_DUPLICATE_DOCUMENT/);
+const offsetReversal = {...offset,id:`reverse-offset-${key}`,amount:-10000,reversesOffsetId:offset.id,documentRef:`DOC-R-${key}`,reason:'عكس التسوية التجريبية'};
+await request(`/api/payroll-runs/${ids.augustRun}/entitlement-offsets`,{method:'POST',body:JSON.stringify(offsetReversal)});
+state=await loadState();
+assert.equal(findRun(state,ids.septemberRun).items[0].priorPeriodNet,10000,'Offset reversal must restore salary debt exactly once');
+assert.equal(findLoan(state,offsetLoanId).remainingAmount,10000,'Offset reversal must restore linked loan principal exactly once');
+assert.equal(findRun(state,ids.augustRun).entitlementOffsets.length,2);
+await assert.rejects(request(`/api/loans/${offsetLoanId}`,{method:'DELETE'}),/409.*LOAN_HAS_SETTLEMENT_HISTORY/);
+
 const legacyPeriod = new Date(Date.UTC(priorYear,priorMonthNumber+5,1)).toISOString().slice(0,7);
 const legacyId = `legacy-settlement-run-${key}`;
 const legacyItem = {...payrollItem({id:`${legacyId}-item`,runId:legacyId,entitlementStatus:'HELD',entitlementReason:'مراجعة تسوية',isSuspended:false}),

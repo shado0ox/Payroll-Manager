@@ -17,6 +17,7 @@ import {
   Company, 
   Employee, 
   PayrollRun, 
+  PayrollEntitlementOffset,
   PayrollSettlement,
   AttendanceRecord, 
   LeaveRequest, 
@@ -156,7 +157,7 @@ function isClosedPayrollInputLocked(
     if (!item) return false;
     // Approval does not lock an unpaid employee. Source inputs lock only after that employee
     // is included in an active transfer batch or the payment has been confirmed.
-    const employeePaymentLocked = payrollRuns.filter(paymentRun => paymentRun.companyId === run.companyId).some(paymentRun =>
+    const employeePaymentLocked = (run.entitlementOffsets || []).some(offset=>offset.employeeId===record.employeeId) || payrollRuns.filter(paymentRun => paymentRun.companyId === run.companyId).some(paymentRun =>
       (paymentRun.paymentBatches || []).some(batch => ['SCHEDULED', 'PAID'].includes(batch.status)
         && salaryBatchAllocations(paymentRun,batch).some(row => row.employeeId === record.employeeId && row.periodMonth === run.periodMonth))
     );
@@ -642,6 +643,19 @@ export const App: React.FC = () => {
       alert(`${tr('تعذر أرشفة الموظفين. لم يتم تغيير أي بيانات:', 'Employee archival failed. No data was changed:')} ${code}`);
       return false;
     }
+  };
+
+  const handleCreatePayrollEntitlementOffset = async (runId:string,offset:PayrollEntitlementOffset):Promise<boolean> => {
+    const operation=persistenceQueueRef.current.catch(()=>undefined).then(()=>api.createPayrollEntitlementOffset(runId,offset));
+    persistenceQueueRef.current=operation.then(()=>undefined,()=>undefined);
+    try{
+      const result=await operation;
+      setState(prev=>{const runs=new Map([result.record,...result.affectedPayrollRuns].map(run=>[run.id,run]));
+        return {...prev,payrollRuns:prev.payrollRuns.map(run=>runs.get(run.id)||run),loans:prev.loans.map(loan=>loan.id===result.loan?.id?result.loan:loan)};
+      });
+      setDbStatus(prev=>({...prev,isCloudConnected:true,isChecking:false,lastError:null,lastSavedAt:result.updated_at}));
+      return true;
+    }catch(error:any){alert(`${tr('تعذر حفظ التسوية. لم تُطبق أي حركة غير مؤكدة:', 'Settlement could not be saved. No unconfirmed movement was applied:')} ${error?.message || 'UNKNOWN_ERROR'}`);return false;}
   };
 
   const handleSavePayrollRunConfirmed = async (run: PayrollRun): Promise<boolean> => {
@@ -1411,6 +1425,7 @@ export const App: React.FC = () => {
                 activeRole={state.activeRole}
                 permissions={state.currentUser?.permissions}
                 onSavePayrollRun={handleSavePayrollRunConfirmed}
+                onCreateEntitlementOffset={handleCreatePayrollEntitlementOffset}
                 onViewEmployeeStatement={openEmployeeStatement}
                 onOpenQoyodModal={() => setIsQoyodModalOpen(true)}
               />

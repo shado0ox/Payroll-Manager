@@ -1,6 +1,6 @@
 export type EmployeeRegistrationRequest={id:string;employee_id:string;company_id:string;username:string;email:string;created_at:string;employee_no:string;employee_name:string};
 import { AppState } from './storage';
-import { AttendanceRecord, Company, Employee, JournalBatch, LeaveRequest, LoanSchedule, PayrollRun, PayrollSettlement, PenaltyRecord, QoyodApiConfig, TemporaryEarningRecord, UserAccount } from '../types';
+import { AttendanceRecord, Company, Employee, JournalBatch, LeaveRequest, LoanSchedule, PayrollRun, PayrollEntitlementOffset, PayrollSettlement, PenaltyRecord, QoyodApiConfig, TemporaryEarningRecord, UserAccount } from '../types';
 
 export type StateCollectionKey = 'employees' | 'archivedEmployees' | 'attendance' | 'leaves' | 'loans' | 'penalties' | 'temporaryEarnings' | 'payrollRuns' | 'payrollSettlements' | 'journals';
 export type StateRecordChange = {
@@ -118,6 +118,7 @@ export type EmployeePayslipSummary = {
 export type EmployeePayslipDetail = {
   id:string;periodMonth:string;paidAmount:number;payment:EmployeePayslipPayment;
   snapshot:{
+    balance?:{entitlement:number;paid:number;reserved:number;offsets:number;outstanding:number};
     payrollRunId:string|null;payrollRunItemId:string|null;periodMonth:string;employeeNo:string;employeeName:string;department:string;
     earnings:{baseSalary:number;housingAllowance:number;transportAllowance:number;otherAllowances:number;nonGosiAllowances:number;overtimeAmount:number;overtimeHours:number;bonuses:number;roundingAdjustment:number;manualAddition:number;totalGrossSalary:number};
     deductions:{delayMinutes:number;delayDeduction:number;absenceDays:number;absenceDeduction:number;unpaidLeaveDays:number;unpaidLeaveDeduction:number;gosiEmployeeShare:number;loanDeduction:number;penaltiesDeduction:number;otherDeductions:number;manualDeduction:number;totalDeductions:number};
@@ -413,6 +414,13 @@ export const api = {
     const result = await request<{deleted:boolean;version:number;updated_at:string}>(`/api/journals/${encodeURIComponent(id)}`, { method:'DELETE',body:JSON.stringify({reason}) });
     stateVersion = result.version;
     removeFromSyncedCollection('journals',id);
+    return result;
+  },
+  createPayrollEntitlementOffset: async (runId:string,offset:PayrollEntitlementOffset) => {
+    const result=await request<{record:PayrollRun;affectedPayrollRuns:PayrollRun[];loan:LoanSchedule|null;version:number;updated_at:string}>(`/api/payroll-runs/${encodeURIComponent(runId)}/entitlement-offsets`,{method:'POST',body:JSON.stringify(offset)});
+    stateVersion=result.version;updateSyncedCollection('payrollRuns',result.record);
+    for(const run of result.affectedPayrollRuns)updateSyncedCollection('payrollRuns',run);
+    if(result.loan)updateSyncedCollection('loans',result.loan);
     return result;
   },
   savePayrollRun: async (record: any) => {

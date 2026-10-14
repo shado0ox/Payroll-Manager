@@ -1,4 +1,4 @@
-import { monthlySalaryNet } from '../../server/payroll-ledger.mjs';
+import { monthlySalaryNet, salarySourceSummary, effectiveEmployeeSalaryLoans } from '../../server/payroll-ledger.mjs';
 import React from 'react';
 import { 
   X, 
@@ -55,7 +55,8 @@ export const EmployeeStatementModal: React.FC<EmployeeStatementModalProps> = ({
     .filter(h => h.item !== undefined)
     .sort((a, b) => b.run.periodMonth.localeCompare(a.run.periodMonth));
 
-  const activeLoan = loans.find(l => l.companyId === company.id && l.employeeId === employee.id && l.status === 'ACTIVE');
+  const effectiveLoans=effectiveEmployeeSalaryLoans(loans,payrollRuns,company.id,employee.id);
+  const activeLoan=effectiveLoans.filter(loan=>loan.status==='ACTIVE'&&loan.effectiveRemaining>0).map(loan=>({...loan,remainingAmount:loan.effectiveRemaining}))[0];
   const employeePaidSettlements = settlements.filter(item => item.companyId === company.id && item.employeeId === employee.id && item.status === 'PAID');
   const employeePaidSettlementTotal = roundAmount(employeePaidSettlements.reduce((sum, item) => sum + Number(item.amount || 0), 0));
   const selectedHistory = employeeHistory.find(history => history.run.periodMonth === periodMonth);
@@ -375,6 +376,9 @@ export const EmployeeStatementModal: React.FC<EmployeeStatementModalProps> = ({
                     <th className="py-2.5 px-3">{tr('الراتب الإجمالي', 'Gross Salary')}</th>
                     <th className="py-2.5 px-3">{tr('الاستقطاعات', 'Deductions')}</th>
                     <th className="py-2.5 px-3">{tr('صافي استحقاق الشهر', 'Monthly net entitlement')}</th>
+                    <th className="py-2.5 px-3">{tr('المدفوع', 'Paid')}</th>
+                    <th className="py-2.5 px-3">{tr('التسويات', 'Offsets')}</th>
+                    <th className="py-2.5 px-3">{tr('المتبقي المستحق', 'Outstanding')}</th>
                     <th className="py-2.5 px-3">{tr('حالة المسير', 'Payroll Status')}</th>
                   </tr>
                 </thead>
@@ -385,6 +389,9 @@ export const EmployeeStatementModal: React.FC<EmployeeStatementModalProps> = ({
                       <td className="py-2.5 px-3">{formatSAR(item!.totalGrossSalary)}</td>
                       <td className="py-2.5 px-3 text-rose-600">{formatSAR(item!.totalDeductions)}</td>
                       <td className="py-2.5 px-3 font-bold text-emerald-800">{formatSAR(monthlySalaryNet(item))}</td>
+                      <td className="py-2.5 px-3">{formatSAR(salarySourceSummary(payrollRuns,run,item,settlements).paid)}</td>
+                      <td className="py-2.5 px-3">{formatSAR(salarySourceSummary(payrollRuns,run,item,settlements).offsets)}</td>
+                      <td className="py-2.5 px-3 font-bold text-amber-800">{formatSAR(salarySourceSummary(payrollRuns,run,item,settlements).outstanding)}</td>
                       <td className="py-2.5 px-3">
                         <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 text-[10px] font-semibold">
                           {run.status}

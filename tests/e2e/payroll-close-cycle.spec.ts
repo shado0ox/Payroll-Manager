@@ -109,6 +109,10 @@ test('payroll reversal restores next-month loan deduction with an audit trail', 
   expect(reversedBatch.paymentReversedAt).toBeTruthy();
   expect(reversedBatch.paymentReversedBy).toBeTruthy();
 
+  const cancelReservation=waitForPayrollWrite(page,'PATCH',/\/api\/payroll-runs\/[^/]+\/payment-batches\/[^/]+\/status$/);
+  await page.getByRole('button',{name:/^إلغاء$|^Cancel$/i}).click();
+  expect((await (await cancelReservation).json()).record.paymentBatches.at(-1).status).toBe('CANCELLED');
+
   page.once('dialog',confirmation => confirmation.accept());
   const reversePosting = waitForPayrollWrite(page,'POST',/\/api\/payroll-runs\/[^/]+\/status$/);
   await page.getByRole('button',{ name:/التراجع عن الترحيل|Reverse posting/i }).click();
@@ -187,6 +191,24 @@ test('partial employee payment keeps 10000 available after a 40000 payment and r
   await page.getByRole('button',{name:/إلغاء|Cancel/i,exact:true}).last().click();
   // Closing the modal preserves selection; clear it before the helper selects again.
   await page.getByRole('button',{name:/تحديد المتاح|Select eligible/i}).click();
+  const promptValues=['10000','تسوية موثقة لرصيد الموظف',`DOC-${seed.employeeId}`,'1105',new Date().toISOString().slice(0,10)];
+  let promptIndex=0;
+  const answerPrompts=async (dialog:any)=>{expect(dialog.type()).toBe('prompt');await dialog.accept(promptValues[promptIndex++]);};
+  page.on('dialog',answerPrompts);
+  const offsetWrite=waitForPayrollWrite(page,'POST',/\/api\/payroll-runs\/[^/]+\/entitlement-offsets$/);
+  await page.getByRole('button',{name:/تسوية ذمة هذا الشهر|Settle this month/i}).click();
+  const offsetRun=(await (await offsetWrite).json()).record;
+  page.off('dialog',answerPrompts);
+  expect(offsetRun.entitlementOffsets[0].amount).toBe(10000);
+  expect(offsetRun.items[0].netSalary).toBe(50000);
+  await expect(page.getByRole('button',{name:/تحديد المتاح|Select eligible/i})).toBeDisabled();
+  const reversalPrompts=['عكس التسوية التجريبية',`DOC-${seed.employeeId}/R`];let reversalIndex=0;
+  const answerReversal=async(dialog:any)=>{await dialog.accept(reversalPrompts[reversalIndex++]);};
+  page.on('dialog',answerReversal);
+  const reverseOffset=waitForPayrollWrite(page,'POST',/\/api\/payroll-runs\/[^/]+\/entitlement-offsets$/);
+  await page.getByRole('button',{name:/عكس التسوية|Reverse settlement/i}).click();
+  expect((await (await reverseOffset).json()).record.entitlementOffsets.at(-1).amount).toBe(-10000);
+  page.off('dialog',answerReversal);
   const second=await createPartial();
   expect(second.paymentBatches.at(-1).totalAmount).toBe(10000);
   expect(second.items[0].netSalary).toBe(50000);

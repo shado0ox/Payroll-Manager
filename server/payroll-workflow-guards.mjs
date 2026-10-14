@@ -24,7 +24,7 @@ const payrollSourceLocked = (stored, kind, record) => closedRunsForInput(stored,
   if (!item) return false;
   // Payroll inputs remain editable for unpaid/held employees. Once the employee is reserved
   // in a SCHEDULED batch or actually PAID, source entries used by that payroll item are locked.
-  const employeePaymentLocked = asArray(stored.payrollRuns).filter(paymentRun => paymentRun.companyId === run.companyId).some(paymentRun =>
+  const employeePaymentLocked = asArray(run.entitlementOffsets).some(offset=>offset.employeeId===record.employeeId) || asArray(stored.payrollRuns).filter(paymentRun => paymentRun.companyId === run.companyId).some(paymentRun =>
     asArray(paymentRun.paymentBatches).some(batch => ['SCHEDULED','PAID'].includes(batch.status)
       && salaryBatchAllocations(paymentRun,batch).some(row => row.employeeId === record.employeeId && row.periodMonth === run.periodMonth))
   );
@@ -125,7 +125,7 @@ const payrollItemPaymentLockCore = (item) => {
   };
 };
 
-function validatePayrollWorkflowChanges(storedRuns, incomingRuns, user) {
+function validatePayrollWorkflowChanges(storedRuns, incomingRuns, user, options = {}) {
   const before = new Map(asArray(storedRuns).map(run => [run.id, run]));
   const after = new Map(asArray(incomingRuns).map(run => [run.id, run]));
   for (const run of asArray(incomingRuns)) {
@@ -157,6 +157,13 @@ function validatePayrollWorkflowChanges(storedRuns, incomingRuns, user) {
 
     const oldStatus = String(oldRun.status || 'DRAFT');
     const nextStatus = String(nextRun.status || 'DRAFT');
+    if (!sameJson(oldRun.entitlementOffsets,nextRun.entitlementOffsets)) {
+      const oldOffsets=asArray(oldRun.entitlementOffsets),nextOffsets=asArray(nextRun.entitlementOffsets);
+      if(!options.allowEntitlementOffsets||nextOffsets.length!==oldOffsets.length+1||!sameJson(oldOffsets,nextOffsets.slice(0,-1))) {
+        throw workflowError(409,'ENTITLEMENT_OFFSET_COMMAND_REQUIRED');
+      }
+    }
+
     for (const oldItem of asArray(oldRun.items)) {
       const nextItem=asArray(nextRun.items).find(item=>item.id===oldItem.id);
       if (['SETTLED','CANCELLED_WITH_DOCUMENT'].includes(oldItem.entitlementStatus) && oldItem.entitlementStatus===nextItem?.entitlementStatus
@@ -169,6 +176,11 @@ function validatePayrollWorkflowChanges(storedRuns, incomingRuns, user) {
       const transition = oldStatus + '->' + nextStatus;
       const allowed = new Set(['DRAFT->UNDER_REVIEW','UNDER_REVIEW->DRAFT','UNDER_REVIEW->APPROVED','APPROVED->UNDER_REVIEW','APPROVED->POSTED','POSTED->APPROVED']);
       if (!allowed.has(transition)) throw workflowError(409, 'INVALID_PAYROLL_STATUS_TRANSITION');
+      if (transition==='APPROVED->UNDER_REVIEW' && asArray(oldRun.entitlementOffsets).length) throw workflowError(409,'SETTLED_PAYROLL_CANNOT_REOPEN');
+      if (transition==='APPROVED->UNDER_REVIEW' && asArray(storedRuns).filter(run=>run.companyId===oldRun.companyId).some(run=>
+        asArray(run.paymentBatches).some(batch=>batch.status==='SCHEDULED' && salaryBatchAllocations(run,batch).some(row=>row.periodMonth===oldRun.periodMonth)))) {
+        throw workflowError(409,'SCHEDULED_PAYROLL_MUST_CANCEL_BEFORE_REOPEN');
+      }
       if (transition === 'UNDER_REVIEW->APPROVED' && !can(user, 'APPROVE_PAYROLL')) {
         throw workflowError(403, 'APPROVE_PAYROLL_REQUIRED');
       }
@@ -195,10 +207,10 @@ function validatePayrollWorkflowChanges(storedRuns, incomingRuns, user) {
         throw workflowError(409, 'APPROVED_PAYROLL_IDENTITY_IMMUTABLE');
       }
       const lockedEmployeeIds = new Set(
-        asArray(storedRuns).filter(run => run.companyId === oldRun.companyId).flatMap(run =>
+        [...asArray(oldRun.entitlementOffsets).map(offset=>offset.employeeId),...asArray(storedRuns).filter(run => run.companyId === oldRun.companyId).flatMap(run =>
           asArray(run.paymentBatches).filter(batch => ['SCHEDULED','PAID'].includes(batch.status))
             .flatMap(batch => salaryBatchAllocations(run,batch).filter(row => row.periodMonth === oldRun.periodMonth).map(row => row.employeeId))
-        )
+        )]
       );
       const oldItemsByEmployee = new Map(asArray(oldRun.items).map(item => [item.employeeId, item]));
       const nextItemsByEmployee = new Map(asArray(nextRun.items).map(item => [item.employeeId, item]));
@@ -269,6 +281,7 @@ function validatePayrollWorkflowChanges(storedRuns, incomingRuns, user) {
     if (!can(user, 'MANAGE_PAYROLL')) throw workflowError(403, 'MANAGE_PAYROLL_REQUIRED');
     if (!['DRAFT','UNDER_REVIEW'].includes(run.status)) throw workflowError(409, 'NEW_PAYROLL_RUN_INVALID_STATUS');
     if (asArray(run.paymentBatches).length) throw workflowError(409, 'NEW_PAYROLL_RUN_CANNOT_HAVE_PAYMENTS');
+    if (asArray(run.entitlementOffsets).length) throw workflowError(409,'NEW_PAYROLL_CANNOT_HAVE_OFFSETS');
   }
 }
 

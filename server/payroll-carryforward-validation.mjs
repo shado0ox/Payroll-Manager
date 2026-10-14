@@ -1,4 +1,4 @@
-import { monthlySalaryNet, salaryBatchAllocations } from './payroll-ledger.mjs';
+import { monthlySalaryNet, salaryBatchAllocations, salaryOffsetTotal } from './payroll-ledger.mjs';
 const asArray = value => Array.isArray(value) ? value : [];
 const roundAmount = value => Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
 const fail = code => { const error = new Error(code); error.status = 409; throw error; };
@@ -125,7 +125,7 @@ export function validatePayrollCarryForwardState(storedRuns, incomingRuns) {
         if (batchKeys.has(key)) fail('PAYMENT_ALLOCATION_DUPLICATE_SOURCE');
         batchKeys.add(key);
         const allocated = roundAmount((allocatedAmounts.get(key) || 0) + amount);
-        if (!Number.isFinite(monthlySalaryNet(item)) || allocated > monthlySalaryNet(item)) fail('PAYROLL_ENTITLEMENT_OVERPAID');
+        if (!Number.isFinite(monthlySalaryNet(item)) || allocated > roundAmount(monthlySalaryNet(item) - salaryOffsetTotal(source,item))) fail('PAYROLL_ENTITLEMENT_OVERPAID');
         allocatedAmounts.set(key,allocated);
         total = roundAmount(total + amount);
       }

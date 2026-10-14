@@ -148,7 +148,7 @@ export function generateEntitlementSettlementJournals(company:Company,runs:Payro
   const entries=runs.filter(run=>run.companyId===company.id && ['APPROVED','POSTED'].includes(run.status)).flatMap(run=>run.items
     .filter(item=>['SETTLED','CANCELLED_WITH_DOCUMENT'].includes(item.entitlementStatus || '') && item.entitlementSettlementAccount && item.entitlementSettlementDate && currentPeriodNet(item)>0)
     .map(item=>({run,item})));
-  return entries.map(({run,item})=>{
+  const manualJournals=entries.map(({run,item})=>{
     const periodMonth=item.entitlementSettlementDate!.slice(0,7);
     const amount=currentPeriodNet(item);
     const description=`${item.employeeNo} | ${run.periodMonth} | ${item.entitlementReason || ''} | ${item.entitlementDocumentRef || ''}`;
@@ -156,4 +156,37 @@ export function generateEntitlementSettlementJournals(company:Company,runs:Payro
       {id:`settlement-counter-${item.id}`,accountCode:item.entitlementSettlementAccount!,accountNameAr:'الحساب المقابل للتسوية الموثقة',accountNameEn:'Documented settlement counter-account',descriptionAr:description,descriptionEn:description,debit:0,credit:amount}];
   return finishBatch({id:`batch-settlement-${item.id}`,companyId:company.id,payrollRunId:run.id,periodMonth,batchNumber:`JV-SETTLEMENT-${item.id}`,date:item.entitlementSettlementDate!,description:`تسويات ذمم الرواتب بمستندات - ${periodMonth}`,descriptionEn:`Documented salary liability settlements - ${periodMonth}`,journalType:'PAYROLL_SETTLEMENT',status:'APPROVED'},lines);
   });
+  const offsetJournals=runs.filter(run=>run.companyId===company.id).flatMap(run=>(run.entitlementOffsets || []).map(offset=>{
+    const amount=Math.abs(offset.amount),reversed=offset.amount<0;
+    const description=`${offset.employeeId} | ${run.periodMonth} | ${offset.reason} | ${offset.documentRef}`;
+    const payable={id:`offset-payable-${offset.id}`,accountCode:company.chartOfAccounts.salariesPayableAccount||'2101',accountNameAr:'مستحقات الرواتب والأجور',accountNameEn:'Salaries payable',descriptionAr:description,descriptionEn:description,debit:reversed?0:amount,credit:reversed?amount:0};
+    const counter={id:`offset-counter-${offset.id}`,accountCode:offset.counterAccount,accountNameAr:'الحساب المقابل للتسوية الموثقة',accountNameEn:'Documented settlement counter-account',descriptionAr:description,descriptionEn:description,debit:reversed?amount:0,credit:reversed?0:amount};
+    return finishBatch({id:`batch-offset-${offset.id}`,companyId:company.id,payrollRunId:run.id,periodMonth:offset.date.slice(0,7),batchNumber:`JV-OFFSET-${offset.id}`,date:offset.date,description:`${reversed?'عكس تسوية':'تسوية'} ذمة راتب ${run.periodMonth} - ${offset.documentRef}`,descriptionEn:`${reversed?'Reversal of salary offset':'Salary liability offset'} ${run.periodMonth} - ${offset.documentRef}`,journalType:'PAYROLL_SETTLEMENT',status:'APPROVED'},[payable,counter]);
+  }));
+  return [...manualJournals,...offsetJournals];
+}
+
+// Old payment journals were aggregated per run. Preserve their posted scope before
+// showing new per-batch journals, otherwise the same transfer could be posted twice.
+export function buildPayrollPaymentJournalPlan(company:Company,runs:PayrollRun[],journals:JournalBatch[]) {
+  const batches:JournalBatch[]=[],blockedRunIds:string[]=[];
+  for(const run of runs.filter(run=>run.companyId===company.id)){
+    const paid=(run.paymentBatches || []).filter(batch=>batch.status==='PAID');
+    const legacy=journals.find(journal=>journal.companyId===company.id&&journal.id===`batch-payment-${run.id}`&&journal.qoyodSyncStatus?.synced);
+    if(!legacy){batches.push(...paid.map(batch=>generatePaymentJournalBatch(company,run,batch)));continue;}
+    const snapshot=mergeFreshJournalWithDraft(legacy,legacy);batches.push(snapshot);
+    const lines=snapshot.lines;
+    const amount=roundAmount(snapshot.totalDebit);
+    const standard=lines.length===2&&lines.some(line=>line.id==='line-pay-debit-payable'&&roundAmount(line.debit)===amount&&line.credit===0)
+      &&lines.some(line=>line.id==='line-pay-cred-bank'&&roundAmount(line.credit)===amount&&line.debit===0);
+    if(!standard){blockedRunIds.push(run.id);continue;}
+    if(roundAmount(paid.reduce((sum,batch)=>sum+batch.totalAmount,0))===amount)continue;
+    const syncedAt=Date.parse(legacy.qoyodSyncStatus?.syncedAt||'');
+    if(!Number.isFinite(syncedAt)){blockedRunIds.push(run.id);continue;}
+    const historical=paid.filter(batch=>!Number.isFinite(Date.parse(batch.createdAt||''))||Date.parse(batch.createdAt)<=syncedAt);
+    if(roundAmount(historical.reduce((sum,batch)=>sum+batch.totalAmount,0))!==amount){blockedRunIds.push(run.id);continue;}
+    const covered=new Set(historical.map(batch=>batch.id));
+    batches.push(...paid.filter(batch=>!covered.has(batch.id)).map(batch=>generatePaymentJournalBatch(company,run,batch)));
+  }
+  return {batches,blockedRunIds};
 }

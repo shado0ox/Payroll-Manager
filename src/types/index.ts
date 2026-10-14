@@ -501,7 +501,14 @@ export interface PayrollPaymentBatch {
   createdBy?: string;
 }
 
+export interface PayrollEntitlementOffset {
+  id:string; employeeId:string; sourcePayrollItemId:string; amount:number;
+  reason:string; documentRef:string; counterAccount:string; date:string;
+  loanId?:string; loanPriorStatus?:LoanSchedule['status']; reversesOffsetId?:string; createdAt?:string; createdBy?:string;
+}
+
 export interface PayrollRun {
+  entitlementOffsets?: PayrollEntitlementOffset[];
   id: string;
   companyId: string;
   periodMonth: string; // e.g. "2026-08"

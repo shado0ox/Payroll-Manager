@@ -1,4 +1,4 @@
-import { salaryBatchAllocations } from '../payroll-ledger.mjs';
+import { salaryBatchAllocations, salarySourceSummary } from '../payroll-ledger.mjs';
 import express from 'express';
 import { randomUUID } from 'node:crypto';
 import { resolveAnnualLeaveAccrual } from '../annual-leave-accrual.mjs';
@@ -54,11 +54,18 @@ const safePayrollSnapshot = (row, periodMonth) => {
   };
 };
 
-export function buildEmployeePaidPayslips(batchRows, itemRows, employeeId) {
+export function buildEmployeePaidPayslips(batchRows, itemRows, employeeId, legacySettlements = []) {
   const rowsByRun = new Map(itemRows.map(row => [row.payroll_run_id,row]));
   const rowsByPeriod = new Map(itemRows.map(row => [row.period_month,row]));
+  const ledgerRuns=itemRows.map(row=>({...(row.run_payload||{}),id:row.payroll_run_id,companyId:row.company_id,periodMonth:row.period_month,
+    items:[{...(row.payload||{}),id:row.id,employeeId,netSalary:row.net_salary}],
+    paymentBatches:batchRows.filter(batch=>batch.payroll_run_id===row.payroll_run_id).map(batch=>({...batch.batch_payload,id:batch.id,status:'PAID',employeeIds:batch.employee_ids}))}));
   const payslips = [];
-  for (const batchRow of batchRows) {
+  const historicalPayments=legacySettlements.filter(settlement=>settlement.status==='PAID'&&rowsByRun.has(settlement.sourcePayrollRunId)).map(settlement=>({
+    id:settlement.id,payroll_run_id:settlement.sourcePayrollRunId,payment_period_month:settlement.periodMonth,batch_number:`SETTLEMENT-${settlement.id}`,
+    method:settlement.paymentMethod,payment_date:settlement.paymentDate,employee_ids:[employeeId],batch_payload:{allocations:[{employeeId,periodMonth:settlement.periodMonth,
+      sourcePayrollRunId:settlement.sourcePayrollRunId,sourcePayrollItemId:settlement.sourcePayrollItemId,amount:settlement.amount}],reference:settlement.paymentReference}}));
+  for (const batchRow of [...batchRows,...historicalPayments]) {
     const batch = batchRow.batch_payload || {};
     const direct = array(batchRow.employee_ids).includes(employeeId);
     const paymentItem = rowsByRun.get(batchRow.payroll_run_id);
@@ -98,6 +105,7 @@ export function buildEmployeePaidPayslips(batchRows, itemRows, employeeId) {
         netSalary:coverage.fallback.net,payableDays:null,adjustmentNotes:'',
       };
       if (!snapshot) continue;
+      if(sourceRow){const run=ledgerRuns.find(run=>run.id===sourceRow.payroll_run_id);snapshot.balance=salarySourceSummary(ledgerRuns,run,run.items[0],legacySettlements);}
       snapshot.netSalary = coverage.amount;
       payslips.push({
         id:`${batchRow.id}:${coverage.periodMonth}`,periodMonth:coverage.periodMonth,paidAmount:coverage.amount,
@@ -206,10 +214,11 @@ export function createEmployeePortalRouter({ auth,writeLimiter,pool,q,bumpStateV
         OR EXISTS (SELECT 1 FROM jsonb_array_elements(COALESCE(b.payload->'priorEntitlements','[]'::jsonb)) entitlement WHERE entitlement->>'employeeId'=$1)
       ) ORDER BY COALESCE(b.payment_date,b.scheduled_date) DESC,b.sort_order DESC`,params);
     const items = await pool.query(`SELECT i.payroll_run_id,i.id,i.employee_no,i.employee_name,i.base_salary,i.total_gross_salary,
-        i.total_deductions,i.net_salary,i.payload,r.period_month
+        i.total_deductions,i.net_salary,i.payload,r.period_month,r.company_id,r.payload run_payload
       FROM ${q('payroll_run_items')} i JOIN ${q('payroll_runs')} r ON r.id=i.payroll_run_id
       WHERE i.employee_id=$1 AND r.company_id=ANY($2::text[]) ORDER BY r.period_month DESC`,params);
-    return buildEmployeePaidPayslips(batches.rows,items.rows,req.user.employee_id);
+    const settlements=await pool.query(`SELECT payload FROM ${q('payroll_settlements')} WHERE employee_id=$1 AND company_id=ANY($2::text[]) AND status='PAID'`,params);
+    return buildEmployeePaidPayslips(batches.rows,items.rows,req.user.employee_id,settlements.rows.map(row=>row.payload));
   };
 
   router.get('/employee-portal/me', auth, async (req,res,next) => {

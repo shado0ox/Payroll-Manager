@@ -17,7 +17,12 @@ const employeeIsPaymentLocked = (run, employeeId) => asArray(run?.paymentBatches
  * The function is pure so the database command can persist every returned run atomically.
  */
 export function reconcilePaidPayrollCarryForward({ runs, employees, sourceRun, paidBatch, now = new Date().toISOString() }) {
-  if (Array.isArray(paidBatch?.allocations)) return reconcileAllocatedCarry({runs,sourceRun,batch:paidBatch});
+  if (Array.isArray(paidBatch?.allocations)) {
+    const releasedHolds=reconcilePaidPayrollCarryForward({runs,employees,sourceRun,paidBatch:{...paidBatch,allocations:undefined},now});
+    const byId=new Map(releasedHolds.map(run=>[run.id,run]));
+    const adjusted=reconcileAllocatedCarry({runs:asArray(runs).map(run=>byId.get(run.id)||run),sourceRun,batch:paidBatch});
+    return [...new Map([...releasedHolds,...adjusted].map(run=>[run.id,run])).values()];
+  }
   const employeeIds = new Set(asArray(paidBatch?.employeeIds).map(String));
   if (!sourceRun?.periodMonth || !employeeIds.size) return [];
   const employeesById = new Map(asArray(employees).map(employee => [String(employee.id), employee]));

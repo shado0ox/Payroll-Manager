@@ -26,6 +26,8 @@ interface Props {
   employees: Employee[];
   committedEmployeeIds: Set<string>;
   remainingPaymentAmounts: Record<string,number>;
+  offsetAvailableAmounts:Record<string,number>;
+  onCreateOffset:(item:PayrollRunItem)=>void;
   language: 'ar' | 'en';
   onToggleAllEligible: () => void;
   onTogglePaymentEmployee: (employeeId: string) => void;
@@ -38,7 +40,7 @@ interface Props {
 
 export const PayrollRunItemsTable = React.memo(function PayrollRunItemsTable({
   currentRun, filteredItems, eligibleFilteredItems, selectedPaymentEmployeeIds, employees,
-  committedEmployeeIds, remainingPaymentAmounts, language, onToggleAllEligible, onTogglePaymentEmployee,
+  committedEmployeeIds, remainingPaymentAmounts, offsetAvailableAmounts, onCreateOffset, language, onToggleAllEligible, onTogglePaymentEmployee,
   getEmployeePaymentBatch, onEntitlementStatusChange, onOpenAdjustment,
   onViewEmployeeStatement, tr,
 }: Props) {
@@ -128,6 +130,7 @@ export const PayrollRunItemsTable = React.memo(function PayrollRunItemsTable({
                   <div><span className="text-slate-400">{tr('صافي الراتب', 'Net salary')}</span><div className="font-extrabold text-emerald-800">{formatSAR(item.netSalary)}</div></div>
                 </div>
 
+                {['APPROVED','POSTED'].includes(currentRun.status)&&!['SETTLED','CANCELLED_WITH_DOCUMENT'].includes(item.entitlementStatus||'')&&offsetAvailableAmounts[item.employeeId]>0&&<button type="button" onClick={()=>onCreateOffset(item)} className="mb-1 rounded-lg border border-purple-200 px-2 py-1 text-[10px] font-bold text-purple-700">{tr('تسوية ذمة هذا الشهر','Settle this month’s balance')}</button>}
                 {!paymentBatch && ['APPROVED', 'POSTED'].includes(currentRun.status) && (
                   <select value={entitlementStatus} onChange={event => handleEntitlementStatusChange(item, event.target.value as PayrollEntitlementStatus)} className="mt-3 w-full rounded-xl border border-slate-200 bg-white px-2 py-2 text-[11px] font-bold">
                     {Object.entries(ENTITLEMENT_CONFIG).map(([status, config]) => <option key={status} value={status}>{language === 'ar' ? config.labelAr : config.labelEn}</option>)}
@@ -192,7 +195,8 @@ export const PayrollRunItemsTable = React.memo(function PayrollRunItemsTable({
                         <div className="font-bold text-slate-900 flex items-center gap-1 truncate"><span className="truncate">{item.employeeName}</span><span className={`w-1.5 h-1.5 rounded-full shrink-0 ${item.gosiEnabled === false ? 'bg-slate-300' : 'bg-emerald-500'}`} /></div>
                         <div className="text-[10px] text-slate-400 font-mono">{item.employeeNo}</div>
                         <div className="mt-0.5">{renderEntitlement(item, paymentBatch)}</div>
-                        {!paymentBatch && ['APPROVED', 'POSTED'].includes(currentRun.status) && (
+                        {['APPROVED','POSTED'].includes(currentRun.status)&&!['SETTLED','CANCELLED_WITH_DOCUMENT'].includes(item.entitlementStatus||'')&&offsetAvailableAmounts[item.employeeId]>0&&<button type="button" onClick={()=>onCreateOffset(item)} className="mb-1 rounded-lg border border-purple-200 px-2 py-1 text-[10px] font-bold text-purple-700">{tr('تسوية ذمة هذا الشهر','Settle this month’s balance')}</button>}
+                {!paymentBatch && ['APPROVED', 'POSTED'].includes(currentRun.status) && (
                           <select value={entitlementStatus} onChange={event => handleEntitlementStatusChange(item, event.target.value as PayrollEntitlementStatus)} className="block mt-1 max-w-full px-1.5 py-1 rounded-lg border border-slate-200 bg-white text-[9px] font-bold">
                             {Object.entries(ENTITLEMENT_CONFIG).map(([status, config]) => <option key={status} value={status}>{language === 'ar' ? config.labelAr : config.labelEn}</option>)}
                           </select>

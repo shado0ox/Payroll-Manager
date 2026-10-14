@@ -1,4 +1,5 @@
 import { validateApprovedPayrollLoans } from '../payroll-loan-validation.mjs';
+import { buildPayrollEntitlementOffset } from '../payroll-entitlement-offsets.mjs';
 import { salaryBatchAllocations, monthlySalaryNet } from '../payroll-ledger.mjs';
 import express from 'express';
 import { snapshotPayrollGosiBranches } from '../gosi-payroll-snapshot.mjs';
@@ -136,6 +137,44 @@ router.post('/payroll-runs/:id/payment-batches', auth, writeLimiter, async (req,
     if (e?.code === '23505') return res.status(409).json({ error:'PAYMENT_BATCH_DUPLICATE',detail:e.constraint });
     next(e);
   } finally { client.release(); }
+});
+
+router.post('/payroll-runs/:id/entitlement-offsets', auth, writeLimiter, async (req,res,next)=>{
+  const client=await pool.connect();
+  try{
+    if(!can(req.user,'MANAGE_PAYROLL'))return res.status(403).json({error:'FORBIDDEN'});
+    if(req.body?.reversesOffsetId&&!can(req.user,'REVERSE_PAYROLL_PAYMENT'))throw workflowError(403,'REVERSE_PAYROLL_PAYMENT_REQUIRED');
+    await client.query('BEGIN');
+    const stored=await readLockedNormalizedState(client);
+    const previous=asArray(stored.payrollRuns).find(run=>run.id===req.params.id);
+    if(!previous)throw workflowError(404,'PAYROLL_RUN_NOT_FOUND');
+    if(!req.user.company_ids.includes(previous.companyId))throw workflowError(403,'FORBIDDEN');
+    const {record,offset,loan}=buildPayrollEntitlementOffset(stored,previous,req.body||{},req.user);
+    if(loan&&!can(req.user,'MANAGE_LOANS_PENALTIES'))throw workflowError(403,'MANAGE_LOANS_PENALTIES_REQUIRED');
+    const affectedPayrollRuns=reconcilePaidPayrollCarryForward({runs:stored.payrollRuns,employees:stored.employees,sourceRun:record,
+      paidBatch:{employeeIds:[offset.employeeId],allocations:[]}});
+    const affected=new Map(affectedPayrollRuns.map(run=>[run.id,run]));
+    const nextRuns=asArray(stored.payrollRuns).map(run=>run.id===record.id?record:affected.get(run.id)||run);
+    const nextLoans=asArray(stored.loans).map(row=>row.id===loan?.id?loan:row);
+    validatePayrollWorkflowChanges(stored.payrollRuns,nextRuns,req.user,{allowEntitlementOffsets:true});
+    validatePayrollCarryForwardState(stored.payrollRuns,nextRuns);
+    const payload=clone(record);delete payload.items;delete payload.paymentBatches;
+    await client.query(`UPDATE ${q('payroll_runs')} SET payload=$2::jsonb,updated_at=now() WHERE id=$1`,[record.id,JSON.stringify(payload)]);
+    for(const run of affectedPayrollRuns)await persistReconciledPayrollRun(client,run);
+    if(loan)await client.query(`UPDATE ${q('loans')} SET remaining_amount=$2,remaining_installments=$3,status=$4,payload=$5::jsonb,updated_at=now() WHERE id=$1`,
+      [loan.id,loan.remainingAmount,loan.remainingInstallments,loan.status,JSON.stringify(loan)]);
+    await appendPayrollFinancialAudit(client,q,{stored,next:{...stored,payrollRuns:nextRuns,loans:nextLoans},user:req.user});
+    const updated=await bumpStateVersion(client,req.user.id);
+    await appendStateAudit(client,q,{companyIds:req.user.company_ids,user:req.user,action:'PAYROLL_ENTITLEMENT_OFFSET',version:updated.rows[0].version});
+    await client.query('COMMIT');
+    broadcastStateUpdate({version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at,companyIds:[record.companyId],changes:[
+      {collection:'payrollRuns',operation:'upsert',records:[record,...affectedPayrollRuns]},...(loan?[{collection:'loans',operation:'upsert',records:[loan]}]:[])]});
+    res.json({record,offset,loan,affectedPayrollRuns,version:Number(updated.rows[0].version),updated_at:updated.rows[0].updated_at});
+  }catch(error){
+    try{await client.query('ROLLBACK');}catch{}
+    if(Number.isInteger(error?.status)&&error.status>=400&&error.status<500)return res.status(error.status).json({error:error.message});
+    next(error);
+  }finally{client.release();}
 });
 
 router.patch('/payroll-runs/:id/payment-batches/:batchId/status', auth, writeLimiter, async (req, res, next) => {
