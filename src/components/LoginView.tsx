@@ -42,7 +42,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ defaultCompanyCode = '101'
     if (!forgotEmail.trim()) return;
     setResetBusy(true);
     try {
-      const result = await api.passwordResetRequest(forgotEmail.trim(),language);
+      const result = await api.passwordResetRequest(forgotEmail.trim(),language,companyInput.trim());
       setRecoveryRequestId(result.requestId);
       setRecoveryStep('CODE');
       setForgotMessage(language === 'ar' ? 'إذا كان البريد مسجلًا، تم إرسال رمز من 6 أرقام. الرمز صالح لمدة 10 دقائق.' : 'If the email is registered, a 6-digit code was sent. It expires in 10 minutes.');
@@ -91,7 +91,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ defaultCompanyCode = '101'
     if (!forgotEmail.trim()) return;
     setResetBusy(true);
     try {
-      await api.usernameRecoveryRequest(forgotEmail.trim(), language);
+      await api.usernameRecoveryRequest(forgotEmail.trim(), language,companyInput.trim());
       setForgotMessage(language === 'ar'
         ? 'إذا تطابقت البيانات، تم إرسال اسم المستخدم إلى بريدك الإلكتروني.'
         : 'If the details match, the username has been sent to your email.');
@@ -291,10 +291,10 @@ export const LoginView: React.FC<LoginViewProps> = ({ defaultCompanyCode = '101'
                     </div>
                     {recoveryStep === 'EMAIL' && <>
                       <input type="email" value={forgotEmail} onChange={e => setForgotEmail(e.target.value)} placeholder={isArabic ? 'البريد الإلكتروني المسجل' : 'Registered email'} className={inputClass} dir="ltr" autoComplete="email" />
-                      {recoveryMode === 'EMAIL_LOGIN' && <p className="text-[11px] text-slate-400">{isArabic ? `سيتم الدخول إلى المنشأة رقم ${companyInput || '—'}.` : `You will sign in to company ${companyInput || '—'}.`}</p>}
+                      {recoveryMode !== 'COMPANY_CODE' && <p className="text-[11px] text-slate-400">{isArabic ? `المنشأة المحددة للاسترجاع أو الدخول رقم ${companyInput || '—'}.` : `Selected company for recovery or sign-in: ${companyInput || '—'}.`}</p>}
                       <button
                         type="button"
-                        disabled={resetBusy || !forgotEmail.trim() || (recoveryMode === 'EMAIL_LOGIN' && !companyInput.trim())}
+                        disabled={resetBusy || !forgotEmail.trim() || (recoveryMode !== 'COMPANY_CODE' && !companyInput.trim())}
                         onClick={recoveryMode === 'PASSWORD' ? passwordResetRequest : recoveryMode === 'EMAIL_LOGIN' ? emailLoginRequest : recoveryMode === 'USERNAME' ? usernameRecoveryRequest : companyCodeRecoveryRequest}
                         className="w-full h-11 rounded-xl bg-slate-100 text-slate-900 font-black disabled:opacity-50"
                       >
@@ -358,9 +358,9 @@ export const LoginView: React.FC<LoginViewProps> = ({ defaultCompanyCode = '101'
               </form>}
               {mode === 'CREATED' && <div className="space-y-5">
                 <div className="rounded-2xl border border-emerald-400/25 bg-emerald-400/10 p-5 text-center"><div className="text-xs text-emerald-200">{isArabic ? 'كود الشركة' : 'Company code'}</div><div className="mt-2 font-mono text-3xl font-black tracking-[.25em] text-white">{createdCompanyCode}</div></div>
-                <button type="button" onClick={() => setMode('LOGIN')} className="flex h-12 w-full items-center justify-center rounded-2xl bg-emerald-500 text-sm font-black text-slate-950">{isArabic ? 'الدخول الآن' : 'Sign in now'}</button>
+                <button type="button" onClick={() => setMode('LOGIN')} className="flex h-12 w-full items-center justify-center rounded-2xl bg-emerald-500 text-sm font-black text-slate-950">{isArabic ? 'العودة للدخول' : 'Back to sign in'}</button>
               </div>}
-              {mode === 'EMPLOYEE_CREATED' && <div className="space-y-5"><div className="rounded-2xl border border-cyan-400/25 bg-cyan-400/10 p-5 text-center text-sm font-bold text-cyan-100">{isArabic ? 'تم ربط الحساب بملفك الوظيفي بنجاح.' : 'Your account was linked to your employee profile.'}</div><button type="button" onClick={() => setMode('LOGIN')} className="flex h-12 w-full items-center justify-center rounded-2xl bg-cyan-400 text-sm font-black text-slate-950">{isArabic ? 'الدخول الآن' : 'Sign in now'}</button></div>}
+              {mode === 'EMPLOYEE_CREATED' && <div className="space-y-5"><div className="rounded-2xl border border-cyan-400/25 bg-cyan-400/10 p-5 text-center text-sm font-bold text-cyan-100">{isArabic ? 'تم التحقق من بريدك. طلب تسجيلك ينتظر موافقة الإدارة، ولن يمكنك الدخول قبل اعتماده.' : 'Your email is verified. Registration is awaiting administration approval before you can sign in.'}</div><button type="button" onClick={() => setMode('LOGIN')} className="flex h-12 w-full items-center justify-center rounded-2xl bg-cyan-400 text-sm font-black text-slate-950">{isArabic ? 'العودة للدخول' : 'Back to sign in'}</button></div>}
             </div>
             <div className="mt-7 text-center text-[11px] leading-5 text-slate-600"><p>{t('loginFooter')}</p><p className="mt-1"><a href="/privacy" className="hover:text-emerald-400">{isArabic ? 'سياسة الخصوصية' : 'Privacy'}</a> · <a href="/terms" className="hover:text-emerald-400">{isArabic ? 'شروط الاستخدام' : 'Terms'}</a></p><p className="mt-1">{t('designedBy')} <span className="font-bold text-slate-500">Shadi Nassef</span></p></div>
           </div>

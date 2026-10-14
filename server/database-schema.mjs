@@ -1,3 +1,4 @@
+import {migrateTenantCredentials} from './tenant-credentials.mjs';
 export async function initializeDatabaseSchema({ pool,q,schema,bcrypt }) {
 await pool.query(`CREATE SCHEMA IF NOT EXISTS "${schema}"`);
 await pool.query(`CREATE TABLE IF NOT EXISTS ${q('companies')} (
@@ -38,12 +39,13 @@ await pool.query(`UPDATE ${q('users')} owner_user SET is_company_owner=true,upda
     WHERE company.is_archived=false
     ORDER BY company.id,candidate.created_at,candidate.id
   )`);
-await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS users_email_unique_idx ON ${q('users')}(lower(email)) WHERE email <> ''`);
+
 await pool.query(`CREATE TABLE IF NOT EXISTS ${q('registration_requests')} (
   id text PRIMARY KEY, email text NOT NULL UNIQUE, code_hash text NOT NULL, details jsonb NOT NULL,
   attempts integer NOT NULL DEFAULT 0 CHECK (attempts >= 0 AND attempts <= 10),
   expires_at timestamptz NOT NULL, created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now()
 )`);
+await pool.query(`ALTER TABLE ${q('registration_requests')} DROP CONSTRAINT IF EXISTS registration_requests_email_key`);
 await pool.query(`DELETE FROM ${q('registration_requests')} WHERE expires_at < now()-interval '1 day'`);
 await pool.query(`CREATE TABLE IF NOT EXISTS ${q('privacy_consents')} (
   id text PRIMARY KEY, subject_type text NOT NULL CHECK (subject_type IN ('USER','EMPLOYEE_PORTAL')),
@@ -68,15 +70,6 @@ await pool.query(`CREATE TABLE IF NOT EXISTS ${q('auth_email_codes')} (
 await pool.query(`CREATE INDEX IF NOT EXISTS auth_email_codes_user_purpose_idx
   ON ${q('auth_email_codes')}(user_id,purpose,expires_at DESC)`);
 await pool.query(`DELETE FROM ${q('auth_email_codes')} WHERE expires_at < now()-interval '1 day' OR used_at < now()-interval '1 day'`);
-const duplicateUserEmails = await pool.query(`SELECT lower(email) AS email_key,count(*)::integer AS duplicate_count
-  FROM ${q('users')} WHERE email IS NOT NULL AND btrim(email) <> ''
-  GROUP BY lower(email) HAVING count(*) > 1 LIMIT 1`);
-if (!duplicateUserEmails.rowCount) {
-  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS users_email_ci_unique ON ${q('users')} (lower(email)) WHERE email IS NOT NULL AND btrim(email) <> ''`);
-} else {
-  console.warn('Skipping users_email_ci_unique because duplicate user emails already exist; resolve duplicates before enforcing the index.');
-}
-
 await pool.query(`CREATE TABLE IF NOT EXISTS ${q('sessions')} (
   token_hash text PRIMARY KEY, user_id text NOT NULL REFERENCES ${q('users')}(id) ON DELETE CASCADE,
   expires_at timestamptz NOT NULL, created_at timestamptz NOT NULL DEFAULT now()
@@ -139,8 +132,14 @@ await pool.query(`CREATE TABLE IF NOT EXISTS ${q('employee_portal_accounts')} (
   is_active boolean NOT NULL DEFAULT true, email_verified_at timestamptz NOT NULL DEFAULT now(),
   last_login timestamptz, created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now()
 )`);
-await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS employee_portal_email_unique_idx
-  ON ${q('employee_portal_accounts')}(lower(email))`);
+
+await pool.query(`ALTER TABLE ${q('employee_portal_accounts')} ADD COLUMN IF NOT EXISTS approval_status text NOT NULL DEFAULT 'APPROVED'`);
+await pool.query(`ALTER TABLE ${q('employee_portal_accounts')} ADD COLUMN IF NOT EXISTS reviewed_by text`);
+await pool.query(`ALTER TABLE ${q('employee_portal_accounts')} ADD COLUMN IF NOT EXISTS reviewed_at timestamptz`);
+await pool.query(`ALTER TABLE ${q('employee_portal_accounts')} ADD COLUMN IF NOT EXISTS review_reason text NOT NULL DEFAULT ''`);
+await pool.query(`DO $$ BEGIN
+ ALTER TABLE ${q('employee_portal_accounts')} ADD CONSTRAINT employee_portal_approval_status_check CHECK (approval_status IN ('PENDING','APPROVED','REJECTED'));
+EXCEPTION WHEN duplicate_object THEN NULL; END $$`);
 await pool.query(`ALTER TABLE ${q('sessions')} ALTER COLUMN user_id DROP NOT NULL`);
 await pool.query(`ALTER TABLE ${q('sessions')} ADD COLUMN IF NOT EXISTS portal_account_id text REFERENCES ${q('employee_portal_accounts')}(id) ON DELETE CASCADE`);
 await pool.query(`INSERT INTO ${q('employee_portal_accounts')}
@@ -466,7 +465,8 @@ await pool.query(`INSERT INTO ${q('companies')} (id, company_code, name_ar, name
 ]);
 const adminHash = await bcrypt.hash(process.env.ADMIN_PASSWORD, 12);
 await pool.query(`INSERT INTO ${q('users')} (id, username, password_hash, name, email, role, company_ids)
-  VALUES ('user-admin',$1,$2,$3,$4,'ADMIN',$5::jsonb) ON CONFLICT (username) DO NOTHING`, [
+  VALUES ('user-admin',$1,$2,$3,$4,'ADMIN',$5::jsonb) ON CONFLICT (id) DO NOTHING`, [
   process.env.ADMIN_USERNAME, adminHash, process.env.ADMIN_NAME, process.env.ADMIN_EMAIL || '', JSON.stringify([companyId])
 ]);
+await migrateTenantCredentials({pool,q,schema});
 }

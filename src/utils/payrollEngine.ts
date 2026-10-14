@@ -31,7 +31,7 @@ export function calculateEmployeePayrollItem(input: EmployeeCalculationInput): P
   const companyBank = detectBankFromIBAN(employee.bankIban, company.bankDefinitions);
   const effectiveBankName = companyBank?.nameAr || employee.bankName;
   const effectiveBankSwift = companyBank?.swiftCode || getSwiftCodeFromBankName(employee.bankName, company.bankDefinitions) || employee.bankSwiftCode;
-  const rules = company.calculationRules || {
+  const configuredRules = company.calculationRules || {
     dailyRateFormula: 'BASE_PLUS_HOUSING',
     hourlyRateDivisor: 8,
     workDaysDivisor: 30,
@@ -47,6 +47,8 @@ export function calculateEmployeePayrollItem(input: EmployeeCalculationInput): P
     saudiGosiMaxCap: 45000,
     roundingDecimals: 2,
   };
+
+  const rules = { ...configuredRules, roundingDecimals: 2 };
 
   const suspensionStartsBeforePeriodEnds = !employee.suspensionStartDate
     || employee.suspensionStartDate <= `${input.periodMonth}-31`;
@@ -307,7 +309,7 @@ export function calculateEmployeePayrollItem(input: EmployeeCalculationInput): P
   if(leaveCashAllowance>0)warningFlags.push(`بدل إجازة نقدي مضاف للمسير: ${leaveCashAllowance}`);
   if(leaveAdvancePaid>0)warningFlags.push(`دفعة إجازة مقدمة مسجلة: ${leaveAdvancePaid}`);
 
-  return {
+  return applyPayrollNetRounding({
     id: `item-${employee.id}-${input.periodMonth}`,
     payrollRunId: '',
     employeeId: employee.id,
@@ -363,7 +365,20 @@ export function calculateEmployeePayrollItem(input: EmployeeCalculationInput): P
 
     isSuspended: isSuspended || isAbsconded,
     warningFlags,
-  };
+  }, company.calculationRules?.netSalaryRounding);
+}
+
+export function applyPayrollNetRounding(item: PayrollRunItem, policy?: 'NONE' | 'CEIL_SAR'): PayrollRunItem {
+  const previous = roundAmount(item.roundingAdjustment || 0);
+  const gross = roundAmount(item.totalGrossSalary - previous);
+  const net = roundAmount(Math.max(0, gross - item.totalDeductions));
+  const priorNet = roundAmount(item.priorPeriodNet || 0);
+  const halalas = Math.round((net + priorNet) * 100);
+  const adjustment = policy === 'CEIL_SAR' && halalas > 0 ? ((100 - halalas % 100) % 100) / 100 : 0;
+  return { ...item, roundingAdjustment: adjustment,
+    bonuses: roundAmount(item.bonuses - previous + adjustment),
+    totalGrossSalary: roundAmount(gross + adjustment), netSalary: roundAmount(net + adjustment + priorNet),
+    totalCompanyBurden: roundAmount(gross + adjustment + item.gosiEmployerShare + priorNet) };
 }
 
 export function roundAmount(val: number, decimals: number = 2): number {

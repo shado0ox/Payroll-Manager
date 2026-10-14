@@ -4,7 +4,7 @@ on:
   pull_request:
     branches: [main]
   push:
-    branches: [fix/payroll-workflow-password-reset]
+    branches: [main, fix/payroll-workflow-password-reset]
 
 permissions:
   contents: read
@@ -88,6 +88,8 @@ jobs:
           cat runtime-server.log || true
           exit 1
 
+      - name: Verify registration approval and tenant credentials
+        run: node scripts/registration-tenant-acceptance.mjs
       - name: Exercise approval and payment persistence
         run: node scripts/runtime-payroll-smoke.mjs
       - name: Exercise full isolated payroll acceptance cycle

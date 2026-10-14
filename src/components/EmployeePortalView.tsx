@@ -217,7 +217,8 @@ const PayslipDocument = ({ payslip,company,language,money,monthName }:{payslip:E
   const earningRows = [
     ['الراتب الأساسي','Base salary',snapshot.earnings.baseSalary],['بدل السكن','Housing allowance',snapshot.earnings.housingAllowance],
     ['بدل النقل','Transport allowance',snapshot.earnings.transportAllowance],['بدلات أخرى','Other allowances',snapshot.earnings.otherAllowances + snapshot.earnings.nonGosiAllowances],
-    ['العمل الإضافي','Overtime',snapshot.earnings.overtimeAmount],['المكافآت والإضافات','Bonuses and additions',snapshot.earnings.bonuses + snapshot.earnings.manualAddition],
+    ['العمل الإضافي','Overtime',snapshot.earnings.overtimeAmount],['فرق جبر الراتب','Salary rounding top-up',snapshot.earnings.roundingAdjustment],
+    ['المكافآت والإضافات','Bonuses and additions',snapshot.earnings.bonuses - snapshot.earnings.roundingAdjustment],
   ].filter(row => Number(row[2]) !== 0);
   const deductionRows = [
     ['التأخير','Delay',snapshot.deductions.delayDeduction],['الغياب','Absence',snapshot.deductions.absenceDeduction],['إجازة بدون راتب','Unpaid leave',snapshot.deductions.unpaidLeaveDeduction],

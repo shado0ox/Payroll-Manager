@@ -46,7 +46,8 @@ import {
   PayrollEntitlementStatus,
 } from '../types';
 import { 
-  calculateEmployeePayrollItem, 
+  calculateEmployeePayrollItem,
+  applyPayrollNetRounding,
   formatSAR, 
   formatNumber, 
   roundAmount 
@@ -461,7 +462,7 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
       adjustmentItem.delayDeduction + adjustmentItem.absenceDeduction + adjustmentItem.unpaidLeaveDeduction +
       adjustmentItem.gosiEmployeeShare + adjustmentItem.loanDeduction + adjustmentItem.penaltiesDeduction + otherDeductions
     );
-    const updatedItem: PayrollRunItem = {
+    const updatedItem: PayrollRunItem = applyPayrollNetRounding({
       ...adjustmentItem,
       bonuses,
       otherDeductions,
@@ -472,7 +473,7 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
       totalDeductions,
       netSalary: roundAmount(Math.max(0, totalGrossSalary - totalDeductions)),
       totalCompanyBurden: roundAmount(totalGrossSalary + adjustmentItem.gosiEmployerShare),
-    };
+    }, company.calculationRules?.netSalaryRounding);
     const items = currentRun.items.map(item => item.id === updatedItem.id ? updatedItem : item);
     const sum = (selector: (item: PayrollRunItem) => number) => roundAmount(items.reduce((total, item) => total + selector(item), 0));
     onSavePayrollRun({
@@ -654,7 +655,7 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
         // Re-apply the stored delta on top of the newly calculated base instead of dropping it.
         const previousManualAddition = previousItem?.manualAddition || 0;
         const previousManualDeduction = previousItem?.manualDeduction || 0;
-        const calculatedWithManualAdjustment = (previousManualAddition || previousManualDeduction) ? {
+        const calculatedWithManualAdjustment = applyPayrollNetRounding((previousManualAddition || previousManualDeduction) ? {
           ...calculated,
           bonuses: roundAmount(calculated.bonuses + previousManualAddition),
           otherDeductions: roundAmount(calculated.otherDeductions + previousManualDeduction),
@@ -665,7 +666,7 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
           totalDeductions: roundAmount(calculated.totalDeductions + previousManualDeduction),
           netSalary: roundAmount(Math.max(0, calculated.netSalary + previousManualAddition - previousManualDeduction)),
           totalCompanyBurden: roundAmount(calculated.totalCompanyBurden + previousManualAddition - previousManualDeduction),
-        } : calculated;
+        } : calculated, company.calculationRules?.netSalaryRounding);
         const previousEntitlementStatus = previousItem?.entitlementStatus || 'PAYABLE';
         const normalizedIban = String(emp.bankIban || '').replace(/\s/g, '').toUpperCase();
         const hasReadyBankAccount = /^SA\d{22}$/.test(normalizedIban) && emp.bankAccountStatus !== 'PENDING';
@@ -698,18 +699,18 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
             : (shouldReleaseAutomaticHold ? undefined : previousItem.entitlementHoldSource),
           entitlementUpdatedAt: (shouldApplyAutomaticHold || shouldReleaseAutomaticHold) ? new Date().toISOString() : previousItem.entitlementUpdatedAt,
         } : ((!hasReadyBankAccount && !cashWithoutIbanAllowed) || calculated.isSuspended) ? {
-          ...calculated,
+          ...calculatedWithManualAdjustment,
           entitlementStatus: 'HELD',
           entitlementReason: missingBankHold
             ? 'MISSING_BANK_ACCOUNT'
             : (emp.suspensionReason?.trim() || tr('تعليق تلقائي من ملف الموظف', 'Automatically held from employee profile')),
           entitlementHoldSource: missingBankHold ? 'MISSING_BANK_ACCOUNT' : 'EMPLOYEE_SUSPENSION',
           entitlementUpdatedAt: new Date().toISOString(),
-        } : calculated;
+        } : calculatedWithManualAdjustment;
       });
       const runItems: PayrollRunItem[] = [...lockedHistoricalItems, ...recalculatedItems];
 
-      const decimals = company.calculationRules?.roundingDecimals ?? 2;
+      const decimals = 2;
       const totalBaseSalaries = roundAmount(runItems.reduce((s, i) => s + i.baseSalary, 0), decimals);
       const totalAllowances = roundAmount(runItems.reduce((s, i) => s + i.housingAllowance + i.transportAllowance + i.otherAllowances + i.bonuses, 0), decimals);
       const totalOvertime = roundAmount(runItems.reduce((s, i) => s + i.overtimeAmount, 0), decimals);

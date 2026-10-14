@@ -1,3 +1,4 @@
+import {EmployeeRegistrationApprovals} from './EmployeeRegistrationApprovals';
 import React, { useEffect, useState, useMemo } from 'react';
 import { Company, Employee, UserRole } from '../types';
 import { downloadCsvFile } from '../utils/exportUtils';
@@ -482,6 +483,7 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
 
   return (
     <div className="space-y-6">
+      <EmployeeRegistrationApprovals companyId={company.id} />
       <div className="flex flex-wrap gap-2 rounded-2xl border bg-white p-2 shadow-sm">
         <button type="button" onClick={() => setListTab('CURRENT')} className={`rounded-xl px-4 py-2 text-sm font-black ${listTab==='CURRENT'?'bg-slate-900 text-white':'text-slate-600 hover:bg-slate-50'}`}>{language==='ar'?'الموظفون الحاليون':'Current employees'} ({companyEmployees.length})</button>
         <button type="button" onClick={() => setListTab('ARCHIVED')} className={`rounded-xl px-4 py-2 text-sm font-black ${listTab==='ARCHIVED'?'bg-rose-700 text-white':'text-slate-600 hover:bg-rose-50'}`}>{language==='ar'?'مؤرشفون':'Archived'} ({archivedEmployees.length})</button>

@@ -49,8 +49,9 @@ test('employee self-registration verifies identity and the supplied email before
   assert.match(authRegistrationRoutes,/\['ACTIVE','SUSPENDED','ON_LEAVE'\]/);
   assert.match(authRegistrationRoutes,/OR employee_id=\$3/);
   assert.match(authRegistrationRoutes,/INSERT INTO \$\{q\('employee_portal_accounts'\)\}/);
-  assert.match(authRegistrationRoutes,/jsonb_set\(payload,'\{email\}'/);
-  assert.match(authRegistrationRoutes,/email_verified_at\).*now\(\)/s);
+  assert.doesNotMatch(authRegistrationRoutes,/jsonb_set\(payload,'\{email\}'/);
+  assert.match(authRegistrationRoutes,/false,now\(\),'PENDING'/);
+  assert.match(authRegistrationRoutes,/email_verified_at,approval_status\).*now\(\)/s);
 });
 
 test('login is delegated with rate limiting, transaction, and secure cookie behavior', () => {

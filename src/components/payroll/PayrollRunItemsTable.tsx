@@ -117,6 +117,7 @@ export const PayrollRunItemsTable = React.memo(function PayrollRunItemsTable({
                   <div><span className="text-slate-400">{tr('القسم', 'Department')}</span><div className="font-bold text-slate-800">{item.department || '—'}</div></div>
                   <div><span className="text-slate-400">{tr('الأساسي', 'Basic')}</span><div className="font-bold text-slate-900">{formatSAR(item.baseSalary)}</div></div>
                   <div><span className="text-slate-400">{tr('البدلات', 'Allowances')}</span><div className="font-bold text-slate-900">{formatSAR(item.housingAllowance + item.transportAllowance + item.otherAllowances)}</div></div>
+                  {Boolean(item.roundingAdjustment) && <div><span className="text-slate-400">{tr('فرق جبر الراتب', 'Rounding top-up')}</span><div className="font-bold text-emerald-700">+{formatSAR(item.roundingAdjustment!)}</div></div>}
                   <div><span className="text-slate-400">{tr('المستحق', 'Gross')}</span><div className="font-bold text-slate-900">{formatSAR(item.totalGrossSalary)}</div></div>
                   <div><span className="text-slate-400">{tr('الغياب/التأخير', 'Absence/late')}</span><div className="font-bold text-rose-700">{formatSAR(item.delayDeduction + item.absenceDeduction + item.unpaidLeaveDeduction)}</div></div>
                   <div><span className="text-slate-400">{tr('التأمينات', 'GOSI')}</span><div className="font-bold text-slate-800">{formatSAR(item.gosiEmployeeShare)}</div></div>
@@ -202,7 +203,7 @@ export const PayrollRunItemsTable = React.memo(function PayrollRunItemsTable({
                   </td>
                   <td className="py-2.5 px-1.5 text-slate-600 truncate font-medium">{item.department}</td>
                   <td className="py-2.5 px-1.5 font-semibold text-slate-800 whitespace-nowrap">{formatSAR(item.baseSalary)}</td>
-                  <td className="py-2.5 px-1.5 text-slate-600 whitespace-nowrap">{formatSAR(item.housingAllowance + item.transportAllowance + item.otherAllowances)}</td>
+                  <td className="py-2.5 px-1.5 text-slate-600 whitespace-nowrap">{formatSAR(item.housingAllowance + item.transportAllowance + item.otherAllowances)}{Boolean(item.roundingAdjustment) && <div className="text-xs text-emerald-700">{tr('فرق جبر', 'Rounding')} +{formatSAR(item.roundingAdjustment!)}</div>}</td>
                   <td className="py-2.5 px-1.5 whitespace-nowrap">{formatSAR(item.overtimeAmount + item.bonuses + Number(item.priorPeriodNet || 0))}</td>
                   <td className="py-2.5 px-1.5 font-bold text-slate-900 whitespace-nowrap">{formatSAR(item.totalGrossSalary)}</td>
                   <td className="py-2.5 px-1.5 text-rose-600 whitespace-nowrap">{formatSAR(item.delayDeduction + item.absenceDeduction + item.unpaidLeaveDeduction)}</td>

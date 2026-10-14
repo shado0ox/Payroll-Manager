@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   Layers, 
   FileSpreadsheet, 
@@ -43,12 +43,14 @@ export const AccountingJournalsView: React.FC<AccountingJournalsViewProps> = ({
   const { language } = useLanguage();
   const ui = (ar: string, en: string) => language === 'ar' ? ar : en;
   const companyRuns = useMemo(() => {
-    return payrollRuns.filter(r => r.companyId === company.id);
+    return payrollRuns.filter(r => r.companyId === company.id).sort((a,b) => b.periodMonth.localeCompare(a.periodMonth));
   }, [payrollRuns, company.id]);
 
   const [selectedPeriod, setSelectedPeriod] = useState<string>(
     companyRuns[0]?.periodMonth || new Date().toISOString().slice(0, 7)
   );
+
+  const availablePeriods = useMemo(() => [...new Set(companyRuns.map(run => run.periodMonth))], [companyRuns]);
 
   const [journalType, setJournalType] = useState<'PAYROLL_ACCRUAL' | 'GOSI_ACCRUAL' | 'PAYROLL_PAYMENT' | 'GOSI_PAYMENT'>('PAYROLL_ACCRUAL');
   const [selectedGosiBranchId,setSelectedGosiBranchId]=useState('');
@@ -57,8 +59,11 @@ export const AccountingJournalsView: React.FC<AccountingJournalsViewProps> = ({
   const [saving,setSaving]=useState(false);
   const [isAccountsMapModalOpen, setIsAccountsMapModalOpen] = useState(false);
 
+  useEffect(() => { setSelectedPeriod(companyRuns[0]?.periodMonth || new Date().toISOString().slice(0,7)); }, [company.id]);
+  useEffect(() => { setEditingLines(null); setChangeReason(''); }, [selectedPeriod,journalType,selectedGosiBranchId,company.id]);
+
   const currentRun = useMemo(() => {
-    return companyRuns.find(r => r.periodMonth === selectedPeriod) || companyRuns[0];
+    return companyRuns.find(r => r.periodMonth === selectedPeriod) || null;
   }, [companyRuns, selectedPeriod]);
 
   const gosiAccrualBatches=useMemo(()=>currentRun?generateGosiAccrualJournalBatches(company,currentRun):[],[company,currentRun]);
@@ -122,15 +127,15 @@ export const AccountingJournalsView: React.FC<AccountingJournalsViewProps> = ({
 
         <div className="flex flex-wrap items-center gap-2.5">
           {/* Period Selector */}
-          <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-xl border border-slate-200 shadow-xs">
+          <div className="flex w-full sm:w-auto min-w-64 items-center gap-3 bg-white px-4 py-3 rounded-xl border border-slate-200 shadow-xs">
             <Calendar className="w-4 h-4 text-slate-500" />
             <select
               value={selectedPeriod}
               onChange={(e) => setSelectedPeriod(e.target.value)}
-              className="bg-transparent text-xs font-bold text-slate-800 border-none focus:ring-0 cursor-pointer"
+              aria-label={ui("فترة القيد", "Journal period")} className="w-full min-w-52 bg-transparent text-sm font-bold text-slate-800 border-none focus:ring-0 cursor-pointer"
             >
-              {companyRuns.map(r => (
-                <option key={r.id} value={r.periodMonth}>{ui('فترة', 'Period')} {r.periodMonth}</option>
+              {availablePeriods.map(period => (
+                <option key={period} value={period}>{new Intl.DateTimeFormat(language === 'ar' ? 'ar-SA-u-ca-gregory-nu-latn' : 'en-GB', {month:'long',year:'numeric',timeZone:'UTC'}).format(new Date(`${period}-01T00:00:00Z`))} — {period}</option>
               ))}
             </select>
           </div>

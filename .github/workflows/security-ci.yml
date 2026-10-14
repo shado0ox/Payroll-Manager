@@ -4,7 +4,7 @@ on:
   pull_request:
     branches: [main]
   push:
-    branches: [security/tenant-storage-hardening]
+    branches: [main, security/tenant-storage-hardening]
 
 permissions:
   contents: read

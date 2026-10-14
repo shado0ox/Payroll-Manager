@@ -12,14 +12,14 @@ export function createAuthLoginRouter({ loginLimiter, pool, q, sha256, permissio
       const password = String(req.body?.password || '');
       let result = await pool.query(`SELECT u.*, c.id company_id,false is_portal_account FROM ${q('users')} u
         JOIN ${q('companies')} c ON c.company_code=$2 AND c.is_archived=false
-        WHERE (lower(u.username)=$1 OR lower(u.email)=$1)`, [identifier, companyCode]);
+        WHERE (lower(u.username)=$1 OR lower(u.email)=$1) AND u.company_ids ? c.id`, [identifier, companyCode]);
       if (!result.rowCount) result = await pool.query(`SELECT p.id,p.username,p.password_hash,
         concat_ws(' ',e.first_name_ar,e.last_name_ar) name,p.email,'' phone,'EMPLOYEE' role,
         jsonb_build_array(p.company_id) company_ids,'[]'::jsonb permissions,p.employee_id,p.is_active,
         p.created_at,p.last_login,p.company_id,true is_portal_account
         FROM ${q('employee_portal_accounts')} p JOIN ${q('employees')} e ON e.id=p.employee_id
         JOIN ${q('companies')} c ON c.id=p.company_id AND c.company_code=$2 AND c.is_archived=false
-        WHERE (lower(p.username)=$1 OR lower(p.email)=$1) AND e.is_archived=false`,[identifier,companyCode]);
+        WHERE (lower(p.username)=$1 OR lower(p.email)=$1) AND e.is_archived=false AND p.approval_status='APPROVED'`,[identifier,companyCode]);
       const user = result.rows[0];
       const valid = user && user.is_active && await bcrypt.compare(password, user.password_hash);
       const companyAllowed = valid && user.company_ids.includes(user.company_id);

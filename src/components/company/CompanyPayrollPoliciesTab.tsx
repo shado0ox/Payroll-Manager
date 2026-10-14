@@ -292,24 +292,13 @@ export const CompanyPayrollPoliciesTab = React.memo<CompanyPayrollPoliciesTabPro
       </div>
     </div>
 
-    {/* Rounding Decimals */}
     <div>
-      <label className="block text-xs font-bold text-slate-700 mb-1">{tr('دقة التقريب العشري للمبالغ المالية', 'Financial amount decimal precision')}</label>
-      <select
-        value={formData.calculationRules?.roundingDecimals ?? 2}
-        onChange={(e) => setFormData({
-          ...formData,
-          calculationRules: {
-            ...formData.calculationRules!,
-            roundingDecimals: parseInt(e.target.value) || 2
-          }
-        })}
-        className="w-full px-3.5 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white font-semibold text-slate-900"
-      >
-        <option value="2">{tr('منزلتين عشريتين (هللات - 0.00)', 'Two decimal places (halalas - 0.00)')}</option>
-        <option value="0">{tr('أقرب رقم صحيح (بدون كسور)', 'Nearest whole number (no decimals)')}</option>
-        <option value="3">{tr('ثلاث منازل عشرية (0.000)', 'Three decimal places (0.000)')}</option>
+      <label className="block text-xs font-bold text-slate-700 mb-1">{tr('جبر صافي الراتب لصالح الموظف', 'Employee-favourable net salary rounding')}</label>
+      <select value={formData.calculationRules?.netSalaryRounding || 'NONE'} onChange={e => setFormData({...formData,calculationRules:{...formData.calculationRules!,roundingDecimals:2,netSalaryRounding:e.target.value as 'NONE'|'CEIL_SAR'}})} className="w-full px-3.5 py-2.5 text-sm bg-slate-50 border rounded-xl">
+        <option value="NONE">{tr('صرف الصافي بالهللات (الافتراضي)', 'Pay exact halalas (default)')}</option>
+        <option value="CEIL_SAR">{tr('جبر الصافي لأعلى إلى الريال التالي', 'Round net upward to the next riyal')}</option>
       </select>
+      <p className="mt-2 text-xs text-slate-500">{tr('مثال: 6500.50 تصبح 6501.00. الفرق إضافة تتحملها الشركة ضمن المكافآت، ولا يُخصم من الموظف. الحسابات والتأمينات تبقى بالهللات. يُطبق عند حساب المسير أو إعادة حساب الموظفين غير المدرجين في تحويل نشط.', 'Example: 6500.50 becomes 6501.00. The employer funds the difference as a bonus; no employee deduction. Calculations and GOSI retain halalas. Applies when calculating unlocked payroll items.')}</p>
     </div>
   </div>
 

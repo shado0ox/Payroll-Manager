@@ -147,7 +147,8 @@ export interface CompanyCalculationRules {
   overtimeStandardRate: number; // 1.5 (150%)
   overtimeWeekendRate: number; // 2.0 (200%)
   // Rounding
-  roundingDecimals: number; // 2 or 0 (nearest SAR)
+  netSalaryRounding?: 'NONE' | 'CEIL_SAR';
+  roundingDecimals: number; // Legacy compatibility; payroll monetary amounts use two decimals.
 }
 
 export interface ChartOfAccountsMap {
@@ -412,6 +413,7 @@ export interface PayrollRunItem {
   gosiEmployerShare: number;
   totalCompanyBurden: number; // Net + GOSI Employer + all costs
   saudiGosiPaymentMode?: 'SHARED' | 'COMPANY_FULL';
+  roundingAdjustment?: number;
   manualAddition?: number;
   manualDeduction?: number;
   adjustmentNotes?: string;

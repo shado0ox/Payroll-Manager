@@ -72,7 +72,7 @@ export function generatePayrollJournalBatch(company:Company,payrollRun:PayrollRu
     const bucket=buckets.get(ccId)!;
     bucket.base+=Number(item.baseSalary||0); bucket.housing+=Number(item.housingAllowance||0);
     bucket.transport+=Number(item.transportAllowance||0); bucket.overtime+=Number(item.overtimeAmount||0);
-    bucket.other+=Number(item.otherAllowances||0)+Number(item.bonuses||0)+Number(item.manualAddition||0);
+    bucket.other+=Number(item.otherAllowances||0)+Number(item.bonuses||0);
   }
   const lines:JournalLine[]=[];
   const definitions = [

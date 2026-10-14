@@ -1,9 +1,9 @@
-import React from 'react';
+import React, {lazy,Suspense} from 'react';
 import { Archive, Clock, Download, FileSpreadsheet, LogOut, ShieldAlert } from 'lucide-react';
 import { Company, Employee, PayrollRun, UserRole } from '../types';
 import { useLanguage } from '../i18n/LanguageContext';
 import { downloadCsvFile } from '../utils/exportUtils';
-import { ReportsView } from './ReportsView';
+const ReportsView=lazy(()=>import('./ReportsView').then(module=>({default:module.ReportsView})));
 
 interface SubscriptionSuspendedViewProps {
   company: Company;
@@ -101,7 +101,7 @@ export const SubscriptionSuspendedView: React.FC<SubscriptionSuspendedViewProps>
         </section>
 
         <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
-          <ReportsView company={company} employees={employees} payrollRuns={payrollRuns} activeRole={activeRole} />
+          <Suspense fallback={<p className="p-5 text-sm text-slate-500">{text('تحميل التقارير…','Loading reports…')}</p>}><ReportsView company={company} employees={employees} payrollRuns={payrollRuns} activeRole={activeRole} /></Suspense>
         </section>
       </div>
     </main>

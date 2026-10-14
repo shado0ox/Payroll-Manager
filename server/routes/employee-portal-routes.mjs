@@ -36,7 +36,7 @@ const safePayrollSnapshot = (row, periodMonth) => {
       baseSalary:number(item.baseSalary ?? row.base_salary),housingAllowance:number(item.housingAllowance),
       transportAllowance:number(item.transportAllowance),otherAllowances:number(item.otherAllowances),
       nonGosiAllowances:number(item.nonGosiAllowances),overtimeAmount:number(item.overtimeAmount),
-      overtimeHours:number(item.overtimeHours),bonuses:number(item.bonuses),manualAddition:number(item.manualAddition),
+      overtimeHours:number(item.overtimeHours),bonuses:number(item.bonuses),roundingAdjustment:number(item.roundingAdjustment),manualAddition:number(item.manualAddition),
       totalGrossSalary:number(item.totalGrossSalary ?? row.total_gross_salary),
     },
     deductions:{
