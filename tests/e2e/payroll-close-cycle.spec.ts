@@ -200,7 +200,8 @@ test('partial employee payment keeps 10000 available after a 40000 payment and r
   const offsetWrite=waitForPayrollWrite(page,'POST',/\/api\/payroll-runs\/[^/]+\/entitlement-offsets$/);
   await page.getByRole('button',{name:/تسوية ذمة هذا الشهر|Settle this month/i}).click();
   expect(pageErrors,'Settlement UI must not throw before saving').toEqual([]);
-  expect(promptIndex,'All five settlement fields must be requested').toBe(5);
+  await expect.poll(()=>promptIndex,{message:'All five settlement fields must be requested'}).toBe(5);
+  expect(pageErrors,'Settlement UI must not throw before saving').toEqual([]);
   const offsetRun=(await (await offsetWrite).json()).record;
   page.off('dialog',answerPrompts);
   expect(offsetRun.entitlementOffsets[0].amount).toBe(10000);

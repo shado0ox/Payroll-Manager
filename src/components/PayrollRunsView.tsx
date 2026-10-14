@@ -287,12 +287,12 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
     if(!Number.isFinite(amount)||amount<=0||amount>offsetAvailableAmounts[item.employeeId])return;
     const reason=window.prompt(tr('سبب التسوية الموثقة:', 'Documented settlement reason:'))?.trim()||'';
     const documentRef=window.prompt(tr('مرجع مستند التسوية أو الموافقة الخطية:', 'Settlement document or written approval reference:'))?.trim()||'';
-    const counterAccount=window.prompt(tr('رمز الحساب المقابل للتسوية:', 'Settlement counter-account code:'),company.chartOfAccounts.employeeAdvancesAccount||'1105')?.trim()||'';
+    const counterAccount=window.prompt(tr('رمز الحساب المقابل للتسوية:', 'Settlement counter-account code:'),company.chartOfAccounts?.employeeAdvancesAccount||'1105')?.trim()||'';
     const date=window.prompt(tr('تاريخ التسوية YYYY-MM-DD:', 'Settlement date YYYY-MM-DD:'),new Date().toISOString().slice(0,10))?.trim()||'';
     if(!reason||!documentRef||!counterAccount||!date)return;
     let loanId:string|undefined;
     const candidates=effectiveEmployeeSalaryLoans(loans,companyRuns,company.id,item.employeeId).filter(loan=>loan.effectiveRemaining>0);
-    if(counterAccount===(company.chartOfAccounts.employeeAdvancesAccount||'1105')&&candidates.length){
+    if(counterAccount===(company.chartOfAccounts?.employeeAdvancesAccount||'1105')&&candidates.length){
       const choice=window.prompt(tr('لو التسوية مقابل سلفة مسجلة، اختر رقمها. اتركه فارغًا لذمة خارج سجل السلف:', 'For a recorded loan, enter its number. Leave blank for a receivable outside the loan register:')+'\n'+candidates.map((loan,index)=>`${index+1}: ${loan.reason} — ${formatSAR(loan.effectiveRemaining)}`).join('\n'))?.trim();
       if(choice){const candidate=candidates[Number(choice)-1];if(!candidate||amount>candidate.effectiveRemaining)return;loanId=candidate.id;}
     }
@@ -399,7 +399,7 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
     if (['SETTLED', 'CANCELLED_WITH_DOCUMENT'].includes(status)) {
       documentRef = window.prompt(tr('رقم مستند/مرجع التسوية (إلزامي):', 'Settlement document/reference number (required):'), item.entitlementDocumentRef || '')?.trim() || '';
       if (!documentRef) return;
-      settlementAccount = window.prompt(tr('رمز الحساب المقابل لتسوية الذمة (راجع المستند المحاسبي):', 'Counter-account code for the documented settlement:'), item.entitlementSettlementAccount || company.chartOfAccounts.employeeAdvancesAccount || '1105')?.trim() || '';
+      settlementAccount = window.prompt(tr('رمز الحساب المقابل لتسوية الذمة (راجع المستند المحاسبي):', 'Counter-account code for the documented settlement:'), item.entitlementSettlementAccount || company.chartOfAccounts?.employeeAdvancesAccount || '1105')?.trim() || '';
       settlementDate = window.prompt(tr('تاريخ التسوية YYYY-MM-DD:', 'Settlement date YYYY-MM-DD:'), new Date().toISOString().slice(0,10))?.trim() || '';
       if (!settlementAccount || !/^\d{4}-\d{2}-\d{2}$/.test(settlementDate) || Number.isNaN(Date.parse(settlementDate))) return;
 
