@@ -142,6 +142,8 @@ test('payroll reversal restores next-month loan deduction with an audit trail', 
 
 test('partial employee payment keeps 10000 available after a 40000 payment and reload', async ({ page }) => {
   test.setTimeout(90_000);
+  const pageErrors:string[]=[];
+  page.on('pageerror',error=>pageErrors.push(error.message));
   await login(page);
   const seed = await page.evaluate(async () => {
     const state = (await (await fetch('/api/state')).json()).state;
@@ -197,6 +199,8 @@ test('partial employee payment keeps 10000 available after a 40000 payment and r
   page.on('dialog',answerPrompts);
   const offsetWrite=waitForPayrollWrite(page,'POST',/\/api\/payroll-runs\/[^/]+\/entitlement-offsets$/);
   await page.getByRole('button',{name:/تسوية ذمة هذا الشهر|Settle this month/i}).click();
+  expect(pageErrors,'Settlement UI must not throw before saving').toEqual([]);
+  expect(promptIndex,'All five settlement fields must be requested').toBe(5);
   const offsetRun=(await (await offsetWrite).json()).record;
   page.off('dialog',answerPrompts);
   expect(offsetRun.entitlementOffsets[0].amount).toBe(10000);
