@@ -1,6 +1,6 @@
 export type EmployeeRegistrationRequest={id:string;employee_id:string;company_id:string;username:string;email:string;created_at:string;employee_no:string;employee_name:string};
 import { AppState } from './storage';
-import { AttendanceRecord, Company, Employee, JournalBatch, LeaveRequest, LoanSchedule, PayrollRun, PayrollEntitlementOffset, PayrollSettlement, PenaltyRecord, QoyodApiConfig, TemporaryEarningRecord, UserAccount } from '../types';
+import { AuditLog, AttendanceRecord, Company, Employee, JournalBatch, LeaveRequest, LoanSchedule, PayrollRun, PayrollEntitlementOffset, PayrollSettlement, PenaltyRecord, QoyodApiConfig, TemporaryEarningRecord, UserAccount } from '../types';
 
 export type StateCollectionKey = 'employees' | 'archivedEmployees' | 'attendance' | 'leaves' | 'loans' | 'penalties' | 'temporaryEarnings' | 'payrollRuns' | 'payrollSettlements' | 'journals';
 export type StateRecordChange = {
@@ -224,6 +224,7 @@ function classifyPayrollCommand(previous: any, next: any) {
 }
 
 export const api = {
+  auditLogs: (filters:Record<string,string>) => request<{logs:AuditLog[];total:number;page:number;limit:number;summary:{users:number;actions:number;latest:string|null};facets:{actions:string[];entities:string[];users:{id:string;name:string}[]}}>(`/api/audit-logs?${new URLSearchParams(filters)}`),
   listGosiAccounts:(companyId:string)=>request<{records:GosiAccount[]}>(`/api/gosi/accounts?companyId=${encodeURIComponent(companyId)}`),
   saveGosiAccount:(record:GosiAccount)=>request<{record:GosiAccount;version:number}>(`/api/gosi/accounts/${encodeURIComponent(record.id)}`,{method:'PUT',body:JSON.stringify(record)}),
   deleteGosiAccount:(companyId:string,id:string)=>request<{archived:boolean;version:number}>(`/api/gosi/accounts/${encodeURIComponent(id)}?companyId=${encodeURIComponent(companyId)}`,{method:'DELETE'}),

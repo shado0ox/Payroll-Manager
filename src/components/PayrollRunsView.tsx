@@ -153,24 +153,7 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
   // remain available in the period selector.
   useEffect(() => {
     setSelectedPeriod(currentPeriod);
-    setSelectedYear(Number(currentPeriod.slice(0,4)));
   }, [company.id, currentPeriod]);
-
-  const [selectedYear, setSelectedYear] = useState<number>(() =>
-    Number(currentPeriod.slice(0, 4))
-  );
-
-  const availableYears = useMemo(() => {
-    const currentYear = Number(currentPeriod.slice(0, 4));
-    const years = new Set<number>([currentYear - 1, currentYear, currentYear + 1, selectedYear]);
-    companyRuns.forEach(run => years.add(Number(run.periodMonth.slice(0, 4))));
-    return Array.from(years).filter(Number.isFinite).sort((a, b) => b - a);
-  }, [companyRuns, currentPeriod, selectedYear]);
-
-  const yearPeriods = useMemo(() =>
-    Array.from({ length: 12 }, (_, index) => `${selectedYear}-${String(index + 1).padStart(2, '0')}`),
-    [selectedYear]
-  );
 
   const [searchTerm, setSearchTerm] = useState('');
   const [filterWarningOnly, setFilterWarningOnly] = useState(false);
@@ -845,20 +828,9 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
           {/* Period Selector */}
           <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-xl border border-slate-200 shadow-xs">
             <Calendar className="w-4 h-4 text-slate-500" />
-            <CalendarInput required type="year" aria-label={tr('السنة', 'Year')}
-              value={selectedYear}
-              onChange={(e) => {
-                const year = Number(e.target.value);
-                setSelectedYear(year);
-                const month = selectedPeriod.slice(5, 7) || currentPeriod.slice(5, 7);
-                setSelectedPeriod(`${year}-${month}`);
-                setSelectedPaymentEmployeeIds([]);
-              }}
-              className="bg-transparent text-xs font-bold text-slate-800 border-none focus:ring-0 cursor-pointer"/>
-            <span className="text-slate-300">/</span>
             <CalendarInput required type="month" aria-label={tr('شهر المسير', 'Payroll month')}
               value={selectedPeriod}
-              onChange={(e) => { if(!e.target.value)return;setSelectedYear(Number(e.target.value.slice(0,4)));setSelectedPeriod(e.target.value);setSelectedPaymentEmployeeIds([]); }}
+              onChange={(e) => { if(!e.target.value)return;setSelectedPeriod(e.target.value);setSelectedPaymentEmployeeIds([]); }}
               className="bg-transparent text-xs font-bold text-slate-800 border-none focus:ring-0 cursor-pointer"/>
           </div>
 

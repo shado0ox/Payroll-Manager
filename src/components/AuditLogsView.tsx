@@ -1,107 +1,47 @@
-import React, { useState } from 'react';
-import { 
-  History, 
-  ShieldCheck, 
-  Search, 
-  Calendar, 
-  UserCheck, 
-  AlertCircle, 
-  Clock,
-  Filter
-} from 'lucide-react';
-import { AuditLog } from '../types';
-import { useLanguage } from '../i18n/LanguageContext';
+import React,{useEffect,useMemo,useState} from 'react';
+import {History,Search,RefreshCw,Download,ChevronDown,ShieldCheck} from 'lucide-react';
+import {Company,AuditLog} from '../types';
+import {api} from '../utils/api';
+import {downloadCsvFile} from '../utils/exportUtils';
+import {CalendarInput} from './CalendarInput';
+import {useLanguage} from '../i18n/LanguageContext';
 
-interface AuditLogsViewProps {
-  logs: AuditLog[];
-}
-
-export const AuditLogsView: React.FC<AuditLogsViewProps> = ({ logs }) => {
-  const { language } = useLanguage();
-  const ui = (ar: string, en: string) => language === 'ar' ? ar : en;
-  const [searchTerm, setSearchTerm] = useState('');
-
-  const filteredLogs = logs.filter(l => 
-    l.action.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    l.details.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    l.userName.toLowerCase().includes(searchTerm.toLowerCase())
-  );
-
-  return (
-    <div className="space-y-6">
-      
-      {/* Top Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-xl sm:text-2xl font-bold text-slate-900 flex items-center gap-2">
-            <History className="w-6 h-6 text-emerald-600" />
-            <span>{ui('سجل التدقيق والحركات الإدارية', 'Audit Trail & Administrative Activity')}</span>
-          </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            {ui('توثيق كامل لكافة عمليات إنشاء الموظفين واحتساب الرواتب والتعديلات والترحيل المحاسبي', 'A complete record of employee creation, payroll calculations, adjustments, and accounting postings.')}
-          </p>
-        </div>
-
-        <div className="relative w-full sm:w-72">
-          <Search className="w-4 h-4 text-slate-400 absolute right-3 top-2.5" />
-          <input
-            type="text"
-            placeholder={ui('بحث في سجل العمليات...', 'Search the audit trail...')}
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pr-9 pl-3 py-1.5 text-xs bg-white border border-slate-200 rounded-xl shadow-xs focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
-          />
-        </div>
-      </div>
-
-      {/* Logs Table */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-right text-xs">
-            <thead>
-              <tr className="bg-slate-50 text-slate-500 font-bold border-b border-slate-200">
-                <th className="py-3 px-4">{ui('التوقيت والتاريخ', 'Date & Time')}</th>
-                <th className="py-3 px-4">{ui('المستخدم والمنصب', 'User & Role')}</th>
-                <th className="py-3 px-4">{ui('نوع العملية', 'Action')}</th>
-                <th className="py-3 px-4">{ui('الكيان المستهدف', 'Target Entity')}</th>
-                <th className="py-3 px-4">{ui('التفاصيل والتغييرات', 'Details & Changes')}</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {filteredLogs.length === 0 ? (
-                <tr>
-                  <td colSpan={5} className="py-12 text-center text-slate-400">
-                    {ui('لا توجد سجلات تدقيق مطابقة للبحث', 'No audit records match your search.')}
-                  </td>
-                </tr>
-              ) : (
-                filteredLogs.map((log) => (
-                  <tr key={log.id} className="hover:bg-slate-50">
-                    <td className="py-3 px-4 font-mono text-slate-600">
-                      {new Date(log.timestamp).toLocaleString('en-GB')}
-                    </td>
-                    <td className="py-3 px-4 font-semibold text-slate-900">
-                      {log.userName}
-                    </td>
-                    <td className="py-3 px-4">
-                      <span className="px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-800 text-[10px] font-bold">
-                        {log.action}
-                      </span>
-                    </td>
-                    <td className="py-3 px-4 text-slate-600 font-medium">
-                      {log.entityType} ({log.entityId})
-                    </td>
-                    <td className="py-3 px-4 text-slate-700">
-                      {log.details}
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-    </div>
-  );
+const actions:Record<string,[string,string]>={
+ UPSERT_GOSI_ACCOUNT:['حفظ حساب تأمينات','Save GOSI account'],ARCHIVE_GOSI_ACCOUNT:['أرشفة حساب تأمينات','Archive GOSI account'],CLEAR_GOSI_EMPLOYEE_OVERRIDES:['مسح استثناءات التأمينات','Clear GOSI overrides'],UPSERT_GOSI_ASSIGNMENT:['ربط موظف بالتأمينات','Assign employee GOSI'],DELETE_GOSI_EMPLOYEE_OVERRIDE:['حذف استثناء تأمينات موظف','Delete GOSI override'],UPSERT_GOSI_DEPARTMENT_ASSIGNMENT:['ربط قسم بالتأمينات','Assign department GOSI'],END_GOSI_DEPARTMENT_ASSIGNMENT:['إنهاء ربط قسم بالتأمينات','End department GOSI mapping'],IMPORT_GOSI_INVOICE:['استيراد فاتورة تأمينات','Import GOSI invoice'],DELETE_GOSI_INVOICE:['حذف فاتورة تأمينات','Delete GOSI invoice'],EMPLOYEE_LEAVE_REQUEST:['طلب إجازة من الموظف','Employee leave request'],EMPLOYEE_LEAVE_CANCEL:['إلغاء طلب إجازة','Cancel employee leave'],EMPLOYEE_BANK_CHANGE_REQUEST:['طلب تعديل حساب بنكي','Request bank change'],
+ STATE_PATCH:['تحديث عام للبيانات','General data update'],STATE_REPLACE:['حفظ عام للبيانات','General data save'],
+ CREATE_PAYROLL_RUN:['إنشاء مسير رواتب','Create payroll'],UPDATE_PAYROLL_RUN:['تعديل مسير رواتب','Update payroll'],PAYROLL_STATUS_TRANSITION:['تغيير حالة المسير','Payroll status change'],CREATE_PAYMENT_BATCH:['إنشاء دفعة صرف','Create payment batch'],PAYMENT_BATCH_STATUS_TRANSITION:['تغيير حالة دفعة الصرف','Payment status change'],PAYROLL_PAYMENT_REVERSED:['عكس صرف راتب','Reverse salary payment'],PAYROLL_ENTITLEMENT_OFFSET:['تسوية مستحق راتب','Salary offset'],PAYROLL_OFFSET_CREATED:['إنشاء تسوية موثقة','Create documented offset'],PAYROLL_OFFSET_REVERSED:['عكس تسوية موثقة','Reverse documented offset'],PAYROLL_ENTITLEMENT_CHANGED:['تغيير حالة المستحق','Entitlement status change'],CREATE_PAYROLL_SETTLEMENT:['إنشاء تسوية موظف','Create employee settlement'],REVERSE_PAYROLL_SETTLEMENT:['عكس تسوية موظف','Reverse employee settlement'],
+ CREATE_JOURNAL:['إنشاء قيد','Create journal'],UPDATE_JOURNAL:['تعديل أو ترحيل قيد','Update or post journal'],DELETE_JOURNAL:['حذف مسودة قيد','Delete journal draft'],UPDATE_QOYOD_CONFIG:['تحديث إعدادات قيود','Update Qoyod settings'],
+ CREATE_LOAN:['إنشاء سلفة','Create loan'],UPDATE_LOAN:['تعديل سلفة','Update loan'],DELETE_LOAN:['حذف سلفة','Delete loan'],ADJUST_LOAN:['تسوية سلفة','Adjust loan'],LOAN_ADJUSTMENT_CREATED:['إنشاء حركة تسوية سلفة','Create loan adjustment'],
+ CREATE_ATTENDANCE:['إضافة حركة حضور','Create attendance'],UPDATE_ATTENDANCE:['تعديل حركة حضور','Update attendance'],DELETE_ATTENDANCE:['حذف حركة حضور','Delete attendance'],IMPORT_ATTENDANCE:['استيراد حضور','Import attendance'],CREATE_LEAVE:['إنشاء طلب إجازة','Create leave'],UPDATE_LEAVE:['تعديل طلب إجازة','Update leave'],LEAVE_STATUS_TRANSITION:['تغيير حالة إجازة','Leave status change'],
+ CREATE_PENALTY:['إنشاء جزاء','Create penalty'],UPDATE_PENALTY:['تعديل جزاء','Update penalty'],DELETE_PENALTY:['حذف جزاء','Delete penalty'],CREATE_TEMPORARY_EARNING:['إضافة مكافأة أو عمولة','Create earning'],UPDATE_TEMPORARY_EARNING:['تعديل مكافأة أو عمولة','Update earning'],DELETE_TEMPORARY_EARNING:['حذف مكافأة أو عمولة','Delete earning'],
+ CREATE_COMPANY:['إنشاء منشأة','Create company'],UPDATE_COMPANY:['تعديل بيانات المنشأة','Update company'],ARCHIVE_COMPANY:['أرشفة منشأة','Archive company'],CREATE_USER:['إنشاء مستخدم','Create user'],UPDATE_USER:['تعديل مستخدم','Update user'],DELETE_USER:['حذف مستخدم','Delete user'],EMPLOYEE_REGISTRATION_APPROVED:['الموافقة على تسجيل موظف','Approve employee registration'],EMPLOYEE_REGISTRATION_REJECTED:['رفض تسجيل موظف','Reject employee registration'],IMPORT_EMPLOYEES:['استيراد موظفين','Import employees'],BULK_ANNUAL_LEAVE_SETTINGS:['تحديث سياسات الإجازات جماعيًا','Bulk leave policy update'],ARCHIVE_COMPANY_EMPLOYEES:['أرشفة موظفي المنشأة','Archive company employees'],REPAIR_PAYROLL_DATA:['إصلاح بيانات الرواتب','Repair payroll data']
+};
+const entities:Record<string,[string,string]>={APP_STATE:['بيانات النظام','Application data'],EMPLOYEE:['الموظف','Employee'],PAYROLL_RUN:['مسير الرواتب','Payroll run'],PAYMENT_BATCH:['دفعة صرف','Payment batch'],PAYROLL_OFFSET:['تسوية ذمة راتب','Salary offset'],PAYROLL_ITEM:['مستحق موظف','Employee entitlement'],PAYROLL_SETTLEMENT:['تسوية موظف','Employee settlement'],LOAN:['سلفة','Loan'],PENALTY:['جزاء','Penalty'],TEMPORARY_EARNING:['مكافأة أو عمولة','Earning'],ATTENDANCE:['حضور','Attendance'],LEAVE:['إجازة','Leave'],JOURNAL:['قيد محاسبي','Journal'],COMPANY:['المنشأة','Company'],USER:['المستخدم','User'],EMPLOYEE_REGISTRATION:['طلب تسجيل موظف','Employee registration']};
+const roles:Record<string,[string,string]>={ADMIN:['مسؤول النظام','Administrator'],COMPANY_MANAGER:['مدير المنشأة','Company manager'],GENERAL_MANAGER:['المدير العام','General manager'],OPERATIONS_MANAGER:['مدير العمليات','Operations manager'],EMPLOYEE:['الموظف','Employee']};
+const fields:Record<string,[string,string]>={status:['الحالة','Status'],remainingAmount:['الرصيد المتبقي','Remaining balance'],paymentDate:['تاريخ الصرف','Payment date'],reversedPaymentDate:['تاريخ الصرف المعكوس','Reversed payment date'],paymentReversedAt:['توقيت العكس','Reversal time']};
+const empty={logs:[] as AuditLog[],total:0,page:1,limit:25,summary:{users:0,actions:0,latest:null as string|null},facets:{actions:[] as string[],entities:[] as string[],users:[] as {id:string;name:string}[]}};
+export const AuditLogsView:React.FC<{company:Company}>=({company})=>{
+ const {language}=useLanguage();const ui=(a:string,b:string)=>language==='ar'?a:b;
+ const label=(value:string)=>actions[value]?.[language==='ar'?0:1]||value;
+ const entityLabel=(value:string)=>entities[value]?.[language==='ar'?0:1]||value;
+ const [search,setSearch]=useState(''),[query,setQuery]=useState(''),[from,setFrom]=useState(''),[to,setTo]=useState(''),[action,setAction]=useState(''),[entity,setEntity]=useState(''),[userId,setUserId]=useState(''),[order,setOrder]=useState('desc'),[page,setPage]=useState(1),[refresh,setRefresh]=useState(0),[expanded,setExpanded]=useState('');
+ const [data,setData]=useState(empty),[loading,setLoading]=useState(true),[error,setError]=useState('');
+ useEffect(()=>{const timer=setTimeout(()=>{setQuery(search.trim());setPage(1);},300);return()=>clearTimeout(timer);},[search]);
+ useEffect(()=>{let cancelled=false;setLoading(true);setError('');api.auditLogs({companyId:company.id,search:query,from,to,action,entity,userId,order,page:String(page),limit:'25',timeZone:company.timezone||'Asia/Riyadh'}).then(result=>{if(!cancelled)setData(result);}).catch(err=>{if(!cancelled){setError(err.message||'AUDIT_LOAD_FAILED');setData(empty);}}).finally(()=>{if(!cancelled)setLoading(false);});return()=>{cancelled=true;};},[company.id,company.timezone,query,from,to,action,entity,userId,order,page,refresh]);
+ const displayDate=(value:string)=>{const date=new Date(value);return Number.isNaN(date.getTime())?'—':new Intl.DateTimeFormat(language==='ar'?'ar-SA-u-ca-gregory-nu-latn':'en-GB',{timeZone:company.timezone||'Asia/Riyadh',dateStyle:'medium',timeStyle:'short'}).format(date);};
+ const change=(setter:(value:string)=>void,value:string)=>{setter(value);setPage(1);setExpanded('');};
+ const pages=Math.max(1,Math.ceil(data.total/25));
+ const exportPage=()=>{const cell=(value:unknown)=>'"'+String(value??'').replace(/^[=+@-]/,'\t$&').replace(/"/g,'""')+'"';downloadCsvFile(`Audit_${company.id}_page_${page}.csv`,[[ui('التاريخ','Date'),ui('المستخدم','User'),ui('المنصب','Role'),ui('العملية','Action'),ui('نوع الكيان','Entity type'),ui('المرجع','Reference'),ui('التفاصيل','Details')],...data.logs.map(log=>[displayDate(log.timestamp),log.userName,roles[log.userRole]?.[language==='ar'?0:1]||log.userRole,label(log.action),log.entityType||log.entity||'',log.entityId,log.details||log.descriptionAr||''])].map(row=>row.map(cell).join(',')).join('\r\n'));};
+ const cards=useMemo(()=>[[ui('نتائج التصفية','Matching records'),data.total],[ui('المستخدمون المنفذون','Users'),data.summary.users],[ui('أنواع الحركات','Action types'),data.summary.actions]], [data,language]);
+ return <div className="space-y-5" data-testid="audit-view">
+  <div className="flex flex-wrap items-center justify-between gap-3"><div><h1 className="flex items-center gap-2 text-xl font-bold"><History className="h-6 w-6 text-emerald-700"/>{ui('سجل التدقيق والحركات الإدارية','Audit Trail & Administrative Activity')}</h1><p className="mt-1 text-xs text-slate-500">{company.nameAr} · {ui('سجل للقراءة فقط، يعرض الحركات المحفوظة على الخادم. التوقيت حسب المنشأة.','Read-only server records, displayed in company time.')}</p></div><div className="flex gap-2"><button disabled={loading} onClick={()=>{setPage(1);setRefresh(n=>n+1);}} className="flex items-center gap-1 rounded-xl border bg-white px-3 py-2 text-xs"><RefreshCw className={`h-4 w-4 ${loading?'animate-spin':''}`}/>{ui('تحديث السجل','Refresh audit')}</button><button disabled={loading||!!error||!data.logs.length} onClick={exportPage} className="flex items-center gap-1 rounded-xl bg-emerald-700 px-3 py-2 text-xs text-white disabled:opacity-40"><Download className="h-4 w-4"/>{ui('تصدير الصفحة الحالية','Export current page')}</button></div></div>
+  <div className="grid grid-cols-3 gap-3">{cards.map(([title,value])=><div key={String(title)} className="rounded-2xl border bg-white p-4"><p className="text-xs text-slate-500">{title}</p><p className="mt-1 text-xl font-bold">{value}</p></div>)}</div>
+  <div className="grid gap-3 rounded-2xl border bg-white p-4 sm:grid-cols-2 lg:grid-cols-4"><label className="text-xs"><span className="flex items-center gap-1"><Search className="h-3 w-3"/>{ui('بحث في الحركات','Search activity')}</span><input value={search} onChange={e=>setSearch(e.target.value)} className="mt-1 w-full rounded-lg border p-2" placeholder={ui('مستخدم، عملية، مرجع أو تفاصيل','User, action, reference or details')}/></label>
+   <label className="text-xs">{ui('من تاريخ','From date')}<CalendarInput aria-label={ui('بداية فترة التدقيق','Audit start date')} type="date" value={from} max={to||undefined} onChange={e=>change(setFrom,e.target.value)} className="mt-1 w-full rounded-lg border p-2"/></label><label className="text-xs">{ui('إلى تاريخ','To date')}<CalendarInput aria-label={ui('نهاية فترة التدقيق','Audit end date')} type="date" min={from||undefined} value={to} onChange={e=>change(setTo,e.target.value)} className="mt-1 w-full rounded-lg border p-2"/></label>
+   <label className="text-xs">{ui('المستخدم','User')}<select value={userId} onChange={e=>change(setUserId,e.target.value)} className="mt-1 w-full rounded-lg border p-2"><option value="">{ui('كل المستخدمين','All users')}</option>{data.facets.users.map(user=><option key={user.id} value={user.id}>{user.name||user.id}</option>)}</select></label><label className="text-xs">{ui('نوع العملية','Action type')}<select value={action} onChange={e=>change(setAction,e.target.value)} className="mt-1 w-full rounded-lg border p-2"><option value="">{ui('كل العمليات','All actions')}</option>{data.facets.actions.map(code=><option key={code} value={code}>{label(code)}</option>)}</select></label><label className="text-xs">{ui('الكيان المستهدف','Entity type')}<select value={entity} onChange={e=>change(setEntity,e.target.value)} className="mt-1 w-full rounded-lg border p-2"><option value="">{ui('كل الكيانات','All entities')}</option>{data.facets.entities.map(code=><option key={code} value={code}>{entityLabel(code)}</option>)}</select></label><label className="text-xs">{ui('الترتيب','Order')}<select value={order} onChange={e=>change(setOrder,e.target.value)} className="mt-1 w-full rounded-lg border p-2"><option value="desc">{ui('الأحدث أولًا','Newest first')}</option><option value="asc">{ui('الأقدم أولًا','Oldest first')}</option></select></label><button className="self-end rounded-lg border p-2 text-xs" onClick={()=>{setSearch('');setQuery('');setFrom('');setTo('');setAction('');setEntity('');setUserId('');setOrder('desc');setPage(1);}}>{ui('مسح التصفية','Clear filters')}</button>
+  </div>
+  {error&&<p role="alert" className="rounded-xl bg-rose-50 p-4 text-sm text-rose-800">{ui('تعذر تحميل السجل: ','Could not load audit: ')}{error==='INVALID_AUDIT_FILTER'?ui('راجع التواريخ وترتيب البداية والنهاية.','Check the date range and filters.'):error}</p>}
+  <div className="overflow-hidden rounded-2xl border bg-white"><div className="overflow-x-auto"><table className="w-full min-w-[850px] text-xs"><thead className="bg-slate-100"><tr>{[ui('التوقيت والتاريخ','Date & time'),ui('المستخدم والمنصب','User & role'),ui('العملية','Action'),ui('الكيان والمرجع','Entity & reference'),ui('التفاصيل','Details')].map(title=><th key={title} className="p-3 text-start">{title}</th>)}</tr></thead><tbody>{loading?<tr><td colSpan={5} className="p-8 text-center">{ui('جاري تحميل السجل…','Loading audit…')}</td></tr>:!data.logs.length?<tr><td colSpan={5} className="p-8 text-center text-slate-500">{ui('لا توجد حركات مطابقة للتصفية','No matching activity')}</td></tr>:data.logs.map(log=><React.Fragment key={log.id}><tr className="border-t align-top hover:bg-slate-50"><td className="p-3">{displayDate(log.timestamp)}</td><td className="p-3 font-bold">{log.userName||'—'}<p className="mt-1 font-normal text-slate-500">{roles[log.userRole]?.[language==='ar'?0:1]||log.userRole}</p></td><td className="p-3">{label(log.action)}<p className="mt-1 font-mono text-[10px] text-slate-400">{log.action}</p></td><td className="p-3">{entityLabel(log.entityType||log.entity||'—')}<p className="mt-1 max-w-52 break-all font-mono text-[10px] text-slate-500">{log.entityId||'—'}</p></td><td className="p-3"><p className="max-w-80 break-words">{log.details||log.descriptionAr||ui('لم تحفظ تفاصيل إضافية لهذه الحركة','No additional details were recorded')}</p><button aria-expanded={expanded===log.id} onClick={()=>setExpanded(id=>id===log.id?'':log.id)} className="mt-2 flex items-center gap-1 text-emerald-700"><ChevronDown className="h-3 w-3"/>{ui('عرض تفاصيل الحركة','View event details')}</button></td></tr>{expanded===log.id&&<tr className="border-t bg-slate-50"><td colSpan={5} className="p-4"><div className="mb-3 flex items-center gap-1 text-xs text-slate-500"><ShieldCheck className="h-4 w-4"/>{ui('معرّف الحركة','Event ID')}: {log.id}</div>{log.diff?<table className="mb-3 w-full text-xs"><thead><tr><th className="text-start">{ui('الحقل','Field')}</th><th className="text-start">{ui('قبل','Before')}</th><th className="text-start">{ui('بعد','After')}</th></tr></thead><tbody>{[...new Set([...Object.keys(log.diff.before||{}),...Object.keys(log.diff.after||{})])].filter(key=>JSON.stringify(log.diff?.before?.[key])!==JSON.stringify(log.diff?.after?.[key])).map(key=><tr key={key}><td className="py-2">{fields[key]?.[language==='ar'?0:1]||key}</td><td>{JSON.stringify(log.diff?.before?.[key])??'—'}</td><td>{JSON.stringify(log.diff?.after?.[key])??'—'}</td></tr>)}</tbody></table>:<p className="mb-3 text-xs text-slate-500">{ui('لا توجد مقارنة قبل/بعد محفوظة لهذه الحركة.','No before/after comparison was recorded for this event.')}</p>}<details><summary className="cursor-pointer text-xs">{ui('البيانات المسجلة كاملة','Full recorded event')}</summary><pre dir="ltr" className="mt-2 max-h-80 overflow-auto rounded-lg bg-slate-900 p-3 text-xs text-slate-100">{JSON.stringify(log,null,2)}</pre></details></td></tr>}</React.Fragment>)}</tbody></table></div><div className="flex items-center justify-between border-t p-3 text-xs"><span>{ui('صفحة','Page')} {page} / {pages} · {data.total} {ui('حركة','events')}</span><div className="flex gap-2"><button disabled={loading||page<=1} onClick={()=>setPage(n=>n-1)} className="rounded border px-3 py-1 disabled:opacity-40">{ui('السابق','Previous')}</button><button disabled={loading||page>=pages} onClick={()=>setPage(n=>n+1)} className="rounded border px-3 py-1 disabled:opacity-40">{ui('التالي','Next')}</button></div></div></div>
+  <p className="text-[11px] text-slate-500">{ui('السجلات القديمة العامة تُعرض كما حُفظت؛ لا تُستنتج تغييرات لم تسجّل وقت تنفيذ العملية.','Legacy general events are displayed as recorded; missing historical changes are not inferred.')}</p>
+ </div>;
 };

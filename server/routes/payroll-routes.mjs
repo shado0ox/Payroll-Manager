@@ -37,7 +37,7 @@ async function commitPayrollCommandState(client, stored, record, user, action, a
   const nextState = { ...stored,payrollRuns:nextRuns };
   await appendPayrollFinancialAudit(client,q,{ stored,next:nextState,user });
   const updated = await bumpStateVersion(client,user.id);
-  await appendStateAudit(client,q,{ companyIds:user.company_ids,user,action,version:updated.rows[0].version });
+  await appendStateAudit(client,q,{ companyIds:[record.companyId],entityType:'PAYROLL_RUN',entityId:record.id,details:`${record.periodMonth} | ${record.status}`,diff:{before:{status:asArray(stored.payrollRuns).find(run=>run.id===record.id)?.status},after:{status:record.status}},user,action,version:updated.rows[0].version });
   return updated;
 }
 
@@ -165,7 +165,7 @@ router.post('/payroll-runs/:id/entitlement-offsets', auth, writeLimiter, async (
       [loan.id,loan.remainingAmount,loan.remainingInstallments,loan.status,JSON.stringify(loan)]);
     await appendPayrollFinancialAudit(client,q,{stored,next:{...stored,payrollRuns:nextRuns,loans:nextLoans},user:req.user});
     const updated=await bumpStateVersion(client,req.user.id);
-    await appendStateAudit(client,q,{companyIds:req.user.company_ids,user:req.user,action:'PAYROLL_ENTITLEMENT_OFFSET',version:updated.rows[0].version});
+    await appendStateAudit(client,q,{companyIds:[record.companyId],entityType:'PAYROLL_RUN',entityId:record.id,user:req.user,action:'PAYROLL_ENTITLEMENT_OFFSET',version:updated.rows[0].version});
     await client.query('COMMIT');
     broadcastStateUpdate({version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at,companyIds:[record.companyId],changes:[
       {collection:'payrollRuns',operation:'upsert',records:[record,...affectedPayrollRuns]},...(loan?[{collection:'loans',operation:'upsert',records:[loan]}]:[])]});
@@ -296,7 +296,7 @@ router.put('/payroll-runs/:id', auth, writeLimiter, async (req, res, next) => {
       CROSS JOIN LATERAL jsonb_array_elements_text(COALESCE(batch->'employeeIds','[]'::jsonb)) WITH ORDINALITY AS employee_ids(employee_id,employee_ordinality)`, [JSON.stringify(record.paymentBatches || [])]);
 
     const updated = await bumpStateVersion(client,req.user.id);
-    await appendStateAudit(client,q,{ companyIds:req.user.company_ids,user:req.user,action:existing.rowCount ? 'UPDATE_PAYROLL_RUN' : 'CREATE_PAYROLL_RUN',version:updated.rows[0].version });
+    await appendStateAudit(client,q,{ companyIds:[record.companyId],entityType:'PAYROLL_RUN',entityId:record.id,user:req.user,action:existing.rowCount ? 'UPDATE_PAYROLL_RUN' : 'CREATE_PAYROLL_RUN',version:updated.rows[0].version });
     await client.query('COMMIT');
     broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at,
       companyIds:[record.companyId],changes:[{ collection:'payrollRuns',operation:'upsert',records:[record] }] });
@@ -393,7 +393,7 @@ router.post('/payroll-settlements', auth, writeLimiter, async (req, res, next) =
         WHERE payroll_run_id=$1 AND id=$2`, [payrollRun.id,item.id,item.entitlementStatus,item.entitlementReason,JSON.stringify(item)]);
     }
     const updated = await bumpStateVersion(client,req.user.id);
-    await appendStateAudit(client,q,{ companyIds:req.user.company_ids,user:req.user,action:'CREATE_PAYROLL_SETTLEMENT',version:updated.rows[0].version });
+    await appendStateAudit(client,q,{ companyIds:[record.companyId],entityType:'PAYROLL_SETTLEMENT',entityId:record.id,user:req.user,action:'CREATE_PAYROLL_SETTLEMENT',version:updated.rows[0].version });
     await client.query('COMMIT');
     broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at,
       companyIds:[record.companyId],changes:[
@@ -433,7 +433,7 @@ router.post('/payroll-settlements/:id/reverse', auth, writeLimiter, async (req, 
         WHERE payroll_run_id=$1 AND id=$2`, [payrollRun.id,item.id,item.entitlementStatus,item.entitlementReason,JSON.stringify(item)]);
     }
     const updated = await bumpStateVersion(client,req.user.id);
-    await appendStateAudit(client,q,{ companyIds:req.user.company_ids,user:req.user,action:'REVERSE_PAYROLL_SETTLEMENT',version:updated.rows[0].version });
+    await appendStateAudit(client,q,{ companyIds:[record.companyId],entityType:'PAYROLL_SETTLEMENT',entityId:record.id,user:req.user,action:'REVERSE_PAYROLL_SETTLEMENT',version:updated.rows[0].version });
     await client.query('COMMIT');
     broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at,
       companyIds:[record.companyId],changes:[

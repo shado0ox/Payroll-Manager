@@ -53,7 +53,7 @@ router.put('/penalties/:id', auth, writeLimiter, async (req, res, next) => {
       record.id,record.companyId,record.employeeId,record.periodMonth,record.date,record.reason.trim(),Number(record.amount),Boolean(record.appliedInPayroll),JSON.stringify(record),sortOrder
     ]);
     const updated = await bumpStateVersion(client,req.user.id);
-    await appendStateAudit(client,q,{ companyIds:req.user.company_ids,user:req.user,action:existing.rowCount ? 'UPDATE_PENALTY' : 'CREATE_PENALTY',version:updated.rows[0].version });
+    await appendStateAudit(client,q,{ companyIds:[record.companyId],entityType:'PENALTY',entityId:record.id,user:req.user,action:existing.rowCount ? 'UPDATE_PENALTY' : 'CREATE_PENALTY',version:updated.rows[0].version });
     await client.query('COMMIT');
     broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at,
       companyIds:[record.companyId],changes:[{ collection:'penalties',operation:'upsert',records:[record] }] });
@@ -77,7 +77,7 @@ router.delete('/penalties/:id', auth, writeLimiter, async (req, res, next) => {
     if (payrollSourceLocked(stored,'penalty',row.rows[0].payload)) throw workflowError(409, 'PAYROLL_SOURCE_ENTRY_LOCKED');
     await client.query(`DELETE FROM ${q('penalties')} WHERE id=$1`, [req.params.id]);
     const updated = await bumpStateVersion(client,req.user.id);
-    await appendStateAudit(client,q,{ companyIds:req.user.company_ids,user:req.user,action:'DELETE_PENALTY',version:updated.rows[0].version });
+    await appendStateAudit(client,q,{ companyIds:[row.rows[0].company_id],entityType:'PENALTY',entityId:req.params.id,user:req.user,action:'DELETE_PENALTY',version:updated.rows[0].version });
     await client.query('COMMIT');
     broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at,
       companyIds:[row.rows[0].company_id],changes:[{ collection:'penalties',operation:'delete',ids:[req.params.id] }] });
@@ -126,7 +126,7 @@ router.put('/loans/:id', auth, writeLimiter, async (req, res, next) => {
       Number(record.remainingInstallments),Number(record.remainingAmount),record.startDate,record.status,String(record.reason || ''),JSON.stringify(record),sortOrder
     ]);
     const updated = await bumpStateVersion(client,req.user.id);
-    await appendStateAudit(client,q,{ companyIds:req.user.company_ids,user:req.user,action:appendOnlyAdjustment ? 'ADJUST_LOAN' : existing.rowCount ? 'UPDATE_LOAN' : 'CREATE_LOAN',version:updated.rows[0].version });
+    await appendStateAudit(client,q,{ companyIds:[record.companyId],entityType:'LOAN',entityId:record.id,user:req.user,action:appendOnlyAdjustment ? 'ADJUST_LOAN' : existing.rowCount ? 'UPDATE_LOAN' : 'CREATE_LOAN',version:updated.rows[0].version });
     await client.query('COMMIT');
     broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at,
       companyIds:[record.companyId],changes:[{ collection:'loans',operation:'upsert',records:[record] }] });
@@ -151,7 +151,7 @@ router.delete('/loans/:id', auth, writeLimiter, async (req, res, next) => {
     if (payrollSourceLocked(stored,'loan',row.rows[0].payload)) throw workflowError(409, 'PAYROLL_SOURCE_ENTRY_LOCKED');
     await client.query(`DELETE FROM ${q('loans')} WHERE id=$1`, [req.params.id]);
     const updated = await bumpStateVersion(client,req.user.id);
-    await appendStateAudit(client,q,{ companyIds:req.user.company_ids,user:req.user,action:'DELETE_LOAN',version:updated.rows[0].version });
+    await appendStateAudit(client,q,{ companyIds:[row.rows[0].company_id],entityType:'LOAN',entityId:req.params.id,user:req.user,action:'DELETE_LOAN',version:updated.rows[0].version });
     await client.query('COMMIT');
     broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at,
       companyIds:[row.rows[0].company_id],changes:[{ collection:'loans',operation:'delete',ids:[req.params.id] }] });
@@ -195,7 +195,7 @@ router.put('/temporary-earnings/:id', auth, writeLimiter, async (req, res, next)
       record.id,record.companyId,record.employeeId,record.periodMonth,record.date,record.type,Number(record.amount),record.reason.trim(),Boolean(record.appliedInPayroll),JSON.stringify(record),sortOrder
     ]);
     const updated = await bumpStateVersion(client,req.user.id);
-    await appendStateAudit(client,q,{ companyIds:req.user.company_ids,user:req.user,action:existing.rowCount ? 'UPDATE_TEMPORARY_EARNING' : 'CREATE_TEMPORARY_EARNING',version:updated.rows[0].version });
+    await appendStateAudit(client,q,{ companyIds:[record.companyId],entityType:'TEMPORARY_EARNING',entityId:record.id,user:req.user,action:existing.rowCount ? 'UPDATE_TEMPORARY_EARNING' : 'CREATE_TEMPORARY_EARNING',version:updated.rows[0].version });
     await client.query('COMMIT');
     broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at,
       companyIds:[record.companyId],changes:[{ collection:'temporaryEarnings',operation:'upsert',records:[record] }] });
@@ -219,7 +219,7 @@ router.delete('/temporary-earnings/:id', auth, writeLimiter, async (req, res, ne
     if (payrollSourceLocked(stored,'earning',row.rows[0].payload)) throw workflowError(409, 'PAYROLL_SOURCE_ENTRY_LOCKED');
     await client.query(`DELETE FROM ${q('temporary_earnings')} WHERE id=$1`, [req.params.id]);
     const updated = await bumpStateVersion(client,req.user.id);
-    await appendStateAudit(client,q,{ companyIds:req.user.company_ids,user:req.user,action:'DELETE_TEMPORARY_EARNING',version:updated.rows[0].version });
+    await appendStateAudit(client,q,{ companyIds:[row.rows[0].company_id],entityType:'TEMPORARY_EARNING',entityId:req.params.id,user:req.user,action:'DELETE_TEMPORARY_EARNING',version:updated.rows[0].version });
     await client.query('COMMIT');
     broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at,
       companyIds:[row.rows[0].company_id],changes:[{ collection:'temporaryEarnings',operation:'delete',ids:[req.params.id] }] });

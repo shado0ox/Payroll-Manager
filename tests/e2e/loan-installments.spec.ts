@@ -1,3 +1,4 @@
+import {navigate} from '../support/navigation';
 import {expect,test} from '@playwright/test';
 test('loan form previews six whole-riyal installments with remainder in the last month',async({page})=>{
  await page.goto('/login');
@@ -6,7 +7,7 @@ test('loan form previews six whole-riyal installments with remainder in the last
  await login.locator('input[autocomplete="username"]').fill('admin');
  await login.locator('input[autocomplete="current-password"]').fill('TestAdmin1!');
  await Promise.all([page.waitForResponse(response=>response.url().endsWith('/api/state')&&response.ok()),login.locator('button[type="submit"]').click()]);
- await page.getByTestId('nav-loans_penalties').click();
+ await navigate(page,'loans_penalties');
  await page.getByRole('button',{name:/إضافة سلفة جديدة|Add loan/i}).click();
  await page.getByLabel(/إجمالي مبلغ السلفة|Total loan amount/i).fill('1000');
  await page.getByLabel(/عدد أشهر السداد|Repayment months/i).and(page.locator("input")).fill('6');

@@ -17,7 +17,7 @@ router.put('/companies/:id', auth, writeLimiter, async (req, res, next) => {
     await client.query('BEGIN');
     const committed = await updateCompanyAggregate(client,record);
     const updated = await bumpStateVersion(client,req.user.id);
-    await appendStateAudit(client,q,{ companyIds:[record.id],user:req.user,action:'UPDATE_COMPANY',version:updated.rows[0].version });
+    await appendStateAudit(client,q,{ companyIds:[record.id],entityType:'COMPANY',entityId:record.id,user:req.user,action:'UPDATE_COMPANY',version:updated.rows[0].version });
     await client.query('COMMIT');
     broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at });
     res.json({ record:committed,version:Number(updated.rows[0].version),updated_at:updated.rows[0].updated_at });
@@ -45,7 +45,7 @@ router.post('/companies', auth, writeLimiter, async (req, res, next) => {
     await client.query(`UPDATE ${q('users')} SET company_ids=company_ids || jsonb_build_array($2::text),updated_at=now()
       WHERE id=$1 AND NOT (company_ids ? $2)`, [req.user.id,record.id]);
     const updated = await bumpStateVersion(client,req.user.id);
-    await appendStateAudit(client,q,{ companyIds:[record.id],user:req.user,action:'CREATE_COMPANY',version:updated.rows[0].version });
+    await appendStateAudit(client,q,{ companyIds:[record.id],entityType:'COMPANY',entityId:record.id,user:req.user,action:'CREATE_COMPANY',version:updated.rows[0].version });
     await client.query('COMMIT');
     broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at });
     res.status(201).json({ record:committed,version:Number(updated.rows[0].version),updated_at:updated.rows[0].updated_at });
@@ -76,7 +76,7 @@ router.delete('/companies/:id', auth, writeLimiter, async (req, res, next) => {
       updated_at=now()
       WHERE company_ids ? $1`, [req.params.id]);
     const updated = await bumpStateVersion(client,req.user.id);
-    await appendStateAudit(client,q,{ companyIds:[req.params.id],user:req.user,action:'ARCHIVE_COMPANY',version:updated.rows[0].version });
+    await appendStateAudit(client,q,{ companyIds:[req.params.id],entityType:'COMPANY',entityId:req.params.id,user:req.user,action:'ARCHIVE_COMPANY',version:updated.rows[0].version });
     await client.query('COMMIT');
     broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at });
     res.json({ archived:true,nextCompanyId,version:Number(updated.rows[0].version),updated_at:updated.rows[0].updated_at });

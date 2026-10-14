@@ -21,7 +21,7 @@ export function createUserRouter({ auth,writeLimiter,pool,q,can,allowedRoles,all
         const duplicateEmail = await client.query(`SELECT id FROM ${q('users')} WHERE lower(email)=lower($1) AND id<>$2 AND company_ids ?| $3::text[] LIMIT 1`, [normalizedEmail, req.params.id,u.companyIds]);
         if (duplicateEmail.rowCount) throw workflowError(409,'USER_EMAIL_EXISTS');
       }
-      const existing = await client.query(`SELECT id,password_hash,company_ids,role,is_company_owner FROM ${q('users')} WHERE id=$1 FOR UPDATE`, [req.params.id]);
+      const existing = await client.query(`SELECT id,password_hash,company_ids,role,is_company_owner,permissions,is_active FROM ${q('users')} WHERE id=$1 FOR UPDATE`, [req.params.id]);
       if (existing.rowCount) assertExistingUserScope(existing.rows[0], req.user);
       if (u.role === 'EMPLOYEE') {
         const employee = await client.query(`SELECT company_id FROM ${q('employees')} WHERE id=$1 AND is_archived=false`, [u.employeeId]);
@@ -40,7 +40,7 @@ export function createUserRouter({ auth,writeLimiter,pool,q,can,allowedRoles,all
       const record = { id:row.id,username:row.username,name:row.name,email:row.email,phone:row.phone,role:row.role,companyIds:row.company_ids,permissions:row.permissions,employeeId:row.employee_id || undefined,isActive:row.is_active,isCompanyOwner:row.is_company_owner,createdAt:row.created_at,lastLogin:row.last_login };
       const updated = await client.query(`UPDATE ${q('app_state')} SET version=version+1,updated_by=$1,updated_at=now() WHERE id=1 RETURNING version,updated_at`, [req.user.id]);
       if (!updated.rowCount) throw workflowError(409,'STATE_NOT_INITIALIZED');
-      await appendStateAudit(client,q,{ companyIds:record.companyIds,user:req.user,action:'STATE_PATCH',version:updated.rows[0].version });
+      await appendStateAudit(client,q,{ companyIds:record.companyIds,entityType:'USER',entityId:record.id,details:record.name,diff:{before:existing.rowCount?{role:existing.rows[0].role,permissions:existing.rows[0].permissions,isActive:existing.rows[0].is_active}:{},after:{role:record.role,permissions:record.permissions,isActive:record.isActive}},user:req.user,action:existing.rowCount?'UPDATE_USER':'CREATE_USER',version:updated.rows[0].version });
       await client.query(`INSERT INTO ${q('audit_log')} (user_id,action,ip) VALUES ($1,$2,$3)`, [req.user.id,`${existing.rowCount ? 'UPDATE_USER' : 'CREATE_USER'}:${record.id}`,req.ip]);
       await client.query('COMMIT');
       broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at });
@@ -75,7 +75,7 @@ export function createUserRouter({ auth,writeLimiter,pool,q,can,allowedRoles,all
       const row = deleted.rows[0];
       const updated = await client.query(`UPDATE ${q('app_state')} SET version=version+1,updated_by=$1,updated_at=now() WHERE id=1 RETURNING version,updated_at`, [req.user.id]);
       if (!updated.rowCount) throw workflowError(409,'STATE_NOT_INITIALIZED');
-      await appendStateAudit(client,q,{ companyIds:row.company_ids,user:req.user,action:'STATE_PATCH',version:updated.rows[0].version });
+      await appendStateAudit(client,q,{ companyIds:row.company_ids,entityType:'USER',entityId:row.id,details:row.name,user:req.user,action:'DELETE_USER',version:updated.rows[0].version });
       await client.query(`INSERT INTO ${q('audit_log')} (user_id,action,ip) VALUES ($1,$2,$3)`, [req.user.id,`DELETE_USER:${row.id}`,req.ip]);
       await client.query('COMMIT');
       broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at });

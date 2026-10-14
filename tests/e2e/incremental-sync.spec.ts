@@ -1,3 +1,4 @@
+import {navigate} from '../support/navigation';
 import { expect, test } from '@playwright/test';
 
 const login = async (page:any) => {
@@ -10,7 +11,7 @@ const login = async (page:any) => {
     page.waitForResponse((response:any) => response.url().endsWith('/api/state') && response.ok()),
     form.locator('button[type="submit"]').click(),
   ]);
-  await expect(page.getByTestId('nav-employees')).toBeVisible();
+  await expect(page.getByTestId('nav-group-people')).toBeVisible();
 };
 
 test('a record saved in one tab reaches another without reloading full state', async ({ browser }) => {
@@ -23,7 +24,7 @@ test('a record saved in one tab reaches another without reloading full state', a
   const opened=context.waitForEvent('page');
   await writer.evaluate(()=>{window.open('/employees','_blank');});
   const observer=await opened;
-  await expect(observer.getByTestId('nav-employees')).toBeVisible();
+  await expect(observer.getByTestId('nav-group-people')).toBeVisible();
 
   let fullStateReads = 0;
   observer.on('request',request => {
@@ -51,11 +52,11 @@ test('a record saved in one tab reaches another without reloading full state', a
   },employeeId);
 
   expect(result.ok,JSON.stringify(result.body)).toBe(true);
-  await observer.getByTestId('nav-employees').click();
+  await navigate(observer,'employees');
   await expect(observer.locator('tbody').getByText(result.employeeName,{ exact:true })).toBeVisible();
   expect(fullStateReads).toBe(0);
 
-  await observer.getByTestId('nav-loans_penalties').click();
+  await navigate(observer,'loans_penalties');
   const financialResult = await writer.evaluate(async employeeId => {
     const stateResponse = await fetch('/api/state');
     const current = await stateResponse.json();

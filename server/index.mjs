@@ -1,3 +1,4 @@
+import {createAuditRouter} from './routes/audit-routes.mjs';
 import { createPortalRegistrationApprovalRouter } from './routes/portal-registration-approval-routes.mjs';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
@@ -272,6 +273,8 @@ app.use('/api', createStateRouter({
   scopeStateForCompanies,createTenantScopedClient,replaceNormalizedPayrollData,replaceNormalizedOperationsData,replaceNormalizedCoreData,
   appendPayrollFinancialAudit,appendStateAudit,broadcastStateUpdate,addStateEventClient,
 }));
+
+app.use('/api',createAuditRouter({auth,pool,q,can}));
 
 app.use('/api', createCompanyRouter({
   auth,writeLimiter,pool,q,can,workflowError,asArray,clone,subscriptionState,bumpStateVersion,appendStateAudit,broadcastStateUpdate,

@@ -1,3 +1,4 @@
+import {redactAuditValue} from './audit-log-service.mjs';
 import { validateLoanInstallmentPlan } from './loan-installments.mjs';
 import { validateApprovedPayrollLoans } from './payroll-loan-validation.mjs';
 export function createStateAccessService({
@@ -38,6 +39,7 @@ function publicStateForUser(rawState, user) {
     if (Array.isArray(state.auditLogs)) state.auditLogs = state.auditLogs.filter(item => item.companyId && allowed.has(item.companyId));
     if (state.activeCompanyId && !allowed.has(state.activeCompanyId)) state.activeCompanyId = [...allowed][0] || '';
   }
+  state.auditLogs=can(user,'VIEW_AUDIT_LOGS')?(state.auditLogs||[]).map(log=>redactAuditValue(log)):[];
   if (Array.isArray(state.users)) state.users = state.users.map(({ password, ...item }) => item);
   // Each company has its own Qoyod configuration. Only expose the active assigned company's public settings.
   const integrationCompanyId = state.activeCompanyId && assigned.has(state.activeCompanyId)

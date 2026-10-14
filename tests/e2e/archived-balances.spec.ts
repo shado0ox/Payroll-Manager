@@ -1,3 +1,4 @@
+import {navigate} from '../support/navigation';
 import {test,expect} from '@playwright/test';
 test('archived absconded, final-exit and transfer balances appear without a new salary or duplicate liability',async({page})=>{
  test.setTimeout(90000);
@@ -24,8 +25,7 @@ test('archived absconded, final-exit and transfer balances appear without a new 
   for(let i=0;i<3;i++)await write(`/api/employees/${employees[i].id}`,'PUT',{...employees[i],status:i===0?'ABSCONDED':'TERMINATED',employmentEndReason:['ABSCONDED','FINAL_EXIT','SPONSOR_TRANSFER'][i],terminationDate:`${sourcePeriod}-31`});
   return {targetPeriod,employeeIds:employees.map(e=>e.id),runId};
  });
- await page.reload();await page.getByTestId('nav-payroll_runs').click();
- await page.getByLabel(/السنة|Year/i).and(page.locator("input")).fill(seed.targetPeriod.slice(0,4));await page.getByLabel(/شهر المسير|Payroll month/i).and(page.locator("input")).fill(seed.targetPeriod);
+ await page.reload();await navigate(page,'payroll_runs');await page.getByLabel(/شهر المسير|Payroll month/i).and(page.locator("input")).fill(seed.targetPeriod);
  const calculate=async()=>{const saved=page.waitForResponse(r=>r.request().method()==='PUT'&&/\/api\/payroll-runs\/[^/]+$/.test(new URL(r.url()).pathname));await page.getByRole('button',{name:/إعادة احتساب المسير آلياً|Recalculate payroll/i}).click();const response=await saved;const result=await response.json();expect(response.ok(),JSON.stringify(result)).toBe(true);return result.record;};
  for(let attempt=0;attempt<2;attempt++){
   const run=await calculate();

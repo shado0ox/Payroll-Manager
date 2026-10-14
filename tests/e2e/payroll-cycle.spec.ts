@@ -1,3 +1,4 @@
+import {navigate} from '../support/navigation';
 import { expect, test } from '@playwright/test';
 
 const login = async (page:any) => {
@@ -10,7 +11,7 @@ const login = async (page:any) => {
     page.waitForResponse((response:any) => response.url().endsWith('/api/state') && response.ok()),
     form.locator('button[type="submit"]').click(),
   ]);
-  await expect(page.getByTestId('nav-payroll_runs')).toBeVisible();
+  await expect(page.getByTestId('nav-group-payroll')).toBeVisible();
 };
 
 test('current-month payroll calculates foreign GOSI and financial inputs without refresh', async ({ page }) => {
@@ -53,7 +54,7 @@ test('current-month payroll calculates foreign GOSI and financial inputs without
 
   expect(seed.ok,JSON.stringify(seed)).toBe(true);
   await page.waitForTimeout(300);
-  await page.getByTestId('nav-payroll_runs').click();
+  await navigate(page,'payroll_runs');
   await expect(page.getByLabel(/شهر المسير|Payroll month/i).and(page.locator("input"))).toHaveValue(seed.periodMonth!);
 
   let fullStateReads = 0;

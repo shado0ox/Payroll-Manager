@@ -74,8 +74,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
     {id:'company',label:language==='ar'?'المنشأة والإعدادات':'Company and settings',icon:Building2,tabs:['company_profile','settings']},
     {id:'access',label:language==='ar'?'المستخدمون والرقابة':'Users and audit',icon:ShieldCheck,tabs:['users','audit_logs']},
   ];
-  const [openGroups,setOpenGroups]=useState(['people','payroll','company','access']);
-  useEffect(()=>{const group=groups.find(group=>group.tabs.includes(activeTab));if(group)setOpenGroups(previous=>previous.includes(group.id)?previous:[...previous,group.id]);},[activeTab]);
+  const [openGroups,setOpenGroups]=useState<string[]>([]);
+  useEffect(()=>setOpenGroups([]),[company?.id]);
   const roleTitle = t(ROLE_DISPLAY[activeRole] || 'systemUser');
   const displayName = currentUser?.name || (isAdmin ? t('systemAdmin') : t('user'));
   const avatarLetter = currentUser?.name ? currentUser.name.charAt(0) : (language === 'ar' ? 'م' : 'U');
@@ -128,8 +128,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
           const items=visibleNavItems.filter(item=>group.tabs.includes(item.id));if(!items.length)return null;
           const GroupIcon=group.icon,open=openGroups.includes(group.id),active=group.tabs.includes(activeTab);
           return <div key={group.id} className="contents md:block md:pt-2">
-            <button type="button" data-testid={`nav-group-${group.id}`} aria-expanded={open} aria-controls={`nav-group-content-${group.id}`} onClick={()=>setOpenGroups(previous=>open?previous.filter(id=>id!==group.id):[...previous,group.id])} className={`hidden w-full items-center justify-between rounded-xl px-3 py-2.5 text-xs font-bold md:flex ${active?'bg-teal-400/10 text-teal-200':'text-slate-400 hover:bg-white/5 hover:text-white'}`}><span className="flex items-center gap-2"><GroupIcon className="h-4 w-4"/>{group.label}</span><ChevronDown className={`h-4 w-4 transition-transform ${open?'rotate-180':''}`}/></button>
-            <div id={`nav-group-content-${group.id}`} className={open?'contents md:block md:ms-3 md:border-s md:border-white/10 md:ps-1':'contents md:hidden'}>{items.map(renderItem)}</div>
+            <div className={`flex min-w-[76px] flex-col items-center gap-1 rounded-xl px-2 py-2 text-[10px] font-bold md:w-full md:flex-row md:justify-between md:px-3 md:py-2.5 md:text-xs ${active?'bg-teal-400/10 text-teal-200':'text-slate-400'}`}>
+              <span data-testid={`nav-group-label-${group.id}`} title={group.label} className="flex flex-col items-center gap-1 md:flex-row md:gap-2"><GroupIcon className="h-4 w-4"/><span className="max-w-[84px] truncate md:max-w-none">{group.label}</span></span>
+              <button type="button" data-testid={`nav-group-${group.id}`} aria-label={`${language==='ar'?(open?'طي ':'توسيع '):(open?'Collapse ':'Expand ')}${group.label}`} aria-expanded={open} aria-controls={`nav-group-content-${group.id}`} onClick={()=>setOpenGroups(previous=>open?previous.filter(id=>id!==group.id):[...previous,group.id])} className="rounded-lg p-1.5 hover:bg-white/10"><ChevronDown className={`h-4 w-4 transition-transform ${open?'rotate-180':''}`}/></button>
+            </div>
+            <div id={`nav-group-content-${group.id}`} className={open?'contents md:block md:ms-3 md:border-s md:border-white/10 md:ps-1':'hidden'}>{items.map(renderItem)}</div>
           </div>;
         })}
       </nav>
