@@ -135,3 +135,61 @@ test('payroll reversal restores next-month loan deduction with an audit trail', 
   expect(reversalAudit.diff.before.status).toBe('PAID');
   expect(reversalAudit.diff.after.status).toBe('SCHEDULED');
 });
+
+test('partial employee payment keeps 10000 available after a 40000 payment and reload', async ({ page }) => {
+  test.setTimeout(90_000);
+  await login(page);
+  const seed = await page.evaluate(async () => {
+    const state = (await (await fetch('/api/state')).json()).state;
+    const companyId = state.activeCompanyId || state.companies[0].id;
+    const used = new Set(state.payrollRuns.filter((run:any)=>run.companyId===companyId).map((run:any)=>run.periodMonth));
+    let date = new Date(Date.UTC(new Date().getUTCFullYear()+2,0,1));
+    while(used.has(date.toISOString().slice(0,7))) date = new Date(Date.UTC(date.getUTCFullYear(),date.getUTCMonth()+1,1));
+    const period = date.toISOString().slice(0,7), suffix = String(Date.now());
+    const employeeId = `partial-browser-${suffix}`, runId = `partial-run-${suffix}`, itemId = `${runId}-item`;
+    const write = async (path:string,record:any) => {
+      const response = await fetch(path,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(record)});
+      if(!response.ok) throw new Error(`${path}: ${await response.text()}`);
+    };
+    await write(`/api/employees/${employeeId}`,{id:employeeId,companyId,employeeNo:`PART-${suffix}`,firstNameAr:'اختبار',lastNameAr:'جزئي',nationality:'NON_SAUDI',status:'ACTIVE',hireDate:`${period}-01`,salaryStartDate:`${period}-01`,nationalIdOrIqama:`2${suffix.slice(-9)}`,bankIban:'SA0380000000608010167519',bankName:'Al Rajhi',bankAccountStatus:'ACTIVE',salaryPackage:{baseSalary:50000,housingAllowance:0,transportAllowance:0,otherFixedAllowances:0,customAllowances:[],customDeductions:[]}});
+    const item = {id:itemId,payrollRunId:runId,employeeId,employeeNo:`PART-${suffix}`,employeeName:'اختبار جزئي',nationality:'NON_SAUDI',nationalIdOrIqama:`2${suffix.slice(-9)}`,bankIban:'SA0380000000608010167519',bankName:'Al Rajhi',baseSalary:50000,housingAllowance:0,transportAllowance:0,otherAllowances:0,overtimeAmount:0,overtimeHours:0,bonuses:0,totalGrossSalary:50000,delayMinutes:0,delayDeduction:0,absenceDays:0,absenceDeduction:0,unpaidLeaveDays:0,unpaidLeaveDeduction:0,gosiEmployeeShare:0,gosiEmployerShare:0,loanDeduction:0,penaltiesDeduction:0,otherDeductions:0,totalDeductions:0,netSalary:50000,totalCompanyBurden:50000,entitlementStatus:'PAYABLE',warningFlags:[]};
+    await write(`/api/payroll-runs/${runId}`,{id:runId,companyId,periodMonth:period,startDate:`${period}-01`,endDate:new Date(Date.UTC(date.getUTCFullYear(),date.getUTCMonth()+1,0)).toISOString().slice(0,10),status:'UNDER_REVIEW',createdAt:new Date().toISOString(),calculatedAt:new Date().toISOString(),employeesCount:1,totalBaseSalaries:50000,totalAllowances:0,totalOvertime:0,totalGrossSalaries:50000,totalAbsenceDeductions:0,totalDelayDeductions:0,totalGosiEmployee:0,totalGosiEmployer:0,totalLoanDeductions:0,totalPenalties:0,totalDeductions:0,totalNetSalaries:50000,totalCompanyCost:50000,items:[item],paymentBatches:[]});
+    const approved = await fetch(`/api/payroll-runs/${runId}/status`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:'APPROVED'})});
+    if(!approved.ok) throw new Error(await approved.text());
+    return {period,runId,employeeId};
+  });
+  const openPeriod = async () => {
+    await page.getByTestId('nav-payroll_runs').click();
+    await page.getByLabel(/السنة|Year/i).selectOption(seed.period.slice(0,4));
+    await page.getByLabel(/شهر المسير|Payroll month/i).selectOption(seed.period);
+  };
+  await page.reload();
+  await expect(page.getByTestId('nav-payroll_runs')).toBeVisible();
+  await openPeriod();
+  const createPartial = async (amount?:string) => {
+    await page.getByRole('button',{name:/تحديد المتاح|Select eligible/i}).click();
+    await page.getByRole('button',{name:/إنشاء دفعة للمحددين|Create selected batch/i}).click();
+    if(amount) await page.getByLabel(/مبلغ سداد|Payment amount/i).fill(amount);
+    await page.locator('select:has(option[value="CASH"])').selectOption('CASH');
+    const saved=waitForPayrollWrite(page,'POST',/\/api\/payroll-runs\/[^/]+\/payment-batches$/);
+    await page.getByRole('button',{name:/إنشاء وجدولة الدفعة|Create and schedule batch/i}).click();
+    return (await (await saved).json()).record;
+  };
+  const first=await createPartial('40000');
+  expect(first.paymentBatches.at(-1).totalAmount).toBe(40000);
+  const markPaid=waitForPayrollWrite(page,'PATCH',/\/api\/payroll-runs\/[^/]+\/payment-batches\/[^/]+\/status$/);
+  await page.getByRole('button',{name:/تم التحويل|Mark paid/i}).click();
+  await markPaid;
+  await page.reload();await expect(page.getByTestId('nav-payroll_runs')).toBeVisible();await openPeriod();
+  await page.getByRole('button',{name:/تحديد المتاح|Select eligible/i}).click();
+  await page.getByRole('button',{name:/إنشاء دفعة للمحددين|Create selected batch/i}).click();
+  await expect(page.getByLabel(/مبلغ سداد|Payment amount/i)).toHaveValue('10000');
+  await page.getByRole('button',{name:/إلغاء|Cancel/i,exact:true}).last().click();
+  // Closing the modal preserves selection; clear it before the helper selects again.
+  await page.getByRole('button',{name:/تحديد المتاح|Select eligible/i}).click();
+  const second=await createPartial();
+  expect(second.paymentBatches.at(-1).totalAmount).toBe(10000);
+  expect(second.items[0].netSalary).toBe(50000);
+  expect(second.paymentBatches.reduce((sum:number,batch:any)=>sum+batch.totalAmount,0)).toBe(50000);
+  await expect(page.getByRole('button',{name:/تحديد المتاح|Select eligible/i})).toBeDisabled();
+});

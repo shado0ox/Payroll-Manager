@@ -39,6 +39,14 @@ export async function appendPayrollFinancialAudit(client, q, { stored, next, use
   for (const [runId, oldRun] of beforeRuns) {
     const newRun = nextRuns.get(runId);
     if (!newRun) continue;
+    const oldItems = new Map(asArray(oldRun.items).map(item => [item.id,item]));
+    for (const item of asArray(newRun.items)) {
+      const before = oldItems.get(item.id);
+      if (!before || before.entitlementStatus === item.entitlementStatus) continue;
+      await insertAudit(client,q,{companyId:newRun.companyId,user,action:'PAYROLL_ENTITLEMENT_CHANGED',entityType:'PAYROLL_ITEM',entityId:item.id,
+        details:`${newRun.periodMonth} | ${before.entitlementStatus || 'PAYABLE'} -> ${item.entitlementStatus || 'PAYABLE'}`,
+        payload:{payrollRunId:runId,employeeId:item.employeeId,periodMonth:newRun.periodMonth,amount:Number(item.netSalary || 0),reason:item.entitlementReason || '',documentRef:item.entitlementDocumentRef || '',counterAccount:item.entitlementSettlementAccount || '',settlementDate:item.entitlementSettlementDate || '',diff:{before:{status:before.entitlementStatus},after:{status:item.entitlementStatus}}}});
+    }
     const oldBatches = new Map(asArray(oldRun.paymentBatches).map(batch => [batch.id, batch]));
     const newBatches = new Map(asArray(newRun.paymentBatches).map(batch => [batch.id, batch]));
 
@@ -59,6 +67,7 @@ export async function appendPayrollFinancialAudit(client, q, { stored, next, use
           periodMonth: newRun.periodMonth,
           batchNumber: newBatch.batchNumber,
           amount,
+          allocations:asArray(newBatch.allocations),
           reason,
           diff: {
             before: { status: oldBatch.status, paymentDate: oldBatch.paymentDate ?? null },

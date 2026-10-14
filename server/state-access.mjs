@@ -1,3 +1,4 @@
+import { validateApprovedPayrollLoans } from './payroll-loan-validation.mjs';
 export function createStateAccessService({
   clone,can,allowedCompanyIds,itemCompanyId,companyScopedKeys,operationsMutableKeys,asArray,sameJson,
   validateClosedPayrollInputs,validatePayrollWorkflowChanges,validatePayrollCarryForwardState,workflowError,
@@ -86,7 +87,8 @@ function validatePayrollSettlementChanges(storedSettlements, incomingSettlements
 
 function mergeStateForUser(stored, incoming, user) {
   if (Object.prototype.hasOwnProperty.call(incoming || {}, 'payrollSettlements')) validatePayrollSettlementChanges(stored?.payrollSettlements, incoming?.payrollSettlements);
-  validateClosedPayrollInputs(stored, incoming);
+  validateClosedPayrollInputs(stored, incoming, user);
+  validateApprovedPayrollLoans({...stored,loans:incoming.loans || stored.loans},incoming.payrollRuns || stored.payrollRuns);
   validatePayrollWorkflowChanges(stored?.payrollRuns, incoming?.payrollRuns, user);
   validatePayrollCarryForwardState(stored?.payrollRuns, incoming?.payrollRuns);
   if (user.role === 'ADMIN') {

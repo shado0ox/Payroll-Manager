@@ -132,13 +132,6 @@ export function calculateEmployeePayrollItem(input: EmployeeCalculationInput): P
   attendanceRecords.forEach((record) => {
     // Imported analysis rows are informational until HR explicitly approves them.
     if (record.sourceType === 'MOQOOT_IMPORT' && record.payrollApproved !== true) return;
-    if (record.aggregateAttendance) {
-      aggregateAbsenceDays += record.absence ? Math.max(0,Number(record.daysCount || 0)) : 0;
-      totalDelayMinutes += Math.max(0,Number(record.delayMinutes || 0));
-      if (record.overtimeType === 'WEEKEND') weekendOvertimeHours += Math.max(0,Number(record.overtimeHours || 0));
-      else standardOvertimeHours += Math.max(0,Number(record.overtimeHours || 0));
-      return;
-    }
     const recordStart = record.date;
     const recordEnd = record.endDate || record.date;
     const overlapStart = recordStart > servicePeriodStart ? recordStart : servicePeriodStart;
@@ -147,6 +140,16 @@ export function calculateEmployeePayrollItem(input: EmployeeCalculationInput): P
       ? Math.floor((Date.parse(`${overlapEnd}T00:00:00Z`) - Date.parse(`${overlapStart}T00:00:00Z`)) / 86400000) + 1
       : 0;
     if (overlappedDays <= 0) return;
+    const recordDays = Math.max(1, Math.floor((Date.parse(`${recordEnd}T00:00:00Z`) - Date.parse(`${recordStart}T00:00:00Z`)) / 86400000) + 1);
+    const periodShare = overlappedDays / recordDays;
+    if (record.aggregateAttendance) {
+      aggregateAbsenceDays += record.absence ? Math.max(0,Number(record.daysCount || 0)) * periodShare : 0;
+      totalDelayMinutes += Math.max(0,Number(record.delayMinutes || 0)) * periodShare;
+      if (record.overtimeType === 'WEEKEND') weekendOvertimeHours += Math.max(0,Number(record.overtimeHours || 0)) * periodShare;
+      else standardOvertimeHours += Math.max(0,Number(record.overtimeHours || 0)) * periodShare;
+      return;
+    }
+
     if (record.absence) {
       addDateRangeToSet(absenceDates, overlapStart, overlapEnd);
     } else if (record.unpaidLeave) {
@@ -154,14 +157,14 @@ export function calculateEmployeePayrollItem(input: EmployeeCalculationInput): P
     } else {
       if (record.delayMinutes > 0) {
         if (record.delayMinutes > rules.delayGracePeriodMinutes) {
-          totalDelayMinutes += (record.delayMinutes - rules.delayGracePeriodMinutes);
+          totalDelayMinutes += (record.delayMinutes - rules.delayGracePeriodMinutes) * periodShare;
         }
       }
       if (record.overtimeHours > 0) {
         if (record.overtimeType === 'WEEKEND') {
-          weekendOvertimeHours += record.overtimeHours;
+          weekendOvertimeHours += record.overtimeHours * periodShare;
         } else {
-          standardOvertimeHours += record.overtimeHours;
+          standardOvertimeHours += record.overtimeHours * periodShare;
         }
       }
     }
@@ -299,9 +302,9 @@ export function calculateEmployeePayrollItem(input: EmployeeCalculationInput): P
   if (totalGrossSalary - totalDeductions < 0) {
     warningFlags.push('الاستقطاعات تتجاوز إجمالي المستحقات');
   }
-  // Saudi Labor Law: Loans deduction should not exceed 33% of gross salary
-  if (totalGrossSalary > 0 && loanDeduction > (totalGrossSalary * 0.33)) {
-    warningFlags.push('قسط السلفة يتجاوز الثلث (33%) من إجمالي الراتب');
+  // Article 92: flag employer-loan deductions above the ordinary 10% wage limit.
+  if (totalGrossSalary > 0 && loanDeduction > (totalGrossSalary * 0.10)) {
+    warningFlags.push('قسط السلفة يتجاوز 10% من الأجر؛ يلزم مراجعة السند النظامي والموافقة الخطية');
   }
   if (totalAbsenceDays >= 5) {
     warningFlags.push(`غياب مرتفع (${totalAbsenceDays} أيام)`);

@@ -1,3 +1,4 @@
+import { monthlySalaryNet, salaryBatchAllocations, salaryBatchEmployeeComponents } from '../../server/payroll-ledger.mjs';
 import { Company, PayrollRun, JournalBatch, Employee, PayrollRunItem } from '../types';
 
 const isEnglish = () => localStorage.getItem('wafr_language') === 'en';
@@ -105,9 +106,9 @@ export function exportPayrollSheetCsv(payrollRun: PayrollRun, company: Company):
     item.loanDeduction.toFixed(2),
     item.penaltiesDeduction.toFixed(2),
     item.totalDeductions.toFixed(2),
-    item.netSalary.toFixed(2),
+    monthlySalaryNet(item).toFixed(2),
     item.gosiEmployerShare.toFixed(2),
-    item.totalCompanyBurden.toFixed(2)
+    (item.totalCompanyBurden - Number(item.priorPeriodNet || 0)).toFixed(2)
   ]);
 
   const summaryRow = [
@@ -123,17 +124,17 @@ export function exportPayrollSheetCsv(payrollRun: PayrollRun, company: Company):
     payrollRun.totalAllowances.toFixed(2),
     '""',
     payrollRun.totalOvertime.toFixed(2),
-    payrollRun.totalGrossSalaries.toFixed(2),
+    payrollRun.items.reduce((sum,item)=>sum+item.totalGrossSalary,0).toFixed(2),
     payrollRun.totalDelayDeductions.toFixed(2),
     payrollRun.totalAbsenceDeductions.toFixed(2),
     '""',
     payrollRun.totalGosiEmployee.toFixed(2),
     payrollRun.totalLoanDeductions.toFixed(2),
     payrollRun.totalPenalties.toFixed(2),
-    payrollRun.totalDeductions.toFixed(2),
-    payrollRun.totalNetSalaries.toFixed(2),
+    payrollRun.items.reduce((sum,item)=>sum+item.totalDeductions,0).toFixed(2),
+    payrollRun.items.reduce((sum,item)=>sum+monthlySalaryNet(item),0).toFixed(2),
     payrollRun.totalGosiEmployer.toFixed(2),
-    payrollRun.totalCompanyCost.toFixed(2)
+    payrollRun.items.reduce((sum,item)=>sum+item.totalCompanyBurden-Number(item.priorPeriodNet||0),0).toFixed(2)
   ];
 
   const csvContent = [headers.join(','), ...rows.map(r => r.join(',')), summaryRow.join(',')].join('\r\n');
@@ -164,23 +165,35 @@ export function exportWpsBankCsv(payrollRun: PayrollRun, company: Company, emplo
     'الرقم المرجعي للمنشأة'
   ];
 
+  const batches = (payrollRun.paymentBatches || []).filter(batch => batchReference
+    ? (batch.reference || batch.batchNumber) === batchReference : batch.status === 'SCHEDULED');
+  if (!batches.length) { alert(en ? 'Create a scheduled payroll batch before exporting WPS.' : 'أنشئ دفعة مجدولة قبل تصدير حماية الأجور.'); return; }
+  const sourcePeriods = new Set(batches.flatMap(batch => salaryBatchAllocations(payrollRun,batch).map(row => row.periodMonth)));
+  if (sourcePeriods.size !== 1) { alert(en ? 'Export each salary month in a separate WPS batch, or use the bank payment file.' : 'صدّر كل شهر راتب في دفعة حماية أجور مستقلة، أو استخدم ملف التحويل البنكي.'); return; }
+  const sourcePeriod = [...sourcePeriods][0];
+  const amounts = new Map<string, {amount:number;basic:number;housing:number;deductions:number;otherIncome:number}>();
+  for (const batch of batches) for (const id of batch.employeeIds) {
+    const row = salaryBatchEmployeeComponents(payrollRun,batch,id);
+    const old = amounts.get(id) || {amount:0,basic:0,housing:0,deductions:0,otherIncome:0};
+    amounts.set(id,{amount:old.amount+row.amount,basic:old.basic+row.basic,housing:old.housing+row.housing,deductions:old.deductions+row.deductions,otherIncome:old.otherIncome+row.otherIncome});
+  }
   const selectedIds = employeeIds ? new Set(employeeIds) : null;
   const selectedItems = payrollRun.items
     .filter(i => !selectedIds || selectedIds.has(i.employeeId))
-    .filter(i => !i.isSuspended && i.netSalary > 0);
-  const selectedTotal = selectedItems.reduce((sum, item) => sum + item.netSalary, 0);
+    .filter(i => !i.isSuspended && (amounts.get(i.employeeId)?.amount || 0) > 0);
+  const selectedTotal = selectedItems.reduce((sum, item) => sum + amounts.get(item.employeeId)!.amount, 0);
   const rows = selectedItems
     .map(item => [
       'ED', // Employee Detail
-      `"${item.employeeId.slice(0, 10)}"`,
+      `"${item.nationalIdOrIqama || ''}"`,
       `"${item.employeeName}"`,
       `"${item.bankIban}"`,
       `"${item.bankName}"`,
-      item.baseSalary.toFixed(2),
-      item.housingAllowance.toFixed(2),
-      (item.transportAllowance + item.otherAllowances + item.overtimeAmount).toFixed(2),
-      item.totalDeductions.toFixed(2),
-      item.netSalary.toFixed(2),
+      amounts.get(item.employeeId)!.basic.toFixed(2),
+      amounts.get(item.employeeId)!.housing.toFixed(2),
+      amounts.get(item.employeeId)!.otherIncome.toFixed(2),
+      amounts.get(item.employeeId)!.deductions.toFixed(2),
+      amounts.get(item.employeeId)!.amount.toFixed(2),
       `"${company.crNumber}"`
     ]);
 
@@ -189,7 +202,7 @@ export function exportWpsBankCsv(payrollRun: PayrollRun, company: Company, emplo
     `"${company.crNumber}"`,
     `"${company.nameAr}"`,
     `"${payrollRun.endDate}"`,
-    `"${payrollRun.periodMonth}"`,
+    `"${sourcePeriod}"`,
     `"${selectedItems.length}"`,
     selectedTotal.toFixed(2),
     'SAR',

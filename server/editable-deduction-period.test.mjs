@@ -12,6 +12,6 @@ test('deduction payroll period is explicitly editable', () => {
   assert.match(component, /فترة الراتب التي يطبق عليها الخصم/);
 });
 
-test('selected prior deduction period is consumed by prior-period recalculation', () => {
-  assert.match(payroll, /penalties\.filter\(p => p\.employeeId === emp\.id && p\.periodMonth === cursor/);
+test('prior deductions are read from the saved source run after recalculating that source month', () => {
+  assert.match(payroll, /unpaidSalaryDetails/);
 });

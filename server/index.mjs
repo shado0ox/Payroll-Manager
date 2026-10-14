@@ -130,7 +130,7 @@ const {
 const migrate = createDatabaseMigrator({
   pool,q,schema,bcrypt,replaceNormalizedPayrollData,replaceNormalizedOperationsData,replaceNormalizedCoreData,
 });
-const { addStateEventClient,disconnectStateEventClients,broadcastStateUpdate,bumpStateVersion,readLockedNormalizedState } = createStateRuntime({
+const { addStateEventClient,disconnectStateEventClients,broadcastStateUpdate,bumpStateVersion,lockStateVersion,readLockedNormalizedState } = createStateRuntime({
   q,buildId,workflowError,readNormalizedApplicationState,
 });
 const { run:runHrLifecycleAlerts } = createHrLifecycleAlertService({
@@ -328,6 +328,7 @@ app.use('/api', createPayrollRouter({
   workflowError,
   readLockedNormalizedState,
   readNormalizedApplicationState,
+  lockStateVersion,
   validatePayrollWorkflowChanges,
   validatePayrollCarryForwardState,
   appendPayrollFinancialAudit,

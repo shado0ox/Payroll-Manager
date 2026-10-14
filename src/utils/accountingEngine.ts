@@ -119,10 +119,10 @@ export function generateGosiAccrualJournalBatches(company:Company,payrollRun:Pay
 
 export function generatePaymentJournalBatch(company:Company,payrollRun:PayrollRun,paymentBatch?:PayrollPaymentBatch):JournalBatch {
   const paidBatches=payrollRun.paymentBatches?.filter(batch=>batch.status==='PAID')||[];
-  const amount=roundAmount(paymentBatch?paymentBatch.totalAmount:payrollRun.paymentBatches?.length?paidBatches.reduce((sum,batch)=>sum+batch.totalAmount,0):payrollRun.totalNetSalaries);
+  const amount=roundAmount(paymentBatch?(paymentBatch.status==='PAID'?paymentBatch.totalAmount:0):paidBatches.reduce((sum,batch)=>sum+batch.totalAmount,0));
   const reference=paymentBatch?.batchNumber||`مسير ${payrollRun.periodMonth}`;
   const lines:JournalLine[]=[{id:'line-pay-debit-payable',accountCode:company.chartOfAccounts.salariesPayableAccount||'2101',accountNameAr:'مستحقات الرواتب والأجور',accountNameEn:'Salaries and wages payable',descriptionAr:`صرف رواتب شهر ${payrollRun.periodMonth} - دفعة ${reference}`,descriptionEn:`Salary payment for ${payrollRun.periodMonth}`,debit:amount,credit:0},{id:'line-pay-cred-bank',accountCode:company.chartOfAccounts.bankAccount||'1010',accountNameAr:'حساب البنك الجاري',accountNameEn:'Current bank account',descriptionAr:`تحويل رواتب شهر ${payrollRun.periodMonth} - دفعة ${reference}`,descriptionEn:`Salary transfer for ${payrollRun.periodMonth}`,debit:0,credit:amount}];
-  return finishBatch({id:`batch-payment-${paymentBatch?.id||payrollRun.id}`,companyId:company.id,payrollRunId:payrollRun.id,periodMonth:payrollRun.periodMonth,batchNumber:`PV-${paymentBatch?.batchNumber||`${payrollRun.periodMonth.replace('-','')}-${company.crNumber.slice(-4)||'001'}`}`,date:paymentBatch?.paymentDate||paymentBatch?.scheduledDate||monthEnd(payrollRun.periodMonth),description:`قيد صرف رواتب شهر ${payrollRun.periodMonth} - دفعة ${reference}`,descriptionEn:`Salary payment journal for ${payrollRun.periodMonth}`,journalType:'PAYROLL_PAYMENT',affectedBranches:[],status:journalStatus(payrollRun)},lines);
+  return finishBatch({id:`batch-payment-${paymentBatch?.id||payrollRun.id}`,companyId:company.id,payrollRunId:payrollRun.id,periodMonth:paymentBatch?.paymentDate?.slice(0,7)||payrollRun.periodMonth,batchNumber:`PV-${paymentBatch?.batchNumber||`${payrollRun.periodMonth.replace('-','')}-${company.crNumber.slice(-4)||'001'}`}`,date:paymentBatch?.paymentDate||paymentBatch?.scheduledDate||monthEnd(payrollRun.periodMonth),description:`قيد صرف رواتب شهر ${payrollRun.periodMonth} - دفعة ${reference}`,descriptionEn:`Salary payment journal for ${payrollRun.periodMonth}`,journalType:'PAYROLL_PAYMENT',affectedBranches:[],status:journalStatus(payrollRun)},lines);
 }
 
 export function generateGosiPaymentJournalBatches(company:Company,payrollRun:PayrollRun):JournalBatch[] {
@@ -142,4 +142,18 @@ export function buildJournalDraft(fresh:JournalBatch,editedLines:JournalLine[],r
   for(const line of editedLines){const original=freshById.get(line.id);if(!original){customLines.push(line);continue;}const changes:Partial<JournalLine>={};for(const key of ['accountCode','accountNameAr','accountNameEn','descriptionAr','descriptionEn','debit','credit','costCenterCode','costCenterName','costCenterNameEn','contactName'] as const){if(line[key]!==original[key])(changes as any)[key]=line[key];}if(Object.keys(changes).length)manualLineOverrides[line.id]=changes;}
   const removedLineIds=fresh.lines.filter(line=>!editedIds.has(line.id)).map(line=>line.id);
   return {...fresh,...balanceJournalLines(editedLines,fresh.periodMonth),manualLineOverrides,customLines,removedLineIds,changeReason:reason};
+}
+
+export function generateEntitlementSettlementJournals(company:Company,runs:PayrollRun[]):JournalBatch[] {
+  const entries=runs.filter(run=>run.companyId===company.id && ['APPROVED','POSTED'].includes(run.status)).flatMap(run=>run.items
+    .filter(item=>['SETTLED','CANCELLED_WITH_DOCUMENT'].includes(item.entitlementStatus || '') && item.entitlementSettlementAccount && item.entitlementSettlementDate && currentPeriodNet(item)>0)
+    .map(item=>({run,item})));
+  return entries.map(({run,item})=>{
+    const periodMonth=item.entitlementSettlementDate!.slice(0,7);
+    const amount=currentPeriodNet(item);
+    const description=`${item.employeeNo} | ${run.periodMonth} | ${item.entitlementReason || ''} | ${item.entitlementDocumentRef || ''}`;
+    const lines:JournalLine[]=[{id:`settlement-payable-${item.id}`,accountCode:company.chartOfAccounts.salariesPayableAccount||'2101',accountNameAr:'مستحقات الرواتب والأجور',accountNameEn:'Salaries payable',descriptionAr:description,descriptionEn:description,debit:amount,credit:0},
+      {id:`settlement-counter-${item.id}`,accountCode:item.entitlementSettlementAccount!,accountNameAr:'الحساب المقابل للتسوية الموثقة',accountNameEn:'Documented settlement counter-account',descriptionAr:description,descriptionEn:description,debit:0,credit:amount}];
+  return finishBatch({id:`batch-settlement-${item.id}`,companyId:company.id,payrollRunId:run.id,periodMonth,batchNumber:`JV-SETTLEMENT-${item.id}`,date:item.entitlementSettlementDate!,description:`تسويات ذمم الرواتب بمستندات - ${periodMonth}`,descriptionEn:`Documented salary liability settlements - ${periodMonth}`,journalType:'PAYROLL_SETTLEMENT',status:'APPROVED'},lines);
+  });
 }

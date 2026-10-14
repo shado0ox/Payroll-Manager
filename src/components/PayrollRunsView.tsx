@@ -67,6 +67,7 @@ import { PayrollRunItemsTable } from './payroll/PayrollRunItemsTable';
 import { PayrollPaymentBatchModal } from './payroll/PayrollPaymentBatchModal';
 import { getCurrentPeriod } from '../utils/period';
 import { getPayrollPaymentCoverages } from '../utils/payrollPaymentCoverage';
+import { unpaidSalaryDetails, availableSalaryAllocations, allocateSalaryAmount } from '../../server/payroll-ledger.mjs';
 
 interface PayrollRunsViewProps {
   company: Company;
@@ -171,6 +172,7 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
   const [adjustmentItem, setAdjustmentItem] = useState<PayrollRunItem | null>(null);
   const [adjustmentForm, setAdjustmentForm] = useState({ addition: 0, deduction: 0, notes: '' });
   const [paymentBatchForm, setPaymentBatchForm] = useState({
+    amounts: {} as Record<string, string>,
     method: 'WPS' as PaymentMethod,
     scheduledDate: new Date().toISOString().slice(0, 10),
     reference: '',
@@ -262,46 +264,15 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
       )?.batch;
   };
 
+  const availableAllocationsByEmployee = useMemo(() => new Map((currentRun?.items || []).map(item => [
+    item.employeeId, availableSalaryAllocations(companyRuns, currentRun, item.employeeId)
+  ])), [companyRuns, currentRun]);
+  const remainingPaymentAmounts = useMemo(() => Object.fromEntries([...availableAllocationsByEmployee].map(([id,rows]) => [id, roundAmount(rows.reduce((sum,row) => sum + row.amount,0))])), [availableAllocationsByEmployee]);
   const eligibleFilteredItems = useMemo(() => filteredItems.filter(item =>
-    (item.entitlementStatus || 'PAYABLE') === 'PAYABLE' && item.netSalary > 0 && !committedEmployeeIds.has(item.employeeId)
-  ), [filteredItems, committedEmployeeIds]);
+    (item.entitlementStatus || 'PAYABLE') === 'PAYABLE' && remainingPaymentAmounts[item.employeeId] > 0
+  ), [filteredItems, remainingPaymentAmounts]);
   const selectedPaymentItems = useMemo(() => currentRun?.items.filter(item => selectedPaymentEmployeeIds.includes(item.employeeId)) || [], [currentRun?.items, selectedPaymentEmployeeIds]);
-  const referencedPriorEntitlementKeys = useMemo(() => {
-    const keys = new Set<string>();
-    companyRuns.forEach(run => (run.paymentBatches || []).filter(batch => ['SCHEDULED', 'PAID'].includes(batch.status)).forEach(batch => {
-      (batch.priorEntitlements || []).forEach(ref => keys.add(`${ref.sourcePayrollRunId}:${ref.sourcePayrollItemId}`));
-    }));
-    return keys;
-  }, [companyRuns]);
-  const availablePriorEntitlementsByEmployee = useMemo(() => {
-    const byEmployee = new Map<string, PayrollPriorEntitlement[]>();
-    companyRuns.filter(run => run.periodMonth < selectedPeriod).forEach(run => run.items
-      .filter(item => item.employeeId
-        && (item.entitlementStatus || 'PAYABLE') === 'HELD'
-        && item.entitlementReason === 'MISSING_BANK_ACCOUNT'
-        && item.netSalary > 0
-        && !referencedPriorEntitlementKeys.has(`${run.id}:${item.id}`))
-      .forEach(item => {
-        const entitlement = {
-        sourcePayrollRunId: run.id,
-        sourcePayrollItemId: item.id,
-        sourcePeriodMonth: run.periodMonth,
-        employeeId: item.employeeId,
-        employeeNo: item.employeeNo,
-        employeeName: item.employeeName,
-        amount: roundAmount(item.netSalary),
-        };
-        byEmployee.set(item.employeeId, [...(byEmployee.get(item.employeeId) || []), entitlement]);
-      }));
-    return byEmployee;
-  }, [companyRuns, selectedPeriod, referencedPriorEntitlementKeys]);
-  const getAvailablePriorEntitlements = (employeeId: string) => availablePriorEntitlementsByEmployee.get(employeeId) || [];
-  const { selectedPriorEntitlements, selectedPaymentTotal } = useMemo(() => {
-    const selectedPriorEntitlements = selectedPaymentItems.flatMap(item => availablePriorEntitlementsByEmployee.get(item.employeeId) || []);
-    const currentTotal = selectedPaymentItems.reduce((sum, item) => sum + item.netSalary, 0);
-    const priorTotal = selectedPriorEntitlements.reduce((sum, ref) => sum + ref.amount, 0);
-    return { selectedPriorEntitlements, selectedPaymentTotal: roundAmount(currentTotal + priorTotal) };
-  }, [selectedPaymentItems, availablePriorEntitlementsByEmployee]);
+  const selectedPaymentTotal = roundAmount(selectedPaymentItems.reduce((sum,item) => sum + Number(paymentBatchForm.amounts[item.employeeId] ?? remainingPaymentAmounts[item.employeeId] ?? 0),0));
 
   const togglePaymentEmployee = (employeeId: string) => {
     setSelectedPaymentEmployeeIds(current => current.includes(employeeId)
@@ -321,8 +292,13 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
     if (!currentRun || !selectedPaymentItems.length || !['APPROVED', 'POSTED'].includes(currentRun.status)) return;
     const stillEligible = selectedPaymentItems;
     if (!stillEligible.length) return;
-    const priorEntitlements = stillEligible.flatMap(item => getAvailablePriorEntitlements(item.employeeId));
-    const priorEntitlementsTotal = roundAmount(priorEntitlements.reduce((sum, ref) => sum + ref.amount, 0));
+    let allocations: NonNullable<PayrollPaymentBatch['allocations']>;
+    try {
+      allocations = stillEligible.flatMap(item => allocateSalaryAmount(availableAllocationsByEmployee.get(item.employeeId) || [], Number(paymentBatchForm.amounts[item.employeeId] ?? remainingPaymentAmounts[item.employeeId] ?? 0)));
+    } catch {
+      alert(tr('أدخل لكل موظف مبلغًا أكبر من صفر ولا يتجاوز المتبقي المتاح.', 'Enter a positive payment amount within each employee’s available balance.'));
+      return;
+    }
     const invalidBankItems = stillEligible.filter(item => {
       const employee = companyEmployees.find(emp => emp.id === item.employeeId);
       const iban = String(employee?.bankIban || item.bankIban || '').replace(/\s/g, '').toUpperCase();
@@ -346,13 +322,13 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
       periodMonth: currentRun.periodMonth,
       employeeIds: stillEligible.map(item => item.employeeId),
       employeesCount: stillEligible.length,
-      totalAmount: roundAmount(stillEligible.reduce((sum, item) => sum + item.netSalary, 0) + priorEntitlementsTotal),
+      totalAmount: roundAmount(allocations.reduce((sum,row) => sum + row.amount,0)),
       method: paymentBatchForm.method,
       status: 'SCHEDULED',
       scheduledDate: paymentBatchForm.scheduledDate,
       reference: paymentBatchForm.reference.trim() || batchNumber,
-      notes: `${currentRun.status === 'POSTED' ? 'دفعة متأخرة مرتبطة بالمسير الأصلي. ' : ''}${priorEntitlements.length ? `تتضمن ${priorEntitlements.length} مستحق سابق بإجمالي ${priorEntitlementsTotal.toFixed(2)} SR. ` : ''}${paymentBatchForm.notes.trim()}`.trim(),
-      priorEntitlements,
+      notes: `${currentRun.status === 'POSTED' ? 'دفعة متأخرة مرتبطة بالمسير الأصلي. ' : ''}${paymentBatchForm.notes.trim()}`.trim(),
+      allocations,
       createdAt: new Date().toISOString(),
     };
     const updatedRun = { ...currentRun, paymentBatches: [...(currentRun.paymentBatches || []), batch] };
@@ -361,7 +337,7 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
     if (batch.method !== 'CASH') exportBankPayrollXlsx(updatedRun, company, batch, employees);
     setSelectedPaymentEmployeeIds([]);
     setIsPaymentBatchModalOpen(false);
-    setPaymentBatchForm({ method: 'WPS', scheduledDate: new Date().toISOString().slice(0, 10), reference: '', notes: '' });
+    setPaymentBatchForm({ amounts: {}, method: 'WPS', scheduledDate: new Date().toISOString().slice(0, 10), reference: '', notes: '' });
   };
 
   const handleEntitlementStatusChange = (item: PayrollRunItem, status: PayrollEntitlementStatus) => {
@@ -382,6 +358,8 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
     }
     let reason = '';
     let documentRef = '';
+    let settlementAccount = '';
+    let settlementDate = '';
     if (status !== 'PAYABLE') {
       reason = window.prompt(tr('اكتب سبب التعليق أو التسوية (إلزامي):', 'Enter the hold or settlement reason (required):'), item.entitlementReason || '')?.trim() || '';
       if (!reason) return;
@@ -389,12 +367,18 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
     if (['SETTLED', 'CANCELLED_WITH_DOCUMENT'].includes(status)) {
       documentRef = window.prompt(tr('رقم مستند/مرجع التسوية (إلزامي):', 'Settlement document/reference number (required):'), item.entitlementDocumentRef || '')?.trim() || '';
       if (!documentRef) return;
+      settlementAccount = window.prompt(tr('رمز الحساب المقابل لتسوية الذمة (راجع المستند المحاسبي):', 'Counter-account code for the documented settlement:'), item.entitlementSettlementAccount || company.chartOfAccounts.employeeAdvancesAccount || '1105')?.trim() || '';
+      settlementDate = window.prompt(tr('تاريخ التسوية YYYY-MM-DD:', 'Settlement date YYYY-MM-DD:'), new Date().toISOString().slice(0,10))?.trim() || '';
+      if (!settlementAccount || !/^\d{4}-\d{2}-\d{2}$/.test(settlementDate) || Number.isNaN(Date.parse(settlementDate))) return;
+
     }
     const items = currentRun.items.map(current => current.id === item.id ? {
       ...current,
       entitlementStatus: status,
       entitlementReason: status === 'PAYABLE' ? undefined : reason,
       entitlementDocumentRef: ['SETTLED', 'CANCELLED_WITH_DOCUMENT'].includes(status) ? documentRef : undefined,
+      entitlementSettlementAccount: settlementAccount || undefined,
+      entitlementSettlementDate: settlementDate || undefined,
       entitlementHoldSource: status === 'HELD' ? 'MANUAL' : undefined,
       entitlementUpdatedAt: new Date().toISOString(),
     } : current);
@@ -523,7 +507,7 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
       // A paid/scheduled payroll item is historical financial evidence. Preserve it even when
       // the employee was later archived and is no longer returned by the active employee query.
       const lockedHistoricalItems = previousItems.filter(item =>
-        committedEmployeeIds.has(item.employeeId) && !companyEmployeeIds.has(item.employeeId)
+        !companyEmployeeIds.has(item.employeeId)
       );
       const recalculatedItems: PayrollRunItem[] = companyEmployees
         .filter(emp => {
@@ -588,46 +572,9 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
           leaveRequests: empLeavePayments,
         });
 
-        // Carry every unpaid prior salary period into the current run exactly once.
-        // Unpaid prior periods are recalculated from their own period inputs, so a July deduction
-        // added later for an unpaid employee immediately changes the July carried balance.
-        const priorPeriodDetails: Array<{ periodMonth: string; gross: number; deductions: number; net: number }> = [];
-        const salaryStartDate = String(emp.salaryStartDate || emp.hireDate || '');
-        const salaryStartMonth = /^\d{4}-\d{2}-\d{2}$/.test(salaryStartDate) ? salaryStartDate.slice(0, 7) : selectedPeriod;
-        let cursor = salaryStartMonth;
-        while (cursor < selectedPeriod && priorPeriodDetails.length < 240) {
-          const historicalRun = companyRuns.find(run => run.periodMonth === cursor);
-          const alreadyTransferred = paymentCoverages.some(coverage =>
-            coverage.sourcePeriodMonth === cursor && coverage.employeeId === emp.id
-          );
-          if (!alreadyTransferred) {
-            const [priorYear, priorMonthNo] = cursor.split('-').map(Number);
-            const priorEnd = `${cursor}-${String(new Date(Date.UTC(priorYear, priorMonthNo, 0)).getUTCDate()).padStart(2, '0')}`;
-            const priorStart = `${cursor}-01`;
-            const priorEmployee = cursor === salaryStartMonth ? { ...emp, prorateFirstMonth: true } : emp;
-            const priorItem = calculateEmployeePayrollItem({
-              employee: priorEmployee,
-              company,
-              periodMonth: cursor,
-              attendanceRecords: attendance.filter(a => a.employeeId === emp.id && a.date <= priorEnd && (a.endDate || a.date) >= priorStart),
-              activeLoans: effectiveLoansFor(cursor, emp.id),
-              penalties: penalties.filter(p => p.employeeId === emp.id && p.periodMonth === cursor && p.appliedInPayroll !== false),
-              temporaryEarnings: temporaryEarnings.filter(e => e.employeeId === emp.id && e.periodMonth === cursor && e.appliedInPayroll !== false),
-              leaveRequests: leaves.filter(leave=>leave.employeeId===emp.id&&leave.status==='APPROVED'&&leave.startDate.slice(0,7)===cursor),
-            });
-            if (Number(priorItem?.netSalary || 0) > 0) {
-              priorPeriodDetails.push({
-                periodMonth: cursor,
-                gross: Number(priorItem?.totalGrossSalary || 0),
-                deductions: Number(priorItem?.totalDeductions || 0),
-                net: Number(priorItem?.netSalary || 0),
-              });
-            }
-          }
-          const [cursorYear, cursorMonth] = cursor.split('-').map(Number);
-          const next = new Date(Date.UTC(cursorYear, cursorMonth, 1));
-          cursor = `${next.getUTCFullYear()}-${String(next.getUTCMonth() + 1).padStart(2, '0')}`;
-        }
+        // Read saved month snapshots. Do not invent opening arrears from hire date,
+        // or recalculate historical salaries using today's employee profile.
+        const priorPeriodDetails = unpaidSalaryDetails(companyRuns, { companyId:company.id, periodMonth:selectedPeriod }, emp.id);
         const priorPeriodGross = roundAmount(priorPeriodDetails.reduce((sum, row) => sum + row.gross, 0));
         const priorPeriodDeductions = roundAmount(priorPeriodDetails.reduce((sum, row) => sum + row.deductions, 0));
         const priorPeriodNet = roundAmount(priorPeriodDetails.reduce((sum, row) => sum + row.net, 0));
@@ -650,6 +597,7 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
             : undefined);
         // Employees already included in an active/paid transfer batch are immutable.
         if (previousItem && committedEmployeeIds.has(emp.id)) return previousItem;
+        if (previousItem && ['SETTLED', 'CANCELLED_WITH_DOCUMENT'].includes(previousItem.entitlementStatus || '')) return previousItem;
         // A manual per-employee adjustment (bonus/deduction added via the adjustment modal) must
         // survive a fresh recalculation for any employee not yet locked in a transfer batch.
         // Re-apply the stored delta on top of the newly calculated base instead of dropping it.
@@ -694,6 +642,8 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
             ? automaticHoldReason
             : (shouldReleaseAutomaticHold ? undefined : previousItem.entitlementReason),
           entitlementDocumentRef: shouldReleaseAutomaticHold ? undefined : previousItem.entitlementDocumentRef,
+          entitlementSettlementAccount: previousItem.entitlementSettlementAccount,
+          entitlementSettlementDate: previousItem.entitlementSettlementDate,
           entitlementHoldSource: shouldApplyAutomaticHold
             ? (missingBankHold ? 'MISSING_BANK_ACCOUNT' : 'EMPLOYEE_SUSPENSION')
             : (shouldReleaseAutomaticHold ? undefined : previousItem.entitlementHoldSource),
@@ -1202,6 +1152,7 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
         currentRun={currentRun}
         filteredItems={filteredItems}
         eligibleFilteredItems={eligibleFilteredItems}
+        remainingPaymentAmounts={remainingPaymentAmounts}
         selectedPaymentEmployeeIds={selectedPaymentEmployeeIds}
         employees={employees}
         committedEmployeeIds={committedEmployeeIds}
@@ -1218,6 +1169,7 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
       {isPaymentBatchModalOpen && currentRun && (
         <PayrollPaymentBatchModal
           form={paymentBatchForm}
+          employees={selectedPaymentItems.map(item => ({ id:item.employeeId,name:item.employeeName,maximum:remainingPaymentAmounts[item.employeeId] || 0 }))}
           selectedCount={selectedPaymentItems.length}
           total={selectedPaymentTotal}
           onChange={setPaymentBatchForm}

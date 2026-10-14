@@ -1,3 +1,5 @@
+import { validateApprovedPayrollLoans } from '../payroll-loan-validation.mjs';
+import { salaryBatchAllocations, monthlySalaryNet } from '../payroll-ledger.mjs';
 import express from 'express';
 import { snapshotPayrollGosiBranches } from '../gosi-payroll-snapshot.mjs';
 
@@ -15,6 +17,7 @@ export function createPayrollRouter({
   workflowError,
   readLockedNormalizedState,
   readNormalizedApplicationState,
+  lockStateVersion,
   validatePayrollWorkflowChanges,
   validatePayrollCarryForwardState,
   appendPayrollFinancialAudit,
@@ -60,6 +63,7 @@ router.post('/payroll-runs/:id/status', auth, writeLimiter, async (req, res, nex
       delete record.postedAt; delete record.postedBy;
     }
     const nextRuns = asArray(stored.payrollRuns).map(item => item.id === record.id ? record : item);
+    validateApprovedPayrollLoans(stored,nextRuns);
     validatePayrollWorkflowChanges(stored.payrollRuns,nextRuns,req.user);
     validatePayrollCarryForwardState(stored.payrollRuns,nextRuns);
     const payload = clone(record); delete payload.items; delete payload.paymentBatches;
@@ -106,8 +110,15 @@ router.post('/payroll-runs/:id/payment-batches', auth, writeLimiter, async (req,
     }
     const record = { ...previous,paymentBatches:[...asArray(previous.paymentBatches),batch] };
     const nextRuns = asArray(stored.payrollRuns).map(item => item.id === record.id ? record : item);
+    validateApprovedPayrollLoans(stored,nextRuns);
     validatePayrollWorkflowChanges(stored.payrollRuns,nextRuns,req.user);
     validatePayrollCarryForwardState(stored.payrollRuns,nextRuns);
+    if (Array.isArray(batch.allocations)) batch.allocations = batch.allocations.map(allocation => {
+      const source = nextRuns.find(run => run.id === allocation.sourcePayrollRunId);
+      const item = source.items.find(item => item.id === allocation.sourcePayrollItemId);
+      return {...allocation,salarySnapshot:{baseSalary:Number(item.baseSalary || 0),housingAllowance:Number(item.housingAllowance || 0),
+        totalDeductions:Number(item.totalDeductions || 0),netSalary:monthlySalaryNet(item)}};
+    });
     const payload = clone(batch); delete payload.employeeIds;
     const sortOrder = Number((await client.query(`SELECT COALESCE(max(sort_order),-1)+1 AS sort_order FROM ${q('payroll_payment_batches')} WHERE payroll_run_id=$1`, [previous.id])).rows[0]?.sort_order || 0);
     await client.query(`INSERT INTO ${q('payroll_payment_batches')} (id,payroll_run_id,company_id,batch_number,status,method,total_amount,scheduled_date,payment_date,payload,sort_order)
@@ -152,6 +163,7 @@ router.patch('/payroll-runs/:id/payment-batches/:batchId/status', auth, writeLim
         : [];
     const affectedById = new Map(affectedPayrollRuns.map(item => [item.id,item]));
     const nextRuns = asArray(stored.payrollRuns).map(item => item.id === record.id ? record : (affectedById.get(item.id) || item));
+    validateApprovedPayrollLoans(stored,nextRuns);
     validatePayrollWorkflowChanges(stored.payrollRuns,nextRuns,req.user);
     validatePayrollCarryForwardState(stored.payrollRuns,nextRuns);
     nextBatch = record.paymentBatches.find(item => item.id === nextBatch.id);
@@ -185,12 +197,21 @@ router.put('/payroll-runs/:id', auth, writeLimiter, async (req, res, next) => {
     const stored = await readLockedNormalizedState(client);
     const existingRecord = asArray(stored.payrollRuns).find(item => item.id === record.id);
     if (existingRecord && existingRecord.companyId !== record.companyId) throw workflowError(409, 'PAYROLL_COMPANY_IMMUTABLE');
+    for (const item of asArray(existingRecord?.items)) {
+      if (!['SETTLED','CANCELLED_WITH_DOCUMENT'].includes(item.entitlementStatus)) continue;
+      const after = asArray(record.items).find(candidate => candidate.id === item.id);
+      if (!sameJson(item,after) && asArray(stored.journals).some(journal => journal.id === `batch-settlement-${item.id}` && journal.qoyodSyncStatus?.synced)) {
+        throw workflowError(409,'SETTLEMENT_JOURNAL_POSTED_REQUIRES_REVERSAL');
+      }
+    }
+
     if (existingRecord && (existingRecord.status !== record.status || !sameJson(existingRecord.paymentBatches,record.paymentBatches))) {
       throw workflowError(409,'PAYROLL_COMMAND_ENDPOINT_REQUIRED');
     }
     const nextRuns = existingRecord
       ? asArray(stored.payrollRuns).map(item => item.id === record.id ? record : item)
       : [record,...asArray(stored.payrollRuns)];
+    validateApprovedPayrollLoans(stored,nextRuns);
     validatePayrollWorkflowChanges(stored.payrollRuns,nextRuns,req.user);
     validatePayrollCarryForwardState(stored.payrollRuns,nextRuns);
     const nextState = { ...stored,payrollRuns:nextRuns };
@@ -275,6 +296,13 @@ function settlementSourceRun(stored, record, entitlementStatus, entitlementReaso
     throw workflowError(400,'INVALID_SETTLEMENT_SOURCE');
   }
   if (entitlementStatus === 'SETTLED') {
+    if (Number(record.amount) !== monthlySalaryNet(item)) throw workflowError(409,'SETTLEMENT_AMOUNT_MISMATCH');
+    if (asArray(stored.payrollRuns).filter(candidate => candidate.companyId === run.companyId).some(candidate =>
+      asArray(candidate.paymentBatches).filter(batch => ['SCHEDULED','PAID'].includes(batch.status)).some(batch =>
+        salaryBatchAllocations(candidate,batch).some(allocation => allocation.employeeId === item.employeeId && allocation.periodMonth === run.periodMonth)))) {
+      throw workflowError(409,'SETTLEMENT_SOURCE_ALREADY_COVERED');
+    }
+
     const releasedAfterClosedBatch = item.entitlementStatus === 'PAYABLE' && asArray(run.paymentBatches).some(batch =>
       ['SCHEDULED','PAID'].includes(batch.status) && !asArray(batch.employeeIds).includes(item.employeeId)
     );
@@ -289,6 +317,7 @@ function settlementSourceRun(stored, record, entitlementStatus, entitlementReaso
     ...run,
     items:run.items.map(candidate => candidate.id === item.id ? {
       ...candidate,entitlementStatus,
+      entitlementDocumentRef:entitlementStatus === 'SETTLED' ? record.id : undefined,
       entitlementReason:entitlementStatus === 'SETTLED' ? (candidate.entitlementReason || entitlementReason) : entitlementReason,
       entitlementUpdatedAt:new Date().toISOString(),
     } : candidate),

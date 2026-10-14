@@ -13,7 +13,7 @@ const payrollItemsTable = fs.readFileSync('src/components/payroll/PayrollRunItem
 test('recalculation preserves employees already in active or paid transfer batches', () => {
   assert.match(payroll, /if \(previousItem && committedEmployeeIds\.has\(emp\.id\)\) return previousItem/);
   assert.match(payroll, /if \(committedEmployeeIds\.has\(emp\.id\) && previousItemsByEmployeeId\.has\(emp\.id\)\) return true;[\s\S]{0,300}emp\.salaryStartDate/);
-  assert.match(payroll, /const lockedHistoricalItems = previousItems\.filter\(item =>[\s\S]{0,200}committedEmployeeIds\.has\(item\.employeeId\)/);
+  assert.match(payroll, /const lockedHistoricalItems = previousItems\.filter\(item =>[\s\S]{0,200}!companyEmployeeIds\.has\(item\.employeeId\)/);
   assert.match(payroll, /const runItems: PayrollRunItem\[\] = \[\.\.\.lockedHistoricalItems, \.\.\.recalculatedItems\]/);
   assert.doesNotMatch(payroll, /An approved or posted payroll cannot be recalculated/);
   assert.doesNotMatch(payroll, /Payroll cannot be recalculated while a scheduled or paid payment batch exists/);
@@ -28,21 +28,13 @@ test('a later salary-start or lifecycle change cannot remove a historically tran
   assert.ok(preserve >= 0 && abscondedFilter > preserve && salaryStartFilter > preserve && terminationFilter > preserve);
 });
 
-test('new and unpaid employees use the full payroll engine including prior period inputs', () => {
-  assert.match(payroll, /priorPeriodDetails/);
-  assert.match(payroll, /penalties\.filter\(p => p\.employeeId === emp\.id && p\.periodMonth === cursor/);
-  assert.match(payroll, /activeLoans: effectiveLoansFor\(cursor, emp\.id\)/);
-  assert.match(payroll, /candidate\.periodMonth < periodMonth/);
+test('current inputs use the engine while carry reads saved salary snapshots', () => {
   assert.match(payroll, /calculateEmployeePayrollItem/);
+  assert.match(payroll, /unpaidSalaryDetails/);
+  assert.doesNotMatch(payroll, /let cursor = salaryStartMonth/);
+  assert.match(payroll, /candidate\.periodMonth < periodMonth/);
   assert.match(types, /priorPeriodNet\?: number/);
-});
-
-test('prior unpaid periods are carried into the current payable balance once and paid periods are skipped', () => {
-  assert.match(payroll, /alreadyTransferred/);
-  assert.match(payroll, /paymentCoverages\.some\(coverage =>/);
-  assert.match(paymentCoverage, /item\.priorPeriodDetails/);
-  assert.match(paymentCoverage, /sourcePeriodMonth: detail\.periodMonth/);
-  assert.match(payroll, /netSalary: roundAmount\(calculated\.netSalary \+ priorPeriodNet\)/);
+  assert.match(paymentCoverage, /salaryBatchAllocations/);
 });
 
 test('a cumulative later payment is visible and locked in every covered source month', () => {
@@ -54,9 +46,9 @@ test('a cumulative later payment is visible and locked in every covered source m
 });
 
 test('period-specific deductions remain editable until that employee enters a transfer batch', () => {
-  assert.match(app, /const employeePaymentLocked = \(run\.paymentBatches \|\| \[\]\)\.some\(batch =>/);
+  assert.match(app, /const employeePaymentLocked = payrollRuns/);
   assert.match(app, /if \(!employeePaymentLocked\) return false/);
-  assert.match(server, /const employeePaymentLocked = asArray\(run\.paymentBatches\)\.some\(batch =>/);
+  assert.match(server, /const employeePaymentLocked = asArray\(stored\.payrollRuns\)/);
   assert.match(server, /if \(!employeePaymentLocked\) return false/);
 });
 

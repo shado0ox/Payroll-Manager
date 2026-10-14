@@ -164,6 +164,7 @@ export const LoansPenaltiesView: React.FC<LoansPenaltiesViewProps> = ({
     if (!loanForm.employeeId) return;
 
     const newLoan: LoanSchedule = {
+      ...(editingLoan || {}),
       id: editingLoan?.id || `loan-${Date.now()}`,
       companyId: company.id,
       employeeId: loanForm.employeeId,
@@ -207,7 +208,7 @@ export const LoansPenaltiesView: React.FC<LoansPenaltiesViewProps> = ({
   };
 
   const openEditLoan = (loan: LoanSchedule) => {
-    setEditingLoan(loan);
+    setEditingLoan(loans.find(source => source.id === loan.id) || loan);
     setLoanForm({
       employeeId: loan.employeeId, totalAmount: loan.totalAmount, monthlyInstallment: loan.monthlyInstallment,
       totalInstallments: loan.totalInstallments, startDate: loan.startDate, reason: loan.reason,

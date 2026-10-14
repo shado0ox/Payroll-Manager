@@ -424,6 +424,8 @@ export interface PayrollRunItem {
   entitlementStatus?: PayrollEntitlementStatus;
   entitlementReason?: string;
   entitlementDocumentRef?: string;
+  entitlementSettlementAccount?: string;
+  entitlementSettlementDate?: string;
   entitlementUpdatedAt?: string;
   entitlementHoldSource?: 'MISSING_BANK_ACCOUNT' | 'EMPLOYEE_SUSPENSION' | 'MANUAL';
 
@@ -474,6 +476,7 @@ export interface PayrollPriorEntitlement {
 }
 
 export interface PayrollPaymentBatch {
+  allocations?: Array<{employeeId:string;periodMonth:string;sourcePayrollRunId:string;sourcePayrollItemId:string;amount:number;salarySnapshot?:{baseSalary:number;housingAllowance:number;totalDeductions:number;netSalary:number}}>;
   id: string;
   batchNumber: string;
   payrollRunId: string;
@@ -578,7 +581,7 @@ export interface JournalQoyodSnapshot {
   descriptionEn?: string;
   totalDebit: number;
   totalCredit: number;
-  journalType?: 'PAYROLL_ACCRUAL' | 'GOSI_ACCRUAL' | 'PAYROLL_PAYMENT' | 'GOSI_PAYMENT';
+  journalType?: 'PAYROLL_ACCRUAL' | 'GOSI_ACCRUAL' | 'PAYROLL_PAYMENT' | 'GOSI_PAYMENT' | 'PAYROLL_SETTLEMENT';
   gosiBranchId?: string;
   gosiBranchCode?: string;
   gosiBranchName?: string;
@@ -597,7 +600,7 @@ export interface JournalBatch {
   descriptionEn?: string;
   totalDebit: number;
   totalCredit: number;
-  journalType?: 'PAYROLL_ACCRUAL' | 'GOSI_ACCRUAL' | 'PAYROLL_PAYMENT' | 'GOSI_PAYMENT';
+  journalType?: 'PAYROLL_ACCRUAL' | 'GOSI_ACCRUAL' | 'PAYROLL_PAYMENT' | 'GOSI_PAYMENT' | 'PAYROLL_SETTLEMENT';
   gosiBranchId?: string;
   gosiBranchCode?: string;
   gosiBranchName?: string;

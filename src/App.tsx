@@ -1,3 +1,4 @@
+import { salaryBatchAllocations } from '../server/payroll-ledger.mjs';
 import React, { lazy, Suspense, useState, useEffect, useMemo, useRef } from 'react';
 import { 
   Building2, 
@@ -155,8 +156,9 @@ function isClosedPayrollInputLocked(
     if (!item) return false;
     // Approval does not lock an unpaid employee. Source inputs lock only after that employee
     // is included in an active transfer batch or the payment has been confirmed.
-    const employeePaymentLocked = (run.paymentBatches || []).some(batch =>
-      ['SCHEDULED', 'PAID'].includes(batch.status) && (batch.employeeIds || []).includes(record.employeeId)
+    const employeePaymentLocked = payrollRuns.filter(paymentRun => paymentRun.companyId === run.companyId).some(paymentRun =>
+      (paymentRun.paymentBatches || []).some(batch => ['SCHEDULED', 'PAID'].includes(batch.status)
+        && salaryBatchAllocations(paymentRun,batch).some(row => row.employeeId === record.employeeId && row.periodMonth === run.periodMonth))
     );
     if (!employeePaymentLocked) return false;
     if (kind === 'attendance') {
@@ -668,7 +670,13 @@ export const App: React.FC = () => {
       return true;
     } catch (error: any) {
       setDbStatus(prev => ({ ...prev,isChecking:false,lastError:error?.message || tr('تعذر حفظ عملية الرواتب', 'Could not save the payroll action') }));
-      alert(`${tr('تعذر حفظ تعديل المسير. لم يتم اعتماد أي تغيير غير مؤكد.', 'The payroll change could not be saved. No unconfirmed change was applied.')} (${error?.message || 'UNKNOWN_ERROR'})`);
+      const messages:Record<string,string> = {
+        PAYROLL_LOAN_BALANCE_EXCEEDED:tr('خصم السلف يتجاوز الرصيد المتبقي بعد المسيرات المعتمدة. أعد احتساب المسير قبل اعتماده.', 'Loan deductions exceed the balance remaining after approved payroll. Recalculate before approval.'),
+        PAYROLL_ENTITLEMENT_OVERPAID:tr('المبلغ يتجاوز المستحق المتبقي بعد الدفعات المدفوعة والمجدولة. حدّث البيانات.', 'The amount exceeds the remaining entitlement after paid and scheduled batches. Refresh the data.'),
+        PAYMENT_ALLOCATION_SOURCE_HELD:tr('المستحق معلق أو تحت التسوية في شهره الأصلي. راجع حالته أولًا.', 'The entitlement is held or under settlement in its original month. Review that source first.'),
+        ENTITLEMENT_SETTLEMENT_DOCUMENT_REQUIRED:tr('التسوية تتطلب سببًا ومرجع مستند.', 'Settlement requires a reason and document reference.'),
+      };
+      alert(messages[error?.message] || `${tr('تعذر حفظ تعديل المسير. لم يتم اعتماد أي تغيير غير مؤكد.', 'The payroll change could not be saved. No unconfirmed change was applied.')} (${error?.message || 'UNKNOWN_ERROR'})`);
       return false;
     }
   };
@@ -1474,6 +1482,7 @@ export const App: React.FC = () => {
 
             {activeTab === 'journals' && hasPermission(state.currentUser, 'MANAGE_JOURNALS') && (
               <AccountingJournalsView
+                settlements={state.payrollSettlements}
                 company={activeCompany}
                 payrollRuns={state.payrollRuns}
                 journals={state.journals}

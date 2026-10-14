@@ -1,3 +1,4 @@
+import { monthlySalaryNet } from '../../server/payroll-ledger.mjs';
 import React from 'react';
 import { 
   X, 
@@ -316,7 +317,7 @@ export const EmployeeStatementModal: React.FC<EmployeeStatementModalProps> = ({
                 <div>
                   <span className="text-xs text-emerald-200 block">{tr('صافي الراتب المستحق للتحويل:', 'Net Payable:')}</span>
                   <div className="text-2xl sm:text-3xl font-black font-mono mt-0.5">
-                    {formatSAR(latestItem.netSalary)}
+                    {formatSAR(monthlySalaryNet(latestItem))}
                   </div>
                 </div>
                 <div className="text-left sm:text-right">
@@ -373,7 +374,7 @@ export const EmployeeStatementModal: React.FC<EmployeeStatementModalProps> = ({
                     <th className="py-2.5 px-3">{tr('الشهر والفترة', 'Period')}</th>
                     <th className="py-2.5 px-3">{tr('الراتب الإجمالي', 'Gross Salary')}</th>
                     <th className="py-2.5 px-3">{tr('الاستقطاعات', 'Deductions')}</th>
-                    <th className="py-2.5 px-3">{tr('صافي المحول', 'Net Transfer')}</th>
+                    <th className="py-2.5 px-3">{tr('صافي استحقاق الشهر', 'Monthly net entitlement')}</th>
                     <th className="py-2.5 px-3">{tr('حالة المسير', 'Payroll Status')}</th>
                   </tr>
                 </thead>
@@ -383,7 +384,7 @@ export const EmployeeStatementModal: React.FC<EmployeeStatementModalProps> = ({
                       <td className="py-2.5 px-3 font-semibold text-slate-800">{run.periodMonth}</td>
                       <td className="py-2.5 px-3">{formatSAR(item!.totalGrossSalary)}</td>
                       <td className="py-2.5 px-3 text-rose-600">{formatSAR(item!.totalDeductions)}</td>
-                      <td className="py-2.5 px-3 font-bold text-emerald-800">{formatSAR(item!.netSalary)}</td>
+                      <td className="py-2.5 px-3 font-bold text-emerald-800">{formatSAR(monthlySalaryNet(item))}</td>
                       <td className="py-2.5 px-3">
                         <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 text-[10px] font-semibold">
                           {run.status}

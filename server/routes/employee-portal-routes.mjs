@@ -1,3 +1,4 @@
+import { salaryBatchAllocations } from '../payroll-ledger.mjs';
 import express from 'express';
 import { randomUUID } from 'node:crypto';
 import { resolveAnnualLeaveAccrual } from '../annual-leave-accrual.mjs';
@@ -80,6 +81,12 @@ export function buildEmployeePaidPayslips(batchRows, itemRows, employeeId) {
     for (const ref of array(batch.priorEntitlements)) {
       if (ref?.employeeId !== employeeId) continue;
       add({ periodMonth:String(ref.sourcePeriodMonth || ''),amount:number(ref.amount),sourceRunId:String(ref.sourcePayrollRunId || '') });
+    }
+    if (Array.isArray(batch.allocations)) {
+      coverages.clear();
+      for (const row of salaryBatchAllocations(null,batch).filter(row => row.employeeId === employeeId)) {
+        add({periodMonth:row.periodMonth,amount:number(row.amount),sourceRunId:row.sourcePayrollRunId});
+      }
     }
     for (const coverage of coverages.values()) {
       const sourceRow = (coverage.sourceRunId && rowsByRun.get(coverage.sourceRunId)) || rowsByPeriod.get(coverage.periodMonth);

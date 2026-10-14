@@ -1,3 +1,4 @@
+import { salaryBatchAllocations } from './payroll-ledger.mjs';
 export function createPayrollWorkflowGuards({ can,asArray,workflowError }) {
 const sameJson = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
 const payrollFinancialCore = (run) => {
@@ -23,8 +24,9 @@ const payrollSourceLocked = (stored, kind, record) => closedRunsForInput(stored,
   if (!item) return false;
   // Payroll inputs remain editable for unpaid/held employees. Once the employee is reserved
   // in a SCHEDULED batch or actually PAID, source entries used by that payroll item are locked.
-  const employeePaymentLocked = asArray(run.paymentBatches).some(batch =>
-    ['SCHEDULED','PAID'].includes(batch.status) && asArray(batch.employeeIds).includes(record.employeeId)
+  const employeePaymentLocked = asArray(stored.payrollRuns).filter(paymentRun => paymentRun.companyId === run.companyId).some(paymentRun =>
+    asArray(paymentRun.paymentBatches).some(batch => ['SCHEDULED','PAID'].includes(batch.status)
+      && salaryBatchAllocations(paymentRun,batch).some(row => row.employeeId === record.employeeId && row.periodMonth === run.periodMonth))
   );
   if (!employeePaymentLocked) return false;
   if (kind === 'attendance') return run.periodMonth === record.periodMonth;
@@ -74,7 +76,7 @@ const isAppendOnlyLoanAdjustment = (beforeLoan, afterLoan, user) => {
   return true;
 };
 
-function validateClosedPayrollInputs(stored, incoming) {
+function validateClosedPayrollInputs(stored, incoming, user) {
   const checks = [
     ['attendance', 'attendance'],
     ['loans', 'loan'],
@@ -126,6 +128,23 @@ const payrollItemPaymentLockCore = (item) => {
 function validatePayrollWorkflowChanges(storedRuns, incomingRuns, user) {
   const before = new Map(asArray(storedRuns).map(run => [run.id, run]));
   const after = new Map(asArray(incomingRuns).map(run => [run.id, run]));
+  for (const run of asArray(incomingRuns)) {
+    const oldItems = new Map(asArray(before.get(run.id)?.items).map(item => [item.id,item]));
+    for (const item of asArray(run.items)) {
+      if (sameJson(oldItems.get(item.id),item)) continue;
+      if (['SETTLED','CANCELLED_WITH_DOCUMENT'].includes(item.entitlementStatus)
+        && (!String(item.entitlementReason || '').trim() || !String(item.entitlementDocumentRef || '').trim())) {
+        throw workflowError(409,'ENTITLEMENT_SETTLEMENT_DOCUMENT_REQUIRED');
+      }
+      if (['SETTLED','CANCELLED_WITH_DOCUMENT'].includes(item.entitlementStatus) && oldItems.get(item.id)?.entitlementStatus !== item.entitlementStatus
+        && (!String(item.entitlementSettlementAccount || '').trim() || !/^\d{4}-\d{2}-\d{2}$/.test(item.entitlementSettlementDate || '')
+          || Number.isNaN(Date.parse(item.entitlementSettlementDate)) || new Date(item.entitlementSettlementDate).toISOString().slice(0,10) !== item.entitlementSettlementDate)) {
+        throw workflowError(409,'ENTITLEMENT_SETTLEMENT_ACCOUNT_DATE_REQUIRED');
+      }
+
+    }
+  }
+
 
   for (const [runId, oldRun] of before) {
     const nextRun = after.get(runId);
@@ -138,6 +157,14 @@ function validatePayrollWorkflowChanges(storedRuns, incomingRuns, user) {
 
     const oldStatus = String(oldRun.status || 'DRAFT');
     const nextStatus = String(nextRun.status || 'DRAFT');
+    for (const oldItem of asArray(oldRun.items)) {
+      const nextItem=asArray(nextRun.items).find(item=>item.id===oldItem.id);
+      if (['SETTLED','CANCELLED_WITH_DOCUMENT'].includes(oldItem.entitlementStatus) && oldItem.entitlementStatus===nextItem?.entitlementStatus
+        && !sameJson({...payrollItemPaymentLockCore(oldItem),entitlementReason:'',entitlementDocumentRef:'',entitlementUpdatedAt:''},
+          {...payrollItemPaymentLockCore(nextItem),entitlementReason:'',entitlementDocumentRef:'',entitlementUpdatedAt:''})) {
+        throw workflowError(409,'SETTLED_ENTITLEMENT_FINANCIAL_IMMUTABLE');
+      }
+    }
     if (oldStatus !== nextStatus) {
       const transition = oldStatus + '->' + nextStatus;
       const allowed = new Set(['DRAFT->UNDER_REVIEW','UNDER_REVIEW->DRAFT','UNDER_REVIEW->APPROVED','APPROVED->UNDER_REVIEW','APPROVED->POSTED','POSTED->APPROVED']);
@@ -155,7 +182,8 @@ function validatePayrollWorkflowChanges(storedRuns, incomingRuns, user) {
         throw workflowError(403, 'MANAGE_PAYROLL_REQUIRED');
       }
       if ((transition === 'APPROVED->UNDER_REVIEW' || transition === 'POSTED->APPROVED')
-        && asArray(oldRun.paymentBatches).some(batch => batch.status === 'PAID')) {
+        && asArray(storedRuns).filter(run => run.companyId === oldRun.companyId).some(run => asArray(run.paymentBatches).some(batch => batch.status === 'PAID'
+          && salaryBatchAllocations(run,batch).some(row => row.periodMonth === oldRun.periodMonth)))) {
         throw workflowError(409, 'PAID_PAYROLL_CANNOT_REOPEN');
       }
     }
@@ -167,9 +195,10 @@ function validatePayrollWorkflowChanges(storedRuns, incomingRuns, user) {
         throw workflowError(409, 'APPROVED_PAYROLL_IDENTITY_IMMUTABLE');
       }
       const lockedEmployeeIds = new Set(
-        asArray(oldRun.paymentBatches)
-          .filter(batch => ['SCHEDULED','PAID'].includes(batch.status))
-          .flatMap(batch => asArray(batch.employeeIds))
+        asArray(storedRuns).filter(run => run.companyId === oldRun.companyId).flatMap(run =>
+          asArray(run.paymentBatches).filter(batch => ['SCHEDULED','PAID'].includes(batch.status))
+            .flatMap(batch => salaryBatchAllocations(run,batch).filter(row => row.periodMonth === oldRun.periodMonth).map(row => row.employeeId))
+        )
       );
       const oldItemsByEmployee = new Map(asArray(oldRun.items).map(item => [item.employeeId, item]));
       const nextItemsByEmployee = new Map(asArray(nextRun.items).map(item => [item.employeeId, item]));
@@ -195,13 +224,17 @@ function validatePayrollWorkflowChanges(storedRuns, incomingRuns, user) {
         if (paymentTransition === 'SCHEDULED->PAID') {
           if (!can(user, 'CONFIRM_PAYROLL_PAYMENT')) throw workflowError(403, 'CONFIRM_PAYROLL_PAYMENT_REQUIRED');
           if (Number(oldBatch.totalAmount || 0) !== Number(nextBatch.totalAmount || 0)
-            || !sameJson(asArray(oldBatch.employeeIds), asArray(nextBatch.employeeIds))) {
+            || !sameJson(asArray(oldBatch.employeeIds), asArray(nextBatch.employeeIds))
+            || !sameJson(oldBatch.allocations, nextBatch.allocations)
+            || !sameJson(oldBatch.priorEntitlements, nextBatch.priorEntitlements)) {
             throw workflowError(409, 'PAYMENT_BATCH_SCOPE_CHANGED');
           }
         } else if (paymentTransition === 'PAID->SCHEDULED') {
           if (!can(user, 'REVERSE_PAYROLL_PAYMENT')) throw workflowError(403, 'REVERSE_PAYROLL_PAYMENT_REQUIRED');
           if (Number(oldBatch.totalAmount || 0) !== Number(nextBatch.totalAmount || 0)
             || !sameJson(asArray(oldBatch.employeeIds), asArray(nextBatch.employeeIds))
+            || !sameJson(oldBatch.allocations, nextBatch.allocations)
+            || !sameJson(oldBatch.priorEntitlements, nextBatch.priorEntitlements)
             || !sameJson(oldBatch.method, nextBatch.method)
             || !sameJson(oldBatch.scheduledDate, nextBatch.scheduledDate)
             || !sameJson(oldBatch.reference, nextBatch.reference)

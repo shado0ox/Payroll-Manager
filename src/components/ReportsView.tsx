@@ -1,3 +1,4 @@
+import { monthlySalaryNet } from '../../server/payroll-ledger.mjs';
 import React, { useState, useMemo } from 'react';
 import { 
   FileSpreadsheet, 
@@ -33,7 +34,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
   const { language } = useLanguage();
   const ui = (ar: string, en: string) => language === 'ar' ? ar : en;
   const companyRuns = useMemo(() => {
-    return payrollRuns.filter(r => r.companyId === company.id);
+    return payrollRuns.filter(r => r.companyId === company.id).sort((a,b) => b.periodMonth.localeCompare(a.periodMonth));
   }, [payrollRuns, company.id]);
 
   const [selectedPeriod, setSelectedPeriod] = useState<string>(
@@ -41,7 +42,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
   );
 
   const currentRun = useMemo(() => {
-    return companyRuns.find(r => r.periodMonth === selectedPeriod) || companyRuns[0];
+    return companyRuns.find(r => r.periodMonth === selectedPeriod);
   }, [companyRuns, selectedPeriod]);
 
   const companyEmployees = useMemo(() => {
@@ -57,8 +58,8 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
       const existing = map.get(item.department) || { count: 0, totalGross: 0, totalNet: 0, totalBurden: 0 };
       existing.count += 1;
       existing.totalGross += item.totalGrossSalary;
-      existing.totalNet += item.netSalary;
-      existing.totalBurden += item.totalCompanyBurden;
+      existing.totalNet += monthlySalaryNet(item);
+      existing.totalBurden += item.totalCompanyBurden - Number(item.priorPeriodNet || 0);
       map.set(item.department, existing);
     });
 
@@ -239,8 +240,8 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
             </thead>
             <tbody className="divide-y divide-slate-100">
               {deptCostBreakdown.map((row) => {
-                const percentage = currentRun && currentRun.totalCompanyCost > 0
-                  ? ((row.totalBurden / currentRun.totalCompanyCost) * 100).toFixed(1)
+                const percentage = currentRun && deptCostBreakdown.reduce((sum,row) => sum + row.totalBurden,0) > 0
+                  ? ((row.totalBurden / deptCostBreakdown.reduce((sum,row) => sum + row.totalBurden,0)) * 100).toFixed(1)
                   : '0';
 
                 return (

@@ -107,9 +107,9 @@ test('an explicitly manual hold is never inferred as an automatic suspension hol
   assert.equal(result.items[0].entitlementHoldSource,'MANUAL');
 });
 
-test('paid, reserved, and closed future payroll records are not mutated', () => {
+test('paid, reserved, and posted future payroll records are not mutated', () => {
   const reserved = futureRun(carriedItem(), { paymentBatches:[{ status:'SCHEDULED',employeeIds:['employee-1'] }] });
-  const approved = futureRun(carriedItem(), { id:'approved-september',status:'APPROVED' });
+  const approved = futureRun(carriedItem(), { id:'posted-september',status:'POSTED' });
   const result = reconcilePaidPayrollCarryForward({
     runs:[reserved,approved],employees:[readyEmployee],sourceRun,paidBatch:{ employeeIds:['employee-1'] },
   });

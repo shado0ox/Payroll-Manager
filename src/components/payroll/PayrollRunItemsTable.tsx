@@ -25,6 +25,7 @@ interface Props {
   selectedPaymentEmployeeIds: string[];
   employees: Employee[];
   committedEmployeeIds: Set<string>;
+  remainingPaymentAmounts: Record<string,number>;
   language: 'ar' | 'en';
   onToggleAllEligible: () => void;
   onTogglePaymentEmployee: (employeeId: string) => void;
@@ -37,7 +38,7 @@ interface Props {
 
 export const PayrollRunItemsTable = React.memo(function PayrollRunItemsTable({
   currentRun, filteredItems, eligibleFilteredItems, selectedPaymentEmployeeIds, employees,
-  committedEmployeeIds, language, onToggleAllEligible, onTogglePaymentEmployee,
+  committedEmployeeIds, remainingPaymentAmounts, language, onToggleAllEligible, onTogglePaymentEmployee,
   getEmployeePaymentBatch, onEntitlementStatusChange, onOpenAdjustment,
   onViewEmployeeStatement, tr,
 }: Props) {
@@ -55,6 +56,7 @@ export const PayrollRunItemsTable = React.memo(function PayrollRunItemsTable({
             {language === 'ar' ? PAYMENT_STATUS_CONFIG[paymentBatch.status].labelAr : PAYMENT_STATUS_CONFIG[paymentBatch.status].labelEn}
           </span>
           <span className="text-[8px] font-mono text-slate-500">{paymentBatch.batchNumber} • {paymentBatch.periodMonth}</span>
+          {remainingPaymentAmounts[item.employeeId] > 0 && <span className="text-[9px] text-amber-800">{language === 'ar' ? 'متبقي متاح: ' : 'Available balance: '}{formatSAR(remainingPaymentAmounts[item.employeeId])}</span>}
         </span>
       );
     }
@@ -78,7 +80,7 @@ export const PayrollRunItemsTable = React.memo(function PayrollRunItemsTable({
           const hasWarning = (item.warningFlags || []).length > 0;
           const paymentBatch = getEmployeePaymentBatch(item.employeeId);
           const entitlementStatus = item.entitlementStatus || 'PAYABLE';
-          const canSelectForPayment = entitlementStatus === 'PAYABLE' && item.netSalary > 0 && !committedEmployeeIds.has(item.employeeId);
+          const canSelectForPayment = eligibleFilteredItems.some(candidate => candidate.employeeId === item.employeeId);
           const identity = emp?.nationalIdOrIqama || emp?.iqamaNumber || emp?.entryNumber || '—';
           const nationality = emp?.nationality === 'SAUDI'
             ? tr('سعودي', 'Saudi')
@@ -180,7 +182,7 @@ export const PayrollRunItemsTable = React.memo(function PayrollRunItemsTable({
               const hasWarning = (item.warningFlags || []).length > 0;
               const paymentBatch = getEmployeePaymentBatch(item.employeeId);
               const entitlementStatus = item.entitlementStatus || 'PAYABLE';
-              const canSelectForPayment = entitlementStatus === 'PAYABLE' && item.netSalary > 0 && !committedEmployeeIds.has(item.employeeId);
+              const canSelectForPayment = eligibleFilteredItems.some(candidate => candidate.employeeId === item.employeeId);
               return (
                 <tr key={`${item.id || 'item'}-${idx}`} className={`hover:bg-slate-50 transition-colors text-[11px] ${item.isSuspended ? 'bg-amber-50/40' : (hasWarning ? 'bg-amber-50/20' : '')}`}>
                   <td className="py-2.5 px-2 truncate">

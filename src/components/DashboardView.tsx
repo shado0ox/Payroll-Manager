@@ -1,3 +1,4 @@
+import { monthlySalaryNet } from '../../server/payroll-ledger.mjs';
 import React, { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import { 
   DollarSign, 
@@ -98,9 +99,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     return acc + (pkg.baseSalary || e.basicSalary || 0) + (pkg.housingAllowance || e.housingAllowance || 0) + (pkg.transportAllowance || e.transportationAllowance || 0) + (pkg.otherFixedAllowances || e.otherAllowances || 0) + (pkg.nonGosiOtherAllowances || 0);
   }, 0), [companyEmployees]);
   
-  const totalGross = currentRun ? currentRun.totalGrossSalaries : calculatedGross;
-  const totalDeductions = currentRun ? currentRun.totalDeductions : 0;
-  const totalNet = currentRun ? currentRun.totalNetSalaries : (totalGross - totalDeductions);
+  const totalGross = currentRun ? currentRun.items.reduce((sum,item) => sum + item.totalGrossSalary,0) : calculatedGross;
+  const totalDeductions = currentRun ? currentRun.items.reduce((sum,item) => sum + item.totalDeductions,0) : 0;
+  const totalNet = currentRun ? currentRun.items.reduce((sum,item) => sum + monthlySalaryNet(item),0) : (totalGross - totalDeductions);
 
   // Monthly Budget calculations
   const monthlyAllocatedBudget = Math.max(0, Number(company.monthlyBudgetCap) || 0);
@@ -116,7 +117,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   // Sample items for table display
   const tableItems = useMemo(() => {
     if (currentRun && currentRun.items.length > 0) {
-      return currentRun.items.slice(0, 6);
+      return currentRun.items.slice(0, 6).map(item => ({ ...item, netSalary:monthlySalaryNet(item) }));
     }
     return companyEmployees.slice(0, 6).map(emp => {
       const basic = emp.salaryPackage?.baseSalary || emp.basicSalary || 0;

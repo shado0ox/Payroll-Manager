@@ -15,9 +15,9 @@ import {
   Save,
   X
 } from 'lucide-react';
-import { Company, PayrollRun, JournalBatch, JournalLine, UserRole } from '../types';
+import { Company, PayrollRun, PayrollSettlement, PayrollPaymentBatch, JournalBatch, JournalLine, UserRole } from '../types';
 import { formatSAR, formatNumber, roundAmount } from '../utils/payrollEngine';
-import { buildJournalDraft, generateGosiAccrualJournalBatches, generateGosiPaymentJournalBatches, generatePayrollJournalBatch, generatePaymentJournalBatch, mergeFreshJournalWithDraft } from '../utils/accountingEngine';
+import { buildJournalDraft, generateEntitlementSettlementJournals, generateGosiAccrualJournalBatches, generateGosiPaymentJournalBatches, generatePayrollJournalBatch, generatePaymentJournalBatch, mergeFreshJournalWithDraft } from '../utils/accountingEngine';
 import { exportQoyodJournalCsv } from '../utils/exportUtils';
 import { useLanguage } from '../i18n/LanguageContext';
 
@@ -25,6 +25,7 @@ interface AccountingJournalsViewProps {
   company: Company;
   payrollRuns: PayrollRun[];
   journals: JournalBatch[];
+  settlements?: PayrollSettlement[];
   activeRole: UserRole;
   onUpdateCompany: (company: Company) => void;
   onSaveJournal: (journal: JournalBatch) => Promise<void>;
@@ -35,6 +36,7 @@ export const AccountingJournalsView: React.FC<AccountingJournalsViewProps> = ({
   company,
   payrollRuns,
   journals,
+  settlements = [],
   activeRole,
   onUpdateCompany,
   onSaveJournal,
@@ -50,9 +52,26 @@ export const AccountingJournalsView: React.FC<AccountingJournalsViewProps> = ({
     companyRuns[0]?.periodMonth || new Date().toISOString().slice(0, 7)
   );
 
-  const availablePeriods = useMemo(() => [...new Set(companyRuns.map(run => run.periodMonth))], [companyRuns]);
+  const paymentJournals=useMemo(()=>[
+    ...companyRuns.flatMap(run=>(run.paymentBatches || []).filter(batch=>batch.status==='PAID').map(batch=>generatePaymentJournalBatch(company,run,batch))),
+    ...settlements.filter(settlement=>settlement.companyId===company.id && settlement.status==='PAID').flatMap(settlement=>{
+      const run=companyRuns.find(run=>run.id===settlement.sourcePayrollRunId);
+      if(!run)return [];
+      const batch={id:settlement.id,batchNumber:`SETTLEMENT-${settlement.id}`,totalAmount:settlement.amount,status:'PAID',paymentDate:settlement.paymentDate,method:settlement.paymentMethod} as PayrollPaymentBatch;
+      return [generatePaymentJournalBatch(company,run,batch)];
+    })
+  ],[companyRuns,settlements,company]);
+  const settlementJournals=useMemo(()=>generateEntitlementSettlementJournals(company,companyRuns),[company,companyRuns]);
+  const availablePeriods = useMemo(() => [...new Set([
+    ...companyRuns.map(run => run.periodMonth),...paymentJournals.map(batch=>batch.periodMonth),
+    ...companyRuns.flatMap(run=>run.items.map(item=>item.entitlementSettlementDate?.slice(0,7)).filter(Boolean))
+  ])].sort((a,b)=>b.localeCompare(a)), [companyRuns,paymentJournals]);
+  const [journalType, setJournalType] = useState<'PAYROLL_ACCRUAL' | 'GOSI_ACCRUAL' | 'PAYROLL_PAYMENT' | 'GOSI_PAYMENT' | 'PAYROLL_SETTLEMENT'>('PAYROLL_ACCRUAL');
+  const [selectedPaymentJournalId,setSelectedPaymentJournalId]=useState('');
+  const periodPaymentJournals=(journalType==='PAYROLL_SETTLEMENT'?settlementJournals:paymentJournals).filter(batch=>batch.periodMonth===selectedPeriod);
+  const effectivePaymentId=periodPaymentJournals.some(batch=>batch.id===selectedPaymentJournalId)?selectedPaymentJournalId:periodPaymentJournals[0]?.id;
 
-  const [journalType, setJournalType] = useState<'PAYROLL_ACCRUAL' | 'GOSI_ACCRUAL' | 'PAYROLL_PAYMENT' | 'GOSI_PAYMENT'>('PAYROLL_ACCRUAL');
+
   const [selectedGosiBranchId,setSelectedGosiBranchId]=useState('');
   const [editingLines,setEditingLines]=useState<JournalLine[]|null>(null);
   const [changeReason,setChangeReason]=useState('');
@@ -60,7 +79,7 @@ export const AccountingJournalsView: React.FC<AccountingJournalsViewProps> = ({
   const [isAccountsMapModalOpen, setIsAccountsMapModalOpen] = useState(false);
 
   useEffect(() => { setSelectedPeriod(companyRuns[0]?.periodMonth || new Date().toISOString().slice(0,7)); }, [company.id]);
-  useEffect(() => { setEditingLines(null); setChangeReason(''); }, [selectedPeriod,journalType,selectedGosiBranchId,company.id]);
+  useEffect(() => { setEditingLines(null); setChangeReason(''); }, [selectedPeriod,journalType,selectedGosiBranchId,effectivePaymentId,company.id]);
 
   const currentRun = useMemo(() => {
     return companyRuns.find(r => r.periodMonth === selectedPeriod) || null;
@@ -72,11 +91,11 @@ export const AccountingJournalsView: React.FC<AccountingJournalsViewProps> = ({
   const effectiveBranchId=branchBatches.some(batch=>batch.gosiBranchId===selectedGosiBranchId)?selectedGosiBranchId:(branchBatches[0]?.gosiBranchId||'');
 
   const freshBatch: JournalBatch | null = useMemo(() => {
+    if(journalType==='PAYROLL_PAYMENT'||journalType==='PAYROLL_SETTLEMENT')return periodPaymentJournals.find(batch=>batch.id===effectivePaymentId)||null;
     if (!currentRun) return null;
     if(journalType==='PAYROLL_ACCRUAL')return generatePayrollJournalBatch(company,currentRun);
-    if(journalType==='PAYROLL_PAYMENT')return generatePaymentJournalBatch(company,currentRun);
     return branchBatches.find(batch=>batch.gosiBranchId===effectiveBranchId)||null;
-  },[company,currentRun,journalType,branchBatches,effectiveBranchId]);
+  },[company,currentRun,journalType,branchBatches,effectiveBranchId,companyRuns,selectedPeriod,paymentJournals,settlementJournals,effectivePaymentId]);
   const persistedBatch = useMemo(
     () => freshBatch ? journals.find(journal => journal.id === freshBatch.id) : undefined,
     [freshBatch,journals]
@@ -183,9 +202,11 @@ export const AccountingJournalsView: React.FC<AccountingJournalsViewProps> = ({
           ['GOSI_ACCRUAL',ui('استحقاق التأمينات','GOSI accrual')],
           ['PAYROLL_PAYMENT',ui('صرف الرواتب','Payroll payment')],
           ['GOSI_PAYMENT',ui('صرف التأمينات','GOSI payment')],
+          ['PAYROLL_SETTLEMENT',ui('تسويات ذمم الرواتب','Salary liability settlements')],
         ] as const).map(([type,label])=><button key={type} onClick={()=>{setJournalType(type);setEditingLines(null);setChangeReason('');}} className={`rounded-xl py-2 text-xs font-bold transition-all ${journalType===type?'bg-emerald-600 text-white shadow-xs':'text-slate-600 hover:bg-slate-50'}`}>{label}</button>)}
       </div>
-      {(journalType==='GOSI_ACCRUAL'||journalType==='GOSI_PAYMENT')&&<div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-xs"><label className="text-xs font-bold text-slate-600">{ui('فرع التأمينات','GOSI branch')}<select className="ms-2 rounded-xl border border-slate-200 px-3 py-2" value={effectiveBranchId} onChange={event=>{setSelectedGosiBranchId(event.target.value);setEditingLines(null);setChangeReason('');}}>{branchBatches.map(batch=><option key={batch.id} value={batch.gosiBranchId}>{batch.gosiBranchName} · {batch.gosiBranchCode}</option>)}</select></label>{!branchBatches.length&&<span className="ms-3 text-xs text-amber-700">{ui('لا توجد مبالغ تأمينات مرتبطة بفروع داخل عناصر المسير.','No payroll GOSI amounts are assigned to a branch.')}</span>}</div>}
+      {(journalType==='PAYROLL_PAYMENT'||journalType==='PAYROLL_SETTLEMENT')&&<label className="block rounded-xl bg-white p-3 text-xs">{ui('الدفعة أو التسوية بتاريخها الفعلي','Payment or settlement by actual date')}<select className="ms-2 rounded-xl border px-3 py-2" value={effectivePaymentId||''} onChange={event=>setSelectedPaymentJournalId(event.target.value)}>{periodPaymentJournals.map(batch=><option key={batch.id} value={batch.id}>{batch.batchNumber} · {batch.date}</option>)}</select></label>}
+      {(journalType==='GOSI_ACCRUAL' ||journalType==='GOSI_PAYMENT')&&<div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-xs"><label className="text-xs font-bold text-slate-600">{ui('فرع التأمينات','GOSI branch')}<select className="ms-2 rounded-xl border border-slate-200 px-3 py-2" value={effectiveBranchId} onChange={event=>{setSelectedGosiBranchId(event.target.value);setEditingLines(null);setChangeReason('');}}>{branchBatches.map(batch=><option key={batch.id} value={batch.gosiBranchId}>{batch.gosiBranchName} · {batch.gosiBranchCode}</option>)}</select></label>{!branchBatches.length&&<span className="ms-3 text-xs text-amber-700">{ui('لا توجد مبالغ تأمينات مرتبطة بفروع داخل عناصر المسير.','No payroll GOSI amounts are assigned to a branch.')}</span>}</div>}
 
       {/* Batch Header Information Card */}
       {activeBatch && (
