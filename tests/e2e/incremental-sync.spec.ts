@@ -19,7 +19,10 @@ test('a record saved in one tab reaches another without reloading full state', a
   await login(writer);
 
   const observer = await context.newPage();
-  await login(observer);
+  // Both pages share this browser context and its authenticated cookie.
+  // Reuse that session instead of spending a second login-limit attempt.
+  await observer.goto('/employees');
+  await expect(observer.getByTestId('nav-employees')).toBeVisible();
 
   let fullStateReads = 0;
   observer.on('request',request => {
