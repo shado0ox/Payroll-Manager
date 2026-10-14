@@ -9,8 +9,8 @@ test('loan form previews six whole-riyal installments with remainder in the last
  await page.getByTestId('nav-loans_penalties').click();
  await page.getByRole('button',{name:/إضافة سلفة جديدة|Add loan/i}).click();
  await page.getByLabel(/إجمالي مبلغ السلفة|Total loan amount/i).fill('1000');
- await page.getByLabel(/عدد أشهر السداد|Repayment months/i).fill('6');
- await page.getByLabel(/شهر أول قسط|First installment month/i).fill('2026-11');
+ await page.getByLabel(/عدد أشهر السداد|Repayment months/i).and(page.locator("input")).fill('6');
+ await page.getByLabel(/شهر أول قسط|First installment month/i).and(page.locator("input")).fill('2026-11');
  const rows=page.getByTestId('loan-schedule-preview').locator('tbody tr');
  await expect(rows).toHaveCount(6);
  expect(await rows.locator('td:nth-child(2)').allTextContents()).toEqual(['166','166','166','166','166','170']);

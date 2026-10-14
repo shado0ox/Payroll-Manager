@@ -50,8 +50,9 @@ export const CompanyCostCentersTab = React.memo<CompanyCostCentersTabProps>(({
       alert(tr('يرجى إدخال رمز واسم مركز التكلفة', 'Enter the cost center code and name.'));
       return;
     }
+    const singleAccount=(center:CostCenter)=>{const next={...center};delete next.administrativeSalariesExpenseAccount;delete next.workerWagesExpenseAccount;return next;};
     const updatedCostCenters = editingCostCenter
-      ? (company.costCenters || []).map(item => item.id === editingCostCenter.id ? ({ ...item, ...costCenterFormData } as CostCenter) : item)
+      ? (company.costCenters || []).map(item => item.id === editingCostCenter.id ? singleAccount({ ...item, ...costCenterFormData } as CostCenter) : item)
       : [...(company.costCenters || []), {
           ...costCenterFormData,
           id: `cc-${Date.now()}`,
@@ -106,6 +107,7 @@ export const CompanyCostCentersTab = React.memo<CompanyCostCentersTabProps>(({
                 {cc.code}
               </span>
               <h4 className="text-sm font-bold text-slate-900 mt-1">{language === 'ar' ? cc.nameAr : (cc.nameEn || cc.nameAr)}</h4>
+              {cc.salariesExpenseAccount&&<p className="mt-1 text-xs text-emerald-700">{tr('حساب الرواتب','Salary account')}: {cc.salariesExpenseAccount}</p>}
               {(language === 'ar' ? cc.nameEn : cc.nameAr) && <p className="text-[11px] text-slate-400 font-medium" dir={language === 'ar' ? 'ltr' : 'rtl'}>{language === 'ar' ? cc.nameEn : cc.nameAr}</p>}
             </div>
 
@@ -203,10 +205,7 @@ export const CompanyCostCentersTab = React.memo<CompanyCostCentersTabProps>(({
           />
         </div>
 
-        <fieldset className="space-y-3 rounded-xl border p-3"><legend className="text-xs font-bold">{tr('ربط حسابات مصروف الرواتب','Payroll expense account mapping')}</legend>
-          <p className="text-xs text-slate-500">{tr('حساب الفئة في المركز له الأولوية، ثم حساب المركز العام، ثم إعدادات المنشأة. اترك الحقول فارغة لاستخدام إعدادات المنشأة.','Center category account takes priority, then the center general account, then company mapping. Leave blank to inherit company accounts.')}</p>
-          {(['salariesExpenseAccount','administrativeSalariesExpenseAccount','workerWagesExpenseAccount'] as const).map(key=><label key={key} className="block text-xs">{key==='salariesExpenseAccount'?tr('مصروف رواتب المركز العام','General salary expense'):key==='administrativeSalariesExpenseAccount'?tr('مصروف الرواتب الإدارية','Administrative salaries'):tr('مصروف أجور العاملين','Worker wages')}<input value={costCenterFormData[key]||''} onChange={event=>setCostCenterFormData({...costCenterFormData,[key]:event.target.value})} className="mt-1 block w-full rounded-xl border px-3 py-2 font-mono"/></label>)}
-        </fieldset>
+        <label className="block text-xs font-bold">{tr('رقم حساب مصروف رواتب مركز التكلفة في قيود','Cost center salary expense account number in Qoyod')}<input value={costCenterFormData.salariesExpenseAccount||''} onChange={event=>setCostCenterFormData({...costCenterFormData,salariesExpenseAccount:event.target.value})} className="mt-1 block w-full rounded-xl border px-3 py-2 font-mono"/><span className="mt-1 block font-normal text-slate-500">{tr('حساب واحد يجمع رواتب وبدلات موظفي المركز. اتركه فارغًا لاستخدام حسابات المنشأة.','One account covers wages and allowances for this center. Leave blank to use company accounts.')}</span></label>
         <div className="pt-4 border-t border-slate-100 flex items-center justify-end gap-2.5">
           <button
             type="button"

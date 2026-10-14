@@ -1,3 +1,4 @@
+import {CalendarInput} from './CalendarInput';
 import { monthlySalaryNet } from '../../server/payroll-ledger.mjs';
 import React, { useState, useMemo } from 'react';
 import { 
@@ -107,15 +108,9 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
         {/* Period Selector */}
         <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-xl border border-slate-200 shadow-xs">
           <Calendar className="w-4 h-4 text-slate-500" />
-          <select
-            value={selectedPeriod}
+          <CalendarInput required aria-label={ui("فترة التقرير","Report period")} type="month" value={selectedPeriod}
             onChange={(e) => setSelectedPeriod(e.target.value)}
-            className="bg-transparent text-xs font-bold text-slate-800 border-none focus:ring-0 cursor-pointer"
-          >
-            {companyRuns.map(r => (
-              <option key={r.id} value={r.periodMonth}>{ui('فترة', 'Period')} {r.periodMonth}</option>
-            ))}
-          </select>
+            className="bg-transparent text-xs font-bold text-slate-800 border-none focus:ring-0 cursor-pointer"/>
         </div>
       </div>
 
