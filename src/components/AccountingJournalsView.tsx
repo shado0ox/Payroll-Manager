@@ -113,7 +113,7 @@ export const AccountingJournalsView: React.FC<AccountingJournalsViewProps> = ({
   })[code];
 
   // Chart of accounts form state
-  const [accountsForm, setAccountsForm] = useState(company.chartOfAccounts);
+  const [accountsForm, setAccountsForm] = useState({ ...company.chartOfAccounts });
 
   const handleSaveAccounts = (e: React.FormEvent) => {
     e.preventDefault();
@@ -158,7 +158,7 @@ export const AccountingJournalsView: React.FC<AccountingJournalsViewProps> = ({
           {/* Accounts Mapping Config */}
           <button
             onClick={() => {
-              setAccountsForm(company.chartOfAccounts);
+              setAccountsForm({ ...company.chartOfAccounts });
               setIsAccountsMapModalOpen(true);
             }}
             className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"

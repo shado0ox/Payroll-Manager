@@ -238,7 +238,7 @@ test('offset and reversal have opposite balanced journals while the original pos
   const bundle=await build({entryPoints:['src/utils/accountingEngine.ts'],bundle:true,platform:'node',format:'esm',write:false});
   const engine=await import(`data:text/javascript;base64,${Buffer.from(bundle.outputFiles[0].text).toString('base64')}`);
   const jan=source();jan.entitlementOffsets=[offsetInput(),offsetInput({id:'reverse',amount:-10000,reversesOffsetId:'o1',documentRef:'DOC-R',date:'2026-07-01'})];
-  const journals=engine.generateEntitlementSettlementJournals({id:'c',chartOfAccounts:{salariesPayableAccount:'2101'}},[jan]);
+  const journals=engine.generateEntitlementSettlementJournals({id:'c'},[jan]);
   assert.equal(journals.length,2);assert.notEqual(journals[0].id,journals[1].id);
   assert.equal(journals[0].lines[0].debit,10000);assert.equal(journals[1].lines[0].credit,10000);
   assert.equal(journals[0].totalDebit,journals[0].totalCredit);assert.equal(journals[1].totalDebit,journals[1].totalCredit);
@@ -257,7 +257,7 @@ test('legacy paid cash settlements remain available in portal receipts and sourc
 test('legacy posted aggregate prevents duplicate per-batch journals and permits only proven later batches',async()=>{
   const bundle=await build({entryPoints:['src/utils/accountingEngine.ts'],bundle:true,platform:'node',format:'esm',write:false});
   const engine=await import(`data:text/javascript;base64,${Buffer.from(bundle.outputFiles[0].text).toString('base64')}`);
-  const company={id:'c',crNumber:'1234',chartOfAccounts:{}};
+  const company={id:'c'};
   const jan=source();jan.paymentBatches=[{...batch(40000),createdAt:'2026-06-01T00:00:00Z'}];
   const legacy={...engine.generatePaymentJournalBatch(company,jan),qoyodSyncStatus:{synced:true,syncedAt:'2026-06-10T00:00:00Z',qoyodJournalId:'Q-1'}};
   legacy.qoyodSnapshot=structuredClone(legacy);
