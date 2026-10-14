@@ -1,3 +1,4 @@
+import {CalendarInput} from './CalendarInput';
 import React, { useState, useRef } from 'react';
 import { 
   Building2, 
@@ -697,7 +698,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           </div>
           <div className="mt-5 space-y-4">
             <label className="block"><span className="mb-1.5 block text-xs font-bold text-slate-700">{tr('حالة الاشتراك', 'Subscription status')}</span><select value={subscriptionStatus} onChange={e => setSubscriptionStatus(e.target.value as typeof subscriptionStatus)} className="h-11 w-full rounded-xl border border-slate-200 px-3 text-sm"><option value="TRIAL">{tr('تجريبي', 'Trial')}</option><option value="ACTIVE">{tr('نشط', 'Active')}</option><option value="EXPIRED">{tr('منتهي', 'Expired')}</option><option value="SUSPENDED">{tr('موقوف', 'Suspended')}</option></select></label>
-            <label className="block"><span className="mb-1.5 block text-xs font-bold text-slate-700">{tr('تاريخ نهاية الاشتراك', 'Subscription end date')}</span><input type="date" value={subscriptionEndsAt} onChange={e => setSubscriptionEndsAt(e.target.value)} className="h-11 w-full rounded-xl border border-slate-200 px-3 text-sm" /></label>
+            <label className="block"><span className="mb-1.5 block text-xs font-bold text-slate-700">{tr('تاريخ نهاية الاشتراك', 'Subscription end date')}</span><CalendarInput type="date" value={subscriptionEndsAt} onChange={e => setSubscriptionEndsAt(e.target.value)} className="h-11 w-full rounded-xl border border-slate-200 px-3 text-sm" /></label>
             <button type="button" onClick={oneYearFromToday} className="h-10 w-full rounded-xl border border-emerald-200 bg-emerald-50 text-xs font-black text-emerald-800">{tr('تجديد سنة من تاريخ اليوم', 'Renew one year from today')}</button>
             <button type="button" onClick={saveSubscription} disabled={savingSubscription} className="h-11 w-full rounded-xl bg-violet-700 text-sm font-black text-white disabled:opacity-50">{savingSubscription ? '...' : tr('حفظ وتفعيل الاشتراك', 'Save and activate subscription')}</button>
           </div>

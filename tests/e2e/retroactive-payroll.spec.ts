@@ -20,7 +20,7 @@ test('employee added after a posted paid month receives a late payment and an in
   await write(`/api/journals/${journal.id}`,'PUT',{...journal,qoyodSyncStatus:{synced:true,qoyodJournalId:`ISOLATED-${suffix}`,syncedAt:new Date().toISOString()},qoyodSnapshot:journal});
   await write(`/api/employees/${lateId}`,'PUT',employee(lateId,700,1));return{runId,oldId,lateId,period};
  });
- await page.reload();await page.getByTestId('nav-payroll_runs').click();await page.getByLabel(/السنة|Year/i).selectOption(seed.period.slice(0,4));await page.getByLabel(/شهر المسير|Payroll month/i).selectOption(seed.period);
+ await page.reload();await page.getByTestId('nav-payroll_runs').click();await page.getByLabel(/السنة|Year/i).and(page.locator("input")).fill(seed.period.slice(0,4));await page.getByLabel(/شهر المسير|Payroll month/i).and(page.locator("input")).fill(seed.period);
  const recalculated=page.waitForResponse(r=>r.request().method()==='PUT'&&new URL(r.url()).pathname===`/api/payroll-runs/${seed.runId}`);
  await page.getByRole('button',{name:/إعادة احتساب المسير آلياً|Recalculate payroll/i}).click();const response=await recalculated;const result=await response.json();expect(response.ok(),JSON.stringify(result)).toBe(true);
  expect(result.record.status).toBe('POSTED');expect(result.record.items.find((i:any)=>i.employeeId===seed.oldId).netSalary).toBe(1000);expect(result.record.items.find((i:any)=>i.employeeId===seed.lateId).netSalary).toBe(700);
@@ -28,7 +28,7 @@ test('employee added after a posted paid month receives a late payment and an in
  const scheduled=page.waitForResponse(r=>r.request().method()==='POST'&&new URL(r.url()).pathname===`/api/payroll-runs/${seed.runId}/payment-batches`);
  await page.getByRole('button',{name:/إنشاء وجدولة الدفعة|Create and schedule batch/i}).click();const batchResponse=await scheduled;const scheduledBody=await batchResponse.json();expect(batchResponse.ok(),JSON.stringify(scheduledBody)).toBe(true);expect(scheduledBody.record.paymentBatches.at(-1).totalAmount).toBe(700);
  const paid=page.waitForResponse(r=>r.request().method()==='PATCH'&&/payment-batches\/[^/]+\/status$/.test(new URL(r.url()).pathname));await page.getByRole('button',{name:/تم التحويل|Mark paid/i}).click();expect((await paid).ok()).toBe(true);
- await page.getByTestId('nav-journals').click();await page.getByLabel(/فترة القيد|Journal period/i).selectOption(seed.period);
+ await page.getByTestId('nav-journals').click();await page.getByLabel(/فترة القيد|Journal period/i).and(page.locator("input")).fill(seed.period);
  const selector=page.getByLabel(/قيد الاستحقاق الأصلي أو التكميلي|Original or supplemental accrual/i);await expect(selector).toHaveValue(`batch-${seed.runId}-supplement-1`);await expect(selector.locator('option')).toHaveCount(2);
  const saved=await page.evaluate(async(runId)=>{const s=(await(await fetch('/api/state')).json()).state;return{run:s.payrollRuns.find((r:any)=>r.id===runId),journal:s.journals.find((j:any)=>j.id===`batch-${runId}`)};},seed.runId);
  expect(saved.run.paymentBatches.reduce((sum:number,b:any)=>sum+(b.status==='PAID'?b.totalAmount:0),0)).toBe(1700);expect(saved.journal.totalDebit).toBe(1000);expect(saved.journal.qoyodSnapshot.totalCredit).toBe(1000);
@@ -48,7 +48,7 @@ test('employee added after a posted paid month receives a late payment and an in
   }
   return {heldId,currentId,currentPeriod};
  },seed);
- await page.reload();await page.getByTestId('nav-payroll_runs').click();await page.getByLabel(/السنة|Year/i).selectOption(scopes.currentPeriod.slice(0,4));await page.getByLabel(/شهر المسير|Payroll month/i).selectOption(scopes.currentPeriod);
+ await page.reload();await page.getByTestId('nav-payroll_runs').click();await page.getByLabel(/السنة|Year/i).and(page.locator("input")).fill(scopes.currentPeriod.slice(0,4));await page.getByLabel(/شهر المسير|Payroll month/i).and(page.locator("input")).fill(scopes.currentPeriod);
  await page.getByRole('button',{name:/تحديد المتاح|Select eligible/i}).click();await page.getByRole('button',{name:/إنشاء دفعة للمحددين|Create selected batch/i}).click();
  await expect(page.getByLabel(/مبلغ سداد|Payment amount/i)).toHaveValue('1400');
  await page.getByLabel(/نطاق السداد|Payment scope/i).selectOption('CURRENT_MONTH');await expect(page.getByLabel(/مبلغ سداد|Payment amount/i)).toHaveValue('700');
@@ -58,7 +58,7 @@ test('employee added after a posted paid month receives a late payment and an in
  const scopedPaid=page.waitForResponse(r=>r.request().method()==='PATCH'&&/payment-batches\/[^/]+\/status$/.test(new URL(r.url()).pathname));await page.getByRole('button',{name:/تم التحويل|Mark paid/i}).click();expect((await scopedPaid).ok()).toBe(true);
  const heldAfter=await page.evaluate(async(id)=>{const s=(await(await fetch('/api/state')).json()).state;return s.payrollRuns.find((r:any)=>r.id===id);},scopes.heldId);expect(heldAfter.items[0].netSalary).toBe(700);expect(heldAfter.paymentBatches).toHaveLength(0);
  await page.getByTestId('nav-salary_accounts').click();const ledger=page.getByTestId('outstanding-salary-report');await expect(ledger).toBeVisible();const salaryRow=ledger.locator('tbody tr').filter({hasText:seed.lateId});await expect(salaryRow).toHaveCount(1);await expect(salaryRow.locator('td').last()).toContainText('700');
- await page.getByTestId('nav-journals').click();await page.getByLabel(/فترة القيد|Journal period/i).selectOption(new Date().toISOString().slice(0,7));await page.getByRole('button',{name:/^صرف الرواتب$|^Payroll payment$/}).click();
+ await page.getByTestId('nav-journals').click();await page.getByLabel(/فترة القيد|Journal period/i).and(page.locator("input")).fill(new Date().toISOString().slice(0,7));await page.getByRole('button',{name:/^صرف الرواتب$|^Payroll payment$/}).click();
  await page.getByRole('button',{name:/^تعديل القيد$|^Edit journal$/}).click();await page.getByPlaceholder(/سبب التعديل|Change reason/).fill('اختبار حفظ صرف متأخر');const journalWrite=page.waitForResponse(r=>r.request().method()==='PUT'&&/\/api\/journals\//.test(r.url()));await page.getByRole('button',{name:/^حفظ التعديل$|^Save changes$/}).click();const journalResponse=await journalWrite;expect(journalResponse.ok(),await journalResponse.text()).toBe(true);
 
 

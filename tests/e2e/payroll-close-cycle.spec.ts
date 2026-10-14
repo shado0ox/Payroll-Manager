@@ -61,8 +61,8 @@ test('payroll reversal restores next-month loan deduction with an audit trail', 
   expect(seed.ok,JSON.stringify(seed)).toBe(true);
   await page.waitForTimeout(300);
   await page.getByTestId('nav-payroll_runs').click();
-  await page.getByLabel(/السنة|Year/i).selectOption(seed.payrollPeriod!.slice(0,4));
-  await page.getByLabel(/شهر المسير|Payroll month/i).selectOption(seed.payrollPeriod!);
+  await page.getByLabel(/السنة|Year/i).and(page.locator("input")).fill(seed.payrollPeriod!.slice(0,4));
+  await page.getByLabel(/شهر المسير|Payroll month/i).and(page.locator("input")).fill(seed.payrollPeriod!);
 
   const initialCalculation = waitForPayrollWrite(page,'PUT',/\/api\/payroll-runs\/[^/]+$/);
   await page.getByRole('button',{ name:/إعادة احتساب المسير آلياً|Recalculate payroll/i }).click();
@@ -123,8 +123,8 @@ test('payroll reversal restores next-month loan deduction with an audit trail', 
   await page.getByRole('button',{ name:/التراجع عن الاعتماد والتعديل|Reverse approval and edit/i }).click();
   expect((await (await reopenPayroll).json()).record.status).toBe('UNDER_REVIEW');
 
-  await page.getByLabel(/السنة|Year/i).selectOption(seed.nextPeriod!.slice(0,4));
-  await page.getByLabel(/شهر المسير|Payroll month/i).selectOption(seed.nextPeriod!);
+  await page.getByLabel(/السنة|Year/i).and(page.locator("input")).fill(seed.nextPeriod!.slice(0,4));
+  await page.getByLabel(/شهر المسير|Payroll month/i).and(page.locator("input")).fill(seed.nextPeriod!);
   const recalculationAfterReversal = waitForPayrollWrite(page,'PUT',/\/api\/payroll-runs\/[^/]+$/);
   await page.getByRole('button',{ name:/إعادة احتساب المسير آلياً|Recalculate payroll/i }).click();
   const restoredNextRun = (await (await recalculationAfterReversal).json()).record;
@@ -166,8 +166,8 @@ test('partial employee payment keeps 10000 available after a 40000 payment and r
   });
   const openPeriod = async () => {
     await page.getByTestId('nav-payroll_runs').click();
-    await page.getByLabel(/السنة|Year/i).selectOption(seed.period.slice(0,4));
-    await page.getByLabel(/شهر المسير|Payroll month/i).selectOption(seed.period);
+    await page.getByLabel(/السنة|Year/i).and(page.locator("input")).fill(seed.period.slice(0,4));
+    await page.getByLabel(/شهر المسير|Payroll month/i).and(page.locator("input")).fill(seed.period);
   };
   await page.reload();
   await expect(page.getByTestId('nav-payroll_runs')).toBeVisible();

@@ -1,3 +1,4 @@
+import { allocateSalaryComponents } from '../../server/salary-component-allocation.mjs';
 import { salarySourceSummary, salaryOffsetTotal } from '../../server/payroll-ledger.mjs';
 import { Company, PayrollRun, JournalBatch, JournalLine, PayrollPaymentBatch, JournalBalanceDiagnostic, PayrollRunItem } from '../types';
 import { roundAmount } from './payrollEngine';
@@ -72,9 +73,8 @@ export function generatePayrollJournalBatch(company:Company,payrollRun:PayrollRu
     const category=item.payrollCategory||'UNCLASSIFIED',bucketId=category==='UNCLASSIFIED'?ccId:`${ccId}-${category}`;
     if (!buckets.has(bucketId)) buckets.set(bucketId,{ccId,category,base:0,housing:0,transport:0,overtime:0,other:0});
     const bucket=buckets.get(bucketId)!;
-    bucket.base+=Number(item.baseSalary||0); bucket.housing+=Number(item.housingAllowance||0);
-    bucket.transport+=Number(item.transportAllowance||0); bucket.overtime+=Number(item.overtimeAmount||0);
-    bucket.other+=Number(item.otherAllowances||0)+Number(item.bonuses||0);
+    const [base,housing,transport,other,overtime,bonus]=allocateSalaryComponents([item.baseSalary,item.housingAllowance,item.transportAllowance,item.otherAllowances,item.overtimeAmount,item.bonuses],item.totalGrossSalary);
+    bucket.base+=base;bucket.housing+=housing;bucket.transport+=transport;bucket.overtime+=overtime;bucket.other+=other+bonus;
   }
   const lines:JournalLine[]=[];
   const definitions = [
@@ -87,7 +87,7 @@ export function generatePayrollJournalBatch(company:Company,payrollRun:PayrollRu
   for (const [bucketId,bucket] of buckets) {
     const ccId=bucket.ccId;
     const center=costCenters.find(candidate=>candidate.id===ccId);
-    const centerAccount=(bucket.category==='ADMINISTRATIVE'?center?.administrativeSalariesExpenseAccount:bucket.category==='WORKER'?center?.workerWagesExpenseAccount:undefined)?.trim()||center?.salariesExpenseAccount?.trim();
+    const centerAccount=center?.salariesExpenseAccount?.trim()||(bucket.category==='ADMINISTRATIVE'?center?.administrativeSalariesExpenseAccount:bucket.category==='WORKER'?center?.workerWagesExpenseAccount:undefined)?.trim();
     const categoryAccount=centerAccount||(bucket.category==='ADMINISTRATIVE'?accounts.administrativeSalariesExpenseAccount:bucket.category==='WORKER'?accounts.workerWagesExpenseAccount:undefined);
     const categoryName=bucket.category==='ADMINISTRATIVE'?'مصروف رواتب إدارية':bucket.category==='WORKER'?'مصروف أجور العاملين':'مصروف رواتب مركز التكلفة';
     const cc=costCenters.find(candidate=>candidate.id===ccId)||{code:'CC-GEN',nameAr:'المركز العام',nameEn:'General cost center'};

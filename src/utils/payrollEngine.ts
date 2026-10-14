@@ -1,3 +1,4 @@
+import { allocateSalaryComponents } from '../../server/salary-component-allocation.mjs';
 import { loanInstallmentAmount } from '../../server/loan-installments.mjs';
 import { 
   Employee, 
@@ -313,6 +314,7 @@ export function calculateEmployeePayrollItem(input: EmployeeCalculationInput): P
   if(leaveCashAllowance>0)warningFlags.push(`بدل إجازة نقدي مضاف للمسير: ${leaveCashAllowance}`);
   if(leaveAdvancePaid>0)warningFlags.push(`دفعة إجازة مقدمة مسجلة: ${leaveAdvancePaid}`);
 
+  const storedComponents=allocateSalaryComponents([effectiveBaseSalary,effectiveHousing,effectiveTransport,totalOtherAllowances,totalOvertimeAmount,bonuses],totalGrossSalary);
   return applyPayrollNetRounding({
     id: `item-${employee.id}-${input.periodMonth}`,
     payrollRunId: '',
@@ -329,14 +331,14 @@ export function calculateEmployeePayrollItem(input: EmployeeCalculationInput): P
     bankName: effectiveBankName,
     bankSwiftCode: effectiveBankSwift,
     
-    baseSalary: effectiveBaseSalary,
-    housingAllowance: effectiveHousing,
-    transportAllowance: effectiveTransport,
-    otherAllowances: totalOtherAllowances,
+    baseSalary: storedComponents[0],
+    housingAllowance: storedComponents[1],
+    transportAllowance: storedComponents[2],
+    otherAllowances: storedComponents[3],
     nonGosiAllowances: effectiveNonGosiOther,
-    overtimeAmount: totalOvertimeAmount,
+    overtimeAmount: storedComponents[4],
     overtimeHours: totalOvertimeHours,
-    bonuses,
+    bonuses: storedComponents[5],
     leaveCashAllowance,
     totalGrossSalary,
     payableDays,

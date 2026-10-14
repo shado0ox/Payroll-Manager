@@ -1,3 +1,4 @@
+import {CalendarInput} from './CalendarInput';
 import React, { useState, useMemo } from 'react';
 import { 
   Clock, 
@@ -174,18 +175,9 @@ export const AttendanceLeavesView: React.FC<AttendanceLeavesViewProps> = ({
           {/* Period Selector */}
           <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-xl border border-slate-200 shadow-xs">
             <Calendar className="w-4 h-4 text-slate-500" />
-            <select
-              value={selectedPeriod}
+            <CalendarInput required aria-label={tr("شهر الحضور","Attendance month")} type="month" value={selectedPeriod}
               onChange={(e) => setSelectedPeriod(e.target.value)}
-              className="bg-transparent text-xs font-bold text-slate-800 border-none focus:ring-0 cursor-pointer"
-            >
-              {[0, 1, 2, 3, 4, 5].map(offset => {
-                const date = new Date();
-                date.setMonth(date.getMonth() - offset);
-                const value = date.toISOString().slice(0, 7);
-                return <option key={value} value={value}>{new Intl.DateTimeFormat(language === 'ar' ? 'ar-SA' : 'en-US', { month: 'long', year: 'numeric' }).format(date)}</option>;
-              })}
-            </select>
+              className="bg-transparent text-xs font-bold text-slate-800 border-none focus:ring-0 cursor-pointer"/>
           </div>
 
           <button
@@ -474,7 +466,7 @@ export const AttendanceLeavesView: React.FC<AttendanceLeavesViewProps> = ({
                     <label className="block text-[11px] font-semibold text-slate-600 mb-1">
                       {tr('من تاريخ (البداية) *', 'Start date *')}
                     </label>
-                    <input
+                    <CalendarInput
                       type="date"
                       required
                       max={attendanceEndLimit}
@@ -495,7 +487,7 @@ export const AttendanceLeavesView: React.FC<AttendanceLeavesViewProps> = ({
                     <label className="block text-[11px] font-semibold text-slate-600 mb-1">
                       {tr('إلى تاريخ (النهاية) *', 'End date *')}
                     </label>
-                    <input
+                    <CalendarInput
                       type="date"
                       required
                       min={startDate}
@@ -595,7 +587,7 @@ export const AttendanceLeavesView: React.FC<AttendanceLeavesViewProps> = ({
         </div>
       )}
 
-      {scheduleOpen&&<div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4"><div className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-3xl bg-white p-6"><h3 className="font-black">{tr('قواعد دوام الموظف','Employee work rules')}</h3><p className="mt-1 text-xs text-slate-500">{tr('أنشئ قاعدة بفترة سريان، وأيام أسبوع، ووقت عمل واحد من وإلى. يمكن حفظ قاعدة جديدة عند تغير الدوام.','Create a rule with an effective date range, weekdays, and one from/to work time. Save a new rule whenever the schedule changes.')}</p><div className="mt-5"><label className="mb-1 block text-xs font-bold">{tr('الموظف','Employee')}</label><SearchableEmployeeSelect required employees={companyEmployees} value={schedule.employeeId} onChange={employeeId=>setSchedule({...schedule,employeeId})}/></div><div className="mt-4 grid gap-4 sm:grid-cols-2"><label className="text-xs font-bold">{tr('سريان القاعدة من','Rule starts')}<input type="date" value={schedule.startDate} onChange={e=>setSchedule({...schedule,startDate:e.target.value})} className="mt-1 w-full rounded-xl border p-3"/></label><label className="text-xs font-bold">{tr('سريان القاعدة إلى','Rule ends')}<input type="date" min={schedule.startDate} value={schedule.endDate} onChange={e=>setSchedule({...schedule,endDate:e.target.value})} className="mt-1 w-full rounded-xl border p-3"/></label></div><div className="mt-4 rounded-2xl border p-4"><p className="text-xs font-black">{tr('أيام العمل الأسبوعية','Weekly workdays')}</p><div className="mt-3 flex flex-wrap gap-2">{schedule.days.map(day=><label key={day.weekday} className={`cursor-pointer rounded-xl border px-3 py-2 text-xs font-bold ${day.enabled?'border-blue-300 bg-blue-50 text-blue-800':'border-slate-200 text-slate-500'}`}><input type="checkbox" className="me-2" checked={day.enabled} onChange={e=>updateFlexibleDay(day.weekday,{enabled:e.target.checked})}/>{scheduleDayNames[day.weekday]}</label>)}</div><div className="mt-4 grid gap-4 sm:grid-cols-2"><label className="text-xs font-bold">{tr('وقت العمل من','Work starts')}<input type="time" value={schedule.startTime} onChange={e=>setSchedule({...schedule,startTime:e.target.value})} className="mt-1 w-full rounded-xl border p-3"/></label><label className="text-xs font-bold">{tr('وقت العمل إلى','Work ends')}<input type="time" value={schedule.endTime} onChange={e=>setSchedule({...schedule,endTime:e.target.value})} className="mt-1 w-full rounded-xl border p-3"/></label></div></div>{invalidSchedule&&<p className="mt-3 rounded-xl bg-rose-50 p-3 text-xs font-bold text-rose-700">{tr('اختر يوم عمل واحدًا على الأقل وحدد وقت بداية ونهاية مختلفين.','Choose at least one workday and different start/end times.')}</p>}<div className="mt-5 flex justify-end gap-2"><button onClick={()=>setScheduleOpen(false)} className="rounded-xl px-4 py-2 font-bold">{tr('إلغاء','Cancel')}</button><button disabled={busy||!schedule.employeeId||invalidSchedule} onClick={applySchedule} className="rounded-xl bg-blue-700 px-5 py-2 font-bold text-white disabled:opacity-50">{tr('تطبيق القاعدة','Apply rule')}</button></div></div></div>}
+      {scheduleOpen&&<div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4"><div className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-3xl bg-white p-6"><h3 className="font-black">{tr('قواعد دوام الموظف','Employee work rules')}</h3><p className="mt-1 text-xs text-slate-500">{tr('أنشئ قاعدة بفترة سريان، وأيام أسبوع، ووقت عمل واحد من وإلى. يمكن حفظ قاعدة جديدة عند تغير الدوام.','Create a rule with an effective date range, weekdays, and one from/to work time. Save a new rule whenever the schedule changes.')}</p><div className="mt-5"><label className="mb-1 block text-xs font-bold">{tr('الموظف','Employee')}</label><SearchableEmployeeSelect required employees={companyEmployees} value={schedule.employeeId} onChange={employeeId=>setSchedule({...schedule,employeeId})}/></div><div className="mt-4 grid gap-4 sm:grid-cols-2"><label className="text-xs font-bold">{tr('سريان القاعدة من','Rule starts')}<CalendarInput type="date" value={schedule.startDate} onChange={e=>setSchedule({...schedule,startDate:e.target.value})} className="mt-1 w-full rounded-xl border p-3"/></label><label className="text-xs font-bold">{tr('سريان القاعدة إلى','Rule ends')}<CalendarInput type="date" min={schedule.startDate} value={schedule.endDate} onChange={e=>setSchedule({...schedule,endDate:e.target.value})} className="mt-1 w-full rounded-xl border p-3"/></label></div><div className="mt-4 rounded-2xl border p-4"><p className="text-xs font-black">{tr('أيام العمل الأسبوعية','Weekly workdays')}</p><div className="mt-3 flex flex-wrap gap-2">{schedule.days.map(day=><label key={day.weekday} className={`cursor-pointer rounded-xl border px-3 py-2 text-xs font-bold ${day.enabled?'border-blue-300 bg-blue-50 text-blue-800':'border-slate-200 text-slate-500'}`}><input type="checkbox" className="me-2" checked={day.enabled} onChange={e=>updateFlexibleDay(day.weekday,{enabled:e.target.checked})}/>{scheduleDayNames[day.weekday]}</label>)}</div><div className="mt-4 grid gap-4 sm:grid-cols-2"><label className="text-xs font-bold">{tr('وقت العمل من','Work starts')}<input type="time" value={schedule.startTime} onChange={e=>setSchedule({...schedule,startTime:e.target.value})} className="mt-1 w-full rounded-xl border p-3"/></label><label className="text-xs font-bold">{tr('وقت العمل إلى','Work ends')}<input type="time" value={schedule.endTime} onChange={e=>setSchedule({...schedule,endTime:e.target.value})} className="mt-1 w-full rounded-xl border p-3"/></label></div></div>{invalidSchedule&&<p className="mt-3 rounded-xl bg-rose-50 p-3 text-xs font-bold text-rose-700">{tr('اختر يوم عمل واحدًا على الأقل وحدد وقت بداية ونهاية مختلفين.','Choose at least one workday and different start/end times.')}</p>}<div className="mt-5 flex justify-end gap-2"><button onClick={()=>setScheduleOpen(false)} className="rounded-xl px-4 py-2 font-bold">{tr('إلغاء','Cancel')}</button><button disabled={busy||!schedule.employeeId||invalidSchedule} onClick={applySchedule} className="rounded-xl bg-blue-700 px-5 py-2 font-bold text-white disabled:opacity-50">{tr('تطبيق القاعدة','Apply rule')}</button></div></div></div>}
 
 
     </div>

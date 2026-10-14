@@ -1,3 +1,4 @@
+import {CalendarInput} from './CalendarInput';
 import React, { useMemo, useState } from 'react';
 import { monthlySalaryAccountReport } from '../../server/payroll-ledger.mjs';
 import { Company, PayrollRun, PayrollSettlement } from '../types';
@@ -27,7 +28,7 @@ export function SalaryAccountsView({company,payrollRuns,settlements=[]}:{company
         <div className="flex flex-wrap items-center justify-between gap-3"><h2 className="font-bold">{ui('كشف حساب الرواتب المستحقة','Monthly salary account for all employees')}</h2><button onClick={exportEntitlements} className="rounded-xl bg-emerald-600 px-4 py-2 text-xs font-bold text-white">{ui('تصدير كشف الحساب CSV','Export salary account CSV')}</button></div>
         <p className="text-xs text-slate-500">{ui('رصيد آخر الشهر = رصيد أول الشهر + الدائن − المدين. يشمل الموظفين المؤرشفين؛ الصرف يُسجل بتاريخ التحويل الفعلي، والدفعات المجدولة لا تُعد صرفًا.','Closing balance = opening balance + credit − debit. Includes archived employees; payments use actual payment dates. Scheduled payments are not cash movements.')}</p>
         <div className="flex flex-wrap gap-4 text-xs">
-          <label>{ui('شهر كشف الحساب','Statement month')}<input aria-label={ui('شهر كشف الحساب','Statement month')} type="month" className="ms-2 rounded border p-2" value={entitlementPeriod} onChange={event=>{if(event.target.value)setEntitlementPeriod(event.target.value);}}/></label>
+          <label>{ui('شهر كشف الحساب','Statement month')}<CalendarInput aria-label={ui('شهر كشف الحساب','Statement month')} type="month" className="ms-2 rounded border p-2" value={entitlementPeriod} onChange={event=>{if(event.target.value)setEntitlementPeriod(event.target.value);}}/></label>
           <label>{ui('مركز التكلفة','Cost center')}<select className="ms-2 rounded border p-2" value={entitlementCenter} onChange={event=>setEntitlementCenter(event.target.value)}><option value="ALL">{ui('كل المراكز','All centers')}</option>{company.costCenters?.map(cc=><option key={cc.id} value={cc.id}>{language==='ar'?cc.nameAr:cc.nameEn||cc.nameAr}</option>)}</select></label>
           <label className="flex items-center gap-2"><input type="checkbox" checked={onlyOutstanding} onChange={event=>setOnlyOutstanding(event.target.checked)}/>{ui('أرصدة غير صفرية فقط','Nonzero closing balances only')}</label>
           <span className="font-bold">{ui('إجمالي الرصيد المرحّل للتالي','Total carried forward')}: {formatSAR(visibleEntitlements.reduce((sum,row)=>sum+row.closing,0))}</span>

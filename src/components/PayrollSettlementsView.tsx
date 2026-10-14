@@ -1,3 +1,4 @@
+import {CalendarInput} from './CalendarInput';
 import { monthlySalaryNet } from '../../server/payroll-ledger.mjs';
 import React, { useMemo, useState } from 'react';
 import { Banknote, CheckCircle2, Clock3, RefreshCcw, Search } from 'lucide-react';
@@ -290,7 +291,7 @@ export const PayrollSettlementsView: React.FC<PayrollSettlementsViewProps> = ({
         <div className="mb-3 flex items-center justify-between"><div><div className="font-black text-slate-900">{selected.employee.firstNameAr} {selected.employee.lastNameAr}</div><div className="text-xs text-slate-500">{selected.periodMonth} · {formatSAR(selected.amount)}</div></div><Banknote className="h-5 w-5 text-emerald-700" /></div>
         <div className="grid gap-3 md:grid-cols-3">
           <select value={method} onChange={event => setMethod(event.target.value as PaymentMethod)} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"><option value="BANK_TRANSFER">{tr('تحويل بنكي', 'Bank transfer')}</option><option value="WPS">WPS</option><option value="CASH">{tr('نقدي', 'Cash')}</option></select>
-          <input type="date" value={paymentDate} onChange={event => setPaymentDate(event.target.value)} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm" />
+          <CalendarInput type="date" value={paymentDate} onChange={event => setPaymentDate(event.target.value)} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm" />
           <input value={reference} onChange={event => setReference(event.target.value)} placeholder={tr('مرجع الدفع', 'Payment reference')} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm" />
         </div>
         <div className="mt-3 flex justify-end gap-2"><button onClick={() => setSelectedKey('')} className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-bold">{tr('إلغاء', 'Cancel')}</button><button onClick={payCandidate} className="flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-xs font-black text-white"><CheckCircle2 className="h-4 w-4" />{tr('تأكيد السداد', 'Confirm payment')}</button></div>

@@ -1,3 +1,4 @@
+import {CalendarInput} from './CalendarInput';
 import { validateBalancedJournal } from '../../server/journal-validation.mjs';
 import { getCurrentDate, getCurrentPeriod, getJournalPeriods } from '../utils/period';
 import React, { useState, useMemo, useEffect } from 'react';
@@ -156,13 +157,9 @@ export const AccountingJournalsView: React.FC<AccountingJournalsViewProps> = ({
           {/* Period Selector */}
           <div className="flex w-full sm:w-auto min-w-64 items-center gap-3 bg-white px-4 py-3 rounded-xl border border-slate-200 shadow-xs">
             <Calendar className="w-4 h-4 text-slate-500" />
-            <select
-              value={selectedPeriod}
+            <CalendarInput required type="month" value={selectedPeriod}
               onChange={(e) => setSelectedPeriod(e.target.value)}
-              aria-label={ui("فترة القيد", "Journal period")} className="w-full min-w-52 bg-transparent text-sm font-bold text-slate-800 border-none focus:ring-0 cursor-pointer"
-            >
-              {[...new Set(availablePeriods.map(period=>period.slice(0,4)))].map(year=><optgroup key={year} label={year}>{availablePeriods.filter(period=>period.startsWith(year+'-')).map(period=><option key={period} value={period}>{new Intl.DateTimeFormat(language === 'ar' ? 'ar-SA-u-ca-gregory-nu-latn' : 'en-GB', {month:'long',year:'numeric',timeZone:'UTC'}).format(new Date(`${period}-01T00:00:00Z`))} — {period}</option>)}</optgroup>)}
-            </select>
+              aria-label={ui("فترة القيد", "Journal period")} className="w-full min-w-52 bg-transparent text-sm font-bold text-slate-800 border-none focus:ring-0 cursor-pointer"/>
           </div>
 
           {/* Accounts Mapping Config */}
@@ -328,7 +325,7 @@ export const AccountingJournalsView: React.FC<AccountingJournalsViewProps> = ({
               </tbody>
               <tfoot>
                 <tr className="bg-slate-50 border-t-2 border-slate-300 font-bold text-slate-900">
-                  <td colSpan={4} className="py-3 px-4 text-left font-sans">{ui('الإجمالي العام المتوازن:', 'Balanced total:')}</td>
+                  <td colSpan={4} className="py-3 px-4 text-left font-sans">{ui('إجمالي القيد:', 'Journal totals:')}</td>
                   <td className="py-3 px-4 text-emerald-800 text-sm font-extrabold font-mono">{formatSAR(displayedTotalDebit)}</td>
                   <td className="py-3 px-4 text-sky-800 text-sm font-extrabold font-mono">{formatSAR(displayedTotalCredit)}</td>
                 </tr>

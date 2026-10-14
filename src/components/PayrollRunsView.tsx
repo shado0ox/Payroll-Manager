@@ -1,3 +1,4 @@
+import {CalendarInput} from './CalendarInput';
 import { remainingLoanInstallments } from '../../server/loan-installments.mjs';
 import React, { useState, useMemo, useEffect } from 'react';
 import { 
@@ -844,8 +845,7 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
           {/* Period Selector */}
           <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-xl border border-slate-200 shadow-xs">
             <Calendar className="w-4 h-4 text-slate-500" />
-            <select
-              aria-label={tr('السنة', 'Year')}
+            <CalendarInput required type="year" aria-label={tr('السنة', 'Year')}
               value={selectedYear}
               onChange={(e) => {
                 const year = Number(e.target.value);
@@ -854,21 +854,12 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
                 setSelectedPeriod(`${year}-${month}`);
                 setSelectedPaymentEmployeeIds([]);
               }}
-              className="bg-transparent text-xs font-bold text-slate-800 border-none focus:ring-0 cursor-pointer"
-            >
-              {availableYears.map(year => <option key={year} value={year}>{year}</option>)}
-            </select>
+              className="bg-transparent text-xs font-bold text-slate-800 border-none focus:ring-0 cursor-pointer"/>
             <span className="text-slate-300">/</span>
-            <select
-              aria-label={tr('شهر المسير', 'Payroll month')}
+            <CalendarInput required type="month" aria-label={tr('شهر المسير', 'Payroll month')}
               value={selectedPeriod}
-              onChange={(e) => { setSelectedPeriod(e.target.value); setSelectedPaymentEmployeeIds([]); }}
-              className="bg-transparent text-xs font-bold text-slate-800 border-none focus:ring-0 cursor-pointer"
-            >
-              {yearPeriods.map(period => (
-                <option key={period} value={period}>{new Intl.DateTimeFormat(language === 'ar' ? 'ar-SA' : 'en-US', { month: 'long' }).format(new Date(`${period}-01T12:00:00`))}</option>
-              ))}
-            </select>
+              onChange={(e) => { if(!e.target.value)return;setSelectedYear(Number(e.target.value.slice(0,4)));setSelectedPeriod(e.target.value);setSelectedPaymentEmployeeIds([]); }}
+              className="bg-transparent text-xs font-bold text-slate-800 border-none focus:ring-0 cursor-pointer"/>
           </div>
 
           {/* Recalculate Button */}

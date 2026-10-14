@@ -1,3 +1,4 @@
+import {CalendarInput} from './CalendarInput';
 import { wholeRiyalLoanPlan, remainingLoanInstallments, loanInstallmentAmount } from '../../server/loan-installments.mjs';
 import React, { useState, useMemo } from 'react';
 import { 
@@ -459,8 +460,8 @@ export const LoansPenaltiesView: React.FC<LoansPenaltiesViewProps> = ({
         /* Penalties Table */
         <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
           <div data-penalty-period-filter className="flex flex-wrap items-end gap-3 border-b border-slate-200 bg-slate-50/70 p-4">
-            <div><label className="mb-1 block text-[11px] font-bold text-slate-600">{tr('من شهر', 'From month')}</label><input type="month" value={penaltyPeriodFrom} onChange={event => setPenaltyPeriodFrom(event.target.value)} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs" /></div>
-            <div><label className="mb-1 block text-[11px] font-bold text-slate-600">{tr('إلى شهر', 'To month')}</label><input type="month" value={penaltyPeriodTo} min={penaltyPeriodFrom} onChange={event => setPenaltyPeriodTo(event.target.value)} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs" /></div>
+            <div><label className="mb-1 block text-[11px] font-bold text-slate-600">{tr('من شهر', 'From month')}</label><CalendarInput type="month" value={penaltyPeriodFrom} onChange={event => setPenaltyPeriodFrom(event.target.value)} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs" /></div>
+            <div><label className="mb-1 block text-[11px] font-bold text-slate-600">{tr('إلى شهر', 'To month')}</label><CalendarInput type="month" value={penaltyPeriodTo} min={penaltyPeriodFrom} onChange={event => setPenaltyPeriodTo(event.target.value)} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs" /></div>
             <button type="button" onClick={() => { setPenaltyPeriodFrom(currentPeriod); setPenaltyPeriodTo(currentPeriod); }} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600">{tr('الشهر الحالي', 'Current month')}</button>
             <span className="text-[11px] text-slate-500">{tr('النتائج', 'Results')}: {filteredPenalties.length}</span>
             <span className="text-[11px] font-bold text-rose-700">{tr('إجمالي الخصومات والجزاءات المطبقة', 'Total applied deductions & penalties')}: {formatSAR(totalFilteredPenaltiesApplied)}</span>
@@ -585,7 +586,7 @@ export const LoansPenaltiesView: React.FC<LoansPenaltiesViewProps> = ({
                 </div>
               </div>
 
-              <div><label htmlFor="loan-start-month" className="block font-semibold text-slate-700 mb-1">{tr('شهر أول قسط','First installment month')}</label><input id="loan-start-month" type="month" required value={loanForm.startDate} onChange={event=>setLoanForm({...loanForm,startDate:event.target.value})} className="w-full px-3 py-2 border rounded-xl" /></div>
+              <div><label htmlFor="loan-start-month" className="block font-semibold text-slate-700 mb-1">{tr('شهر أول قسط','First installment month')}</label><CalendarInput id="loan-start-month" type="month" required value={loanForm.startDate} onChange={event=>setLoanForm({...loanForm,startDate:event.target.value})} className="w-full px-3 py-2 border rounded-xl" /></div>
               {proposedLoanPlan&&<div className="p-3 bg-emerald-50 rounded-xl border border-emerald-200">
                 <p className="font-semibold text-emerald-900">{tr('اقتراح الجدولة: الباقي في الشهر الأخير', 'Suggested schedule: remainder in the final month')}</p>
                 <div className="max-h-48 overflow-auto mt-2"><table data-testid="loan-schedule-preview" className="w-full text-sm"><thead><tr><th>{tr('الشهر','Month')}</th><th>{tr('القسط بالريال','Installment (SAR)')}</th></tr></thead><tbody>{proposedLoanPlan.schedule.map(row=><tr key={row.periodMonth}><td className="py-1 text-center">{row.periodMonth}</td><td className="text-center">{row.amount}</td></tr>)}</tbody><tfoot><tr className="font-bold"><td>{tr('الإجمالي','Total')}</td><td className="text-center">{loanForm.totalAmount}</td></tr></tfoot></table></div>
@@ -657,7 +658,7 @@ export const LoansPenaltiesView: React.FC<LoansPenaltiesViewProps> = ({
 
                 <div>
                   <label className="block font-semibold text-slate-700 mb-1">{tr('تاريخ المخالفة', 'Incident date')}</label>
-                  <input
+                  <CalendarInput
                     type="date"
                     max={penaltyEndDate}
                     value={penaltyForm.date}
@@ -669,7 +670,7 @@ export const LoansPenaltiesView: React.FC<LoansPenaltiesViewProps> = ({
 
               <div>
                 <label className="block font-semibold text-slate-700 mb-1">{tr('فترة الراتب التي يطبق عليها الخصم *', 'Payroll period for this deduction *')}</label>
-                <input
+                <CalendarInput
                   type="month"
                   required
                   value={penaltyForm.periodMonth}

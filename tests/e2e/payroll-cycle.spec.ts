@@ -54,7 +54,7 @@ test('current-month payroll calculates foreign GOSI and financial inputs without
   expect(seed.ok,JSON.stringify(seed)).toBe(true);
   await page.waitForTimeout(300);
   await page.getByTestId('nav-payroll_runs').click();
-  await expect(page.getByLabel(/شهر المسير|Payroll month/i)).toHaveValue(seed.periodMonth!);
+  await expect(page.getByLabel(/شهر المسير|Payroll month/i).and(page.locator("input"))).toHaveValue(seed.periodMonth!);
 
   let fullStateReads = 0;
   page.on('request',request => {
