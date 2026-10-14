@@ -1,3 +1,4 @@
+import { wholeRiyalLoanPlan } from '../../server/loan-installments.mjs';
 import { Company, Employee, LoanSchedule, PenaltyRecord } from '../types';
 
 const escapeHtml = (value: unknown): string => String(value ?? '')
@@ -39,8 +40,9 @@ function openPrintDocument(html: string): boolean {
 
 export function printLoanAcknowledgement(company: Company, employee: Employee, loan: LoanSchedule): boolean {
   const reference = `LOAN-${loan.id.replace(/^loan-/, '')}`;
+  const schedule=loan.installmentRounding==='WHOLE_SAR_LAST'?wholeRiyalLoanPlan(loan.totalAmount,loan.totalInstallments,loan.startDate).schedule:[];
   const body = `<section class="section"><div class="section-title">تفاصيل السلفة | Loan Details</div><div class="grid">
-    ${row('إجمالي مبلغ السلفة', 'Total loan amount', money(loan.totalAmount))}${row('القسط الشهري', 'Monthly installment', money(loan.monthlyInstallment))}${row('عدد الأقساط', 'Number of installments', loan.totalInstallments)}${row('فترة بداية الخصم', 'First deduction period', loan.startDate)}${row('سبب السلفة', 'Loan purpose', loan.reason)}${row('حالة الجدولة', 'Schedule status', loan.status)}</div></section>
+    ${row('إجمالي مبلغ السلفة', 'Total loan amount', money(loan.totalAmount))}${row('القسط الشهري', 'Monthly installment', money(loan.monthlyInstallment))}${row('عدد الأقساط', 'Number of installments', loan.totalInstallments)}${row('فترة بداية الخصم', 'First deduction period', loan.startDate)}${row('سبب السلفة', 'Loan purpose', loan.reason)}${row('حالة الجدولة', 'Schedule status', loan.status)}</div>${schedule.length?`<div class="grid">${schedule.map(item=>row(item.periodMonth,'Installment (SAR)',money(item.amount))).join('')}</div>`:''}</section>
     <div class="declaration"><b>إقرار الموظف:</b> أقر أنا الموظف الموضحة بياناتي أعلاه باستلام السلفة المبينة، وأوافق على استقطاع القسط الشهري من راتبي ابتداءً من الفترة المحددة وحتى سداد كامل الرصيد، وفق الأنظمة والسياسات المعتمدة.<div class="en"><b>Employee acknowledgment:</b> I acknowledge receipt of the loan stated above and authorize the company to deduct the monthly installment from my salary starting from the specified period until the balance is fully settled, subject to applicable policies and regulations.</div></div>`;
   return openPrintDocument(documentShell(company, employee, 'إقرار استلام وجدولة سلفة موظف', 'Employee Loan Receipt & Deduction Authorization', reference, body));
 }

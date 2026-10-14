@@ -1,3 +1,4 @@
+import { loanInstallmentAmount } from '../../server/loan-installments.mjs';
 import { 
   Employee, 
   Company, 
@@ -202,7 +203,7 @@ export function calculateEmployeePayrollItem(input: EmployeeCalculationInput): P
   let loanDeduction = 0;
   activeLoans.forEach(loan => {
     if (loan.status === 'ACTIVE' && loan.remainingAmount > 0) {
-      loanDeduction += Math.min(loan.monthlyInstallment, loan.remainingAmount);
+      loanDeduction += loanInstallmentAmount(loan);
     }
   });
   loanDeduction = roundAmount(loanDeduction, rules.roundingDecimals);

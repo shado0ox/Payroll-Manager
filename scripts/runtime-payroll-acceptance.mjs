@@ -266,6 +266,13 @@ assert.equal(findRun(await loadState(),legacyId).items[0].entitlementStatus,'SET
 await request(`/api/payroll-settlements/${legacySettlement.id}/reverse`,{method:'POST',body:JSON.stringify({reversalReason:'اختبار عكس التسوية القديمة'})});
 assert.equal(findRun(await loadState(),legacyId).items[0].entitlementStatus,'HELD');
 
+const integerLoanId=`integer-loan-${key}`;
+const integerLoan={id:integerLoanId,companyId,employeeId:ids.employee,totalAmount:1000,monthlyInstallment:166,
+  totalInstallments:6,remainingInstallments:6,remainingAmount:1000,startDate:'2099-01',status:'ACTIVE',reason:'ستة أقساط دون هللات',installmentRounding:'WHOLE_SAR_LAST'};
+await request(`/api/loans/${integerLoanId}`,{method:'PUT',body:JSON.stringify(integerLoan)});
+assert.equal(findLoan(await loadState(),integerLoanId).installmentRounding,'WHOLE_SAR_LAST','Whole-riyal policy must survive PostgreSQL save and reload');
+await assert.rejects(request(`/api/loans/${integerLoanId}`,{method:'PUT',body:JSON.stringify({...integerLoan,monthlyInstallment:166.67})}),/400.*INVALID_WHOLE_RIYAL_LOAN_PLAN/);
+
 const db = new Pool({ connectionString:databaseUrl,ssl:false });
 try {
   const [runRow,batchRow,loanRow,auditRows] = await Promise.all([

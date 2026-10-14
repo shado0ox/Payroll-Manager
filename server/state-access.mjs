@@ -1,3 +1,4 @@
+import { validateLoanInstallmentPlan } from './loan-installments.mjs';
 import { validateApprovedPayrollLoans } from './payroll-loan-validation.mjs';
 export function createStateAccessService({
   clone,can,allowedCompanyIds,itemCompanyId,companyScopedKeys,operationsMutableKeys,asArray,sameJson,
@@ -87,6 +88,9 @@ function validatePayrollSettlementChanges(storedSettlements, incomingSettlements
 
 function mergeStateForUser(stored, incoming, user) {
   if (Object.prototype.hasOwnProperty.call(incoming || {}, 'payrollSettlements')) validatePayrollSettlementChanges(stored?.payrollSettlements, incoming?.payrollSettlements);
+  for(const loan of asArray(incoming.loans)){
+    try{validateLoanInstallmentPlan(loan);}catch{throw workflowError(400,'INVALID_WHOLE_RIYAL_LOAN_PLAN');}
+  }
   validateClosedPayrollInputs(stored, incoming, user);
   validateApprovedPayrollLoans({...stored,loans:incoming.loans || stored.loans},incoming.payrollRuns || stored.payrollRuns);
   validatePayrollWorkflowChanges(stored?.payrollRuns, incoming?.payrollRuns, user);

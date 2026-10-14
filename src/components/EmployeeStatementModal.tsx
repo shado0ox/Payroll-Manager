@@ -1,3 +1,4 @@
+import { loanInstallmentAmount } from '../../server/loan-installments.mjs';
 import { monthlySalaryNet, salarySourceSummary, effectiveEmployeeSalaryLoans } from '../../server/payroll-ledger.mjs';
 import React from 'react';
 import { 
@@ -348,7 +349,7 @@ export const EmployeeStatementModal: React.FC<EmployeeStatementModalProps> = ({
                 </div>
                 <div>
                   <span className="text-slate-500 block">{tr('القسط الشهري:', 'Monthly Installment:')}</span>
-                  <span className="font-bold text-slate-900">{formatSAR(activeLoan.monthlyInstallment)}</span>
+                  <span className="font-bold text-slate-900">{formatSAR(loanInstallmentAmount({...activeLoan,remainingAmount:activeLoan.effectiveRemaining}))}</span>
                 </div>
                 <div>
                   <span className="text-slate-500 block">{tr('الأقساط المتبقية:', 'Remaining Installments:')}</span>

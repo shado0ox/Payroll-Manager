@@ -1,3 +1,4 @@
+import { remainingLoanInstallments } from '../server/loan-installments.mjs';
 import { salaryBatchAllocations } from '../server/payroll-ledger.mjs';
 import React, { lazy, Suspense, useState, useEffect, useMemo, useRef } from 'react';
 import { 
@@ -916,8 +917,7 @@ export const App: React.FC = () => {
       return;
     }
     const adjustment = { id:`loan-adj-${Date.now()}`,amount,date,reason:reason.trim(),createdAt:new Date().toISOString(),createdBy:state.currentUser?.id };
-    const installment = Number(existing.monthlyInstallment || 0);
-    const remainingInstallments = nextBalance === 0 ? 0 : installment > 0 ? Math.ceil(nextBalance / installment) : existing.remainingInstallments;
+    const remainingInstallments = remainingLoanInstallments(existing,nextBalance);
     const status = nextBalance === 0 ? 'COMPLETED' as const : existing.status === 'COMPLETED' ? 'ACTIVE' as const : existing.status;
     await commitLoanRecord({ ...existing,remainingAmount:nextBalance,remainingInstallments,status,adjustments:[...(existing.adjustments || []),adjustment] });
   };

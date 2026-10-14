@@ -1,3 +1,4 @@
+import { validateLoanInstallmentPlan } from '../loan-installments.mjs';
 import express from 'express';
 
 export function createLoanPenaltyRouter({
@@ -29,6 +30,7 @@ router.put('/penalties/:id', auth, writeLimiter, async (req, res, next) => {
       || typeof record.reason !== 'string' || !record.reason.trim() || !Number.isFinite(Number(record.amount)) || Number(record.amount) < 0) {
       return res.status(400).json({ error:'INVALID_PENALTY_RECORD' });
     }
+    try { validateLoanInstallmentPlan(record); } catch { return res.status(400).json({error:'INVALID_WHOLE_RIYAL_LOAN_PLAN'}); }
     await client.query('BEGIN');
     const stored = await readLockedNormalizedState(client);
     const existingRecord = asArray(stored.penalties).find(item => item.id === record.id);
@@ -100,6 +102,7 @@ router.put('/loans/:id', auth, writeLimiter, async (req, res, next) => {
       || !Number.isInteger(Number(record.totalInstallments)) || !Number.isInteger(Number(record.remainingInstallments))) {
       return res.status(400).json({ error:'INVALID_LOAN_RECORD' });
     }
+    try { validateLoanInstallmentPlan(record); } catch { return res.status(400).json({error:'INVALID_WHOLE_RIYAL_LOAN_PLAN'}); }
     await client.query('BEGIN');
     const stored = await readLockedNormalizedState(client);
     const existingRecord = asArray(stored.loans).find(item => item.id === record.id);
@@ -171,6 +174,7 @@ router.put('/temporary-earnings/:id', auth, writeLimiter, async (req, res, next)
       || !Number.isFinite(Number(record.amount)) || Number(record.amount) < 0 || typeof record.reason !== 'string' || !record.reason.trim()) {
       return res.status(400).json({ error:'INVALID_TEMPORARY_EARNING_RECORD' });
     }
+    try { validateLoanInstallmentPlan(record); } catch { return res.status(400).json({error:'INVALID_WHOLE_RIYAL_LOAN_PLAN'}); }
     await client.query('BEGIN');
     const stored = await readLockedNormalizedState(client);
     const existingRecord = asArray(stored.temporaryEarnings).find(item => item.id === record.id);

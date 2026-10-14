@@ -1,3 +1,4 @@
+import { remainingLoanInstallments } from '../../server/loan-installments.mjs';
 import React, { useState, useMemo, useEffect } from 'react';
 import { 
   Banknote, 
@@ -581,9 +582,7 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
           return {
             ...loan,
             remainingAmount,
-            remainingInstallments: remainingAmount === 0
-              ? 0
-              : loan.monthlyInstallment > 0 ? Math.ceil(remainingAmount / loan.monthlyInstallment) : loan.remainingInstallments,
+            remainingInstallments: remainingLoanInstallments(loan,remainingAmount),
             status: remainingAmount === 0 ? 'COMPLETED' as const : loan.status,
           };
           });

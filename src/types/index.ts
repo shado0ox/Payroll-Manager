@@ -316,6 +316,7 @@ export interface LoanSchedule {
   employeeId: string;
   totalAmount: number;
   monthlyInstallment: number;
+  installmentRounding?: 'WHOLE_SAR_LAST';
   totalInstallments: number;
   remainingInstallments: number;
   remainingAmount: number;

@@ -1,3 +1,4 @@
+import { remainingLoanInstallments } from './loan-installments.mjs';
 const rows = value => Array.isArray(value) ? value : [];
 export const salaryMoney = value => Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
 
@@ -127,7 +128,7 @@ export function effectiveEmployeeSalaryLoans(loans,runs,companyId,employeeId){
     for(const loan of sorted){if(loan.startDate>run.periodMonth||deduction<=0)continue;
       const applied=Math.min(balances.get(loan.id)||0,deduction);balances.set(loan.id,salaryMoney((balances.get(loan.id)||0)-applied));deduction=salaryMoney(deduction-applied);}
   }
-  return sorted.map(loan=>({...loan,effectiveRemaining:balances.get(loan.id)||0}));
+  return sorted.map(loan=>({...loan,effectiveRemaining:balances.get(loan.id)||0,remainingInstallments:remainingLoanInstallments(loan,balances.get(loan.id)||0)}));
 }
 
 export function salarySourceSummary(runs,run,item,settlements=[]){

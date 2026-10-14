@@ -1,3 +1,4 @@
+import { remainingLoanInstallments } from './loan-installments.mjs';
 import { salaryBatchAllocations } from './payroll-ledger.mjs';
 export function createPayrollWorkflowGuards({ can,asArray,workflowError }) {
 const sameJson = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
@@ -56,16 +57,13 @@ const isAppendOnlyLoanAdjustment = (beforeLoan, afterLoan, user) => {
     || !Number.isFinite(Number(adjustment.amount)) || Number(adjustment.amount) === 0
     || typeof adjustment.reason !== 'string' || !adjustment.reason.trim()
     || typeof adjustment.date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(adjustment.date)) return false;
-  const immutableKeys = ['id','companyId','employeeId','totalAmount','monthlyInstallment','totalInstallments','startDate','reason'];
+  const immutableKeys = ['id','companyId','employeeId','totalAmount','monthlyInstallment','totalInstallments','installmentRounding','startDate','reason'];
   if (immutableKeys.some(key => !sameJson(beforeLoan[key], afterLoan[key]))) return false;
   const expectedBalance = Number((Number(beforeLoan.remainingAmount || 0) + Number(adjustment.amount)).toFixed(2));
   if (expectedBalance < 0 || Number(afterLoan.remainingAmount) !== expectedBalance) return false;
   const parsedAdjustmentDate = new Date(`${adjustment.date}T00:00:00Z`);
   if (Number.isNaN(parsedAdjustmentDate.getTime()) || parsedAdjustmentDate.toISOString().slice(0, 10) !== adjustment.date) return false;
-  const installment = Number(beforeLoan.monthlyInstallment || 0);
-  const expectedRemainingInstallments = expectedBalance === 0
-    ? 0
-    : installment > 0 ? Math.ceil(expectedBalance / installment) : Number(beforeLoan.remainingInstallments || 0);
+  const expectedRemainingInstallments = remainingLoanInstallments(beforeLoan,expectedBalance);
   if (Number(afterLoan.remainingInstallments) !== expectedRemainingInstallments) return false;
   const expectedStatus = expectedBalance === 0
     ? 'COMPLETED'

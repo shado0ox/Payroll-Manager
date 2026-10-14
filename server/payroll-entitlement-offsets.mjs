@@ -1,3 +1,4 @@
+import { remainingLoanInstallments } from './loan-installments.mjs';
 import { availableSalarySourceBalance, effectiveEmployeeSalaryLoans, salaryMoney } from './payroll-ledger.mjs';
 const rows=value=>Array.isArray(value)?value:[];
 const fail=code=>{const error=new Error(code);error.status=409;throw error;};
@@ -31,7 +32,7 @@ export function buildPayrollEntitlementOffset(stored,run,input,user){
     offset.loanId=source.id;offset.loanPriorStatus=reversed?reversed.loanPriorStatus:source.status;
     const {effectiveRemaining,...original}=source;
     const remainingAmount=salaryMoney(Number(original.remainingAmount)-amount);
-    loan={...original,remainingAmount,remainingInstallments:remainingAmount===0?0:original.monthlyInstallment>0?Math.ceil(remainingAmount/original.monthlyInstallment):original.remainingInstallments,
+    loan={...original,remainingAmount,remainingInstallments:remainingLoanInstallments(original,remainingAmount),
       status:remainingAmount===0?'COMPLETED':original.status==='COMPLETED'?(offset.loanPriorStatus||'ACTIVE'):original.status,adjustments:[...rows(original.adjustments),{id:`offset-${offset.id}`,amount:-amount,date:offset.date,
         reason:`${offset.reason} | ${offset.documentRef}`,createdAt:offset.createdAt,createdBy:offset.createdBy}]};
   }
