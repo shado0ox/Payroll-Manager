@@ -1,3 +1,4 @@
+import { unpaidSalaryDetails, salaryBatchAllocations } from './payroll-ledger.mjs';
 const asArray = value => Array.isArray(value) ? value : [];
 const roundAmount = value => Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
 const sameJson = (a,b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
@@ -12,35 +13,7 @@ const employeeLockedInRun = (run,employeeId) => asArray(run.paymentBatches).some
   activeBatch(batch) && asArray(batch.employeeIds).includes(employeeId)
 );
 
-const sourceReserved = (runs,sourceRun,sourceItem) => asArray(runs).some(run => asArray(run.paymentBatches).some(batch => {
-  if (!activeBatch(batch)) return false;
-  const employeeIncluded = asArray(batch.employeeIds).includes(sourceItem.employeeId);
-  if (run.id === sourceRun.id && employeeIncluded) return true;
-  if (employeeIncluded) {
-    const paymentItem = asArray(run.items).find(item => item.employeeId === sourceItem.employeeId);
-    if (asArray(paymentItem?.priorPeriodDetails).some(detail => detail?.periodMonth === sourceRun.periodMonth)) return true;
-  }
-  return asArray(batch.priorEntitlements).some(ref =>
-    ref?.sourcePayrollRunId === sourceRun.id && ref?.sourcePayrollItemId === sourceItem.id
-  );
-}));
-
-const canonicalCarryDetails = (runs,targetRun,employeeId) => asArray(runs)
-  .filter(sourceRun => sourceRun.companyId === targetRun.companyId && sourceRun.periodMonth < targetRun.periodMonth)
-  .sort((a,b) => a.periodMonth.localeCompare(b.periodMonth))
-  .flatMap(sourceRun => {
-    const sourceItem = asArray(sourceRun.items).find(item => item.employeeId === employeeId);
-    if (!sourceItem || sourceReserved(runs,sourceRun,sourceItem)) return [];
-    if (['SETTLED','CANCELLED_WITH_DOCUMENT'].includes(String(sourceItem.entitlementStatus || ''))) return [];
-    const net = roundAmount(Number(sourceItem.netSalary || 0) - Number(sourceItem.priorPeriodNet || 0));
-    if (!(net > 0)) return [];
-    return [{
-      periodMonth:sourceRun.periodMonth,
-      gross:roundAmount(sourceItem.totalGrossSalary),
-      deductions:roundAmount(sourceItem.totalDeductions),
-      net,
-    }];
-  });
+const canonicalCarryDetails = unpaidSalaryDetails;
 
 const aggregateRun = run => ({
   employeesCount:asArray(run.items).length,
@@ -146,7 +119,7 @@ const paymentBatchDetails = run => asArray(run.paymentBatches).flatMap(batch => 
     return sum+Number(item?.netSalary||0);
   },0));
   const priorAmount=roundAmount(asArray(batch.priorEntitlements).reduce((sum,ref)=>sum+Number(ref?.amount||0),0));
-  const expectedTotal=roundAmount(currentAmount+priorAmount);
+  const expectedTotal=roundAmount(salaryBatchAllocations(run,batch).reduce((sum,row)=>sum+row.amount,0));
   const recordedTotal=roundAmount(batch.totalAmount);
   const employeesCountMismatch=batch.employeesCount!=null&&Number(batch.employeesCount)!==employeeIds.length;
   if(!duplicateEmployeeIds.length&&!missingEmployeeIds.length&&!employeesCountMismatch

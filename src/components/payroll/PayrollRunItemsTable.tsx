@@ -25,6 +25,9 @@ interface Props {
   selectedPaymentEmployeeIds: string[];
   employees: Employee[];
   committedEmployeeIds: Set<string>;
+  remainingPaymentAmounts: Record<string,number>;
+  offsetAvailableAmounts:Record<string,number>;
+  onCreateOffset:(item:PayrollRunItem)=>void;
   language: 'ar' | 'en';
   onToggleAllEligible: () => void;
   onTogglePaymentEmployee: (employeeId: string) => void;
@@ -37,7 +40,7 @@ interface Props {
 
 export const PayrollRunItemsTable = React.memo(function PayrollRunItemsTable({
   currentRun, filteredItems, eligibleFilteredItems, selectedPaymentEmployeeIds, employees,
-  committedEmployeeIds, language, onToggleAllEligible, onTogglePaymentEmployee,
+  committedEmployeeIds, remainingPaymentAmounts, offsetAvailableAmounts, onCreateOffset, language, onToggleAllEligible, onTogglePaymentEmployee,
   getEmployeePaymentBatch, onEntitlementStatusChange, onOpenAdjustment,
   onViewEmployeeStatement, tr,
 }: Props) {
@@ -55,6 +58,7 @@ export const PayrollRunItemsTable = React.memo(function PayrollRunItemsTable({
             {language === 'ar' ? PAYMENT_STATUS_CONFIG[paymentBatch.status].labelAr : PAYMENT_STATUS_CONFIG[paymentBatch.status].labelEn}
           </span>
           <span className="text-[8px] font-mono text-slate-500">{paymentBatch.batchNumber} • {paymentBatch.periodMonth}</span>
+          {remainingPaymentAmounts[item.employeeId] > 0 && <span className="text-[9px] text-amber-800">{language === 'ar' ? 'متبقي متاح: ' : 'Available balance: '}{formatSAR(remainingPaymentAmounts[item.employeeId])}</span>}
         </span>
       );
     }
@@ -78,7 +82,7 @@ export const PayrollRunItemsTable = React.memo(function PayrollRunItemsTable({
           const hasWarning = (item.warningFlags || []).length > 0;
           const paymentBatch = getEmployeePaymentBatch(item.employeeId);
           const entitlementStatus = item.entitlementStatus || 'PAYABLE';
-          const canSelectForPayment = entitlementStatus === 'PAYABLE' && item.netSalary > 0 && !committedEmployeeIds.has(item.employeeId);
+          const canSelectForPayment = eligibleFilteredItems.some(candidate => candidate.employeeId === item.employeeId);
           const identity = emp?.nationalIdOrIqama || emp?.iqamaNumber || emp?.entryNumber || '—';
           const nationality = emp?.nationality === 'SAUDI'
             ? tr('سعودي', 'Saudi')
@@ -117,6 +121,7 @@ export const PayrollRunItemsTable = React.memo(function PayrollRunItemsTable({
                   <div><span className="text-slate-400">{tr('القسم', 'Department')}</span><div className="font-bold text-slate-800">{item.department || '—'}</div></div>
                   <div><span className="text-slate-400">{tr('الأساسي', 'Basic')}</span><div className="font-bold text-slate-900">{formatSAR(item.baseSalary)}</div></div>
                   <div><span className="text-slate-400">{tr('البدلات', 'Allowances')}</span><div className="font-bold text-slate-900">{formatSAR(item.housingAllowance + item.transportAllowance + item.otherAllowances)}</div></div>
+                  {Boolean(item.roundingAdjustment) && <div><span className="text-slate-400">{tr('فرق جبر الراتب', 'Rounding top-up')}</span><div className="font-bold text-emerald-700">+{formatSAR(item.roundingAdjustment!)}</div></div>}
                   <div><span className="text-slate-400">{tr('المستحق', 'Gross')}</span><div className="font-bold text-slate-900">{formatSAR(item.totalGrossSalary)}</div></div>
                   <div><span className="text-slate-400">{tr('الغياب/التأخير', 'Absence/late')}</span><div className="font-bold text-rose-700">{formatSAR(item.delayDeduction + item.absenceDeduction + item.unpaidLeaveDeduction)}</div></div>
                   <div><span className="text-slate-400">{tr('التأمينات', 'GOSI')}</span><div className="font-bold text-slate-800">{formatSAR(item.gosiEmployeeShare)}</div></div>
@@ -125,6 +130,7 @@ export const PayrollRunItemsTable = React.memo(function PayrollRunItemsTable({
                   <div><span className="text-slate-400">{tr('صافي الراتب', 'Net salary')}</span><div className="font-extrabold text-emerald-800">{formatSAR(item.netSalary)}</div></div>
                 </div>
 
+                {['APPROVED','POSTED'].includes(currentRun.status)&&!['SETTLED','CANCELLED_WITH_DOCUMENT'].includes(item.entitlementStatus||'')&&offsetAvailableAmounts[item.employeeId]>0&&<button type="button" onClick={()=>onCreateOffset(item)} className="mb-1 rounded-lg border border-purple-200 px-2 py-1 text-[10px] font-bold text-purple-700">{tr('تسوية ذمة هذا الشهر','Settle this month’s balance')}</button>}
                 {!paymentBatch && ['APPROVED', 'POSTED'].includes(currentRun.status) && (
                   <select value={entitlementStatus} onChange={event => handleEntitlementStatusChange(item, event.target.value as PayrollEntitlementStatus)} className="mt-3 w-full rounded-xl border border-slate-200 bg-white px-2 py-2 text-[11px] font-bold">
                     {Object.entries(ENTITLEMENT_CONFIG).map(([status, config]) => <option key={status} value={status}>{language === 'ar' ? config.labelAr : config.labelEn}</option>)}
@@ -179,7 +185,7 @@ export const PayrollRunItemsTable = React.memo(function PayrollRunItemsTable({
               const hasWarning = (item.warningFlags || []).length > 0;
               const paymentBatch = getEmployeePaymentBatch(item.employeeId);
               const entitlementStatus = item.entitlementStatus || 'PAYABLE';
-              const canSelectForPayment = entitlementStatus === 'PAYABLE' && item.netSalary > 0 && !committedEmployeeIds.has(item.employeeId);
+              const canSelectForPayment = eligibleFilteredItems.some(candidate => candidate.employeeId === item.employeeId);
               return (
                 <tr key={`${item.id || 'item'}-${idx}`} className={`hover:bg-slate-50 transition-colors text-[11px] ${item.isSuspended ? 'bg-amber-50/40' : (hasWarning ? 'bg-amber-50/20' : '')}`}>
                   <td className="py-2.5 px-2 truncate">
@@ -189,7 +195,8 @@ export const PayrollRunItemsTable = React.memo(function PayrollRunItemsTable({
                         <div className="font-bold text-slate-900 flex items-center gap-1 truncate"><span className="truncate">{item.employeeName}</span><span className={`w-1.5 h-1.5 rounded-full shrink-0 ${item.gosiEnabled === false ? 'bg-slate-300' : 'bg-emerald-500'}`} /></div>
                         <div className="text-[10px] text-slate-400 font-mono">{item.employeeNo}</div>
                         <div className="mt-0.5">{renderEntitlement(item, paymentBatch)}</div>
-                        {!paymentBatch && ['APPROVED', 'POSTED'].includes(currentRun.status) && (
+                        {['APPROVED','POSTED'].includes(currentRun.status)&&!['SETTLED','CANCELLED_WITH_DOCUMENT'].includes(item.entitlementStatus||'')&&offsetAvailableAmounts[item.employeeId]>0&&<button type="button" onClick={()=>onCreateOffset(item)} className="mb-1 rounded-lg border border-purple-200 px-2 py-1 text-[10px] font-bold text-purple-700">{tr('تسوية ذمة هذا الشهر','Settle this month’s balance')}</button>}
+                {!paymentBatch && ['APPROVED', 'POSTED'].includes(currentRun.status) && (
                           <select value={entitlementStatus} onChange={event => handleEntitlementStatusChange(item, event.target.value as PayrollEntitlementStatus)} className="block mt-1 max-w-full px-1.5 py-1 rounded-lg border border-slate-200 bg-white text-[9px] font-bold">
                             {Object.entries(ENTITLEMENT_CONFIG).map(([status, config]) => <option key={status} value={status}>{language === 'ar' ? config.labelAr : config.labelEn}</option>)}
                           </select>
@@ -202,7 +209,7 @@ export const PayrollRunItemsTable = React.memo(function PayrollRunItemsTable({
                   </td>
                   <td className="py-2.5 px-1.5 text-slate-600 truncate font-medium">{item.department}</td>
                   <td className="py-2.5 px-1.5 font-semibold text-slate-800 whitespace-nowrap">{formatSAR(item.baseSalary)}</td>
-                  <td className="py-2.5 px-1.5 text-slate-600 whitespace-nowrap">{formatSAR(item.housingAllowance + item.transportAllowance + item.otherAllowances)}</td>
+                  <td className="py-2.5 px-1.5 text-slate-600 whitespace-nowrap">{formatSAR(item.housingAllowance + item.transportAllowance + item.otherAllowances)}{Boolean(item.roundingAdjustment) && <div className="text-xs text-emerald-700">{tr('فرق جبر', 'Rounding')} +{formatSAR(item.roundingAdjustment!)}</div>}</td>
                   <td className="py-2.5 px-1.5 whitespace-nowrap">{formatSAR(item.overtimeAmount + item.bonuses + Number(item.priorPeriodNet || 0))}</td>
                   <td className="py-2.5 px-1.5 font-bold text-slate-900 whitespace-nowrap">{formatSAR(item.totalGrossSalary)}</td>
                   <td className="py-2.5 px-1.5 text-rose-600 whitespace-nowrap">{formatSAR(item.delayDeduction + item.absenceDeduction + item.unpaidLeaveDeduction)}</td>

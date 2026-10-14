@@ -1,5 +1,6 @@
+export type EmployeeRegistrationRequest={id:string;employee_id:string;company_id:string;username:string;email:string;created_at:string;employee_no:string;employee_name:string};
 import { AppState } from './storage';
-import { AttendanceRecord, Company, Employee, JournalBatch, LeaveRequest, LoanSchedule, PayrollRun, PayrollSettlement, PenaltyRecord, QoyodApiConfig, TemporaryEarningRecord, UserAccount } from '../types';
+import { AttendanceRecord, Company, Employee, JournalBatch, LeaveRequest, LoanSchedule, PayrollRun, PayrollEntitlementOffset, PayrollSettlement, PenaltyRecord, QoyodApiConfig, TemporaryEarningRecord, UserAccount } from '../types';
 
 export type StateCollectionKey = 'employees' | 'archivedEmployees' | 'attendance' | 'leaves' | 'loans' | 'penalties' | 'temporaryEarnings' | 'payrollRuns' | 'payrollSettlements' | 'journals';
 export type StateRecordChange = {
@@ -117,8 +118,9 @@ export type EmployeePayslipSummary = {
 export type EmployeePayslipDetail = {
   id:string;periodMonth:string;paidAmount:number;payment:EmployeePayslipPayment;
   snapshot:{
+    balance?:{entitlement:number;paid:number;reserved:number;offsets:number;outstanding:number};
     payrollRunId:string|null;payrollRunItemId:string|null;periodMonth:string;employeeNo:string;employeeName:string;department:string;
-    earnings:{baseSalary:number;housingAllowance:number;transportAllowance:number;otherAllowances:number;nonGosiAllowances:number;overtimeAmount:number;overtimeHours:number;bonuses:number;manualAddition:number;totalGrossSalary:number};
+    earnings:{baseSalary:number;housingAllowance:number;transportAllowance:number;otherAllowances:number;nonGosiAllowances:number;overtimeAmount:number;overtimeHours:number;bonuses:number;roundingAdjustment:number;manualAddition:number;totalGrossSalary:number};
     deductions:{delayMinutes:number;delayDeduction:number;absenceDays:number;absenceDeduction:number;unpaidLeaveDays:number;unpaidLeaveDeduction:number;gosiEmployeeShare:number;loanDeduction:number;penaltiesDeduction:number;otherDeductions:number;manualDeduction:number;totalDeductions:number};
     netSalary:number;payableDays:number|null;adjustmentNotes:string;
   };
@@ -238,6 +240,8 @@ export const api = {
   compareGosiInvoice:(id:string,payrollMonth:string)=>request<any>(`/api/gosi/invoices/${encodeURIComponent(id)}/comparison?payrollMonth=${encodeURIComponent(payrollMonth)}`),
   publicConfig: () => request<{registrationEnabled:boolean; trialDays:number; developerContactPhone:string}>('/api/public/config'),
   startRegistration: (data: Record<string, unknown>) => request<{requestId:string; maskedEmail:string; expiresInSeconds:number}>('/api/auth/register/start', { method:'POST', body:JSON.stringify(data) }),
+  employeeRegistrationRequests: (companyId:string) => request<{requests:EmployeeRegistrationRequest[]}>(`/api/employee-registration-requests?companyId=${encodeURIComponent(companyId)}`),
+  reviewEmployeeRegistration: (id:string,decision:'APPROVED'|'REJECTED',reason:string) => request(`/api/employee-registration-requests/${encodeURIComponent(id)}/review`,{method:'POST',body:JSON.stringify({decision,reason})}),
   startEmployeeRegistration: (data: Record<string, unknown>) => request<{requestId:string;maskedEmail:string;expiresInSeconds:number}>('/api/auth/employee-register/start',{ method:'POST',body:JSON.stringify(data) }),
   verifyEmployeeRegistration: (requestId:string,code:string) => request<{companyCode:string;username:string}>('/api/auth/employee-register/verify',{ method:'POST',body:JSON.stringify({requestId,code}) }),
   verifyRegistration: (requestId: string, code: string) => request<{companyCode:string; username:string; trialEndsAt:string; trialDays:number}>('/api/auth/register/verify', { method:'POST', body:JSON.stringify({requestId,code}) }),
@@ -412,6 +416,13 @@ export const api = {
     removeFromSyncedCollection('journals',id);
     return result;
   },
+  createPayrollEntitlementOffset: async (runId:string,offset:PayrollEntitlementOffset) => {
+    const result=await request<{record:PayrollRun;affectedPayrollRuns:PayrollRun[];loan:LoanSchedule|null;version:number;updated_at:string}>(`/api/payroll-runs/${encodeURIComponent(runId)}/entitlement-offsets`,{method:'POST',body:JSON.stringify(offset)});
+    stateVersion=result.version;updateSyncedCollection('payrollRuns',result.record);
+    for(const run of result.affectedPayrollRuns)updateSyncedCollection('payrollRuns',run);
+    if(result.loan)updateSyncedCollection('loans',result.loan);
+    return result;
+  },
   savePayrollRun: async (record: any) => {
     const previous = Array.isArray(syncedState?.payrollRuns) ? syncedState!.payrollRuns.find((item:any) => item?.id === record.id) : null;
     const command = classifyPayrollCommand(previous,record);
@@ -431,10 +442,10 @@ export const api = {
     return result;
   },
   deleteEmployee: (employeeId:string) => request<{deleted:boolean;archived:boolean}>(`/api/employees/${encodeURIComponent(employeeId)}`, { method:'DELETE' }),
-  passwordResetRequest: (email: string, language: 'ar'|'en') => request<{ok:boolean;message:string;requestId:string}>('/api/auth/password-reset/request', { method:'POST', body:JSON.stringify({ email,language }) }),
+  passwordResetRequest: (email: string, language: 'ar'|'en', companyCode: string) => request<{ok:boolean;message:string;requestId:string}>('/api/auth/password-reset/request', { method:'POST', body:JSON.stringify({ email,language,companyCode }) }),
   passwordResetVerify: (requestId: string, code: string) => request<{ok:boolean;resetToken:string}>('/api/auth/password-reset/verify', { method:'POST', body:JSON.stringify({ requestId,code }) }),
   passwordResetConfirm: (token: string, password: string) => request<{ok:boolean}>('/api/auth/password-reset/confirm', { method:'POST', body:JSON.stringify({ token, password }) }),
-  usernameRecoveryRequest: (email: string, language: 'ar'|'en') => request<{ok:boolean;message:string}>('/api/auth/username-recovery/request', { method:'POST', body:JSON.stringify({ email, language }) }),
+  usernameRecoveryRequest: (email: string, language: 'ar'|'en', companyCode: string) => request<{ok:boolean;message:string}>('/api/auth/username-recovery/request', { method:'POST', body:JSON.stringify({ email, language, companyCode }) }),
   companyCodeRecoveryRequest: (email: string, language: 'ar'|'en') => request<{ok:boolean;message:string}>('/api/auth/company-code-recovery/request', { method:'POST', body:JSON.stringify({ email, language }) }),
   emailLoginRequest: (companyCode: string, email: string, language: 'ar'|'en') => request<{ok:boolean;message:string;requestId:string}>('/api/auth/email-login/request', { method:'POST', body:JSON.stringify({ companyCode,email,language }) }),
   emailLoginVerify: (requestId: string, code: string) => request<{user:UserAccount;companyId:string}>('/api/auth/email-login/verify', { method:'POST', body:JSON.stringify({ requestId,code }) }),

@@ -147,10 +147,13 @@ export interface CompanyCalculationRules {
   overtimeStandardRate: number; // 1.5 (150%)
   overtimeWeekendRate: number; // 2.0 (200%)
   // Rounding
-  roundingDecimals: number; // 2 or 0 (nearest SAR)
+  netSalaryRounding?: 'NONE' | 'CEIL_SAR';
+  roundingDecimals: number; // Legacy compatibility; payroll monetary amounts use two decimals.
 }
 
 export interface ChartOfAccountsMap {
+  administrativeSalariesExpenseAccount?: string;
+  workerWagesExpenseAccount?: string;
   salariesExpenseAccount: string; // ح/ مصروف الرواتب
   housingAllowanceAccount: string; // ح/ بدل سكن
   transportAllowanceAccount: string; // ح/ بدل نقل
@@ -192,7 +195,10 @@ export interface EmployeeSalaryPackage {
   customDeductions: { componentId: string; name: string; amount: number }[];
 }
 
+export type PayrollCategory = 'UNCLASSIFIED'|'ADMINISTRATIVE'|'WORKER';
+
 export interface Employee {
+  payrollCategory?: PayrollCategory;
   id: string;
   companyId: string;
   employeeNo: string; // الرقم الوظيفي
@@ -315,6 +321,7 @@ export interface LoanSchedule {
   employeeId: string;
   totalAmount: number;
   monthlyInstallment: number;
+  installmentRounding?: 'WHOLE_SAR_LAST';
   totalInstallments: number;
   remainingInstallments: number;
   remainingAmount: number;
@@ -353,6 +360,7 @@ export type PayrollRunStatus = 'DRAFT' | 'UNDER_REVIEW' | 'APPROVED' | 'POSTED';
 export type PayrollEntitlementStatus = 'PAYABLE' | 'HELD' | 'UNDER_SETTLEMENT' | 'SETTLED' | 'CANCELLED_WITH_DOCUMENT';
 
 export interface PayrollRunItem {
+  payrollCategory?: PayrollCategory;
   id: string;
   payrollRunId: string;
   employeeId: string;
@@ -412,6 +420,7 @@ export interface PayrollRunItem {
   gosiEmployerShare: number;
   totalCompanyBurden: number; // Net + GOSI Employer + all costs
   saudiGosiPaymentMode?: 'SHARED' | 'COMPANY_FULL';
+  roundingAdjustment?: number;
   manualAddition?: number;
   manualDeduction?: number;
   adjustmentNotes?: string;
@@ -422,6 +431,8 @@ export interface PayrollRunItem {
   entitlementStatus?: PayrollEntitlementStatus;
   entitlementReason?: string;
   entitlementDocumentRef?: string;
+  entitlementSettlementAccount?: string;
+  entitlementSettlementDate?: string;
   entitlementUpdatedAt?: string;
   entitlementHoldSource?: 'MISSING_BANK_ACCOUNT' | 'EMPLOYEE_SUSPENSION' | 'MANUAL';
 
@@ -472,6 +483,7 @@ export interface PayrollPriorEntitlement {
 }
 
 export interface PayrollPaymentBatch {
+  allocations?: Array<{employeeId:string;periodMonth:string;sourcePayrollRunId:string;sourcePayrollItemId:string;amount:number;salarySnapshot?:{baseSalary:number;housingAllowance:number;totalDeductions:number;netSalary:number}}>;
   id: string;
   batchNumber: string;
   payrollRunId: string;
@@ -496,7 +508,14 @@ export interface PayrollPaymentBatch {
   createdBy?: string;
 }
 
+export interface PayrollEntitlementOffset {
+  id:string; employeeId:string; sourcePayrollItemId:string; amount:number;
+  reason:string; documentRef:string; counterAccount:string; date:string;
+  loanId?:string; loanPriorStatus?:LoanSchedule['status']; reversesOffsetId?:string; createdAt?:string; createdBy?:string;
+}
+
 export interface PayrollRun {
+  entitlementOffsets?: PayrollEntitlementOffset[];
   id: string;
   companyId: string;
   periodMonth: string; // e.g. "2026-08"
@@ -551,7 +570,8 @@ export type JournalDiagnosticCode =
   | 'GROSS_COMPONENT_MISMATCH'
   | 'DEDUCTION_COMPONENT_MISMATCH'
   | 'CURRENT_NET_MISMATCH'
-  | 'DEDUCTIONS_EXCEED_GROSS';
+  | 'DEDUCTIONS_EXCEED_GROSS'
+  | 'SALARY_CATEGORY_ACCOUNT_MISSING';
 
 export interface JournalBalanceDiagnostic {
   code: JournalDiagnosticCode;
@@ -576,7 +596,8 @@ export interface JournalQoyodSnapshot {
   descriptionEn?: string;
   totalDebit: number;
   totalCredit: number;
-  journalType?: 'PAYROLL_ACCRUAL' | 'GOSI_ACCRUAL' | 'PAYROLL_PAYMENT' | 'GOSI_PAYMENT';
+  accrualBaseId?: string;
+  journalType?: 'PAYROLL_ACCRUAL' | 'GOSI_ACCRUAL' | 'PAYROLL_PAYMENT' | 'GOSI_PAYMENT' | 'PAYROLL_SETTLEMENT';
   gosiBranchId?: string;
   gosiBranchCode?: string;
   gosiBranchName?: string;
@@ -595,7 +616,8 @@ export interface JournalBatch {
   descriptionEn?: string;
   totalDebit: number;
   totalCredit: number;
-  journalType?: 'PAYROLL_ACCRUAL' | 'GOSI_ACCRUAL' | 'PAYROLL_PAYMENT' | 'GOSI_PAYMENT';
+  accrualBaseId?: string;
+  journalType?: 'PAYROLL_ACCRUAL' | 'GOSI_ACCRUAL' | 'PAYROLL_PAYMENT' | 'GOSI_PAYMENT' | 'PAYROLL_SETTLEMENT';
   gosiBranchId?: string;
   gosiBranchCode?: string;
   gosiBranchName?: string;

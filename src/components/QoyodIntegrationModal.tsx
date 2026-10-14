@@ -1,3 +1,4 @@
+import { getCurrentDate } from '../utils/period';
 import React, { useState } from 'react';
 import { 
   X, 
@@ -21,7 +22,7 @@ import {
   FileCode
 } from 'lucide-react';
 import { Company, PayrollRun, QoyodApiConfig, JournalBatch, QoyodJournalEntryResponse } from '../types';
-import { generatePayrollJournalBatch } from '../utils/accountingEngine';
+import { generatePayrollJournalBatch, buildAccrualJournalPlan } from '../utils/accountingEngine';
 import { exportQoyodJournalCsv } from '../utils/exportUtils';
 import { buildQoyodJournalPayload, generateQoyodCurlCommand, sendJournalEntryToQoyod } from '../utils/qoyodApi';
 import { useLanguage } from '../i18n/LanguageContext';
@@ -31,6 +32,7 @@ interface QoyodIntegrationModalProps {
   latestRun: PayrollRun | undefined;
   journalBatch?: JournalBatch | null;
   existingJournal?: JournalBatch;
+  journals?: JournalBatch[];
   qoyodConfig: QoyodApiConfig;
   onSaveConfig: (config: QoyodApiConfig) => Promise<boolean | void> | boolean | void;
   onJournalSynced: (journal: JournalBatch) => Promise<void>;
@@ -42,6 +44,7 @@ export const QoyodIntegrationModal: React.FC<QoyodIntegrationModalProps> = ({
   latestRun,
   journalBatch,
   existingJournal,
+  journals = [],
   qoyodConfig,
   onSaveConfig,
   onJournalSynced,
@@ -65,9 +68,12 @@ export const QoyodIntegrationModal: React.FC<QoyodIntegrationModalProps> = ({
   const [copiedJson, setCopiedJson] = useState(false);
   const [activeViewTab, setActiveViewTab] = useState<'config' | 'curl' | 'payload' | 'response'>('config');
 
-  const activeBatch: JournalBatch | null = journalBatch || (latestRun ? generatePayrollJournalBatch(company, latestRun) : null);
-  const isAlreadyPosted = existingJournal?.status === 'POSTED' && Boolean(existingJournal.qoyodSyncStatus?.synced);
-  const currentPayload = activeBatch ? buildQoyodJournalPayload(activeBatch, company) : null;
+  const defaultPlan=latestRun?buildAccrualJournalPlan(generatePayrollJournalBatch(company,latestRun),journals,getCurrentDate(company.timezone||'Asia/Riyadh')):{batches:[],blocked:false};
+  const activeBatch: JournalBatch | null = journalBatch || defaultPlan.batches.at(-1) || null;
+  const postedExisting=existingJournal || journals.find(row=>row.id===activeBatch?.id);
+  const isAlreadyPosted=Boolean(postedExisting?.qoyodSyncStatus?.synced||activeBatch?.qoyodSyncStatus?.synced);
+  const hasDiagnosticErrors=Boolean(activeBatch?.balanceDiagnostics?.some(row=>row.severity==='ERROR'));
+  const currentPayload = activeBatch&&!hasDiagnosticErrors ? buildQoyodJournalPayload(activeBatch, company) : null;
   const currentCurl = currentPayload ? generateQoyodCurlCommand(currentPayload, config.apiKey, config.baseUrl) : '';
 
   // Test Qoyod API Endpoint
@@ -99,6 +105,8 @@ export const QoyodIntegrationModal: React.FC<QoyodIntegrationModalProps> = ({
 
   // Sync current batch via Qoyod API 2.0
   const handleSyncToQoyod = async () => {
+    if(isAlreadyPosted||(!journalBatch&&defaultPlan.blocked)){alert(tr('القيد مرحّل بالفعل أو يحتاج إلى مطابقة محاسبية قبل إنشاء قيد تكميلي.', 'The journal is already posted or requires reconciliation before a supplemental accrual.'));return;}
+    if(hasDiagnosticErrors){alert(tr('راجع أخطاء القيد وربط حسابات المصروف قبل الترحيل.', 'Resolve journal diagnostics and map expense accounts before posting.'));return;}
     if (!activeBatch) {
       alert(tr('لا يوجد مسير رواتب معتمد للترحيل', 'There is no approved payroll run to post.'));
       return;
@@ -122,7 +130,7 @@ export const QoyodIntegrationModal: React.FC<QoyodIntegrationModalProps> = ({
         const qoyodSnapshot = {
           id:activeBatch.id,companyId:activeBatch.companyId,payrollRunId:activeBatch.payrollRunId,periodMonth:activeBatch.periodMonth,
           batchNumber:activeBatch.batchNumber,date:activeBatch.date,description:activeBatch.description,descriptionEn:activeBatch.descriptionEn,
-          totalDebit:activeBatch.totalDebit,totalCredit:activeBatch.totalCredit,journalType:activeBatch.journalType,
+          totalDebit:activeBatch.totalDebit,totalCredit:activeBatch.totalCredit,journalType:activeBatch.journalType,accrualBaseId:activeBatch.accrualBaseId,
           gosiBranchId:activeBatch.gosiBranchId,gosiBranchCode:activeBatch.gosiBranchCode,gosiBranchName:activeBatch.gosiBranchName,
           affectedBranches:activeBatch.affectedBranches,lines:activeBatch.lines.map(line=>({...line})),
         };

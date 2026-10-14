@@ -1,3 +1,5 @@
+import { remainingLoanInstallments } from './loan-installments.mjs';
+import { salaryBatchAllocations } from './payroll-ledger.mjs';
 export function createPayrollWorkflowGuards({ can,asArray,workflowError }) {
 const sameJson = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
 const payrollFinancialCore = (run) => {
@@ -23,8 +25,9 @@ const payrollSourceLocked = (stored, kind, record) => closedRunsForInput(stored,
   if (!item) return false;
   // Payroll inputs remain editable for unpaid/held employees. Once the employee is reserved
   // in a SCHEDULED batch or actually PAID, source entries used by that payroll item are locked.
-  const employeePaymentLocked = asArray(run.paymentBatches).some(batch =>
-    ['SCHEDULED','PAID'].includes(batch.status) && asArray(batch.employeeIds).includes(record.employeeId)
+  const employeePaymentLocked = asArray(run.entitlementOffsets).some(offset=>offset.employeeId===record.employeeId) || asArray(stored.payrollRuns).filter(paymentRun => paymentRun.companyId === run.companyId).some(paymentRun =>
+    asArray(paymentRun.paymentBatches).some(batch => ['SCHEDULED','PAID'].includes(batch.status)
+      && salaryBatchAllocations(paymentRun,batch).some(row => row.employeeId === record.employeeId && row.periodMonth === run.periodMonth))
   );
   if (!employeePaymentLocked) return false;
   if (kind === 'attendance') return run.periodMonth === record.periodMonth;
@@ -54,16 +57,13 @@ const isAppendOnlyLoanAdjustment = (beforeLoan, afterLoan, user) => {
     || !Number.isFinite(Number(adjustment.amount)) || Number(adjustment.amount) === 0
     || typeof adjustment.reason !== 'string' || !adjustment.reason.trim()
     || typeof adjustment.date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(adjustment.date)) return false;
-  const immutableKeys = ['id','companyId','employeeId','totalAmount','monthlyInstallment','totalInstallments','startDate','reason'];
+  const immutableKeys = ['id','companyId','employeeId','totalAmount','monthlyInstallment','totalInstallments','installmentRounding','startDate','reason'];
   if (immutableKeys.some(key => !sameJson(beforeLoan[key], afterLoan[key]))) return false;
   const expectedBalance = Number((Number(beforeLoan.remainingAmount || 0) + Number(adjustment.amount)).toFixed(2));
   if (expectedBalance < 0 || Number(afterLoan.remainingAmount) !== expectedBalance) return false;
   const parsedAdjustmentDate = new Date(`${adjustment.date}T00:00:00Z`);
   if (Number.isNaN(parsedAdjustmentDate.getTime()) || parsedAdjustmentDate.toISOString().slice(0, 10) !== adjustment.date) return false;
-  const installment = Number(beforeLoan.monthlyInstallment || 0);
-  const expectedRemainingInstallments = expectedBalance === 0
-    ? 0
-    : installment > 0 ? Math.ceil(expectedBalance / installment) : Number(beforeLoan.remainingInstallments || 0);
+  const expectedRemainingInstallments = remainingLoanInstallments(beforeLoan,expectedBalance);
   if (Number(afterLoan.remainingInstallments) !== expectedRemainingInstallments) return false;
   const expectedStatus = expectedBalance === 0
     ? 'COMPLETED'
@@ -74,7 +74,7 @@ const isAppendOnlyLoanAdjustment = (beforeLoan, afterLoan, user) => {
   return true;
 };
 
-function validateClosedPayrollInputs(stored, incoming) {
+function validateClosedPayrollInputs(stored, incoming, user) {
   const checks = [
     ['attendance', 'attendance'],
     ['loans', 'loan'],
@@ -100,6 +100,7 @@ const payrollItemPaymentLockCore = (item) => {
   return {
     id:text(item.id), payrollRunId:text(item.payrollRunId), employeeId:text(item.employeeId), employeeNo:text(item.employeeNo),
     employeeName:text(item.employeeName), employeeNameEn:text(item.employeeNameEn), nationalIdOrIqama:text(item.nationalIdOrIqama),
+    payrollCategory:text(item.payrollCategory||'UNCLASSIFIED'),
     department:text(item.department), costCenterId:text(item.costCenterId), nationality:text(item.nationality),
     bankIban:text(item.bankIban), bankName:text(item.bankName), bankSwiftCode:text(item.bankSwiftCode),
     baseSalary:number(item.baseSalary), housingAllowance:number(item.housingAllowance), transportAllowance:number(item.transportAllowance),
@@ -113,7 +114,7 @@ const payrollItemPaymentLockCore = (item) => {
     loanDeduction:number(item.loanDeduction), penaltiesDeduction:number(item.penaltiesDeduction), otherDeductions:number(item.otherDeductions),
     totalDeductions:number(item.totalDeductions), netSalary:number(item.netSalary), gosiEmployerShare:number(item.gosiEmployerShare),
     totalCompanyBurden:number(item.totalCompanyBurden), saudiGosiPaymentMode:text(item.saudiGosiPaymentMode),
-    manualAddition:number(item.manualAddition), manualDeduction:number(item.manualDeduction), adjustmentNotes:text(item.adjustmentNotes),
+    roundingAdjustment:number(item.roundingAdjustment), manualAddition:number(item.manualAddition), manualDeduction:number(item.manualDeduction), adjustmentNotes:text(item.adjustmentNotes),
     entitlementStatus:text(item.entitlementStatus || 'PAYABLE'), entitlementReason:text(item.entitlementReason),
     entitlementDocumentRef:text(item.entitlementDocumentRef), entitlementHoldSource:text(item.entitlementHoldSource), isSuspended:Boolean(item.isSuspended),
     priorPeriodGross:number(item.priorPeriodGross), priorPeriodDeductions:number(item.priorPeriodDeductions), priorPeriodNet:number(item.priorPeriodNet),
@@ -123,9 +124,26 @@ const payrollItemPaymentLockCore = (item) => {
   };
 };
 
-function validatePayrollWorkflowChanges(storedRuns, incomingRuns, user) {
+function validatePayrollWorkflowChanges(storedRuns, incomingRuns, user, options = {}) {
   const before = new Map(asArray(storedRuns).map(run => [run.id, run]));
   const after = new Map(asArray(incomingRuns).map(run => [run.id, run]));
+  for (const run of asArray(incomingRuns)) {
+    const oldItems = new Map(asArray(before.get(run.id)?.items).map(item => [item.id,item]));
+    for (const item of asArray(run.items)) {
+      if (sameJson(oldItems.get(item.id),item)) continue;
+      if (['SETTLED','CANCELLED_WITH_DOCUMENT'].includes(item.entitlementStatus)
+        && (!String(item.entitlementReason || '').trim() || !String(item.entitlementDocumentRef || '').trim())) {
+        throw workflowError(409,'ENTITLEMENT_SETTLEMENT_DOCUMENT_REQUIRED');
+      }
+      if (['SETTLED','CANCELLED_WITH_DOCUMENT'].includes(item.entitlementStatus) && oldItems.get(item.id)?.entitlementStatus !== item.entitlementStatus
+        && (!String(item.entitlementSettlementAccount || '').trim() || !/^\d{4}-\d{2}-\d{2}$/.test(item.entitlementSettlementDate || '')
+          || Number.isNaN(Date.parse(item.entitlementSettlementDate)) || new Date(item.entitlementSettlementDate).toISOString().slice(0,10) !== item.entitlementSettlementDate)) {
+        throw workflowError(409,'ENTITLEMENT_SETTLEMENT_ACCOUNT_DATE_REQUIRED');
+      }
+
+    }
+  }
+
 
   for (const [runId, oldRun] of before) {
     const nextRun = after.get(runId);
@@ -138,10 +156,30 @@ function validatePayrollWorkflowChanges(storedRuns, incomingRuns, user) {
 
     const oldStatus = String(oldRun.status || 'DRAFT');
     const nextStatus = String(nextRun.status || 'DRAFT');
+    if (!sameJson(oldRun.entitlementOffsets,nextRun.entitlementOffsets)) {
+      const oldOffsets=asArray(oldRun.entitlementOffsets),nextOffsets=asArray(nextRun.entitlementOffsets);
+      if(!options.allowEntitlementOffsets||nextOffsets.length!==oldOffsets.length+1||!sameJson(oldOffsets,nextOffsets.slice(0,-1))) {
+        throw workflowError(409,'ENTITLEMENT_OFFSET_COMMAND_REQUIRED');
+      }
+    }
+
+    for (const oldItem of asArray(oldRun.items)) {
+      const nextItem=asArray(nextRun.items).find(item=>item.id===oldItem.id);
+      if (['SETTLED','CANCELLED_WITH_DOCUMENT'].includes(oldItem.entitlementStatus) && oldItem.entitlementStatus===nextItem?.entitlementStatus
+        && !sameJson({...payrollItemPaymentLockCore(oldItem),entitlementReason:'',entitlementDocumentRef:'',entitlementUpdatedAt:''},
+          {...payrollItemPaymentLockCore(nextItem),entitlementReason:'',entitlementDocumentRef:'',entitlementUpdatedAt:''})) {
+        throw workflowError(409,'SETTLED_ENTITLEMENT_FINANCIAL_IMMUTABLE');
+      }
+    }
     if (oldStatus !== nextStatus) {
       const transition = oldStatus + '->' + nextStatus;
       const allowed = new Set(['DRAFT->UNDER_REVIEW','UNDER_REVIEW->DRAFT','UNDER_REVIEW->APPROVED','APPROVED->UNDER_REVIEW','APPROVED->POSTED','POSTED->APPROVED']);
       if (!allowed.has(transition)) throw workflowError(409, 'INVALID_PAYROLL_STATUS_TRANSITION');
+      if (transition==='APPROVED->UNDER_REVIEW' && asArray(oldRun.entitlementOffsets).length) throw workflowError(409,'SETTLED_PAYROLL_CANNOT_REOPEN');
+      if (transition==='APPROVED->UNDER_REVIEW' && asArray(storedRuns).filter(run=>run.companyId===oldRun.companyId).some(run=>
+        asArray(run.paymentBatches).some(batch=>batch.status==='SCHEDULED' && salaryBatchAllocations(run,batch).some(row=>row.periodMonth===oldRun.periodMonth)))) {
+        throw workflowError(409,'SCHEDULED_PAYROLL_MUST_CANCEL_BEFORE_REOPEN');
+      }
       if (transition === 'UNDER_REVIEW->APPROVED' && !can(user, 'APPROVE_PAYROLL')) {
         throw workflowError(403, 'APPROVE_PAYROLL_REQUIRED');
       }
@@ -155,7 +193,8 @@ function validatePayrollWorkflowChanges(storedRuns, incomingRuns, user) {
         throw workflowError(403, 'MANAGE_PAYROLL_REQUIRED');
       }
       if ((transition === 'APPROVED->UNDER_REVIEW' || transition === 'POSTED->APPROVED')
-        && asArray(oldRun.paymentBatches).some(batch => batch.status === 'PAID')) {
+        && asArray(storedRuns).filter(run => run.companyId === oldRun.companyId).some(run => asArray(run.paymentBatches).some(batch => batch.status === 'PAID'
+          && salaryBatchAllocations(run,batch).some(row => row.periodMonth === oldRun.periodMonth)))) {
         throw workflowError(409, 'PAID_PAYROLL_CANNOT_REOPEN');
       }
     }
@@ -167,9 +206,10 @@ function validatePayrollWorkflowChanges(storedRuns, incomingRuns, user) {
         throw workflowError(409, 'APPROVED_PAYROLL_IDENTITY_IMMUTABLE');
       }
       const lockedEmployeeIds = new Set(
-        asArray(oldRun.paymentBatches)
-          .filter(batch => ['SCHEDULED','PAID'].includes(batch.status))
-          .flatMap(batch => asArray(batch.employeeIds))
+        [...asArray(oldRun.entitlementOffsets).map(offset=>offset.employeeId),...asArray(storedRuns).filter(run => run.companyId === oldRun.companyId).flatMap(run =>
+          asArray(run.paymentBatches).filter(batch => ['SCHEDULED','PAID'].includes(batch.status))
+            .flatMap(batch => salaryBatchAllocations(run,batch).filter(row => row.periodMonth === oldRun.periodMonth).map(row => row.employeeId))
+        )]
       );
       const oldItemsByEmployee = new Map(asArray(oldRun.items).map(item => [item.employeeId, item]));
       const nextItemsByEmployee = new Map(asArray(nextRun.items).map(item => [item.employeeId, item]));
@@ -178,6 +218,18 @@ function validatePayrollWorkflowChanges(storedRuns, incomingRuns, user) {
           throw workflowError(409, 'TRANSFERRED_EMPLOYEE_PAYROLL_IMMUTABLE');
         }
       }
+      const monthlyFinancialRows=items=>asArray(items).map(item=>{
+        const core=payrollItemPaymentLockCore(item)||{};
+        return {employeeId:core.employeeId,payrollCategory:core.payrollCategory,costCenterId:core.costCenterId,
+          baseSalary:core.baseSalary,housingAllowance:core.housingAllowance,transportAllowance:core.transportAllowance,
+          otherAllowances:core.otherAllowances,overtimeAmount:core.overtimeAmount,bonuses:core.bonuses,
+          totalGrossSalary:core.totalGrossSalary,totalDeductions:core.totalDeductions,gosiEmployeeShare:core.gosiEmployeeShare,
+          gosiEmployerShare:core.gosiEmployerShare,loanDeduction:core.loanDeduction,
+          currentNet:Number((Number(core.netSalary||0)-Number(core.priorPeriodNet||0)).toFixed(2))};
+      }).sort((a,b)=>String(a.employeeId).localeCompare(String(b.employeeId)));
+      const monthlyChanged=!sameJson(monthlyFinancialRows(oldRun.items),monthlyFinancialRows(nextRun.items));
+      if(monthlyChanged&&!can(user,'APPROVE_PAYROLL'))throw workflowError(403,'APPROVE_PAYROLL_REQUIRED');
+      if(monthlyChanged&&oldStatus==='POSTED'&&!can(user,'POST_PAYROLL'))throw workflowError(403,'POST_PAYROLL_REQUIRED');
     }
 
     const oldBatches = new Map(asArray(oldRun.paymentBatches).map(batch => [batch.id, batch]));
@@ -195,13 +247,17 @@ function validatePayrollWorkflowChanges(storedRuns, incomingRuns, user) {
         if (paymentTransition === 'SCHEDULED->PAID') {
           if (!can(user, 'CONFIRM_PAYROLL_PAYMENT')) throw workflowError(403, 'CONFIRM_PAYROLL_PAYMENT_REQUIRED');
           if (Number(oldBatch.totalAmount || 0) !== Number(nextBatch.totalAmount || 0)
-            || !sameJson(asArray(oldBatch.employeeIds), asArray(nextBatch.employeeIds))) {
+            || !sameJson(asArray(oldBatch.employeeIds), asArray(nextBatch.employeeIds))
+            || !sameJson(oldBatch.allocations, nextBatch.allocations)
+            || !sameJson(oldBatch.priorEntitlements, nextBatch.priorEntitlements)) {
             throw workflowError(409, 'PAYMENT_BATCH_SCOPE_CHANGED');
           }
         } else if (paymentTransition === 'PAID->SCHEDULED') {
           if (!can(user, 'REVERSE_PAYROLL_PAYMENT')) throw workflowError(403, 'REVERSE_PAYROLL_PAYMENT_REQUIRED');
           if (Number(oldBatch.totalAmount || 0) !== Number(nextBatch.totalAmount || 0)
             || !sameJson(asArray(oldBatch.employeeIds), asArray(nextBatch.employeeIds))
+            || !sameJson(oldBatch.allocations, nextBatch.allocations)
+            || !sameJson(oldBatch.priorEntitlements, nextBatch.priorEntitlements)
             || !sameJson(oldBatch.method, nextBatch.method)
             || !sameJson(oldBatch.scheduledDate, nextBatch.scheduledDate)
             || !sameJson(oldBatch.reference, nextBatch.reference)
@@ -236,6 +292,7 @@ function validatePayrollWorkflowChanges(storedRuns, incomingRuns, user) {
     if (!can(user, 'MANAGE_PAYROLL')) throw workflowError(403, 'MANAGE_PAYROLL_REQUIRED');
     if (!['DRAFT','UNDER_REVIEW'].includes(run.status)) throw workflowError(409, 'NEW_PAYROLL_RUN_INVALID_STATUS');
     if (asArray(run.paymentBatches).length) throw workflowError(409, 'NEW_PAYROLL_RUN_CANNOT_HAVE_PAYMENTS');
+    if (asArray(run.entitlementOffsets).length) throw workflowError(409,'NEW_PAYROLL_CANNOT_HAVE_OFFSETS');
   }
 }
 

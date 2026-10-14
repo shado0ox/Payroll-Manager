@@ -1,4 +1,4 @@
-import React from 'react';
+import React, {useState,useEffect} from 'react';
 import { 
   LayoutDashboard, 
   Users, 
@@ -13,7 +13,8 @@ import {
   ShieldCheck,
   UserCheck,
   LogOut,
-  CalendarDays
+  CalendarDays,
+  ChevronDown
 } from 'lucide-react';
 import { NavigationTab, UserRole, UserAccount, Company } from '../types';
 import { useLanguage } from '../i18n/LanguageContext';
@@ -66,24 +67,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
   ];
 
   const visibleNavItems = navItems.filter(item => hasPermission(currentUser, TAB_PERMISSION[item.id]));
+  const groups=[
+    {id:'people',label:language==='ar'?'الموظفون والدوام':'People and attendance',icon:Users,tabs:['employees','attendance','annual_leave']},
+    {id:'payroll',label:language==='ar'?'الرواتب والمحاسبة':'Payroll and accounting',icon:Banknote,tabs:['payroll_runs','loans_penalties','gosi','journals','reports']},
+    {id:'company',label:language==='ar'?'المنشأة والإعدادات':'Company and settings',icon:Building2,tabs:['company_profile','settings']},
+    {id:'access',label:language==='ar'?'المستخدمون والرقابة':'Users and audit',icon:ShieldCheck,tabs:['users','audit_logs']},
+  ];
+  const [openGroups,setOpenGroups]=useState(['people','payroll','company','access']);
+  useEffect(()=>{const group=groups.find(group=>group.tabs.includes(activeTab));if(group)setOpenGroups(previous=>previous.includes(group.id)?previous:[...previous,group.id]);},[activeTab]);
   const roleTitle = t(ROLE_DISPLAY[activeRole] || 'systemUser');
   const displayName = currentUser?.name || (isAdmin ? t('systemAdmin') : t('user'));
   const avatarLetter = currentUser?.name ? currentUser.name.charAt(0) : (language === 'ar' ? 'م' : 'U');
 
-  return (
-    <aside className="wafr-sidebar fixed inset-x-0 bottom-0 z-50 flex h-auto w-full shrink-0 flex-row border-t border-white/10 bg-[#081a27]/95 text-white backdrop-blur-xl md:sticky md:top-0 md:z-auto md:h-screen md:w-72 md:flex-col md:border-t-0">
-      {/* Brand Header: desktop only. On phones the bottom navigation keeps the workspace wide. */}
-      <div className="hidden border-b border-white/10 p-5 md:block">
-        <WafrBrand />
-        <div className="mt-4 flex items-center gap-2 rounded-2xl border border-white/10 bg-white/[.055] p-2.5">
-          {company?.logo ? <img src={company.logo} alt={company.nameAr} className="h-8 w-8 rounded-lg bg-white object-contain p-0.5" /> : <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-400/15 text-emerald-300"><Building2 className="h-4 w-4" /></span>}
-          <p className="min-w-0 truncate text-xs font-bold text-slate-200">{company ? (language === 'en' ? company.nameEn || company.nameAr : company.nameAr) : t('wageCompliance')}</p>
-        </div>
-      </div>
-
-      {/* Navigation: vertical on desktop, horizontally scrollable bottom bar on mobile. */}
-      <nav className="wafr-mobile-nav flex min-w-0 flex-1 gap-1 overflow-x-auto px-2 pb-[calc(.5rem+env(safe-area-inset-bottom))] pt-2 md:block md:space-y-1 md:overflow-y-auto md:p-4">
-        {visibleNavItems.map((item) => {
+  const renderItem=(item:typeof navItems[number])=>{
           const Icon = item.icon;
           const isActive = activeTab === item.id;
 
@@ -111,6 +107,29 @@ export const Sidebar: React.FC<SidebarProps> = ({
               </div>
             </button>
           );
+  };
+
+  return (
+    <aside className="wafr-sidebar fixed inset-x-0 bottom-0 z-50 flex h-auto w-full shrink-0 flex-row border-t border-white/10 bg-[#081a27]/95 text-white backdrop-blur-xl md:sticky md:top-0 md:z-auto md:h-screen md:w-72 md:flex-col md:border-t-0">
+      {/* Brand Header: desktop only. On phones the bottom navigation keeps the workspace wide. */}
+      <div className="hidden border-b border-white/10 p-5 md:block">
+        <WafrBrand />
+        <div className="mt-4 flex items-center gap-2 rounded-2xl border border-white/10 bg-white/[.055] p-2.5">
+          {company?.logo ? <img src={company.logo} alt={company.nameAr} className="h-8 w-8 rounded-lg bg-white object-contain p-0.5" /> : <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-400/15 text-emerald-300"><Building2 className="h-4 w-4" /></span>}
+          <p className="min-w-0 truncate text-xs font-bold text-slate-200">{company ? (language === 'en' ? company.nameEn || company.nameAr : company.nameAr) : t('wageCompliance')}</p>
+        </div>
+      </div>
+
+      {/* Navigation: vertical on desktop, horizontally scrollable bottom bar on mobile. */}
+      <nav className="wafr-mobile-nav flex min-w-0 flex-1 gap-1 overflow-x-auto px-2 pb-[calc(.5rem+env(safe-area-inset-bottom))] pt-2 md:block md:space-y-1 md:overflow-y-auto md:p-4">
+        {visibleNavItems.filter(item=>item.id==='dashboard').map(renderItem)}
+        {groups.map(group=>{
+          const items=visibleNavItems.filter(item=>group.tabs.includes(item.id));if(!items.length)return null;
+          const GroupIcon=group.icon,open=openGroups.includes(group.id),active=group.tabs.includes(activeTab);
+          return <div key={group.id} className="contents md:block md:pt-2">
+            <button type="button" data-testid={`nav-group-${group.id}`} aria-expanded={open} aria-controls={`nav-group-content-${group.id}`} onClick={()=>setOpenGroups(previous=>open?previous.filter(id=>id!==group.id):[...previous,group.id])} className={`hidden w-full items-center justify-between rounded-xl px-3 py-2.5 text-xs font-bold md:flex ${active?'bg-teal-400/10 text-teal-200':'text-slate-400 hover:bg-white/5 hover:text-white'}`}><span className="flex items-center gap-2"><GroupIcon className="h-4 w-4"/>{group.label}</span><ChevronDown className={`h-4 w-4 transition-transform ${open?'rotate-180':''}`}/></button>
+            <div id={`nav-group-content-${group.id}`} className={open?'contents md:block md:ms-3 md:border-s md:border-white/10 md:ps-1':'contents md:hidden'}>{items.map(renderItem)}</div>
+          </div>;
         })}
       </nav>
 

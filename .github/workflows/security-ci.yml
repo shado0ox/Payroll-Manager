@@ -4,7 +4,7 @@ on:
   pull_request:
     branches: [main]
   push:
-    branches: [security/tenant-storage-hardening]
+    branches: [main, security/tenant-storage-hardening]
 
 permissions:
   contents: read
@@ -20,6 +20,8 @@ jobs:
           node-version: '20.19'
           cache: npm
       - run: npm ci
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
       - run: npm run prepare:security
       - run: npm run test:security
       - run: npm run lint

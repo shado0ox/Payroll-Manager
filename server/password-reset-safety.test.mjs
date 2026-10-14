@@ -4,14 +4,15 @@ import fs from 'node:fs';
 
 const server = [
   fs.readFileSync(new URL('./database-schema.mjs', import.meta.url), 'utf8'),
+  fs.readFileSync(new URL('./tenant-credentials.mjs', import.meta.url), 'utf8'),
   fs.readFileSync(new URL('./user-record-policy.mjs', import.meta.url), 'utf8'),
   fs.readFileSync(new URL('./routes/user-routes.mjs', import.meta.url), 'utf8'),
 ].join('\n');
 
-test('startup checks for duplicate user emails before creating the unique email index', () => {
-  assert.match(server, /duplicateUserEmails/);
-  assert.match(server, /GROUP BY lower\(email\) HAVING count\(\*\) > 1/);
-  assert.match(server, /if \(!duplicateUserEmails\.rowCount\)[\s\S]*users_email_ci_unique/);
+test('startup checks tenant credential collisions before removing global uniqueness', () => {
+  assert.match(server, /GROUP BY company_id,identifier HAVING count\(DISTINCT account_group\)>1/);
+  assert.match(server, /TENANT_CREDENTIAL_COLLISION/);
+  assert.match(server, /PRIMARY KEY\(company_id,identifier\)/);
 });
 
 test('user writes reject duplicate emails case-insensitively with a dedicated error', () => {

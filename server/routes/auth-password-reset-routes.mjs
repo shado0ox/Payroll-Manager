@@ -80,8 +80,9 @@ export function createAuthPasswordResetRouter({
       const email = String(req.body?.email || '').trim().toLowerCase();
       const language = req.body?.language === 'en' ? 'en' : 'ar';
       let requestId = `email-code-${crypto.randomUUID()}`;
-      if (emailPattern.test(email)) {
-        const result = await pool.query(`SELECT id,email,name FROM ${q('users')} WHERE lower(email)=lower($1) AND is_active=true LIMIT 1`, [email]);
+      const companyCode = String(req.body?.companyCode || '').trim();
+      if (emailPattern.test(email) && companyCode) {
+        const result = await pool.query(`SELECT u.id,u.email,u.name FROM ${q('users')} u JOIN ${q('companies')} c ON c.company_code=$2 AND c.is_archived=false WHERE lower(u.email)=lower($1) AND u.is_active=true AND u.company_ids ? c.id LIMIT 1`, [email,companyCode]);
         if (result.rowCount) requestId = await createChallenge({ user:result.rows[0],purpose:'PASSWORD_RESET',language });
       }
       res.json({ ok:true,message:'PASSWORD_RESET_REQUEST_ACCEPTED',requestId });
@@ -175,8 +176,9 @@ export function createAuthPasswordResetRouter({
       const email = String(req.body?.email || '').trim().toLowerCase();
       const language = req.body?.language === 'en' ? 'en' : 'ar';
       const accepted = () => res.json({ ok:true,message:'USERNAME_RECOVERY_REQUEST_ACCEPTED' });
-      if (!emailPattern.test(email)) return accepted();
-      const result = await pool.query(`SELECT username,email,name FROM ${q('users')} WHERE lower(email)=lower($1) AND is_active=true LIMIT 1`, [email]);
+      const companyCode=String(req.body?.companyCode || '').trim();
+      if (!emailPattern.test(email)||!companyCode) return accepted();
+      const result = await pool.query(`SELECT u.username,u.email,u.name FROM ${q('users')} u JOIN ${q('companies')} c ON c.company_code=$2 AND c.is_archived=false WHERE lower(u.email)=lower($1) AND u.is_active=true AND u.company_ids ? c.id LIMIT 1`, [email,companyCode]);
       if (!result.rowCount) return accepted();
       const user = result.rows[0];
       await sendAccountEmail({

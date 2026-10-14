@@ -1,3 +1,4 @@
+import { validateLoanInstallmentPlan } from '../loan-installments.mjs';
 import express from 'express';
 
 export function createLoanPenaltyRouter({
@@ -29,6 +30,7 @@ router.put('/penalties/:id', auth, writeLimiter, async (req, res, next) => {
       || typeof record.reason !== 'string' || !record.reason.trim() || !Number.isFinite(Number(record.amount)) || Number(record.amount) < 0) {
       return res.status(400).json({ error:'INVALID_PENALTY_RECORD' });
     }
+    try { validateLoanInstallmentPlan(record); } catch { return res.status(400).json({error:'INVALID_WHOLE_RIYAL_LOAN_PLAN'}); }
     await client.query('BEGIN');
     const stored = await readLockedNormalizedState(client);
     const existingRecord = asArray(stored.penalties).find(item => item.id === record.id);
@@ -100,6 +102,7 @@ router.put('/loans/:id', auth, writeLimiter, async (req, res, next) => {
       || !Number.isInteger(Number(record.totalInstallments)) || !Number.isInteger(Number(record.remainingInstallments))) {
       return res.status(400).json({ error:'INVALID_LOAN_RECORD' });
     }
+    try { validateLoanInstallmentPlan(record); } catch { return res.status(400).json({error:'INVALID_WHOLE_RIYAL_LOAN_PLAN'}); }
     await client.query('BEGIN');
     const stored = await readLockedNormalizedState(client);
     const existingRecord = asArray(stored.loans).find(item => item.id === record.id);
@@ -144,6 +147,7 @@ router.delete('/loans/:id', auth, writeLimiter, async (req, res, next) => {
     if (!row.rowCount) throw workflowError(404, 'LOAN_NOT_FOUND');
     if (!req.user.company_ids.includes(row.rows[0].company_id)) throw workflowError(403, 'FORBIDDEN');
     const stored = await readLockedNormalizedState(client);
+    if (asArray(stored.payrollRuns).some(run => asArray(run.entitlementOffsets).some(offset => offset.loanId === req.params.id))) throw workflowError(409,'LOAN_HAS_SETTLEMENT_HISTORY');
     if (payrollSourceLocked(stored,'loan',row.rows[0].payload)) throw workflowError(409, 'PAYROLL_SOURCE_ENTRY_LOCKED');
     await client.query(`DELETE FROM ${q('loans')} WHERE id=$1`, [req.params.id]);
     const updated = await bumpStateVersion(client,req.user.id);
@@ -170,6 +174,7 @@ router.put('/temporary-earnings/:id', auth, writeLimiter, async (req, res, next)
       || !Number.isFinite(Number(record.amount)) || Number(record.amount) < 0 || typeof record.reason !== 'string' || !record.reason.trim()) {
       return res.status(400).json({ error:'INVALID_TEMPORARY_EARNING_RECORD' });
     }
+    try { validateLoanInstallmentPlan(record); } catch { return res.status(400).json({error:'INVALID_WHOLE_RIYAL_LOAN_PLAN'}); }
     await client.query('BEGIN');
     const stored = await readLockedNormalizedState(client);
     const existingRecord = asArray(stored.temporaryEarnings).find(item => item.id === record.id);

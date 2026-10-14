@@ -198,6 +198,87 @@ state = await loadState();
 assert.equal(findLoan(state,ids.loan)?.status,'COMPLETED','Loan payoff must close the schedule');
 assert.equal(findLoan(state,ids.loan)?.remainingAmount,0);
 
+
+// Amount allocations are persisted in the existing JSON payload, preserving legacy batches.
+source = findRun(await loadState(),ids.augustRun);
+source = {...source,totalBaseSalaries:50000,totalGrossSalaries:50000,totalDeductions:0,totalLoanDeductions:0,totalNetSalaries:50000,totalCompanyCost:50000,
+  items:[{...source.items[0],baseSalary:50000,totalGrossSalary:50000,totalDeductions:0,loanDeduction:0,netSalary:50000,totalCompanyBurden:50000}]};
+await request(`/api/payroll-runs/${source.id}`,{method:'PUT',body:JSON.stringify(source)});
+await request(`/api/payroll-runs/${source.id}/status`,{method:'POST',body:JSON.stringify({status:'APPROVED'})});
+const partialId = `partial-${key}`;
+const sourceAllocation = amount => ({employeeId:ids.employee,periodMonth:priorPeriod,sourcePayrollRunId:source.id,sourcePayrollItemId:source.items[0].id,amount});
+const partial = {...batch,id:partialId,batchNumber:`PARTIAL-${key}`,totalAmount:40000,allocations:[sourceAllocation(40000)]};
+await request(`/api/payroll-runs/${source.id}/payment-batches`,{method:'POST',body:JSON.stringify(partial)});
+await request(`/api/payroll-runs/${source.id}/payment-batches/${partialId}/status`,{method:'PATCH',body:JSON.stringify({status:'PAID'})});
+state = await loadState();
+assert.equal(findRun(state,ids.augustRun).items[0].netSalary,50000,'Partial payment must preserve the original entitlement snapshot');
+assert.equal(findRun(state,ids.septemberRun).items[0].priorPeriodNet,10000,'40000 payment must leave 10000 outstanding');
+const laterPeriod = new Date(Date.UTC(priorYear,priorMonthNumber+4,1)).toISOString().slice(0,7);
+const laterId = `partial-five-months-${key}`;
+const laterItem = {...payrollItem({id:`${laterId}-item`,runId:laterId,entitlementStatus:'PAYABLE',isSuspended:false,prior:true}),
+  entitlementHoldSource:undefined,priorPeriodGross:10000,priorPeriodDeductions:0,priorPeriodNet:10000,
+  priorPeriodDetails:[{periodMonth:priorPeriod,gross:10000,deductions:0,net:10000}],netSalary:11000,totalCompanyBurden:11000};
+const laterRun = payrollRun({id:laterId,periodMonth:laterPeriod,status:'UNDER_REVIEW',item:laterItem,totalGrossSalaries:11000,totalDeductions:0,totalNetSalaries:11000});
+await request(`/api/payroll-runs/${laterId}`,{method:'PUT',body:JSON.stringify(laterRun)});
+await request(`/api/payroll-runs/${laterId}/status`,{method:'POST',body:JSON.stringify({status:'APPROVED'})});
+const finalPartial = {...partial,id:`final-${key}`,batchNumber:`FINAL-${key}`,payrollRunId:laterId,periodMonth:laterPeriod,totalAmount:10000,allocations:[sourceAllocation(10000)]};
+await request(`/api/payroll-runs/${laterId}/payment-batches`,{method:'POST',body:JSON.stringify(finalPartial)});
+await request(`/api/payroll-runs/${laterId}/payment-batches/${finalPartial.id}/status`,{method:'PATCH',body:JSON.stringify({status:'PAID'})});
+const extra = {...finalPartial,id:`overpay-${key}`,totalAmount:1,allocations:[sourceAllocation(1)]};
+await assert.rejects(request(`/api/payroll-runs/${laterId}/payment-batches`,{method:'POST',body:JSON.stringify(extra)}),/409.*PAYROLL_ENTITLEMENT_OVERPAID/);
+await request(`/api/payroll-runs/${laterId}/payment-batches/${finalPartial.id}/status`,{method:'PATCH',body:JSON.stringify({status:'SCHEDULED',paymentReversalReason:'اختبار عكس دفعة جزئية'})});
+await request(`/api/payroll-runs/${laterId}/payment-batches/${finalPartial.id}/status`,{method:'PATCH',body:JSON.stringify({status:'CANCELLED'})});
+state = await loadState();
+assert.deepEqual(findRun(state,laterId).paymentBatches[0].allocations.map(({salarySnapshot,...allocation})=>allocation),[sourceAllocation(10000)],'Allocations must survive status changes and reload');
+
+const offsetLoanId = `offset-loan-${key}`;
+await request(`/api/loans/${offsetLoanId}`,{method:'PUT',body:JSON.stringify({id:offsetLoanId,companyId,employeeId:ids.employee,totalAmount:10000,
+  monthlyInstallment:1000,totalInstallments:10,remainingInstallments:10,remainingAmount:10000,startDate:priorPeriod,status:'ACTIVE',reason:'سلفة اختبار تسوية الرصيد',adjustments:[]})});
+const offset = {id:`offset-${key}`,employeeId:ids.employee,sourcePayrollItemId:ids.augustItem,amount:10000,reason:'تسوية مقابل سلفة موثقة',
+  documentRef:`DOC-${key}`,counterAccount:'1105',date:`${laterPeriod}-12`,loanId:offsetLoanId};
+const offsetResult = (await request(`/api/payroll-runs/${ids.augustRun}/entitlement-offsets`,{method:'POST',body:JSON.stringify(offset)})).body;
+assert.equal(offsetResult.record.items[0].netSalary,50000,'Offset must not rewrite the earned salary snapshot');
+assert.equal(offsetResult.loan.remainingAmount,0,'Offset must clear the linked loan in the same transaction');
+state=await loadState();
+assert.equal(findRun(state,ids.septemberRun).items[0].priorPeriodNet,0);
+assert.equal(findLoan(state,offsetLoanId).remainingAmount,0);
+await assert.rejects(request(`/api/payroll-runs/${ids.augustRun}/entitlement-offsets`,{method:'POST',body:JSON.stringify({...offset,id:`retry-${key}`})}),/409.*OFFSET_DUPLICATE_DOCUMENT/);
+const offsetReversal = {...offset,id:`reverse-offset-${key}`,amount:-10000,reversesOffsetId:offset.id,documentRef:`DOC-R-${key}`,reason:'عكس التسوية التجريبية'};
+await request(`/api/payroll-runs/${ids.augustRun}/entitlement-offsets`,{method:'POST',body:JSON.stringify(offsetReversal)});
+state=await loadState();
+assert.equal(findRun(state,ids.septemberRun).items[0].priorPeriodNet,10000,'Offset reversal must restore salary debt exactly once');
+assert.equal(findLoan(state,offsetLoanId).remainingAmount,10000,'Offset reversal must restore linked loan principal exactly once');
+assert.equal(findRun(state,ids.augustRun).entitlementOffsets.length,2);
+await assert.rejects(request(`/api/loans/${offsetLoanId}`,{method:'DELETE'}),/409.*LOAN_HAS_SETTLEMENT_HISTORY/);
+
+const legacyPeriod = new Date(Date.UTC(priorYear,priorMonthNumber+5,1)).toISOString().slice(0,7);
+const legacyId = `legacy-settlement-run-${key}`;
+const legacyItem = {...payrollItem({id:`${legacyId}-item`,runId:legacyId,entitlementStatus:'HELD',entitlementReason:'مراجعة تسوية',isSuspended:false}),
+  loanDeduction:0,totalDeductions:0,netSalary:1000,totalCompanyBurden:1000};
+await request(`/api/payroll-runs/${legacyId}`,{method:'PUT',body:JSON.stringify(payrollRun({id:legacyId,periodMonth:legacyPeriod,status:'UNDER_REVIEW',item:legacyItem,totalGrossSalaries:1000,totalDeductions:0,totalNetSalaries:1000}))});
+await request(`/api/payroll-runs/${legacyId}/status`,{method:'POST',body:JSON.stringify({status:'APPROVED'})});
+const legacySettlement = {id:`legacy-settlement-${key}`,companyId,employeeId:ids.employee,employeeNo:legacyItem.employeeNo,employeeName:legacyItem.employeeName,
+  periodMonth:legacyPeriod,periodStart:`${legacyPeriod}-01`,periodEnd:periodEnd(legacyPeriod),amount:1000,reason:'HELD_PAYROLL',
+  sourcePayrollRunId:legacyId,sourcePayrollItemId:legacyItem.id,dedupeKey:`settlement-${key}`,status:'PAID',paymentMethod:'BANK_TRANSFER',
+  paymentDate:`${legacyPeriod}-10`,createdAt:new Date().toISOString(),paidAt:new Date().toISOString()};
+await request('/api/payroll-settlements',{method:'POST',body:JSON.stringify(legacySettlement)});
+assert.equal(findRun(await loadState(),legacyId).items[0].entitlementStatus,'SETTLED','Legacy settlement must execute under the state lock');
+await request(`/api/payroll-settlements/${legacySettlement.id}/reverse`,{method:'POST',body:JSON.stringify({reversalReason:'اختبار عكس التسوية القديمة'})});
+assert.equal(findRun(await loadState(),legacyId).items[0].entitlementStatus,'HELD');
+
+const integerLoanId=`integer-loan-${key}`;
+const integerLoan={id:integerLoanId,companyId,employeeId:ids.employee,totalAmount:1000,monthlyInstallment:166,
+  totalInstallments:6,remainingInstallments:6,remainingAmount:1000,startDate:'2099-01',status:'ACTIVE',reason:'ستة أقساط دون هللات',installmentRounding:'WHOLE_SAR_LAST'};
+await request(`/api/loans/${integerLoanId}`,{method:'PUT',body:JSON.stringify(integerLoan)});
+assert.equal(findLoan(await loadState(),integerLoanId).installmentRounding,'WHOLE_SAR_LAST','Whole-riyal policy must survive PostgreSQL save and reload');
+await assert.rejects(request(`/api/loans/${integerLoanId}`,{method:'PUT',body:JSON.stringify({...integerLoan,monthlyInstallment:166.67})}),/400.*INVALID_WHOLE_RIYAL_LOAN_PLAN/);
+
+const categoryEmployeeId=`category-employee-${key}`;
+const categoryEmployee={...activeEmployee,id:categoryEmployeeId,employeeNo:`CAT${key.slice(-12)}`,email:`category-${key}@example.test`,payrollCategory:'WORKER'};
+await request(`/api/employees/${categoryEmployeeId}`,{method:'PUT',body:JSON.stringify(categoryEmployee)});
+assert.equal((await loadState()).employees.find(row=>row.id===categoryEmployeeId).payrollCategory,'WORKER','Expense category must survive database save and reload');
+await assert.rejects(request(`/api/employees/${categoryEmployeeId}`,{method:'PUT',body:JSON.stringify({...categoryEmployee,payrollCategory:'UNKNOWN'})}),/400.*INVALID_PAYROLL_CATEGORY/);
+
 const db = new Pool({ connectionString:databaseUrl,ssl:false });
 try {
   const [runRow,batchRow,loanRow,auditRows] = await Promise.all([
@@ -206,7 +287,7 @@ try {
     db.query(`SELECT status,remaining_amount::text,remaining_installments FROM "${schema}".loans WHERE id=$1`,[ids.loan]),
     db.query(`SELECT action FROM "${schema}".application_audit_logs WHERE company_id=$1 AND entity_id=$2`,[companyId,ids.employee]),
   ]);
-  assert.deepEqual(runRow.rows[0],{ status:'UNDER_REVIEW',approved_at:null,posted_at:null });
+  assert.deepEqual(runRow.rows[0],{ status:'APPROVED',approved_at:runRow.rows[0].approved_at,posted_at:null });
   assert.equal(batchRow.rows[0]?.status,'CANCELLED');
   assert.equal(loanRow.rows[0]?.status,'COMPLETED');
   assert.equal(Number(loanRow.rows[0]?.remaining_amount),0);
@@ -216,4 +297,4 @@ try {
   await db.end();
 }
 
-console.log('Payroll acceptance passed on an isolated database: create -> suspend/release -> late prior payment -> recalculate -> reverse/cancel payment -> reverse posting -> settle loan.');
+console.log('Payroll acceptance passed on an isolated database: create -> suspend/release -> late prior payment -> recalculate -> reverse/cancel payment -> reverse posting -> settle loan -> 50000/40000/10000 partial payments after five months -> reject overpayment -> reverse/cancel.');

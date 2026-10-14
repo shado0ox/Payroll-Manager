@@ -1,3 +1,4 @@
+import { wholeRiyalLoanPlan, remainingLoanInstallments, loanInstallmentAmount } from '../../server/loan-installments.mjs';
 import React, { useState, useMemo } from 'react';
 import { 
   Receipt, 
@@ -104,9 +105,7 @@ export const LoansPenaltiesView: React.FC<LoansPenaltiesViewProps> = ({
       return {
         ...loan,
         remainingAmount,
-        remainingInstallments: remainingAmount === 0
-          ? 0
-          : loan.monthlyInstallment > 0 ? Math.ceil(remainingAmount / loan.monthlyInstallment) : loan.remainingInstallments,
+        remainingInstallments: remainingLoanInstallments(loan,remainingAmount),
         status: remainingAmount === 0 ? 'COMPLETED' as const : loan.status,
       };
     });
@@ -144,6 +143,11 @@ export const LoansPenaltiesView: React.FC<LoansPenaltiesViewProps> = ({
     reason: '',
   });
 
+
+  const proposedLoanPlan=useMemo(()=>{
+    try{return wholeRiyalLoanPlan(loanForm.totalAmount,loanForm.totalInstallments,loanForm.startDate);}catch{return null;}
+  },[loanForm.totalAmount,loanForm.totalInstallments,loanForm.startDate]);
+
   // New Penalty Form
   const [penaltyForm, setPenaltyForm] = useState({
     employeeId: companyEmployees[0]?.id || '',
@@ -163,12 +167,17 @@ export const LoansPenaltiesView: React.FC<LoansPenaltiesViewProps> = ({
     e.preventDefault();
     if (!loanForm.employeeId) return;
 
+    let plan;
+    try { plan=wholeRiyalLoanPlan(loanForm.totalAmount,loanForm.totalInstallments,loanForm.startDate); }
+    catch { alert(tr('أدخل مبلغًا صحيحًا بالريال وعدد أشهر من ١ إلى ٦٠ لا يتجاوز مبلغ السلفة.', 'Enter whole riyals and 1–60 months, no more than the loan amount.')); return; }
     const newLoan: LoanSchedule = {
+      ...(editingLoan || {}),
       id: editingLoan?.id || `loan-${Date.now()}`,
       companyId: company.id,
       employeeId: loanForm.employeeId,
       totalAmount: loanForm.totalAmount,
-      monthlyInstallment: loanForm.monthlyInstallment,
+      monthlyInstallment: plan.monthlyInstallment,
+      installmentRounding: 'WHOLE_SAR_LAST',
       totalInstallments: loanForm.totalInstallments,
       remainingInstallments: editingLoan
         ? Math.max(0, loanForm.totalInstallments - (editingLoan.totalInstallments - editingLoan.remainingInstallments))
@@ -181,6 +190,7 @@ export const LoansPenaltiesView: React.FC<LoansPenaltiesViewProps> = ({
       reason: loanForm.reason,
     };
 
+    newLoan.remainingInstallments=remainingLoanInstallments(newLoan);
     onSaveLoan(newLoan);
     setIsLoanModalOpen(false);
     setEditingLoan(null);
@@ -207,7 +217,7 @@ export const LoansPenaltiesView: React.FC<LoansPenaltiesViewProps> = ({
   };
 
   const openEditLoan = (loan: LoanSchedule) => {
-    setEditingLoan(loan);
+    setEditingLoan(loans.find(source => source.id === loan.id) || loan);
     setLoanForm({
       employeeId: loan.employeeId, totalAmount: loan.totalAmount, monthlyInstallment: loan.monthlyInstallment,
       totalInstallments: loan.totalInstallments, startDate: loan.startDate, reason: loan.reason,
@@ -231,7 +241,7 @@ export const LoansPenaltiesView: React.FC<LoansPenaltiesViewProps> = ({
 
   const totalMonthlyDeductionExpected = companyLoans
     .filter(l => l.status === 'ACTIVE')
-    .reduce((sum, l) => sum + l.monthlyInstallment, 0);
+    .reduce((sum, l) => sum + loanInstallmentAmount(l), 0);
 
   return (
     <div data-no-translate className="space-y-6">
@@ -382,7 +392,7 @@ export const LoansPenaltiesView: React.FC<LoansPenaltiesViewProps> = ({
                           {formatSAR(loan.totalAmount + (loan.adjustments || []).reduce((sum, item) => sum + item.amount, 0))}
                           {(loan.adjustments || []).length > 0 && <div className="text-[10px] font-medium text-slate-400">{tr('الأصل', 'Original')}: {formatSAR(loan.totalAmount)} · {tr('تسويات', 'Adjustments')}: {(loan.adjustments || []).length}</div>}
                         </td>
-                        <td className="py-3 px-4 font-semibold text-rose-700">{formatSAR(loan.monthlyInstallment)}</td>
+                        <td className="py-3 px-4 font-semibold text-rose-700">{formatSAR(loanInstallmentAmount(loan))}</td>
                         <td className="py-3 px-4 font-mono font-bold text-slate-700">{loan.remainingInstallments} {tr('من', 'of')} {loan.totalInstallments}</td>
                         <td className="py-3 px-4 font-extrabold text-amber-800 font-mono">{formatSAR(loan.remainingAmount)}</td>
                         <td className="py-3 px-4 font-mono text-slate-600">{loan.startDate}</td>
@@ -532,19 +542,20 @@ export const LoansPenaltiesView: React.FC<LoansPenaltiesViewProps> = ({
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block font-semibold text-slate-700 mb-1">{tr('إجمالي مبلغ السلفة (SR) *', 'Total loan amount (SR) *')}</label>
+                  <label htmlFor="loan-total-amount" className="block font-semibold text-slate-700 mb-1">{tr('إجمالي مبلغ السلفة (SR) *', 'Total loan amount (SR) *')}</label>
                   <input
                     type="number"
                     required
                     min="100"
-                    step="0.01"
+                    id="loan-total-amount"
+                    step="1"
                     value={loanForm.totalAmount}
                     onChange={(e) => {
                       const total = parseFloat(e.target.value) || 0;
                       setLoanForm({ 
                         ...loanForm, 
                         totalAmount: total,
-                        monthlyInstallment: Math.round((total / (loanForm.totalInstallments || 1)) * 100) / 100
+                        monthlyInstallment: Math.floor(total / (loanForm.totalInstallments || 1))
                       });
                     }}
                     className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold"
@@ -552,19 +563,21 @@ export const LoansPenaltiesView: React.FC<LoansPenaltiesViewProps> = ({
                 </div>
 
                 <div>
-                  <label className="block font-semibold text-slate-700 mb-1">{tr('عدد أشهر السداد *', 'Repayment months *')}</label>
+                  <label htmlFor="loan-month-count" className="block font-semibold text-slate-700 mb-1">{tr('عدد أشهر السداد *', 'Repayment months *')}</label>
                   <input
                     type="number"
                     required
                     min="1"
                     max="60"
+                    id="loan-month-count"
+                    step="1"
                     value={loanForm.totalInstallments}
                     onChange={(e) => {
                       const inst = parseInt(e.target.value) || 1;
                       setLoanForm({ 
                         ...loanForm, 
                         totalInstallments: inst,
-                        monthlyInstallment: Math.round((loanForm.totalAmount / inst) * 100) / 100
+                        monthlyInstallment: Math.floor(loanForm.totalAmount / inst)
                       });
                     }}
                     className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl"
@@ -572,10 +585,12 @@ export const LoansPenaltiesView: React.FC<LoansPenaltiesViewProps> = ({
                 </div>
               </div>
 
-              <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-200 flex items-center justify-between">
-                <span className="font-semibold text-emerald-900">{tr('القسط الشهري المحسوب:', 'Calculated monthly installment:')}</span>
-                <span className="font-bold text-emerald-800 text-sm">{formatSAR(loanForm.monthlyInstallment)}</span>
-              </div>
+              <div><label htmlFor="loan-start-month" className="block font-semibold text-slate-700 mb-1">{tr('شهر أول قسط','First installment month')}</label><input id="loan-start-month" type="month" required value={loanForm.startDate} onChange={event=>setLoanForm({...loanForm,startDate:event.target.value})} className="w-full px-3 py-2 border rounded-xl" /></div>
+              {proposedLoanPlan&&<div className="p-3 bg-emerald-50 rounded-xl border border-emerald-200">
+                <p className="font-semibold text-emerald-900">{tr('اقتراح الجدولة: الباقي في الشهر الأخير', 'Suggested schedule: remainder in the final month')}</p>
+                <div className="max-h-48 overflow-auto mt-2"><table data-testid="loan-schedule-preview" className="w-full text-sm"><thead><tr><th>{tr('الشهر','Month')}</th><th>{tr('القسط بالريال','Installment (SAR)')}</th></tr></thead><tbody>{proposedLoanPlan.schedule.map(row=><tr key={row.periodMonth}><td className="py-1 text-center">{row.periodMonth}</td><td className="text-center">{row.amount}</td></tr>)}</tbody><tfoot><tr className="font-bold"><td>{tr('الإجمالي','Total')}</td><td className="text-center">{loanForm.totalAmount}</td></tr></tfoot></table></div>
+                <p className="mt-2 text-xs text-emerald-800">{tr('تُطبّق عند اعتماد الأشهر؛ التعليق يؤجل الخصم ولا يلغي الرصيد.', 'Applied through approved payroll months; pausing delays deductions and preserves the balance.')}</p>
+              </div>}
 
               <div>
                 <label className="block font-semibold text-slate-700 mb-1">{tr('سبب السلفة', 'Loan reason')}</label>

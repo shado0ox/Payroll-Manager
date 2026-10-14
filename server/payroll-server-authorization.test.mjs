@@ -27,7 +27,7 @@ test('approved payroll locks transferred employees and paid payment batches, not
 
 test('payroll source inputs lock only for employees reserved or paid in a transfer batch', () => {
   assert.match(server, /employeePaymentLocked/);
-  assert.match(server, /asArray\(batch\.employeeIds\)\.includes\(record\.employeeId\)/);
+  assert.match(server, /salaryBatchAllocations\(paymentRun,batch\)/);
   assert.match(server, /if \(!employeePaymentLocked\) return false/);
   assert.match(server, /PAYROLL_SOURCE_ENTRY_LOCKED/);
 });

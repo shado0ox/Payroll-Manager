@@ -1,3 +1,5 @@
+import { loanInstallmentAmount } from '../../server/loan-installments.mjs';
+import { monthlySalaryNet, salarySourceSummary, effectiveEmployeeSalaryLoans, salaryAccountStatement } from '../../server/payroll-ledger.mjs';
 import React from 'react';
 import { 
   X, 
@@ -54,7 +56,9 @@ export const EmployeeStatementModal: React.FC<EmployeeStatementModalProps> = ({
     .filter(h => h.item !== undefined)
     .sort((a, b) => b.run.periodMonth.localeCompare(a.run.periodMonth));
 
-  const activeLoan = loans.find(l => l.companyId === company.id && l.employeeId === employee.id && l.status === 'ACTIVE');
+  const salaryLedger=salaryAccountStatement(payrollRuns,company.id,employee.id,settlements);
+  const effectiveLoans=effectiveEmployeeSalaryLoans(loans,payrollRuns,company.id,employee.id);
+  const activeLoan=effectiveLoans.filter(loan=>loan.status==='ACTIVE'&&loan.effectiveRemaining>0).map(loan=>({...loan,remainingAmount:loan.effectiveRemaining}))[0];
   const employeePaidSettlements = settlements.filter(item => item.companyId === company.id && item.employeeId === employee.id && item.status === 'PAID');
   const employeePaidSettlementTotal = roundAmount(employeePaidSettlements.reduce((sum, item) => sum + Number(item.amount || 0), 0));
   const selectedHistory = employeeHistory.find(history => history.run.periodMonth === periodMonth);
@@ -316,7 +320,7 @@ export const EmployeeStatementModal: React.FC<EmployeeStatementModalProps> = ({
                 <div>
                   <span className="text-xs text-emerald-200 block">{tr('صافي الراتب المستحق للتحويل:', 'Net Payable:')}</span>
                   <div className="text-2xl sm:text-3xl font-black font-mono mt-0.5">
-                    {formatSAR(latestItem.netSalary)}
+                    {formatSAR(monthlySalaryNet(latestItem))}
                   </div>
                 </div>
                 <div className="text-left sm:text-right">
@@ -346,7 +350,7 @@ export const EmployeeStatementModal: React.FC<EmployeeStatementModalProps> = ({
                 </div>
                 <div>
                   <span className="text-slate-500 block">{tr('القسط الشهري:', 'Monthly Installment:')}</span>
-                  <span className="font-bold text-slate-900">{formatSAR(activeLoan.monthlyInstallment)}</span>
+                  <span className="font-bold text-slate-900">{formatSAR(loanInstallmentAmount({...activeLoan,remainingAmount:activeLoan.effectiveRemaining}))}</span>
                 </div>
                 <div>
                   <span className="text-slate-500 block">{tr('الأقساط المتبقية:', 'Remaining Installments:')}</span>
@@ -360,6 +364,7 @@ export const EmployeeStatementModal: React.FC<EmployeeStatementModalProps> = ({
             </div>
           )}
 
+          <section className="mb-5" data-testid="employee-salary-ledger"><h3 className="mb-2 text-sm font-bold">{tr('كشف حساب مستحقات الرواتب','Salary entitlement account statement')}</h3><p className="mb-3 text-xs text-slate-600">{tr('الدائن استحقاق للموظف، والمدين صرف أو تسوية. الرصيد الموجب مستحق لم يُسدّد.','Credit is earned salary; debit is payment or settlement. A positive balance remains payable.')}</p><div className="mb-3 flex flex-wrap gap-4 text-xs font-bold"><span>{tr('الرصيد المستحق','Outstanding')}: {formatSAR(salaryLedger.balance)}</span><span>{tr('محجوز بدفعات مجدولة','Reserved by scheduled payments')}: {formatSAR(salaryLedger.reserved)}</span></div><div className="overflow-x-auto rounded-xl border"><table className="w-full text-xs"><thead><tr className="bg-slate-100"><th className="p-2">{tr('التاريخ','Date')}</th><th>{tr('شهر الاستحقاق','Salary month')}</th><th>{tr('الحركة / المرجع','Entry / reference')}</th><th>{tr('مدين','Debit')}</th><th>{tr('دائن','Credit')}</th><th>{tr('الرصيد','Balance')}</th></tr></thead><tbody>{salaryLedger.entries.map(row=><tr key={row.id} className="border-t"><td className="p-2">{row.date}</td><td>{row.periodMonth}</td><td>{{WAGE:tr('استحقاق راتب','Salary entitlement'),PAYMENT:tr('صرف راتب','Salary payment'),OFFSET:tr('تسوية موثقة','Documented offset'),OFFSET_REVERSAL:tr('عكس تسوية','Offset reversal')}[row.kind]} · {row.reference}</td><td>{formatSAR(row.debit)}</td><td>{formatSAR(row.credit)}</td><td className="font-bold">{formatSAR(row.balance)}</td></tr>)}</tbody><tfoot><tr className="border-t bg-slate-100 font-bold"><td colSpan={3} className="p-2">{tr('الإجمالي','Total')}</td><td>{formatSAR(salaryLedger.totalDebit)}</td><td>{formatSAR(salaryLedger.totalCredit)}</td><td>{formatSAR(salaryLedger.balance)}</td></tr></tfoot></table></div></section>
           {/* Historical Activity Table */}
           <div>
             <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider mb-2 flex items-center gap-2">
@@ -373,7 +378,10 @@ export const EmployeeStatementModal: React.FC<EmployeeStatementModalProps> = ({
                     <th className="py-2.5 px-3">{tr('الشهر والفترة', 'Period')}</th>
                     <th className="py-2.5 px-3">{tr('الراتب الإجمالي', 'Gross Salary')}</th>
                     <th className="py-2.5 px-3">{tr('الاستقطاعات', 'Deductions')}</th>
-                    <th className="py-2.5 px-3">{tr('صافي المحول', 'Net Transfer')}</th>
+                    <th className="py-2.5 px-3">{tr('صافي استحقاق الشهر', 'Monthly net entitlement')}</th>
+                    <th className="py-2.5 px-3">{tr('المدفوع', 'Paid')}</th>
+                    <th className="py-2.5 px-3">{tr('التسويات', 'Offsets')}</th>
+                    <th className="py-2.5 px-3">{tr('المتبقي المستحق', 'Outstanding')}</th>
                     <th className="py-2.5 px-3">{tr('حالة المسير', 'Payroll Status')}</th>
                   </tr>
                 </thead>
@@ -383,7 +391,10 @@ export const EmployeeStatementModal: React.FC<EmployeeStatementModalProps> = ({
                       <td className="py-2.5 px-3 font-semibold text-slate-800">{run.periodMonth}</td>
                       <td className="py-2.5 px-3">{formatSAR(item!.totalGrossSalary)}</td>
                       <td className="py-2.5 px-3 text-rose-600">{formatSAR(item!.totalDeductions)}</td>
-                      <td className="py-2.5 px-3 font-bold text-emerald-800">{formatSAR(item!.netSalary)}</td>
+                      <td className="py-2.5 px-3 font-bold text-emerald-800">{formatSAR(monthlySalaryNet(item))}</td>
+                      <td className="py-2.5 px-3">{formatSAR(salarySourceSummary(payrollRuns,run,item,settlements).paid)}</td>
+                      <td className="py-2.5 px-3">{formatSAR(salarySourceSummary(payrollRuns,run,item,settlements).offsets)}</td>
+                      <td className="py-2.5 px-3 font-bold text-amber-800">{formatSAR(salarySourceSummary(payrollRuns,run,item,settlements).outstanding)}</td>
                       <td className="py-2.5 px-3">
                         <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 text-[10px] font-semibold">
                           {run.status}

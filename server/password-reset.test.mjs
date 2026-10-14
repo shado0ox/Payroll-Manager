@@ -63,10 +63,10 @@ test('login accepts either username or email inside the selected company', () =>
   assert.match(login, /اسم المستخدم أو البريد الإلكتروني/);
 });
 
-test('username recovery uses email only and does not enumerate accounts', () => {
+test('username recovery uses email and company and does not enumerate accounts', () => {
   assert.match(passwordResetRoutes, /username-recovery\/request/);
   assert.match(passwordResetRoutes, /USERNAME_RECOVERY_REQUEST_ACCEPTED/);
-  assert.match(passwordResetRoutes, /WHERE lower\(email\)=lower\(\$1\) AND is_active=true LIMIT 1/);
+  assert.match(passwordResetRoutes, /WHERE lower\(u.email\)=lower\(\$1\) AND u.is_active=true AND u.company_ids \? c.id LIMIT 1/);
   assert.match(passwordResetRoutes, /escapeHtml\(user\.username\)/);
   assert.match(api, /usernameRecoveryRequest/);
   assert.match(login, /نسيت اسم المستخدم/);

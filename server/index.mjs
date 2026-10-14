@@ -1,3 +1,4 @@
+import { createPortalRegistrationApprovalRouter } from './routes/portal-registration-approval-routes.mjs';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -129,7 +130,7 @@ const {
 const migrate = createDatabaseMigrator({
   pool,q,schema,bcrypt,replaceNormalizedPayrollData,replaceNormalizedOperationsData,replaceNormalizedCoreData,
 });
-const { addStateEventClient,disconnectStateEventClients,broadcastStateUpdate,bumpStateVersion,readLockedNormalizedState } = createStateRuntime({
+const { addStateEventClient,disconnectStateEventClients,broadcastStateUpdate,bumpStateVersion,lockStateVersion,readLockedNormalizedState } = createStateRuntime({
   q,buildId,workflowError,readNormalizedApplicationState,
 });
 const { run:runHrLifecycleAlerts } = createHrLifecycleAlertService({
@@ -235,6 +236,8 @@ app.use('/api/auth', createAuthPasswordResetRouter({
 app.use('/api/auth', createAuthLoginRouter({ loginLimiter, pool, q, sha256, permissionsFor }));
 app.use('/api/auth', createAuthSessionRouter({ auth, pool, q, cookieValue, sha256, permissionsFor }));
 
+app.use('/api', createPortalRegistrationApprovalRouter({auth,writeLimiter,pool,q,can,bumpStateVersion,appendStateAudit,broadcastStateUpdate}));
+
 app.use('/api', createEmployeePortalRouter({ auth,writeLimiter,pool,q,bumpStateVersion,appendStateAudit,broadcastStateUpdate }));
 
 app.use('/api',createGosiRouter({ auth,writeLimiter,pool,q,can,workflowError,bumpStateVersion,appendStateAudit,broadcastStateUpdate }));
@@ -325,6 +328,7 @@ app.use('/api', createPayrollRouter({
   workflowError,
   readLockedNormalizedState,
   readNormalizedApplicationState,
+  lockStateVersion,
   validatePayrollWorkflowChanges,
   validatePayrollCarryForwardState,
   appendPayrollFinancialAudit,

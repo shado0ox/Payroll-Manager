@@ -94,10 +94,11 @@ test('payslip list is restricted to paid batches and the authenticated employee 
   const layer = router.stack.find(candidate => candidate.route?.path === '/employee-portal/payslips');
   const res = response();
   await layer.route.stack.at(-1).handle({ user:{ role:'EMPLOYEE',employee_id:'employee-a',company_ids:['company-a'] } },res,error => { if (error) throw error; });
-  assert.deepEqual(queries.map(query => query.params),[['employee-a',['company-a']],['employee-a',['company-a']]]);
+  assert.deepEqual(queries.map(query => query.params),[['employee-a',['company-a']],['employee-a',['company-a']],['employee-a',['company-a']]]);
   assert.match(queries[0].sql,/b\.status='PAID'/);
   assert.match(queries[0].sql,/direct_item\.employee_id=\$1/);
   assert.match(queries[1].sql,/i\.employee_id=\$1/);
+  assert.match(queries[2].sql,/employee_id=\$1 AND company_id=ANY/);
   assert.deepEqual(res.body,{ payslips:[] });
 });
 

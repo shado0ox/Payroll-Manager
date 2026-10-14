@@ -23,6 +23,8 @@ export const CompanyAccountsTab = React.memo<CompanyAccountsTabProps>(({ formDat
 
   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
     {Object.entries({
+      administrativeSalariesExpenseAccount:tr('حساب مصروف الرواتب الإدارية (الراتب والبدلات)','Administrative salary expense account (salary and allowances)'),
+      workerWagesExpenseAccount:tr('حساب مصروف أجور العاملين (الراتب والبدلات)','Worker wages expense account (salary and allowances)'),
       salariesExpenseAccount: tr('حساب مصروف الرواتب الأساسية', 'Basic salaries expense account'),
       housingAllowanceAccount: tr('حساب مصروف بدل السكن', 'Housing allowance expense account'),
       transportAllowanceAccount: tr('حساب مصروف بدل النقل', 'Transport allowance expense account'),

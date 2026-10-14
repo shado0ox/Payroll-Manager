@@ -37,7 +37,7 @@ export function createAuthorizationService({ pool,q,cookieValue,sha256,developer
         LEFT JOIN ${q('users')} admin_user ON admin_user.id=s.user_id
         LEFT JOIN ${q('employee_portal_accounts')} p ON p.id=s.portal_account_id
         LEFT JOIN ${q('employees')} e ON e.id=p.employee_id
-        WHERE s.token_hash=$1 AND s.expires_at > now() AND COALESCE(p.is_active,admin_user.is_active)=true) u`, [tokenHash]);
+        WHERE s.token_hash=$1 AND s.expires_at > now() AND COALESCE(p.is_active,admin_user.is_active)=true AND (p.id IS NULL OR p.approval_status='APPROVED')) u`, [tokenHash]);
       if (!result.rowCount) return res.status(401).json({ error:'SESSION_EXPIRED' });
       await pool.query(`UPDATE ${q('sessions')} SET expires_at=now()+interval '1 hour' WHERE token_hash=$1`, [tokenHash]);
       req.user = result.rows[0];

@@ -1,3 +1,4 @@
+import { remainingLoanInstallments } from '../../server/loan-installments.mjs';
 import React, { useState, useMemo, useEffect } from 'react';
 import { 
   Banknote, 
@@ -28,8 +29,10 @@ import {
 } from 'lucide-react';
 import { 
   Company, 
+  JournalBatch,
   Employee, 
   PayrollRun, 
+  PayrollEntitlementOffset,
   PayrollRunItem, 
   PayrollRunStatus, 
   AttendanceRecord, 
@@ -46,7 +49,9 @@ import {
   PayrollEntitlementStatus,
 } from '../types';
 import { 
-  calculateEmployeePayrollItem, 
+  calculateEmployeePayrollItem,
+  calculateArchivedSalaryBalanceItem,
+  applyPayrollNetRounding,
   formatSAR, 
   formatNumber, 
   roundAmount 
@@ -58,20 +63,22 @@ import {
   exportWpsBankCsv, 
   exportGosiReportCsv 
 } from '../utils/exportUtils';
-import { generatePayrollJournalBatch, generatePaymentJournalBatch } from '../utils/accountingEngine';
+import { generatePayrollJournalBatch, buildAccrualJournalPlan, generatePaymentJournalBatch } from '../utils/accountingEngine';
 import { exportBankPayrollXlsx } from '../utils/bankExcelExport';
 import { hasPermission } from '../utils/permissions';
 import { useLanguage } from '../i18n/LanguageContext';
 import { PayrollRunItemsTable } from './payroll/PayrollRunItemsTable';
 import { PayrollPaymentBatchModal } from './payroll/PayrollPaymentBatchModal';
-import { getCurrentPeriod } from '../utils/period';
+import { getCurrentPeriod, getCurrentDate } from '../utils/period';
 import { getPayrollPaymentCoverages } from '../utils/payrollPaymentCoverage';
+import { unpaidSalaryDetails, availableSalaryAllocations, allocateSalaryAmount, availableSalarySourceBalance, salaryOffsetTotal, effectiveEmployeeSalaryLoans, archivedSalaryBalanceEmployees, monthlySalaryNet, salaryAllocationsForPaymentScope } from '../../server/payroll-ledger.mjs';
 
 interface PayrollRunsViewProps {
   company: Company;
   employees: Employee[];
   archivedEmployees?: Employee[];
   payrollRuns: PayrollRun[];
+  journals?: JournalBatch[];
   attendance: AttendanceRecord[];
   loans: LoanSchedule[];
   penalties: PenaltyRecord[];
@@ -80,6 +87,7 @@ interface PayrollRunsViewProps {
   activeRole: UserRole;
   permissions?: UserPermission[];
   onSavePayrollRun: (run: PayrollRun) => Promise<boolean>;
+  onCreateEntitlementOffset: (runId:string,offset:PayrollEntitlementOffset) => Promise<boolean>;
   onViewEmployeeStatement: (emp: Employee, periodMonth: string) => void;
   onOpenQoyodModal: () => void;
 }
@@ -117,6 +125,7 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
   employees,
   archivedEmployees = [],
   payrollRuns,
+  journals = [],
   attendance,
   loans,
   penalties,
@@ -125,6 +134,7 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
   activeRole,
   permissions,
   onSavePayrollRun,
+  onCreateEntitlementOffset,
   onViewEmployeeStatement,
   onOpenQoyodModal,
 }) => {
@@ -142,10 +152,11 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
   // remain available in the period selector.
   useEffect(() => {
     setSelectedPeriod(currentPeriod);
+    setSelectedYear(Number(currentPeriod.slice(0,4)));
   }, [company.id, currentPeriod]);
 
   const [selectedYear, setSelectedYear] = useState<number>(() =>
-    Number((companyRuns[0]?.periodMonth || currentPeriod).slice(0, 4))
+    Number(currentPeriod.slice(0, 4))
   );
 
   const availableYears = useMemo(() => {
@@ -170,6 +181,8 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
   const [adjustmentItem, setAdjustmentItem] = useState<PayrollRunItem | null>(null);
   const [adjustmentForm, setAdjustmentForm] = useState({ addition: 0, deduction: 0, notes: '' });
   const [paymentBatchForm, setPaymentBatchForm] = useState({
+    amounts: {} as Record<string, string>,
+    scope: 'ALL_AVAILABLE' as 'ALL_AVAILABLE'|'CURRENT_MONTH',
     method: 'WPS' as PaymentMethod,
     scheduledDate: new Date().toISOString().slice(0, 10),
     reference: '',
@@ -192,8 +205,14 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
       && e.terminationDate?.slice(0,7) === selectedPeriod
     );
     const known = new Set(active.map(employee => employee.id));
-    return [...active,...archivedFinalPeriod.filter(employee => !known.has(employee.id))];
-  }, [employees, archivedEmployees, company.id, selectedPeriod]);
+    const additions=[...archivedFinalPeriod,...archivedSalaryBalanceEmployees(archivedEmployees,companyRuns,{companyId:company.id,periodMonth:selectedPeriod})];
+    return [...active,...additions.filter(employee=>{if(known.has(employee.id))return false;known.add(employee.id);return true;})];
+  }, [employees, archivedEmployees, companyRuns, company.id, selectedPeriod]);
+
+  const archivedCarryEmployeeIds=new Set(companyEmployees.filter(employee=>employee.isArchived
+    && !(employee.status==='TERMINATED'&&employee.terminationDate?.slice(0,7)===selectedPeriod
+      && ['SPONSOR_TRANSFER','FINAL_EXIT'].includes(String(employee.employmentEndReason||employee.archiveReason||''))))
+    .map(employee=>employee.id));
 
   // Departments for filtering
   const departments = useMemo(() => {
@@ -223,6 +242,7 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
     );
     const committedEmployeeIds = new Set([
       ...committedPaymentBatches.flatMap(batch => batch.employeeIds),
+      ...(currentRun?.entitlementOffsets || []).map(offset=>offset.employeeId),
       ...externalCoverages.map(coverage => coverage.employeeId),
     ]);
     const paidAmount = roundAmount(
@@ -235,23 +255,24 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
     );
     const entitlementTotals = (currentRun?.items || []).reduce<Record<PayrollEntitlementStatus, number>>((totals, item) => {
       const status = item.entitlementStatus || 'PAYABLE';
-      totals[status] += item.netSalary;
+      totals[status] += status === 'HELD' ? Math.max(0,availableSalarySourceBalance(companyRuns,currentRun,item)+Number(item.priorPeriodNet||0)) : item.netSalary-salaryOffsetTotal(currentRun,item);
       return totals;
     }, { PAYABLE: 0, HELD: 0, UNDER_SETTLEMENT: 0, SETTLED: 0, CANCELLED_WITH_DOCUMENT: 0 });
-    const exceptionalProcessedAmount = entitlementTotals.HELD + entitlementTotals.SETTLED + entitlementTotals.CANCELLED_WITH_DOCUMENT;
+    const offsetTotal = (currentRun?.entitlementOffsets || []).reduce((sum,offset)=>sum+offset.amount,0);
+    const exceptionalProcessedAmount = entitlementTotals.HELD + entitlementTotals.SETTLED + entitlementTotals.CANCELLED_WITH_DOCUMENT + offsetTotal;
     return {
       committedEmployeeIds,
       paidAmount,
       scheduledAmount,
       heldAmount: entitlementTotals.HELD,
       underSettlementAmount: entitlementTotals.UNDER_SETTLEMENT,
-      settledAmount: entitlementTotals.SETTLED,
+      settledAmount: entitlementTotals.SETTLED + offsetTotal,
       cancelledByDocumentAmount: entitlementTotals.CANCELLED_WITH_DOCUMENT,
       remainingToSchedule: Math.max(0, entitlementTotals.PAYABLE - paidAmount - scheduledAmount),
       unpaidAmount: Math.max(0, (currentRun?.totalNetSalaries || 0) - paidAmount - exceptionalProcessedAmount),
       closeOutstandingAmount: Math.max(0, (currentRun?.totalNetSalaries || 0) - paidAmount - exceptionalProcessedAmount),
     };
-  }, [paymentBatches, paymentCoverages, selectedPeriod, currentRun?.id, currentRun?.items, currentRun?.totalNetSalaries]);
+  }, [paymentBatches, paymentCoverages, selectedPeriod, currentRun?.id, currentRun?.items, currentRun?.totalNetSalaries, currentRun?.entitlementOffsets, companyRuns]);
   const { committedEmployeeIds, paidAmount, scheduledAmount, heldAmount, underSettlementAmount, settledAmount, cancelledByDocumentAmount, remainingToSchedule, unpaidAmount, closeOutstandingAmount } = paymentSummary;
 
   const getEmployeePaymentBatch = (employeeId: string) => {
@@ -261,46 +282,44 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
       )?.batch;
   };
 
+  const availableAllocationsByEmployee = useMemo(() => new Map((currentRun?.items || []).map(item => [
+    item.employeeId, availableSalaryAllocations(companyRuns, currentRun, item.employeeId)
+  ])), [companyRuns, currentRun]);
+  const remainingPaymentAmounts = useMemo(() => Object.fromEntries([...availableAllocationsByEmployee].map(([id,rows]) => [id, roundAmount(rows.reduce((sum,row) => sum + row.amount,0))])), [availableAllocationsByEmployee]);
   const eligibleFilteredItems = useMemo(() => filteredItems.filter(item =>
-    (item.entitlementStatus || 'PAYABLE') === 'PAYABLE' && item.netSalary > 0 && !committedEmployeeIds.has(item.employeeId)
-  ), [filteredItems, committedEmployeeIds]);
+    (item.entitlementStatus || 'PAYABLE') === 'PAYABLE' && remainingPaymentAmounts[item.employeeId] > 0
+  ), [filteredItems, remainingPaymentAmounts]);
   const selectedPaymentItems = useMemo(() => currentRun?.items.filter(item => selectedPaymentEmployeeIds.includes(item.employeeId)) || [], [currentRun?.items, selectedPaymentEmployeeIds]);
-  const referencedPriorEntitlementKeys = useMemo(() => {
-    const keys = new Set<string>();
-    companyRuns.forEach(run => (run.paymentBatches || []).filter(batch => ['SCHEDULED', 'PAID'].includes(batch.status)).forEach(batch => {
-      (batch.priorEntitlements || []).forEach(ref => keys.add(`${ref.sourcePayrollRunId}:${ref.sourcePayrollItemId}`));
-    }));
-    return keys;
-  }, [companyRuns]);
-  const availablePriorEntitlementsByEmployee = useMemo(() => {
-    const byEmployee = new Map<string, PayrollPriorEntitlement[]>();
-    companyRuns.filter(run => run.periodMonth < selectedPeriod).forEach(run => run.items
-      .filter(item => item.employeeId
-        && (item.entitlementStatus || 'PAYABLE') === 'HELD'
-        && item.entitlementReason === 'MISSING_BANK_ACCOUNT'
-        && item.netSalary > 0
-        && !referencedPriorEntitlementKeys.has(`${run.id}:${item.id}`))
-      .forEach(item => {
-        const entitlement = {
-        sourcePayrollRunId: run.id,
-        sourcePayrollItemId: item.id,
-        sourcePeriodMonth: run.periodMonth,
-        employeeId: item.employeeId,
-        employeeNo: item.employeeNo,
-        employeeName: item.employeeName,
-        amount: roundAmount(item.netSalary),
-        };
-        byEmployee.set(item.employeeId, [...(byEmployee.get(item.employeeId) || []), entitlement]);
-      }));
-    return byEmployee;
-  }, [companyRuns, selectedPeriod, referencedPriorEntitlementKeys]);
-  const getAvailablePriorEntitlements = (employeeId: string) => availablePriorEntitlementsByEmployee.get(employeeId) || [];
-  const { selectedPriorEntitlements, selectedPaymentTotal } = useMemo(() => {
-    const selectedPriorEntitlements = selectedPaymentItems.flatMap(item => availablePriorEntitlementsByEmployee.get(item.employeeId) || []);
-    const currentTotal = selectedPaymentItems.reduce((sum, item) => sum + item.netSalary, 0);
-    const priorTotal = selectedPriorEntitlements.reduce((sum, ref) => sum + ref.amount, 0);
-    return { selectedPriorEntitlements, selectedPaymentTotal: roundAmount(currentTotal + priorTotal) };
-  }, [selectedPaymentItems, availablePriorEntitlementsByEmployee]);
+  const scopedPaymentAllocations=useMemo(()=>new Map([...availableAllocationsByEmployee].map(([id,rows])=>[id,salaryAllocationsForPaymentScope(rows,selectedPeriod,paymentBatchForm.scope)])),[availableAllocationsByEmployee,selectedPeriod,paymentBatchForm.scope]);
+  const scopedPaymentMaximums=Object.fromEntries([...scopedPaymentAllocations].map(([id,rows])=>[id,roundAmount(rows.reduce((sum,row)=>sum+row.amount,0))]));
+  const scopedSelectedPaymentItems=selectedPaymentItems.filter(item=>scopedPaymentMaximums[item.employeeId]>0);
+  const selectedPaymentTotal = roundAmount(scopedSelectedPaymentItems.reduce((sum,item) => sum + Number(paymentBatchForm.amounts[item.employeeId] ?? scopedPaymentMaximums[item.employeeId] ?? 0),0));
+
+  const offsetAvailableAmounts=Object.fromEntries((currentRun?.items || []).map(item=>[item.employeeId,Math.max(0,availableSalarySourceBalance(companyRuns,currentRun,item))]));
+  const handleCreateOffset = async (item:PayrollRunItem) => {
+    if(!currentRun)return;
+    const amount=Number(window.prompt(tr('مبلغ التسوية من رصيد هذا الشهر غير المحجوز:', 'Amount to offset from this month’s unreserved balance:'),String(offsetAvailableAmounts[item.employeeId])));
+    if(!Number.isFinite(amount)||amount<=0||amount>offsetAvailableAmounts[item.employeeId])return;
+    const reason=window.prompt(tr('سبب التسوية الموثقة:', 'Documented settlement reason:'))?.trim()||'';
+    const documentRef=window.prompt(tr('مرجع مستند التسوية أو الموافقة الخطية:', 'Settlement document or written approval reference:'))?.trim()||'';
+    const counterAccount=window.prompt(tr('رمز الحساب المقابل للتسوية:', 'Settlement counter-account code:'),company.chartOfAccounts?.employeeAdvancesAccount||'1105')?.trim()||'';
+    const date=window.prompt(tr('تاريخ التسوية YYYY-MM-DD:', 'Settlement date YYYY-MM-DD:'),new Date().toISOString().slice(0,10))?.trim()||'';
+    if(!reason||!documentRef||!counterAccount||!date)return;
+    let loanId:string|undefined;
+    const candidates=effectiveEmployeeSalaryLoans(loans,companyRuns,company.id,item.employeeId).filter(loan=>loan.effectiveRemaining>0);
+    if(counterAccount===(company.chartOfAccounts?.employeeAdvancesAccount||'1105')&&candidates.length){
+      const choice=window.prompt(tr('لو التسوية مقابل سلفة مسجلة، اختر رقمها. اتركه فارغًا لذمة خارج سجل السلف:', 'For a recorded loan, enter its number. Leave blank for a receivable outside the loan register:')+'\n'+candidates.map((loan,index)=>`${index+1}: ${loan.reason} — ${formatSAR(loan.effectiveRemaining)}`).join('\n'))?.trim();
+      if(choice){const candidate=candidates[Number(choice)-1];if(!candidate||amount>candidate.effectiveRemaining)return;loanId=candidate.id;}
+    }
+    await onCreateEntitlementOffset(currentRun.id,{id:crypto.randomUUID(),employeeId:item.employeeId,sourcePayrollItemId:item.id,amount,reason,documentRef,counterAccount,date,...(loanId?{loanId}:{})});
+  };
+  const handleReverseOffset = async (offset:PayrollEntitlementOffset) => {
+    if(!currentRun)return;
+    const reason=window.prompt(tr('سبب عكس التسوية:', 'Reason for reversing the settlement:'))?.trim()||'';
+    const documentRef=window.prompt(tr('مرجع مستند العكس:', 'Reversal document reference:'),`${offset.documentRef}/R`)?.trim()||'';
+    if(!reason||!documentRef)return;
+    await onCreateEntitlementOffset(currentRun.id,{...offset,id:crypto.randomUUID(),amount:-offset.amount,reason,documentRef,date:new Date().toISOString().slice(0,10),reversesOffsetId:offset.id});
+  };
 
   const togglePaymentEmployee = (employeeId: string) => {
     setSelectedPaymentEmployeeIds(current => current.includes(employeeId)
@@ -318,10 +337,15 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
 
   const handleCreatePaymentBatch = async () => {
     if (!currentRun || !selectedPaymentItems.length || !['APPROVED', 'POSTED'].includes(currentRun.status)) return;
-    const stillEligible = selectedPaymentItems;
+    const stillEligible = scopedSelectedPaymentItems;
     if (!stillEligible.length) return;
-    const priorEntitlements = stillEligible.flatMap(item => getAvailablePriorEntitlements(item.employeeId));
-    const priorEntitlementsTotal = roundAmount(priorEntitlements.reduce((sum, ref) => sum + ref.amount, 0));
+    let allocations: NonNullable<PayrollPaymentBatch['allocations']>;
+    try {
+      allocations = stillEligible.flatMap(item => allocateSalaryAmount(scopedPaymentAllocations.get(item.employeeId) || [], Number(paymentBatchForm.amounts[item.employeeId] ?? scopedPaymentMaximums[item.employeeId] ?? 0)));
+    } catch {
+      alert(tr('أدخل لكل موظف مبلغًا أكبر من صفر ولا يتجاوز المتبقي المتاح.', 'Enter a positive payment amount within each employee’s available balance.'));
+      return;
+    }
     const invalidBankItems = stillEligible.filter(item => {
       const employee = companyEmployees.find(emp => emp.id === item.employeeId);
       const iban = String(employee?.bankIban || item.bankIban || '').replace(/\s/g, '').toUpperCase();
@@ -345,13 +369,13 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
       periodMonth: currentRun.periodMonth,
       employeeIds: stillEligible.map(item => item.employeeId),
       employeesCount: stillEligible.length,
-      totalAmount: roundAmount(stillEligible.reduce((sum, item) => sum + item.netSalary, 0) + priorEntitlementsTotal),
+      totalAmount: roundAmount(allocations.reduce((sum,row) => sum + row.amount,0)),
       method: paymentBatchForm.method,
       status: 'SCHEDULED',
       scheduledDate: paymentBatchForm.scheduledDate,
       reference: paymentBatchForm.reference.trim() || batchNumber,
-      notes: `${currentRun.status === 'POSTED' ? 'دفعة متأخرة مرتبطة بالمسير الأصلي. ' : ''}${priorEntitlements.length ? `تتضمن ${priorEntitlements.length} مستحق سابق بإجمالي ${priorEntitlementsTotal.toFixed(2)} SR. ` : ''}${paymentBatchForm.notes.trim()}`.trim(),
-      priorEntitlements,
+      notes: `${currentRun.status === 'POSTED' ? 'دفعة متأخرة مرتبطة بالمسير الأصلي. ' : ''}${paymentBatchForm.notes.trim()}`.trim(),
+      allocations,
       createdAt: new Date().toISOString(),
     };
     const updatedRun = { ...currentRun, paymentBatches: [...(currentRun.paymentBatches || []), batch] };
@@ -360,7 +384,7 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
     if (batch.method !== 'CASH') exportBankPayrollXlsx(updatedRun, company, batch, employees);
     setSelectedPaymentEmployeeIds([]);
     setIsPaymentBatchModalOpen(false);
-    setPaymentBatchForm({ method: 'WPS', scheduledDate: new Date().toISOString().slice(0, 10), reference: '', notes: '' });
+    setPaymentBatchForm({ amounts: {}, method: 'WPS', scheduledDate: new Date().toISOString().slice(0, 10), reference: '', notes: '' });
   };
 
   const handleEntitlementStatusChange = (item: PayrollRunItem, status: PayrollEntitlementStatus) => {
@@ -381,6 +405,8 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
     }
     let reason = '';
     let documentRef = '';
+    let settlementAccount = '';
+    let settlementDate = '';
     if (status !== 'PAYABLE') {
       reason = window.prompt(tr('اكتب سبب التعليق أو التسوية (إلزامي):', 'Enter the hold or settlement reason (required):'), item.entitlementReason || '')?.trim() || '';
       if (!reason) return;
@@ -388,12 +414,18 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
     if (['SETTLED', 'CANCELLED_WITH_DOCUMENT'].includes(status)) {
       documentRef = window.prompt(tr('رقم مستند/مرجع التسوية (إلزامي):', 'Settlement document/reference number (required):'), item.entitlementDocumentRef || '')?.trim() || '';
       if (!documentRef) return;
+      settlementAccount = window.prompt(tr('رمز الحساب المقابل لتسوية الذمة (راجع المستند المحاسبي):', 'Counter-account code for the documented settlement:'), item.entitlementSettlementAccount || company.chartOfAccounts?.employeeAdvancesAccount || '1105')?.trim() || '';
+      settlementDate = window.prompt(tr('تاريخ التسوية YYYY-MM-DD:', 'Settlement date YYYY-MM-DD:'), new Date().toISOString().slice(0,10))?.trim() || '';
+      if (!settlementAccount || !/^\d{4}-\d{2}-\d{2}$/.test(settlementDate) || Number.isNaN(Date.parse(settlementDate))) return;
+
     }
     const items = currentRun.items.map(current => current.id === item.id ? {
       ...current,
       entitlementStatus: status,
       entitlementReason: status === 'PAYABLE' ? undefined : reason,
       entitlementDocumentRef: ['SETTLED', 'CANCELLED_WITH_DOCUMENT'].includes(status) ? documentRef : undefined,
+      entitlementSettlementAccount: settlementAccount || undefined,
+      entitlementSettlementDate: settlementDate || undefined,
       entitlementHoldSource: status === 'HELD' ? 'MANUAL' : undefined,
       entitlementUpdatedAt: new Date().toISOString(),
     } : current);
@@ -461,7 +493,7 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
       adjustmentItem.delayDeduction + adjustmentItem.absenceDeduction + adjustmentItem.unpaidLeaveDeduction +
       adjustmentItem.gosiEmployeeShare + adjustmentItem.loanDeduction + adjustmentItem.penaltiesDeduction + otherDeductions
     );
-    const updatedItem: PayrollRunItem = {
+    const updatedItem: PayrollRunItem = applyPayrollNetRounding({
       ...adjustmentItem,
       bonuses,
       otherDeductions,
@@ -472,7 +504,7 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
       totalDeductions,
       netSalary: roundAmount(Math.max(0, totalGrossSalary - totalDeductions)),
       totalCompanyBurden: roundAmount(totalGrossSalary + adjustmentItem.gosiEmployerShare),
-    };
+    }, company.calculationRules?.netSalaryRounding);
     const items = currentRun.items.map(item => item.id === updatedItem.id ? updatedItem : item);
     const sum = (selector: (item: PayrollRunItem) => number) => roundAmount(items.reduce((total, item) => total + selector(item), 0));
     onSavePayrollRun({
@@ -522,19 +554,22 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
       // A paid/scheduled payroll item is historical financial evidence. Preserve it even when
       // the employee was later archived and is no longer returned by the active employee query.
       const lockedHistoricalItems = previousItems.filter(item =>
-        committedEmployeeIds.has(item.employeeId) && !companyEmployeeIds.has(item.employeeId)
+        !companyEmployeeIds.has(item.employeeId)
       );
       const recalculatedItems: PayrollRunItem[] = companyEmployees
         .filter(emp => {
           // Preserve transferred employees before applying current lifecycle or salary-start
           // filters. A later profile change must never remove a historical paid payroll item.
           if (committedEmployeeIds.has(emp.id) && previousItemsByEmployeeId.has(emp.id)) return true;
+          if (archivedCarryEmployeeIds.has(emp.id)) return true;
           if (emp.status === 'ABSCONDED') return false;
           if (emp.salaryStartDate && emp.salaryStartDate.slice(0, 7) > selectedPeriod) return false;
           if (emp.status === 'TERMINATED') return Boolean(emp.terminationDate && selectedPeriod <= emp.terminationDate.slice(0, 7));
           return true;
         })
         .map(emp => {
+        const archivedSavedItem=previousItemsByEmployeeId.get(emp.id);
+        if(emp.isArchived&&archivedSavedItem&&monthlySalaryNet(archivedSavedItem)>0)return archivedSavedItem;
         const monthStart = `${selectedPeriod}-01`;
         const [year, month] = selectedPeriod.split('-').map(Number);
         const monthEnd = `${selectedPeriod}-${String(new Date(Date.UTC(year, month, 0)).getUTCDate()).padStart(2, '0')}`;
@@ -564,9 +599,7 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
           return {
             ...loan,
             remainingAmount,
-            remainingInstallments: remainingAmount === 0
-              ? 0
-              : loan.monthlyInstallment > 0 ? Math.ceil(remainingAmount / loan.monthlyInstallment) : loan.remainingInstallments,
+            remainingInstallments: remainingLoanInstallments(loan,remainingAmount),
             status: remainingAmount === 0 ? 'COMPLETED' as const : loan.status,
           };
           });
@@ -576,7 +609,8 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
         const empEarnings = temporaryEarnings.filter(e => e.employeeId === emp.id && e.periodMonth === selectedPeriod && e.appliedInPayroll !== false);
         const empLeavePayments=leaves.filter(leave=>leave.employeeId===emp.id&&leave.status==='APPROVED'&&leave.startDate.slice(0,7)===selectedPeriod);
 
-        let calculated = calculateEmployeePayrollItem({
+        const carryOnly=archivedCarryEmployeeIds.has(emp.id);
+        let calculated = carryOnly?calculateArchivedSalaryBalanceItem(emp,company,selectedPeriod):calculateEmployeePayrollItem({
           employee: emp,
           company,
           periodMonth: selectedPeriod,
@@ -587,46 +621,9 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
           leaveRequests: empLeavePayments,
         });
 
-        // Carry every unpaid prior salary period into the current run exactly once.
-        // Unpaid prior periods are recalculated from their own period inputs, so a July deduction
-        // added later for an unpaid employee immediately changes the July carried balance.
-        const priorPeriodDetails: Array<{ periodMonth: string; gross: number; deductions: number; net: number }> = [];
-        const salaryStartDate = String(emp.salaryStartDate || emp.hireDate || '');
-        const salaryStartMonth = /^\d{4}-\d{2}-\d{2}$/.test(salaryStartDate) ? salaryStartDate.slice(0, 7) : selectedPeriod;
-        let cursor = salaryStartMonth;
-        while (cursor < selectedPeriod && priorPeriodDetails.length < 240) {
-          const historicalRun = companyRuns.find(run => run.periodMonth === cursor);
-          const alreadyTransferred = paymentCoverages.some(coverage =>
-            coverage.sourcePeriodMonth === cursor && coverage.employeeId === emp.id
-          );
-          if (!alreadyTransferred) {
-            const [priorYear, priorMonthNo] = cursor.split('-').map(Number);
-            const priorEnd = `${cursor}-${String(new Date(Date.UTC(priorYear, priorMonthNo, 0)).getUTCDate()).padStart(2, '0')}`;
-            const priorStart = `${cursor}-01`;
-            const priorEmployee = cursor === salaryStartMonth ? { ...emp, prorateFirstMonth: true } : emp;
-            const priorItem = calculateEmployeePayrollItem({
-              employee: priorEmployee,
-              company,
-              periodMonth: cursor,
-              attendanceRecords: attendance.filter(a => a.employeeId === emp.id && a.date <= priorEnd && (a.endDate || a.date) >= priorStart),
-              activeLoans: effectiveLoansFor(cursor, emp.id),
-              penalties: penalties.filter(p => p.employeeId === emp.id && p.periodMonth === cursor && p.appliedInPayroll !== false),
-              temporaryEarnings: temporaryEarnings.filter(e => e.employeeId === emp.id && e.periodMonth === cursor && e.appliedInPayroll !== false),
-              leaveRequests: leaves.filter(leave=>leave.employeeId===emp.id&&leave.status==='APPROVED'&&leave.startDate.slice(0,7)===cursor),
-            });
-            if (Number(priorItem?.netSalary || 0) > 0) {
-              priorPeriodDetails.push({
-                periodMonth: cursor,
-                gross: Number(priorItem?.totalGrossSalary || 0),
-                deductions: Number(priorItem?.totalDeductions || 0),
-                net: Number(priorItem?.netSalary || 0),
-              });
-            }
-          }
-          const [cursorYear, cursorMonth] = cursor.split('-').map(Number);
-          const next = new Date(Date.UTC(cursorYear, cursorMonth, 1));
-          cursor = `${next.getUTCFullYear()}-${String(next.getUTCMonth() + 1).padStart(2, '0')}`;
-        }
+        // Read saved month snapshots. Do not invent opening arrears from hire date,
+        // or recalculate historical salaries using today's employee profile.
+        const priorPeriodDetails = unpaidSalaryDetails(companyRuns, { companyId:company.id, periodMonth:selectedPeriod }, emp.id);
         const priorPeriodGross = roundAmount(priorPeriodDetails.reduce((sum, row) => sum + row.gross, 0));
         const priorPeriodDeductions = roundAmount(priorPeriodDetails.reduce((sum, row) => sum + row.deductions, 0));
         const priorPeriodNet = roundAmount(priorPeriodDetails.reduce((sum, row) => sum + row.net, 0));
@@ -649,12 +646,13 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
             : undefined);
         // Employees already included in an active/paid transfer batch are immutable.
         if (previousItem && committedEmployeeIds.has(emp.id)) return previousItem;
+        if (previousItem && ['SETTLED', 'CANCELLED_WITH_DOCUMENT'].includes(previousItem.entitlementStatus || '')) return previousItem;
         // A manual per-employee adjustment (bonus/deduction added via the adjustment modal) must
         // survive a fresh recalculation for any employee not yet locked in a transfer batch.
         // Re-apply the stored delta on top of the newly calculated base instead of dropping it.
-        const previousManualAddition = previousItem?.manualAddition || 0;
-        const previousManualDeduction = previousItem?.manualDeduction || 0;
-        const calculatedWithManualAdjustment = (previousManualAddition || previousManualDeduction) ? {
+        const previousManualAddition = carryOnly?0:previousItem?.manualAddition || 0;
+        const previousManualDeduction = carryOnly?0:previousItem?.manualDeduction || 0;
+        const calculatedWithManualAdjustment = applyPayrollNetRounding((previousManualAddition || previousManualDeduction) ? {
           ...calculated,
           bonuses: roundAmount(calculated.bonuses + previousManualAddition),
           otherDeductions: roundAmount(calculated.otherDeductions + previousManualDeduction),
@@ -665,7 +663,7 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
           totalDeductions: roundAmount(calculated.totalDeductions + previousManualDeduction),
           netSalary: roundAmount(Math.max(0, calculated.netSalary + previousManualAddition - previousManualDeduction)),
           totalCompanyBurden: roundAmount(calculated.totalCompanyBurden + previousManualAddition - previousManualDeduction),
-        } : calculated;
+        } : calculated, carryOnly?'NONE':company.calculationRules?.netSalaryRounding);
         const previousEntitlementStatus = previousItem?.entitlementStatus || 'PAYABLE';
         const normalizedIban = String(emp.bankIban || '').replace(/\s/g, '').toUpperCase();
         const hasReadyBankAccount = /^SA\d{22}$/.test(normalizedIban) && emp.bankAccountStatus !== 'PENDING';
@@ -693,23 +691,25 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
             ? automaticHoldReason
             : (shouldReleaseAutomaticHold ? undefined : previousItem.entitlementReason),
           entitlementDocumentRef: shouldReleaseAutomaticHold ? undefined : previousItem.entitlementDocumentRef,
+          entitlementSettlementAccount: previousItem.entitlementSettlementAccount,
+          entitlementSettlementDate: previousItem.entitlementSettlementDate,
           entitlementHoldSource: shouldApplyAutomaticHold
             ? (missingBankHold ? 'MISSING_BANK_ACCOUNT' : 'EMPLOYEE_SUSPENSION')
             : (shouldReleaseAutomaticHold ? undefined : previousItem.entitlementHoldSource),
           entitlementUpdatedAt: (shouldApplyAutomaticHold || shouldReleaseAutomaticHold) ? new Date().toISOString() : previousItem.entitlementUpdatedAt,
         } : ((!hasReadyBankAccount && !cashWithoutIbanAllowed) || calculated.isSuspended) ? {
-          ...calculated,
+          ...calculatedWithManualAdjustment,
           entitlementStatus: 'HELD',
           entitlementReason: missingBankHold
             ? 'MISSING_BANK_ACCOUNT'
             : (emp.suspensionReason?.trim() || tr('تعليق تلقائي من ملف الموظف', 'Automatically held from employee profile')),
           entitlementHoldSource: missingBankHold ? 'MISSING_BANK_ACCOUNT' : 'EMPLOYEE_SUSPENSION',
           entitlementUpdatedAt: new Date().toISOString(),
-        } : calculated;
+        } : calculatedWithManualAdjustment;
       });
       const runItems: PayrollRunItem[] = [...lockedHistoricalItems, ...recalculatedItems];
 
-      const decimals = company.calculationRules?.roundingDecimals ?? 2;
+      const decimals = 2;
       const totalBaseSalaries = roundAmount(runItems.reduce((s, i) => s + i.baseSalary, 0), decimals);
       const totalAllowances = roundAmount(runItems.reduce((s, i) => s + i.housingAllowance + i.transportAllowance + i.otherAllowances + i.bonuses, 0), decimals);
       const totalOvertime = roundAmount(runItems.reduce((s, i) => s + i.overtimeAmount, 0), decimals);
@@ -751,6 +751,7 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
         items: runItems,
         journalBatchId: `batch-${runId}`,
         paymentBatches: currentRun?.paymentBatches || [],
+        entitlementOffsets:currentRun?.entitlementOffsets,
       };
 
       runItems.forEach(i => i.payrollRunId = runId);
@@ -791,6 +792,8 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
   const canReversePosting = hasPermission({ role: activeRole, permissions } as any, 'REVERSE_PAYROLL_APPROVAL');
   const handleReverseApproval = () => {
     if (!currentRun || currentRun.status !== 'APPROVED' || !canReversePosting) return;
+    if ((currentRun.entitlementOffsets || []).length) { alert(tr('توجد تسويات مالية موثقة؛ استحقاق الشهر الأصلي محفوظ.', 'Documented financial settlements preserve the original salary month.')); return; }
+    if (currentRun.paymentBatches?.some(batch=>batch.status==='SCHEDULED')) { alert(tr('ألغِ الدفعة المجدولة قبل التراجع عن اعتماد المسير.', 'Cancel the scheduled batch before reversing payroll approval.')); return; }
     if (currentRun.paymentBatches?.some(batch => batch.status === 'PAID')) {
       alert(tr('لا يمكن فتح المسير بعد تسجيل دفعة مدفوعة. ألغِ إثبات السداد أولًا.', 'Payroll cannot be reopened after a paid batch. Reverse the payment first.'));
       return;
@@ -811,9 +814,7 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
   // Warning metrics
   const totalWarnings = useMemo(() => currentRun?.items.reduce((s, i) => s + i.warningFlags.length, 0) || 0, [currentRun?.items]);
   const priorBalancesTotal = useMemo(() => (currentRun?.items || []).reduce((sum, item) => sum + Number(item.priorPeriodNet || 0), 0), [currentRun?.items]);
-  const exportablePaymentEmployeeIds = useMemo(() => (currentRun?.items || [])
-    .filter(item => (item.entitlementStatus || 'PAYABLE') === 'PAYABLE' && !committedEmployeeIds.has(item.employeeId))
-    .map(item => item.employeeId), [currentRun?.items, committedEmployeeIds]);
+  const exportablePaymentEmployeeIds = useMemo(() => Array.from(new Set((currentRun?.paymentBatches || []).filter(batch=>batch.status==='SCHEDULED').flatMap(batch=>batch.employeeIds))),[currentRun?.paymentBatches]);
 
   return (
     <div data-no-translate className="space-y-6">
@@ -911,35 +912,35 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
           </div>
 
           <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-xs">
-            <div className="text-[11px] font-semibold text-slate-500">{tr('إجمالي المستحق (Gross)', 'Total gross pay')}</div>
+            <div className="text-[11px] font-semibold text-slate-500">{tr('إجمالي استحقاق الشهر', 'This month’s gross pay')}</div>
             <div className="text-sm sm:text-base font-extrabold text-slate-900 mt-0.5">
-              {formatSAR(currentRun.totalGrossSalaries)}
+              {formatSAR(roundAmount(currentRun.items.reduce((sum,item)=>sum+Number(item.totalGrossSalary||0),0)))}
             </div>
             <div className="text-[10px] text-slate-400">{tr('قبل الاستقطاعات', 'Before deductions')}</div>
           </div>
 
           <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-xs">
-            <div className="text-[11px] font-semibold text-slate-500">{tr('إجمالي الاستقطاعات', 'Total deductions')}</div>
+            <div className="text-[11px] font-semibold text-slate-500">{tr('استقطاعات الشهر', 'This month’s deductions')}</div>
             <div className="text-sm sm:text-base font-extrabold text-rose-700 mt-0.5">
-              {formatSAR(currentRun.totalDeductions)}
+              {formatSAR(roundAmount(currentRun.items.reduce((sum,item)=>sum+Number(item.totalDeductions||0),0)))}
             </div>
             <div className="text-[10px] text-slate-400">{tr('تأمينات، سلف، غياب، تأخير', 'GOSI, loans, absence, lateness')}</div>
           </div>
 
           <div className="bg-emerald-50/70 p-3.5 rounded-2xl border border-emerald-200 shadow-xs">
-            <div className="text-[11px] font-bold text-emerald-900">{tr('صافي المستحق (Net)', 'Net pay')}</div>
+            <div className="text-[11px] font-bold text-emerald-900">{tr('إجمالي المستحق مع الأرصدة السابقة', 'Total entitlement including prior balances')}</div>
             <div className="text-sm sm:text-base font-black text-emerald-800 mt-0.5 font-mono">
               {formatSAR(currentRun.totalNetSalaries)}
             </div>
-            <div className="text-[10px] text-emerald-700">{tr('لتحويل البنك (WPS)', 'For bank transfer (WPS)')}</div>
+            <div className="text-[10px] text-emerald-700">{tr('الصرف حسب نطاق ومبلغ الدفعة المختارة', 'Payment follows the selected batch scope and amount')}</div>
           </div>
 
           <div className="bg-purple-50/70 p-3.5 rounded-2xl border border-purple-200 shadow-xs">
-            <div className="text-[11px] font-bold text-purple-900">{tr('إجمالي تكلفة المنشأة', 'Total company cost')}</div>
+            <div className="text-[11px] font-bold text-purple-900">{tr('تكلفة شهر المسير فقط', 'This month’s company cost')}</div>
             <div className="text-sm sm:text-base font-black text-purple-800 mt-0.5 font-mono">
-              {formatSAR(currentRun.totalCompanyCost)}
+              {formatSAR(roundAmount(currentRun.items.reduce((sum,item)=>sum+Number(item.totalGrossSalary||0)+Number(item.gosiEmployerShare||0),0)))}
             </div>
-            <div className="text-[10px] text-purple-700">{tr('تتضمن حصة التأمينات', 'Including employer GOSI')}</div>
+            <div className="text-[10px] text-purple-700">{tr('تشمل حصة التأمينات؛ تستبعد الأرصدة السابقة', 'Includes employer GOSI; excludes prior balances')}</div>
           </div>
 
         </div>
@@ -1037,7 +1038,9 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
 
             <button
               onClick={() => {
-                const batch = generatePayrollJournalBatch(company, currentRun);
+                const plan=buildAccrualJournalPlan(generatePayrollJournalBatch(company,currentRun),journals,getCurrentDate(company.timezone||'Asia/Riyadh'));
+                const batch=plan.batches.at(-1);
+                if(plan.blocked||!batch||batch.qoyodSyncStatus?.synced){alert(tr('راجع تبويب القيود؛ لا توجد إضافة غير مرحّلة قابلة للتصدير تلقائيًا أو يلزم تطابق القيد السابق.', 'Review Journals; there is no automatically exportable unposted accrual or the previous journal needs reconciliation.'));return;}
                 exportQoyodJournalCsv(batch, company);
               }}
               className="px-3 py-1.5 bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all"
@@ -1090,7 +1093,7 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
               </button>
               <button
                 type="button"
-                onClick={() => setIsPaymentBatchModalOpen(true)}
+                onClick={() => {setPaymentBatchForm(prev=>({...prev,scope:'ALL_AVAILABLE',amounts:{}}));setIsPaymentBatchModalOpen(true);}}
                 disabled={!selectedPaymentItems.length || !['APPROVED', 'POSTED'].includes(currentRun.status)}
                 className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-2 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
               >
@@ -1201,6 +1204,9 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
         currentRun={currentRun}
         filteredItems={filteredItems}
         eligibleFilteredItems={eligibleFilteredItems}
+        remainingPaymentAmounts={remainingPaymentAmounts}
+        offsetAvailableAmounts={offsetAvailableAmounts}
+        onCreateOffset={handleCreateOffset}
         selectedPaymentEmployeeIds={selectedPaymentEmployeeIds}
         employees={employees}
         committedEmployeeIds={committedEmployeeIds}
@@ -1214,10 +1220,12 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
         tr={tr}
       />
 
+      {Boolean(currentRun?.entitlementOffsets?.length)&&<div className="rounded-2xl border border-purple-200 bg-white p-4 text-xs"><h3 className="mb-3 font-bold">{tr('التسويات الموثقة لرصيد الشهر', 'Documented month-balance settlements')}</h3>{currentRun!.entitlementOffsets!.map(offset=><div key={offset.id} className="flex flex-wrap items-center justify-between gap-2 border-t py-2"><span>{offset.date} · {offset.documentRef} · {offset.reason} · {formatSAR(offset.amount)}</span>{offset.amount>0&&!currentRun!.entitlementOffsets!.some(row=>row.reversesOffsetId===offset.id)&&hasPermission({role:activeRole,permissions} as any,'REVERSE_PAYROLL_PAYMENT')&&<button onClick={()=>void handleReverseOffset(offset)} className="rounded-lg border px-3 py-1 text-rose-700">{tr('عكس التسوية', 'Reverse settlement')}</button>}</div>)}</div>}
       {isPaymentBatchModalOpen && currentRun && (
         <PayrollPaymentBatchModal
           form={paymentBatchForm}
-          selectedCount={selectedPaymentItems.length}
+          employees={scopedSelectedPaymentItems.map(item => ({ id:item.employeeId,name:item.employeeName,maximum:scopedPaymentMaximums[item.employeeId] || 0 }))}
+          selectedCount={scopedSelectedPaymentItems.length}
           total={selectedPaymentTotal}
           onChange={setPaymentBatchForm}
           onClose={() => setIsPaymentBatchModalOpen(false)}

@@ -26,7 +26,7 @@ export function createEmployeeRouter({
 function validImportedEmployee(employee, user) {
   const salary = employee?.salaryPackage || {};
   const dates = ['hireDate','salaryStartDate','terminationDate','suspensionStartDate','suspensionEndDate','employmentLeaveStartDate','employmentLeaveEndDate'];
-  return employee && typeof employee === 'object' && typeof employee.id === 'string' && Boolean(employee.id)
+  return employee && (employee.payrollCategory===undefined||['UNCLASSIFIED','ADMINISTRATIVE','WORKER'].includes(employee.payrollCategory)) && typeof employee === 'object' && typeof employee.id === 'string' && Boolean(employee.id)
     && typeof employee.companyId === 'string' && user.company_ids.includes(employee.companyId)
     && typeof employee.employeeNo === 'string' && Boolean(employee.employeeNo.trim())
     && typeof employee.firstNameAr === 'string' && Boolean(employee.firstNameAr.trim())
@@ -170,6 +170,7 @@ router.put('/employees/:id', auth, writeLimiter, async (req, res, next) => {
       : await client.query(`SELECT COALESCE(max(sort_order),-1)+1 AS sort_order FROM ${q('employees')} WHERE company_id=$1`, [employee.companyId]);
     const sortOrder = Number(orderResult.rows[0]?.sort_order || 0);
     const salary = employee.salaryPackage || {};
+    if(employee.payrollCategory!==undefined&&!['UNCLASSIFIED','ADMINISTRATIVE','WORKER'].includes(employee.payrollCategory))throw workflowError(400,'INVALID_PAYROLL_CATEGORY');
     const archived = shouldArchiveEmployee(employee);
     const savedEmployee = archived
       ? { ...employee,isArchived:true,archiveReason:employee.employmentEndReason || 'ABSCONDED',archivedAt:new Date().toISOString() }

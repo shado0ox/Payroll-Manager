@@ -39,6 +39,20 @@ export async function appendPayrollFinancialAudit(client, q, { stored, next, use
   for (const [runId, oldRun] of beforeRuns) {
     const newRun = nextRuns.get(runId);
     if (!newRun) continue;
+    const oldOffsetIds=new Set(asArray(oldRun.entitlementOffsets).map(offset=>offset.id));
+    for(const offset of asArray(newRun.entitlementOffsets).filter(offset=>!oldOffsetIds.has(offset.id))){
+      const {id:offsetId,...offsetDetails}=offset;
+      await insertAudit(client,q,{companyId:newRun.companyId,user,action:offset.reversesOffsetId?'PAYROLL_OFFSET_REVERSED':'PAYROLL_OFFSET_CREATED',entityType:'PAYROLL_OFFSET',entityId:offset.id,
+        details:`${offset.amount} SR | ${newRun.periodMonth} | ${offset.reason} | ${offset.documentRef}`,payload:{payrollRunId:runId,periodMonth:newRun.periodMonth,offsetId,...offsetDetails}});
+    }
+    const oldItems = new Map(asArray(oldRun.items).map(item => [item.id,item]));
+    for (const item of asArray(newRun.items)) {
+      const before = oldItems.get(item.id);
+      if (!before || before.entitlementStatus === item.entitlementStatus) continue;
+      await insertAudit(client,q,{companyId:newRun.companyId,user,action:'PAYROLL_ENTITLEMENT_CHANGED',entityType:'PAYROLL_ITEM',entityId:item.id,
+        details:`${newRun.periodMonth} | ${before.entitlementStatus || 'PAYABLE'} -> ${item.entitlementStatus || 'PAYABLE'}`,
+        payload:{payrollRunId:runId,employeeId:item.employeeId,periodMonth:newRun.periodMonth,amount:Number(item.netSalary || 0),reason:item.entitlementReason || '',documentRef:item.entitlementDocumentRef || '',counterAccount:item.entitlementSettlementAccount || '',settlementDate:item.entitlementSettlementDate || '',diff:{before:{status:before.entitlementStatus},after:{status:item.entitlementStatus}}}});
+    }
     const oldBatches = new Map(asArray(oldRun.paymentBatches).map(batch => [batch.id, batch]));
     const newBatches = new Map(asArray(newRun.paymentBatches).map(batch => [batch.id, batch]));
 
@@ -59,6 +73,7 @@ export async function appendPayrollFinancialAudit(client, q, { stored, next, use
           periodMonth: newRun.periodMonth,
           batchNumber: newBatch.batchNumber,
           amount,
+          allocations:asArray(newBatch.allocations),
           reason,
           diff: {
             before: { status: oldBatch.status, paymentDate: oldBatch.paymentDate ?? null },

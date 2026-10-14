@@ -1,3 +1,4 @@
+import { monthlySalaryNet, salaryBatchAllocations, salaryOffsetTotal } from './payroll-ledger.mjs';
 const asArray = value => Array.isArray(value) ? value : [];
 const roundAmount = value => Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
 const fail = code => { const error = new Error(code); error.status = 409; throw error; };
@@ -22,6 +23,7 @@ export function validatePayrollCarryForwardState(storedRuns, incomingRuns) {
     for (const batch of asArray(destinationRun.paymentBatches)) {
       if (!activeBatchStatuses.has(String(batch.status || ''))) continue;
 
+      if (Array.isArray(batch.allocations)) continue;
       const employeeIds = asArray(batch.employeeIds).map(String);
       if (employeeIds.length !== new Set(employeeIds).size) fail('PAYMENT_BATCH_DUPLICATE_EMPLOYEE');
 
@@ -35,6 +37,8 @@ export function validatePayrollCarryForwardState(storedRuns, incomingRuns) {
         if (Number(item.netSalary || 0) <= 0) fail('PAYMENT_BATCH_INVALID_CURRENT_AMOUNT');
         currentTotal = roundAmount(currentTotal + Number(item.netSalary || 0));
         const priorDetails = asArray(item.priorPeriodDetails);
+        const priorPeriods = priorDetails.map(detail => String(detail?.periodMonth || ''));
+        if (new Set(priorPeriods).size !== priorPeriods.length) fail('PAYROLL_CARRY_DUPLICATE_PERIOD');
         const priorNet = roundAmount(priorDetails.reduce((sum,detail) => sum + Number(detail?.net || 0),0));
         if (roundAmount(Number(item.netSalary || 0) - priorNet) > 0) {
           generalCoverages.push([destinationRun.periodMonth,employeeId]);
@@ -63,14 +67,17 @@ export function validatePayrollCarryForwardState(storedRuns, incomingRuns) {
           fail('PRIOR_ENTITLEMENT_SOURCE_NOT_HELD_FOR_BANK');
         }
 
-        const expectedAmount = roundAmount(sourceItem.netSalary);
+        const expectedAmount = monthlySalaryNet(sourceItem);
         const referencedAmount = roundAmount(ref?.amount);
         if (!(expectedAmount > 0) || referencedAmount !== expectedAmount) fail('PRIOR_ENTITLEMENT_AMOUNT_MISMATCH');
         if (String(ref?.sourcePeriodMonth || '') !== String(sourceRun.periodMonth || '')) fail('PRIOR_ENTITLEMENT_PERIOD_MISMATCH');
 
         const sourceKey = `${sourceRun.id}:${sourceItem.id}`;
         const existingBatch = reservedSources.get(sourceKey);
-        if (existingBatch && existingBatch !== batch.id) fail('PRIOR_ENTITLEMENT_ALREADY_RESERVED');
+        if (existingBatch) fail('PRIOR_ENTITLEMENT_ALREADY_RESERVED');
+        if (generalCoverages.some(([period,employee]) => period === sourceRun.periodMonth && employee === String(ref.employeeId))) {
+          fail('PAYROLL_ENTITLEMENT_DUPLICATE_IN_BATCH');
+        }
         reservedSources.set(sourceKey, batch.id);
         claimCoverage(destinationRun.companyId,String(ref?.sourcePeriodMonth || ''),String(ref?.employeeId || ''),String(batch.id));
         priorTotal = roundAmount(priorTotal + referencedAmount);
@@ -81,6 +88,48 @@ export function validatePayrollCarryForwardState(storedRuns, incomingRuns) {
       for (const [periodMonth,employeeId] of generalCoverages) {
         claimCoverage(destinationRun.companyId,periodMonth,employeeId,String(batch.id));
       }
+    }
+  }
+
+  const allocatedAmounts = new Map();
+  for (const run of runs) {
+    for (const batch of asArray(run.paymentBatches)) {
+      if (!activeBatchStatuses.has(batch.status) || Array.isArray(batch.allocations)) continue;
+      for (const allocation of salaryBatchAllocations(run,batch)) {
+        const key = `${run.companyId}:${allocation.periodMonth}:${allocation.employeeId}`;
+        allocatedAmounts.set(key,roundAmount((allocatedAmounts.get(key) || 0) + allocation.amount));
+      }
+    }
+  }
+  for (const run of runs) {
+    for (const batch of asArray(run.paymentBatches)) {
+      if (!activeBatchStatuses.has(batch.status) || !Array.isArray(batch.allocations)) continue;
+      if (!batch.allocations.length || asArray(batch.priorEntitlements).length) fail('PAYMENT_ALLOCATIONS_REQUIRED');
+      const employeeIds = asArray(batch.employeeIds).map(String);
+      const allocationEmployeeIds = new Set(batch.allocations.map(row => row.employeeId));
+      if (employeeIds.length !== new Set(employeeIds).size || employeeIds.length !== allocationEmployeeIds.size
+        || employeeIds.some(id => !allocationEmployeeIds.has(id))) fail('PAYMENT_ALLOCATION_EMPLOYEE_MISMATCH');
+      const batchKeys = new Set();
+      let total = 0;
+      for (const allocation of batch.allocations) {
+        const source = runById.get(allocation.sourcePayrollRunId);
+        const item = asArray(source?.items).find(item => item.id === allocation.sourcePayrollItemId);
+        if (!source || !item || source.companyId !== run.companyId || item.employeeId !== allocation.employeeId
+          || allocation.periodMonth !== source.periodMonth || source.periodMonth > run.periodMonth) fail('PAYMENT_ALLOCATION_SOURCE_INVALID');
+        if (!['APPROVED','POSTED'].includes(source.status)) fail('PAYMENT_ALLOCATION_SOURCE_NOT_APPROVED');
+        if ((item.entitlementStatus || 'PAYABLE') !== 'PAYABLE'
+          && !(item.entitlementStatus === 'HELD' && item.entitlementReason === 'MISSING_BANK_ACCOUNT')) fail('PAYMENT_ALLOCATION_SOURCE_HELD');
+        const amount = Number(allocation.amount);
+        if (!Number.isFinite(amount) || amount <= 0 || amount !== roundAmount(amount)) fail('PAYMENT_ALLOCATION_AMOUNT_INVALID');
+        const key = `${source.companyId}:${source.periodMonth}:${item.employeeId}`;
+        if (batchKeys.has(key)) fail('PAYMENT_ALLOCATION_DUPLICATE_SOURCE');
+        batchKeys.add(key);
+        const allocated = roundAmount((allocatedAmounts.get(key) || 0) + amount);
+        if (!Number.isFinite(monthlySalaryNet(item)) || allocated > roundAmount(monthlySalaryNet(item) - salaryOffsetTotal(source,item))) fail('PAYROLL_ENTITLEMENT_OVERPAID');
+        allocatedAmounts.set(key,allocated);
+        total = roundAmount(total + amount);
+      }
+      if (roundAmount(batch.totalAmount) !== total) fail('PAYMENT_BATCH_TOTAL_MISMATCH');
     }
   }
 

@@ -18,7 +18,7 @@ export function createUserRouter({ auth,writeLimiter,pool,q,can,allowedRoles,all
       client = await pool.connect();
       await client.query('BEGIN');
       if (normalizedEmail) {
-        const duplicateEmail = await client.query(`SELECT id FROM ${q('users')} WHERE lower(email)=lower($1) AND id<>$2 LIMIT 1`, [normalizedEmail, req.params.id]);
+        const duplicateEmail = await client.query(`SELECT id FROM ${q('users')} WHERE lower(email)=lower($1) AND id<>$2 AND company_ids ?| $3::text[] LIMIT 1`, [normalizedEmail, req.params.id,u.companyIds]);
         if (duplicateEmail.rowCount) throw workflowError(409,'USER_EMAIL_EXISTS');
       }
       const existing = await client.query(`SELECT id,password_hash,company_ids,role,is_company_owner FROM ${q('users')} WHERE id=$1 FOR UPDATE`, [req.params.id]);
@@ -51,7 +51,7 @@ export function createUserRouter({ auth,writeLimiter,pool,q,can,allowedRoles,all
       if (Number.isInteger(e?.status) && e.status >= 400 && e.status < 500) return res.status(e.status).json({ error:e.message });
       if (e?.code === '23505') {
         const constraint = String(e.constraint || '');
-        const error = constraint.includes('employee') ? 'EMPLOYEE_ACCOUNT_EXISTS' : constraint.includes('email') ? 'USER_EMAIL_EXISTS' : 'USERNAME_EXISTS';
+        const error = constraint.includes('tenant_credentials') ? 'USER_IDENTIFIER_EXISTS' : constraint.includes('employee') ? 'EMPLOYEE_ACCOUNT_EXISTS' : constraint.includes('email') ? 'USER_EMAIL_EXISTS' : 'USERNAME_EXISTS';
         return res.status(409).json({ error });
       }
       next(e);

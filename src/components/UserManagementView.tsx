@@ -202,7 +202,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
 
     // Check duplicate username
     const isDuplicate = users.some(
-      u => u.username.toLowerCase() === cleanUsername && u.id !== editingUser?.id
+      u => u.username.toLowerCase() === cleanUsername && u.id !== editingUser?.id && u.companyIds.some(id => (formData.companyIds.length ? formData.companyIds : currentUser?.companyIds || companies.map(company=>company.id)).includes(id))
     );
     if (isDuplicate) {
       setFormError(language === 'ar' ? 'اسم المستخدم هذا مستخدم بالفعل، يرجى اختيار اسم مستخدم آخر' : 'This username is already in use. Choose another username.');

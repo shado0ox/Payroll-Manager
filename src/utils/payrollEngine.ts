@@ -1,3 +1,4 @@
+import { loanInstallmentAmount } from '../../server/loan-installments.mjs';
 import { 
   Employee, 
   Company, 
@@ -31,7 +32,7 @@ export function calculateEmployeePayrollItem(input: EmployeeCalculationInput): P
   const companyBank = detectBankFromIBAN(employee.bankIban, company.bankDefinitions);
   const effectiveBankName = companyBank?.nameAr || employee.bankName;
   const effectiveBankSwift = companyBank?.swiftCode || getSwiftCodeFromBankName(employee.bankName, company.bankDefinitions) || employee.bankSwiftCode;
-  const rules = company.calculationRules || {
+  const configuredRules = company.calculationRules || {
     dailyRateFormula: 'BASE_PLUS_HOUSING',
     hourlyRateDivisor: 8,
     workDaysDivisor: 30,
@@ -47,6 +48,8 @@ export function calculateEmployeePayrollItem(input: EmployeeCalculationInput): P
     saudiGosiMaxCap: 45000,
     roundingDecimals: 2,
   };
+
+  const rules = { ...configuredRules, roundingDecimals: 2 };
 
   const suspensionStartsBeforePeriodEnds = !employee.suspensionStartDate
     || employee.suspensionStartDate <= `${input.periodMonth}-31`;
@@ -130,13 +133,6 @@ export function calculateEmployeePayrollItem(input: EmployeeCalculationInput): P
   attendanceRecords.forEach((record) => {
     // Imported analysis rows are informational until HR explicitly approves them.
     if (record.sourceType === 'MOQOOT_IMPORT' && record.payrollApproved !== true) return;
-    if (record.aggregateAttendance) {
-      aggregateAbsenceDays += record.absence ? Math.max(0,Number(record.daysCount || 0)) : 0;
-      totalDelayMinutes += Math.max(0,Number(record.delayMinutes || 0));
-      if (record.overtimeType === 'WEEKEND') weekendOvertimeHours += Math.max(0,Number(record.overtimeHours || 0));
-      else standardOvertimeHours += Math.max(0,Number(record.overtimeHours || 0));
-      return;
-    }
     const recordStart = record.date;
     const recordEnd = record.endDate || record.date;
     const overlapStart = recordStart > servicePeriodStart ? recordStart : servicePeriodStart;
@@ -145,6 +141,16 @@ export function calculateEmployeePayrollItem(input: EmployeeCalculationInput): P
       ? Math.floor((Date.parse(`${overlapEnd}T00:00:00Z`) - Date.parse(`${overlapStart}T00:00:00Z`)) / 86400000) + 1
       : 0;
     if (overlappedDays <= 0) return;
+    const recordDays = Math.max(1, Math.floor((Date.parse(`${recordEnd}T00:00:00Z`) - Date.parse(`${recordStart}T00:00:00Z`)) / 86400000) + 1);
+    const periodShare = overlappedDays / recordDays;
+    if (record.aggregateAttendance) {
+      aggregateAbsenceDays += record.absence ? Math.max(0,Number(record.daysCount || 0)) * periodShare : 0;
+      totalDelayMinutes += Math.max(0,Number(record.delayMinutes || 0)) * periodShare;
+      if (record.overtimeType === 'WEEKEND') weekendOvertimeHours += Math.max(0,Number(record.overtimeHours || 0)) * periodShare;
+      else standardOvertimeHours += Math.max(0,Number(record.overtimeHours || 0)) * periodShare;
+      return;
+    }
+
     if (record.absence) {
       addDateRangeToSet(absenceDates, overlapStart, overlapEnd);
     } else if (record.unpaidLeave) {
@@ -152,14 +158,14 @@ export function calculateEmployeePayrollItem(input: EmployeeCalculationInput): P
     } else {
       if (record.delayMinutes > 0) {
         if (record.delayMinutes > rules.delayGracePeriodMinutes) {
-          totalDelayMinutes += (record.delayMinutes - rules.delayGracePeriodMinutes);
+          totalDelayMinutes += (record.delayMinutes - rules.delayGracePeriodMinutes) * periodShare;
         }
       }
       if (record.overtimeHours > 0) {
         if (record.overtimeType === 'WEEKEND') {
-          weekendOvertimeHours += record.overtimeHours;
+          weekendOvertimeHours += record.overtimeHours * periodShare;
         } else {
-          standardOvertimeHours += record.overtimeHours;
+          standardOvertimeHours += record.overtimeHours * periodShare;
         }
       }
     }
@@ -197,7 +203,7 @@ export function calculateEmployeePayrollItem(input: EmployeeCalculationInput): P
   let loanDeduction = 0;
   activeLoans.forEach(loan => {
     if (loan.status === 'ACTIVE' && loan.remainingAmount > 0) {
-      loanDeduction += Math.min(loan.monthlyInstallment, loan.remainingAmount);
+      loanDeduction += loanInstallmentAmount(loan);
     }
   });
   loanDeduction = roundAmount(loanDeduction, rules.roundingDecimals);
@@ -297,9 +303,9 @@ export function calculateEmployeePayrollItem(input: EmployeeCalculationInput): P
   if (totalGrossSalary - totalDeductions < 0) {
     warningFlags.push('الاستقطاعات تتجاوز إجمالي المستحقات');
   }
-  // Saudi Labor Law: Loans deduction should not exceed 33% of gross salary
-  if (totalGrossSalary > 0 && loanDeduction > (totalGrossSalary * 0.33)) {
-    warningFlags.push('قسط السلفة يتجاوز الثلث (33%) من إجمالي الراتب');
+  // Article 92: flag employer-loan deductions above the ordinary 10% wage limit.
+  if (totalGrossSalary > 0 && loanDeduction > (totalGrossSalary * 0.10)) {
+    warningFlags.push('قسط السلفة يتجاوز 10% من الأجر؛ يلزم مراجعة السند النظامي والموافقة الخطية');
   }
   if (totalAbsenceDays >= 5) {
     warningFlags.push(`غياب مرتفع (${totalAbsenceDays} أيام)`);
@@ -307,11 +313,12 @@ export function calculateEmployeePayrollItem(input: EmployeeCalculationInput): P
   if(leaveCashAllowance>0)warningFlags.push(`بدل إجازة نقدي مضاف للمسير: ${leaveCashAllowance}`);
   if(leaveAdvancePaid>0)warningFlags.push(`دفعة إجازة مقدمة مسجلة: ${leaveAdvancePaid}`);
 
-  return {
+  return applyPayrollNetRounding({
     id: `item-${employee.id}-${input.periodMonth}`,
     payrollRunId: '',
     employeeId: employee.id,
     employeeNo: employee.employeeNo,
+    payrollCategory: employee.payrollCategory || 'UNCLASSIFIED',
     employeeName: `${employee.firstNameAr} ${employee.lastNameAr}`,
     employeeNameEn: `${employee.firstNameEn || ''} ${employee.lastNameEn || ''}`.trim(),
     nationalIdOrIqama: employee.nationalIdOrIqama,
@@ -363,7 +370,20 @@ export function calculateEmployeePayrollItem(input: EmployeeCalculationInput): P
 
     isSuspended: isSuspended || isAbsconded,
     warningFlags,
-  };
+  }, company.calculationRules?.netSalaryRounding);
+}
+
+export function applyPayrollNetRounding(item: PayrollRunItem, policy?: 'NONE' | 'CEIL_SAR'): PayrollRunItem {
+  const previous = roundAmount(item.roundingAdjustment || 0);
+  const gross = roundAmount(item.totalGrossSalary - previous);
+  const net = roundAmount(Math.max(0, gross - item.totalDeductions));
+  const priorNet = roundAmount(item.priorPeriodNet || 0);
+  const halalas = Math.round((net + priorNet) * 100);
+  const adjustment = policy === 'CEIL_SAR' && halalas > 0 ? ((100 - halalas % 100) % 100) / 100 : 0;
+  return { ...item, roundingAdjustment: adjustment,
+    bonuses: roundAmount(item.bonuses - previous + adjustment),
+    totalGrossSalary: roundAmount(gross + adjustment), netSalary: roundAmount(net + adjustment + priorNet),
+    totalCompanyBurden: roundAmount(gross + adjustment + item.gosiEmployerShare + priorNet) };
 }
 
 export function roundAmount(val: number, decimals: number = 2): number {
@@ -399,4 +419,12 @@ export function formatNumber(val: number, decimals: number = 2): string {
     minimumFractionDigits: decimals,
     maximumFractionDigits: decimals,
   }).format(val || 0);
+}
+
+// A carried liability has no current salary, GOSI, attendance, loan or benefit expense.
+export function calculateArchivedSalaryBalanceItem(employee:Employee,company:Company,periodMonth:string):PayrollRunItem {
+ const item=calculateEmployeePayrollItem({employee:{...employee,status:employee.status==='ABSCONDED'?'SUSPENDED':'ACTIVE',gosiEnabled:false,
+   salaryPackage:{baseSalary:0,housingAllowance:0,transportAllowance:0,otherFixedAllowances:0,customAllowances:[],customDeductions:[]}},company,
+   periodMonth,attendanceRecords:[],activeLoans:[],penalties:[],temporaryEarnings:[],leaveRequests:[]});
+ return {...item,warningFlags:['رصيد مستحقات سابقة لموظف مؤرشف؛ لا يشمل راتبًا جديدًا']};
 }

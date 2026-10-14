@@ -1,3 +1,4 @@
+import { unpaidSalaryDetails } from './payroll-ledger.mjs';
 const asArray = value => Array.isArray(value) ? value : [];
 const roundAmount = value => Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
 
@@ -16,6 +17,12 @@ const employeeIsPaymentLocked = (run, employeeId) => asArray(run?.paymentBatches
  * The function is pure so the database command can persist every returned run atomically.
  */
 export function reconcilePaidPayrollCarryForward({ runs, employees, sourceRun, paidBatch, now = new Date().toISOString() }) {
+  if (Array.isArray(paidBatch?.allocations)) {
+    const releasedHolds=reconcilePaidPayrollCarryForward({runs,employees,sourceRun,paidBatch:{...paidBatch,allocations:undefined},now});
+    const byId=new Map(releasedHolds.map(run=>[run.id,run]));
+    const adjusted=reconcileAllocatedCarry({runs:asArray(runs).map(run=>byId.get(run.id)||run),sourceRun,batch:paidBatch});
+    return [...new Map([...releasedHolds,...adjusted].map(run=>[run.id,run])).values()];
+  }
   const employeeIds = new Set(asArray(paidBatch?.employeeIds).map(String));
   if (!sourceRun?.periodMonth || !employeeIds.size) return [];
   const employeesById = new Map(asArray(employees).map(employee => [String(employee.id), employee]));
@@ -30,7 +37,7 @@ export function reconcilePaidPayrollCarryForward({ runs, employees, sourceRun, p
 
   for (const run of asArray(runs)) {
     if (run.id === sourceRun.id || run.companyId !== sourceRun.companyId || run.periodMonth <= sourceRun.periodMonth) continue;
-    if (!['DRAFT', 'UNDER_REVIEW'].includes(String(run.status || 'DRAFT'))) continue;
+    if (!['DRAFT', 'UNDER_REVIEW', 'APPROVED'].includes(String(run.status || 'DRAFT'))) continue;
 
     let removedGross = 0;
     let removedDeductions = 0;
@@ -114,12 +121,13 @@ const sourceCarryDetails = (runs,sourceRun,employeeId) => {
 
 /** Restores released salary reservations to later editable runs after a batch fails or is cancelled. */
 export function reconcileReleasedPayrollCarryForward({ runs, sourceRun, releasedBatch }) {
+  if (Array.isArray(releasedBatch?.allocations)) return reconcileAllocatedCarry({runs,sourceRun,batch:releasedBatch});
   const employeeIds = new Set(asArray(releasedBatch?.employeeIds).map(String));
   if (!sourceRun?.periodMonth || !employeeIds.size) return [];
   const affectedRuns = [];
   for (const run of asArray(runs)) {
     if (run.id === sourceRun.id || run.companyId !== sourceRun.companyId || run.periodMonth <= sourceRun.periodMonth) continue;
-    if (!['DRAFT','UNDER_REVIEW'].includes(String(run.status || 'DRAFT'))) continue;
+    if (!['DRAFT','UNDER_REVIEW','APPROVED'].includes(String(run.status || 'DRAFT'))) continue;
     let addedGross = 0;
     let addedDeductions = 0;
     let addedNet = 0;
@@ -159,4 +167,34 @@ export function reconcileReleasedPayrollCarryForward({ runs, sourceRun, released
     });
   }
   return affectedRuns;
+}
+
+function reconcileAllocatedCarry({runs,sourceRun,batch}) {
+  const currentRuns = asArray(runs).map(run => run.id === sourceRun.id ? sourceRun : run);
+  const employees = new Set(asArray(batch.employeeIds));
+  return currentRuns.flatMap(run => {
+    if (run.id === sourceRun.id || run.companyId !== sourceRun.companyId || run.periodMonth <= sourceRun.periodMonth
+      || !['DRAFT','UNDER_REVIEW','APPROVED'].includes(run.status)) return [];
+    let grossDelta = 0, deductionsDelta = 0, netDelta = 0;
+    let changed = false;
+    const items = asArray(run.items).map(item => {
+      if (!employees.has(item.employeeId) || employeeIsPaymentLocked(run,item.employeeId)) return item;
+      const details = unpaidSalaryDetails(currentRuns,run,item.employeeId);
+      const gross = roundAmount(details.reduce((sum,row) => sum + row.gross,0));
+      const deductions = roundAmount(details.reduce((sum,row) => sum + row.deductions,0));
+      const net = roundAmount(details.reduce((sum,row) => sum + row.net,0));
+      if (JSON.stringify(details) === JSON.stringify(asArray(item.priorPeriodDetails))) return item;
+      const dg = roundAmount(gross - Number(item.priorPeriodGross || 0));
+      const dd = roundAmount(deductions - Number(item.priorPeriodDeductions || 0));
+      const dn = roundAmount(net - Number(item.priorPeriodNet || 0));
+      grossDelta = roundAmount(grossDelta + dg); deductionsDelta = roundAmount(deductionsDelta + dd); netDelta = roundAmount(netDelta + dn);
+      changed = true;
+      return {...item,priorPeriodDetails:details,priorPeriodGross:gross,priorPeriodDeductions:deductions,priorPeriodNet:net,
+        netSalary:roundAmount(Number(item.netSalary || 0) + dn),totalCompanyBurden:roundAmount(Number(item.totalCompanyBurden || 0) + dn)};
+    });
+    if (!changed) return [];
+    return [{...run,items,totalGrossSalaries:roundAmount(Number(run.totalGrossSalaries || 0) + grossDelta),
+      totalDeductions:roundAmount(Number(run.totalDeductions || 0) + deductionsDelta),totalNetSalaries:roundAmount(Number(run.totalNetSalaries || 0) + netDelta),
+      totalCompanyCost:roundAmount(Number(run.totalCompanyCost || 0) + netDelta)}];
+  });
 }

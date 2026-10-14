@@ -39,9 +39,9 @@ export function createAuthRegistrationRouter({
         WHERE e.is_archived=false AND e.status=ANY($3::text[])
           AND (e.national_id_or_iqama=$2 OR e.payload->>'iqamaNumber'=$2) LIMIT 1`,[companyCode,identityNumber,employeeAccountStatuses]);
       if (!employee.rowCount) return res.status(202).json({ requestId,maskedEmail:email.replace(/^(.{1,2}).*(@.*)$/,'$1***$2'),expiresInSeconds:900 });
-      const duplicate = await pool.query(`SELECT 1 FROM ${q('employee_portal_accounts')} WHERE lower(username)=$1 OR lower(email)=$2 OR employee_id=$3 LIMIT 1`,[username,email,employee.rows[0].id]);
+      const duplicate = await pool.query(`SELECT 1 FROM ${q('employee_portal_accounts')} WHERE company_id=$4 AND (lower(username)=$1 OR lower(email)=$2 OR employee_id=$3) AND NOT (employee_id=$3 AND approval_status='REJECTED') LIMIT 1`,[username,email,employee.rows[0].id,employee.rows[0].company_id]);
       if (duplicate.rowCount) return res.status(409).json({ error:'EMPLOYEE_ACCOUNT_ALREADY_EXISTS' });
-      const administrativeCollision = await pool.query(`SELECT 1 FROM ${q('users')} WHERE lower(username)=$1 LIMIT 1`,[username]);
+      const administrativeCollision = await pool.query(`SELECT 1 FROM ${q('users')} WHERE company_ids ? $2 AND (lower(username)=$1 OR lower(email)=$1 OR lower(username)=$3 OR lower(email)=$3) LIMIT 1`,[username,employee.rows[0].company_id,email]);
       if (administrativeCollision.rowCount) return res.status(409).json({ error:'EMPLOYEE_PORTAL_CREDENTIALS_CONFLICT' });
       const code = String(crypto.randomInt(100000,1000000));
       const row = employee.rows[0];
@@ -49,7 +49,7 @@ export function createAuthRegistrationRouter({
       const details = { kind:'EMPLOYEE',employeeId:row.id,companyId:row.company_id,companyCode,username,email,name,passwordHash:await bcrypt.hash(password,12),language,privacyVersion,termsVersion,privacyAcceptedAt:new Date().toISOString() };
       await pool.query(`INSERT INTO ${q('registration_requests')} (id,email,code_hash,details,expires_at)
         VALUES ($1,$2,$3,$4::jsonb,now()+interval '15 minutes')
-        ON CONFLICT (email) DO UPDATE SET id=EXCLUDED.id,code_hash=EXCLUDED.code_hash,details=EXCLUDED.details,expires_at=EXCLUDED.expires_at,attempts=0,updated_at=now()`,
+`,
       [requestId,email,sha256(`${requestId}:${code}`),JSON.stringify(details)]);
       try { await sendVerificationEmail(email,code,language,'EMPLOYEE_REGISTRATION'); }
       catch (error) { await pool.query(`DELETE FROM ${q('registration_requests')} WHERE id=$1`,[requestId]); throw error; }
@@ -78,25 +78,24 @@ export function createAuthRegistrationRouter({
       if (!employee.rowCount || !employeeAccountStatuses.includes(employee.rows[0].status)) {
         await client.query('ROLLBACK'); return res.status(409).json({ error:'EMPLOYEE_ACCOUNT_NOT_ELIGIBLE' });
       }
-      const duplicate = await client.query(`SELECT 1 FROM ${q('employee_portal_accounts')} WHERE lower(username)=$1 OR lower(email)=$2 OR employee_id=$3 LIMIT 1`,[details.username,details.email,details.employeeId]);
+      const duplicate = await client.query(`SELECT 1 FROM ${q('employee_portal_accounts')} WHERE company_id=$4 AND (lower(username)=$1 OR lower(email)=$2 OR employee_id=$3) AND NOT (employee_id=$3 AND approval_status='REJECTED') LIMIT 1`,[details.username,details.email,details.employeeId,details.companyId]);
       if (duplicate.rowCount) { await client.query('ROLLBACK'); return res.status(409).json({ error:'EMPLOYEE_ACCOUNT_ALREADY_EXISTS' }); }
-      const administrativeCollision = await client.query(`SELECT 1 FROM ${q('users')} WHERE lower(username)=$1 LIMIT 1`,[details.username]);
+      const administrativeCollision = await client.query(`SELECT 1 FROM ${q('users')} WHERE company_ids ? $2 AND (lower(username)=$1 OR lower(email)=$1 OR lower(username)=$3 OR lower(email)=$3) LIMIT 1`,[details.username,details.companyId,details.email]);
       if (administrativeCollision.rowCount) { await client.query('ROLLBACK'); return res.status(409).json({ error:'EMPLOYEE_PORTAL_CREDENTIALS_CONFLICT' }); }
+      await client.query(`DELETE FROM ${q('employee_portal_accounts')} WHERE employee_id=$1 AND approval_status='REJECTED'`,[details.employeeId]);
       const accountId = `portal-${crypto.randomUUID()}`;
-      await client.query(`INSERT INTO ${q('employee_portal_accounts')} (id,employee_id,company_id,username,password_hash,email,is_active,email_verified_at)
-        VALUES ($1,$2,$3,$4,$5,$6,true,now())`,[accountId,details.employeeId,details.companyId,details.username,details.passwordHash,details.email]);
+      await client.query(`INSERT INTO ${q('employee_portal_accounts')} (id,employee_id,company_id,username,password_hash,email,is_active,email_verified_at,approval_status)
+        VALUES ($1,$2,$3,$4,$5,$6,false,now(),'PENDING')`,[accountId,details.employeeId,details.companyId,details.username,details.passwordHash,details.email]);
       await client.query(`INSERT INTO ${q('privacy_consents')}
         (id,subject_type,subject_id,company_id,email,privacy_version,terms_version,accepted_at,ip_hash,user_agent)
         VALUES ($1,'EMPLOYEE_PORTAL',$2,$3,$4,$5,$6,$7,$8,$9)`,[
         `consent-${crypto.randomUUID()}`,accountId,details.companyId,details.email,details.privacyVersion,details.termsVersion,
         details.privacyAcceptedAt,sha256(String(req.ip || '')),String(req.get('user-agent') || '').slice(0,500),
       ]);
-      await client.query(`UPDATE ${q('employees')} SET payload=jsonb_set(payload,'{email}',to_jsonb($1::text),true),updated_at=now()
-        WHERE id=$2 AND company_id=$3`,[details.email,details.employeeId,details.companyId]);
       await client.query(`DELETE FROM ${q('registration_requests')} WHERE id=$1`,[requestId]);
       await client.query('COMMIT');
-      res.status(201).json({ companyCode:details.companyCode,username:details.username });
-    } catch (error) { try { await client.query('ROLLBACK'); } catch {} next(error); }
+      res.status(201).json({ companyCode:details.companyCode,username:details.username,approvalStatus:'PENDING' });
+    } catch (error) { try { await client.query('ROLLBACK'); } catch {} if(error?.code==='23505')return res.status(409).json({error:'EMPLOYEE_ACCOUNT_ALREADY_EXISTS'});next(error); }
     finally { client.release(); }
   });
 
@@ -119,15 +118,12 @@ export function createAuthRegistrationRouter({
         || phone.length < 7 || phone.length > 25) {
         return res.status(400).json({ error:'INVALID_REGISTRATION' });
       }
-      const duplicate = await pool.query(`SELECT 1 FROM ${q('users')} WHERE lower(username)=$1 OR lower(email)=$2 LIMIT 1`, [username,email]);
-      if (duplicate.rowCount) return res.status(409).json({ error:'ACCOUNT_ALREADY_EXISTS' });
       const requestId = crypto.randomUUID();
       const code = String(crypto.randomInt(100000, 1000000));
       const details = { companyNameAr,companyNameEn,crNumber,taxNumber,phone,adminName,username,email,passwordHash:await bcrypt.hash(password,12),language,privacyVersion,termsVersion,privacyAcceptedAt:new Date().toISOString() };
       await pool.query(`INSERT INTO ${q('registration_requests')} (id,email,code_hash,details,expires_at)
         VALUES ($1,$2,$3,$4::jsonb,now()+interval '15 minutes')
-        ON CONFLICT (email) DO UPDATE SET id=EXCLUDED.id,code_hash=EXCLUDED.code_hash,details=EXCLUDED.details,
-          expires_at=EXCLUDED.expires_at,attempts=0,updated_at=now()`,
+`,
         [requestId,email,sha256(`${requestId}:${code}`),JSON.stringify(details)]);
       try {
         await sendVerificationEmail(email,code,language);
@@ -150,7 +146,7 @@ export function createAuthRegistrationRouter({
       await client.query('BEGIN');
       const request = await client.query(`SELECT * FROM ${q('registration_requests')} WHERE id=$1 FOR UPDATE`, [requestId]);
       const row = request.rows[0];
-      if (!row || new Date(row.expires_at).getTime() <= Date.now() || row.attempts >= 5) {
+      if (!row || row.details?.kind === 'EMPLOYEE' || !publicRegistrationEnabled || new Date(row.expires_at).getTime() <= Date.now() || row.attempts >= 5) {
         await client.query('ROLLBACK');
         return res.status(400).json({ error:'VERIFICATION_EXPIRED' });
       }
@@ -160,11 +156,6 @@ export function createAuthRegistrationRouter({
         return res.status(400).json({ error:'INVALID_VERIFICATION_CODE' });
       }
       const details = row.details;
-      const duplicate = await client.query(`SELECT 1 FROM ${q('users')} WHERE lower(username)=$1 OR lower(email)=$2 LIMIT 1`, [details.username,details.email]);
-      if (duplicate.rowCount) {
-        await client.query('ROLLBACK');
-        return res.status(409).json({ error:'ACCOUNT_ALREADY_EXISTS' });
-      }
       const companyId = `comp-${crypto.randomUUID()}`;
       let companyCode = '';
       for (let attempt=0; attempt<10 && !companyCode; attempt += 1) {
@@ -190,7 +181,7 @@ export function createAuthRegistrationRouter({
         `consent-${crypto.randomUUID()}`,userId,companyId,details.email,details.privacyVersion,details.termsVersion,
         details.privacyAcceptedAt,sha256(String(req.ip || '')),String(req.get('user-agent') || '').slice(0,500),
       ]);
-      await client.query(`DELETE FROM ${q('registration_requests')} WHERE email=$1`, [details.email]);
+      await client.query(`DELETE FROM ${q('registration_requests')} WHERE id=$1`, [requestId]);
       await client.query('COMMIT');
       res.status(201).json({ companyCode,username:details.username,trialEndsAt,trialDays });
     } catch (error) {

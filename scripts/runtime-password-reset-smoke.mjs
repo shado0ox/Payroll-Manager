@@ -96,7 +96,7 @@ try {
       WHERE id=$1`, [companyId]);
     const suspendedReset = await jsonRequest('/api/auth/password-reset/request', {
       method:'POST',
-      body:JSON.stringify({ email:suspendedManagerEmail }),
+      body:JSON.stringify({ email:suspendedManagerEmail,companyCode }),
     });
     assert.equal(suspendedReset.response.status, 200, 'Expired-company password reset request must remain available');
     const suspendedRequestId = 'ci-suspended-password-code';
