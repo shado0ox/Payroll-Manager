@@ -100,6 +100,7 @@ const payrollItemPaymentLockCore = (item) => {
   return {
     id:text(item.id), payrollRunId:text(item.payrollRunId), employeeId:text(item.employeeId), employeeNo:text(item.employeeNo),
     employeeName:text(item.employeeName), employeeNameEn:text(item.employeeNameEn), nationalIdOrIqama:text(item.nationalIdOrIqama),
+    payrollCategory:text(item.payrollCategory||'UNCLASSIFIED'),
     department:text(item.department), costCenterId:text(item.costCenterId), nationality:text(item.nationality),
     bankIban:text(item.bankIban), bankName:text(item.bankName), bankSwiftCode:text(item.bankSwiftCode),
     baseSalary:number(item.baseSalary), housingAllowance:number(item.housingAllowance), transportAllowance:number(item.transportAllowance),
@@ -217,6 +218,18 @@ function validatePayrollWorkflowChanges(storedRuns, incomingRuns, user, options 
           throw workflowError(409, 'TRANSFERRED_EMPLOYEE_PAYROLL_IMMUTABLE');
         }
       }
+      const monthlyFinancialRows=items=>asArray(items).map(item=>{
+        const core=payrollItemPaymentLockCore(item)||{};
+        return {employeeId:core.employeeId,payrollCategory:core.payrollCategory,costCenterId:core.costCenterId,
+          baseSalary:core.baseSalary,housingAllowance:core.housingAllowance,transportAllowance:core.transportAllowance,
+          otherAllowances:core.otherAllowances,overtimeAmount:core.overtimeAmount,bonuses:core.bonuses,
+          totalGrossSalary:core.totalGrossSalary,totalDeductions:core.totalDeductions,gosiEmployeeShare:core.gosiEmployeeShare,
+          gosiEmployerShare:core.gosiEmployerShare,loanDeduction:core.loanDeduction,
+          currentNet:Number((Number(core.netSalary||0)-Number(core.priorPeriodNet||0)).toFixed(2))};
+      }).sort((a,b)=>String(a.employeeId).localeCompare(String(b.employeeId)));
+      const monthlyChanged=!sameJson(monthlyFinancialRows(oldRun.items),monthlyFinancialRows(nextRun.items));
+      if(monthlyChanged&&!can(user,'APPROVE_PAYROLL'))throw workflowError(403,'APPROVE_PAYROLL_REQUIRED');
+      if(monthlyChanged&&oldStatus==='POSTED'&&!can(user,'POST_PAYROLL'))throw workflowError(403,'POST_PAYROLL_REQUIRED');
     }
 
     const oldBatches = new Map(asArray(oldRun.paymentBatches).map(batch => [batch.id, batch]));

@@ -1,3 +1,4 @@
+import { getCurrentDate } from '../utils/period';
 import React, { useState, useMemo, useEffect } from 'react';
 import { 
   Layers, 
@@ -17,7 +18,7 @@ import {
 } from 'lucide-react';
 import { Company, PayrollRun, PayrollSettlement, PayrollPaymentBatch, JournalBatch, JournalLine, UserRole } from '../types';
 import { formatSAR, formatNumber, roundAmount } from '../utils/payrollEngine';
-import { buildJournalDraft, buildPayrollPaymentJournalPlan, generateEntitlementSettlementJournals, generateGosiAccrualJournalBatches, generateGosiPaymentJournalBatches, generatePayrollJournalBatch, generatePaymentJournalBatch, mergeFreshJournalWithDraft } from '../utils/accountingEngine';
+import { buildJournalDraft, buildAccrualJournalPlan, buildPayrollPaymentJournalPlan, generateEntitlementSettlementJournals, generateGosiAccrualJournalBatches, generateGosiPaymentJournalBatches, generatePayrollJournalBatch, generatePaymentJournalBatch, mergeFreshJournalWithDraft } from '../utils/accountingEngine';
 import { exportQoyodJournalCsv } from '../utils/exportUtils';
 import { useLanguage } from '../i18n/LanguageContext';
 
@@ -57,7 +58,7 @@ export const AccountingJournalsView: React.FC<AccountingJournalsViewProps> = ({
     return buildPayrollPaymentJournalPlan(company,runs,journals);
   },[companyRuns,settlements,company,journals]);
   const paymentJournals=paymentJournalPlan.batches;
-  const settlementJournals=useMemo(()=>generateEntitlementSettlementJournals(company,companyRuns),[company,companyRuns]);
+  const settlementJournals=useMemo(()=>generateEntitlementSettlementJournals(company,companyRuns,settlements),[company,companyRuns,settlements]);
   const availablePeriods = useMemo(() => [...new Set([
     ...companyRuns.map(run => run.periodMonth),...paymentJournals.map(batch=>batch.periodMonth),...settlementJournals.map(batch=>batch.periodMonth),
     ...companyRuns.flatMap(run=>run.items.map(item=>item.entitlementSettlementDate?.slice(0,7)).filter(Boolean))
@@ -69,13 +70,14 @@ export const AccountingJournalsView: React.FC<AccountingJournalsViewProps> = ({
 
 
   const [selectedGosiBranchId,setSelectedGosiBranchId]=useState('');
+  const [selectedAccrualId,setSelectedAccrualId]=useState('');
   const [editingLines,setEditingLines]=useState<JournalLine[]|null>(null);
   const [changeReason,setChangeReason]=useState('');
   const [saving,setSaving]=useState(false);
   const [isAccountsMapModalOpen, setIsAccountsMapModalOpen] = useState(false);
 
   useEffect(() => { setSelectedPeriod(companyRuns[0]?.periodMonth || new Date().toISOString().slice(0,7)); }, [company.id]);
-  useEffect(() => { setEditingLines(null); setChangeReason(''); }, [selectedPeriod,journalType,selectedGosiBranchId,effectivePaymentId,company.id]);
+  useEffect(() => { setEditingLines(null); setChangeReason(''); }, [selectedPeriod,journalType,selectedGosiBranchId,selectedAccrualId,effectivePaymentId,company.id]);
 
   const currentRun = useMemo(() => {
     return companyRuns.find(r => r.periodMonth === selectedPeriod) || null;
@@ -86,12 +88,18 @@ export const AccountingJournalsView: React.FC<AccountingJournalsViewProps> = ({
   const branchBatches=journalType==='GOSI_PAYMENT'?gosiPaymentBatches:gosiAccrualBatches;
   const effectiveBranchId=branchBatches.some(batch=>batch.gosiBranchId===selectedGosiBranchId)?selectedGosiBranchId:(branchBatches[0]?.gosiBranchId||'');
 
+  const accrualPlan=useMemo(()=>{
+    const fresh=currentRun?(journalType==='PAYROLL_ACCRUAL'?generatePayrollJournalBatch(company,currentRun):gosiAccrualBatches.find(batch=>batch.gosiBranchId===effectiveBranchId)):null;
+    return fresh?buildAccrualJournalPlan(fresh,journals,getCurrentDate(company.timezone||'Asia/Riyadh')):{batches:[],blocked:false};
+  },[company,currentRun,journalType,gosiAccrualBatches,effectiveBranchId,journals]);
+  const effectiveAccrualId=accrualPlan.batches.some(batch=>batch.id===selectedAccrualId)?selectedAccrualId:accrualPlan.batches.at(-1)?.id;
+
   const freshBatch: JournalBatch | null = useMemo(() => {
     if(journalType==='PAYROLL_PAYMENT'||journalType==='PAYROLL_SETTLEMENT')return periodPaymentJournals.find(batch=>batch.id===effectivePaymentId)||null;
     if (!currentRun) return null;
-    if(journalType==='PAYROLL_ACCRUAL')return generatePayrollJournalBatch(company,currentRun);
+    if(journalType==='PAYROLL_ACCRUAL'||journalType==='GOSI_ACCRUAL')return accrualPlan.batches.find(batch=>batch.id===effectiveAccrualId)||null;
     return branchBatches.find(batch=>batch.gosiBranchId===effectiveBranchId)||null;
-  },[company,currentRun,journalType,branchBatches,effectiveBranchId,companyRuns,selectedPeriod,paymentJournals,settlementJournals,effectivePaymentId]);
+  },[company,currentRun,journalType,branchBatches,effectiveBranchId,companyRuns,selectedPeriod,paymentJournals,settlementJournals,effectivePaymentId,accrualPlan,effectiveAccrualId]);
   const persistedBatch = useMemo(
     () => freshBatch ? journals.find(journal => journal.id === freshBatch.id) : undefined,
     [freshBatch,journals]
@@ -105,6 +113,7 @@ export const AccountingJournalsView: React.FC<AccountingJournalsViewProps> = ({
 
   const saveDraft=async()=>{if(!freshBatch||!editingLines||!changeReason.trim()||!isBalanced)return;setSaving(true);try{await onSaveJournal(buildJournalDraft(freshBatch,editingLines,changeReason.trim()));setEditingLines(null);setChangeReason('');}finally{setSaving(false);}};
   const diagnosticLabel=(code:NonNullable<JournalBatch['balanceDiagnostics']>[number]['code'])=>({
+    SALARY_CATEGORY_ACCOUNT_MISSING:ui('يلزم ربط حساب مصروف فئة الموظف في دليل الحسابات','Map the employee category expense account in company accounts'),
     PRIOR_PERIOD_BALANCE_EXCLUDED:ui('رصيد سابق مستبعد من استحقاق الشهر الحالي','Prior balance excluded from current accrual'),
     GROSS_COMPONENT_MISMATCH:ui('اختلاف مكونات الاستحقاقات','Gross component mismatch'),
     DEDUCTION_COMPONENT_MISMATCH:ui('اختلاف مكونات الخصومات','Deduction component mismatch'),
@@ -171,7 +180,7 @@ export const AccountingJournalsView: React.FC<AccountingJournalsViewProps> = ({
           {activeBatch && (
             <>
               <button
-                disabled={Boolean(editingLines)||!isBalanced}
+                disabled={Boolean(editingLines)||!isBalanced||activeBatch.balanceDiagnostics?.some(row=>row.severity==='ERROR')}
                 onClick={() => onOpenQoyodModal(activeBatch)}
                 className="px-3.5 py-2 bg-sky-600 hover:bg-sky-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
               >
@@ -180,7 +189,7 @@ export const AccountingJournalsView: React.FC<AccountingJournalsViewProps> = ({
               </button>
 
               <button
-                disabled={Boolean(editingLines)||!isBalanced}
+                disabled={Boolean(editingLines)||!isBalanced||activeBatch.balanceDiagnostics?.some(row=>row.severity==='ERROR')}
                 onClick={() => exportQoyodJournalCsv(activeBatch, company)}
                 className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
               >
@@ -205,6 +214,9 @@ export const AccountingJournalsView: React.FC<AccountingJournalsViewProps> = ({
       {(journalType==='PAYROLL_PAYMENT'||journalType==='PAYROLL_SETTLEMENT')&&<label className="block rounded-xl bg-white p-3 text-xs">{ui('الدفعة أو التسوية بتاريخها الفعلي','Payment or settlement by actual date')}<select className="ms-2 rounded-xl border px-3 py-2" value={effectivePaymentId||''} onChange={event=>setSelectedPaymentJournalId(event.target.value)}>{periodPaymentJournals.map(batch=><option key={batch.id} value={batch.id}>{batch.batchNumber} · {batch.date}</option>)}</select></label>}
       {(journalType==='GOSI_ACCRUAL' ||journalType==='GOSI_PAYMENT')&&<div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-xs"><label className="text-xs font-bold text-slate-600">{ui('فرع التأمينات','GOSI branch')}<select className="ms-2 rounded-xl border border-slate-200 px-3 py-2" value={effectiveBranchId} onChange={event=>{setSelectedGosiBranchId(event.target.value);setEditingLines(null);setChangeReason('');}}>{branchBatches.map(batch=><option key={batch.id} value={batch.gosiBranchId}>{batch.gosiBranchName} · {batch.gosiBranchCode}</option>)}</select></label>{!branchBatches.length&&<span className="ms-3 text-xs text-amber-700">{ui('لا توجد مبالغ تأمينات مرتبطة بفروع داخل عناصر المسير.','No payroll GOSI amounts are assigned to a branch.')}</span>}</div>}
 
+      {(journalType==='PAYROLL_ACCRUAL'||journalType==='GOSI_ACCRUAL')&&accrualPlan.batches.length>1&&<div className="rounded-2xl border bg-white p-3"><label className="text-xs font-bold">{ui('قيد الاستحقاق الأصلي أو التكميلي','Original or supplemental accrual')}<select value={effectiveAccrualId} onChange={event=>setSelectedAccrualId(event.target.value)} className="ms-2 rounded-xl border px-3 py-2">{accrualPlan.batches.map(batch=><option key={batch.id} value={batch.id}>{batch.batchNumber} · {batch.date} · {formatSAR(batch.totalDebit)}</option>)}</select></label></div>}
+      {(journalType==='PAYROLL_ACCRUAL'||journalType==='GOSI_ACCRUAL')&&accrualPlan.blocked&&<div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs">{ui('القيد السابق معدّل يدويًا أو لا يسمح باشتقاق فرق متوازن؛ راجع القيد التكميلي محاسبيًا قبل ترحيل الإضافة المتأخرة.','The previous journal was manually edited or cannot yield a balanced difference; reconcile the supplemental accrual before posting late additions.')}</div>}
+      {journalType==='PAYROLL_ACCRUAL'&&<p className="rounded-xl border border-blue-200 bg-blue-50 p-3 text-xs text-blue-900">{ui('قيد الاستحقاق يثبت تكلفة هذا الشهر فقط. الأرصدة السابقة تبقى في شهور استحقاقها، وقيد الصرف يثبت مبلغ التحويل الفعلي لكل دفعة.','Accrual records this month’s cost only. Prior balances remain in their source months; payment journals record actual paid batch amounts.')}</p>}
       {/* Batch Header Information Card */}
       {activeBatch && (
         <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -342,6 +354,7 @@ export const AccountingJournalsView: React.FC<AccountingJournalsViewProps> = ({
             </div>
 
             <form onSubmit={handleSaveAccounts} className="space-y-3.5 text-xs">
+              {(['administrativeSalariesExpenseAccount','workerWagesExpenseAccount'] as const).map(key=><label key={key} className="block font-semibold">{key==='administrativeSalariesExpenseAccount'?ui('مصروف الرواتب الإدارية','Administrative salary expense'):ui('مصروف أجور العاملين','Worker wages expense')}<input value={accountsForm[key]||''} onChange={event=>setAccountsForm({...accountsForm,[key]:event.target.value})} className="mt-1 block w-full rounded-xl border px-3 py-2 font-mono"/></label>)}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                 <div>
                   <label className="block font-semibold text-slate-700 mb-1">{ui('ح/ مصروف الرواتب الأساسية', 'Basic salary expense account')}</label>

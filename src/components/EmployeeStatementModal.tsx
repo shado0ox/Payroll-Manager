@@ -1,5 +1,5 @@
 import { loanInstallmentAmount } from '../../server/loan-installments.mjs';
-import { monthlySalaryNet, salarySourceSummary, effectiveEmployeeSalaryLoans } from '../../server/payroll-ledger.mjs';
+import { monthlySalaryNet, salarySourceSummary, effectiveEmployeeSalaryLoans, salaryAccountStatement } from '../../server/payroll-ledger.mjs';
 import React from 'react';
 import { 
   X, 
@@ -56,6 +56,7 @@ export const EmployeeStatementModal: React.FC<EmployeeStatementModalProps> = ({
     .filter(h => h.item !== undefined)
     .sort((a, b) => b.run.periodMonth.localeCompare(a.run.periodMonth));
 
+  const salaryLedger=salaryAccountStatement(payrollRuns,company.id,employee.id,settlements);
   const effectiveLoans=effectiveEmployeeSalaryLoans(loans,payrollRuns,company.id,employee.id);
   const activeLoan=effectiveLoans.filter(loan=>loan.status==='ACTIVE'&&loan.effectiveRemaining>0).map(loan=>({...loan,remainingAmount:loan.effectiveRemaining}))[0];
   const employeePaidSettlements = settlements.filter(item => item.companyId === company.id && item.employeeId === employee.id && item.status === 'PAID');
@@ -363,6 +364,7 @@ export const EmployeeStatementModal: React.FC<EmployeeStatementModalProps> = ({
             </div>
           )}
 
+          <section className="mb-5" data-testid="employee-salary-ledger"><h3 className="mb-2 text-sm font-bold">{tr('كشف حساب مستحقات الرواتب','Salary entitlement account statement')}</h3><p className="mb-3 text-xs text-slate-600">{tr('الدائن استحقاق للموظف، والمدين صرف أو تسوية. الرصيد الموجب مستحق لم يُسدّد.','Credit is earned salary; debit is payment or settlement. A positive balance remains payable.')}</p><div className="mb-3 flex flex-wrap gap-4 text-xs font-bold"><span>{tr('الرصيد المستحق','Outstanding')}: {formatSAR(salaryLedger.balance)}</span><span>{tr('محجوز بدفعات مجدولة','Reserved by scheduled payments')}: {formatSAR(salaryLedger.reserved)}</span></div><div className="overflow-x-auto rounded-xl border"><table className="w-full text-xs"><thead><tr className="bg-slate-100"><th className="p-2">{tr('التاريخ','Date')}</th><th>{tr('شهر الاستحقاق','Salary month')}</th><th>{tr('الحركة / المرجع','Entry / reference')}</th><th>{tr('مدين','Debit')}</th><th>{tr('دائن','Credit')}</th><th>{tr('الرصيد','Balance')}</th></tr></thead><tbody>{salaryLedger.entries.map(row=><tr key={row.id} className="border-t"><td className="p-2">{row.date}</td><td>{row.periodMonth}</td><td>{{WAGE:tr('استحقاق راتب','Salary entitlement'),PAYMENT:tr('صرف راتب','Salary payment'),OFFSET:tr('تسوية موثقة','Documented offset'),OFFSET_REVERSAL:tr('عكس تسوية','Offset reversal')}[row.kind]} · {row.reference}</td><td>{formatSAR(row.debit)}</td><td>{formatSAR(row.credit)}</td><td className="font-bold">{formatSAR(row.balance)}</td></tr>)}</tbody><tfoot><tr className="border-t bg-slate-100 font-bold"><td colSpan={3} className="p-2">{tr('الإجمالي','Total')}</td><td>{formatSAR(salaryLedger.totalDebit)}</td><td>{formatSAR(salaryLedger.totalCredit)}</td><td>{formatSAR(salaryLedger.balance)}</td></tr></tfoot></table></div></section>
           {/* Historical Activity Table */}
           <div>
             <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider mb-2 flex items-center gap-2">

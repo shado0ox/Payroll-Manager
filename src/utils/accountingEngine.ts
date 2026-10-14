@@ -1,3 +1,4 @@
+import { salarySourceSummary, salaryOffsetTotal } from '../../server/payroll-ledger.mjs';
 import { Company, PayrollRun, JournalBatch, JournalLine, PayrollPaymentBatch, JournalBalanceDiagnostic, PayrollRunItem } from '../types';
 import { roundAmount } from './payrollEngine';
 
@@ -65,11 +66,12 @@ export function generatePayrollJournalBatch(company:Company,payrollRun:PayrollRu
   const accounts = { ...company.chartOfAccounts };
   const costCenters = company.costCenters || [];
   const defaultCCId = costCenters[0]?.id || 'CC-DEFAULT';
-  const buckets = new Map<string,{base:number;housing:number;transport:number;overtime:number;other:number}>();
+  const buckets = new Map<string,{ccId:string;category:string;base:number;housing:number;transport:number;overtime:number;other:number}>();
   for (const item of payrollRun.items || []) {
     const ccId = costCenters.some(cc => cc.id === item.costCenterId) ? item.costCenterId : defaultCCId;
-    if (!buckets.has(ccId)) buckets.set(ccId,{base:0,housing:0,transport:0,overtime:0,other:0});
-    const bucket=buckets.get(ccId)!;
+    const category=item.payrollCategory||'UNCLASSIFIED',bucketId=category==='UNCLASSIFIED'?ccId:`${ccId}-${category}`;
+    if (!buckets.has(bucketId)) buckets.set(bucketId,{ccId,category,base:0,housing:0,transport:0,overtime:0,other:0});
+    const bucket=buckets.get(bucketId)!;
     bucket.base+=Number(item.baseSalary||0); bucket.housing+=Number(item.housingAllowance||0);
     bucket.transport+=Number(item.transportAllowance||0); bucket.overtime+=Number(item.overtimeAmount||0);
     bucket.other+=Number(item.otherAllowances||0)+Number(item.bonuses||0);
@@ -82,14 +84,19 @@ export function generatePayrollJournalBatch(company:Company,payrollRun:PayrollRu
     ['overtime','overtime',accounts.overtimeExpenseAccount||'5104','مصروف العمل الإضافي','Overtime expense'],
     ['other','other',accounts.otherAllowancesExpenseAccount||'5105','مصروف البدلات والمكافآت الأخرى','Other allowances and bonuses expense'],
   ] as const;
-  for (const [ccId,bucket] of buckets) {
+  for (const [bucketId,bucket] of buckets) {
+    const ccId=bucket.ccId;
+    const categoryAccount=bucket.category==='ADMINISTRATIVE'?accounts.administrativeSalariesExpenseAccount:bucket.category==='WORKER'?accounts.workerWagesExpenseAccount:undefined;
+    const categoryName=bucket.category==='ADMINISTRATIVE'?'مصروف رواتب إدارية':'مصروف أجور العاملين';
     const cc=costCenters.find(candidate=>candidate.id===ccId)||{code:'CC-GEN',nameAr:'المركز العام',nameEn:'General cost center'};
     for(const [key,idPart,accountCode,nameAr,nameEn] of definitions){const amount=roundAmount(bucket[key]);if(amount<=0)continue;
-      lines.push({id:`line-debit-${idPart}-${ccId}`,accountCode,accountNameAr:nameAr,accountNameEn:nameEn,
+      lines.push({id:`line-debit-${idPart}-${bucketId}`,accountCode:categoryAccount||accountCode,accountNameAr:categoryAccount?categoryName:nameAr,accountNameEn:categoryAccount?(bucket.category==='ADMINISTRATIVE'?'Administrative salaries':'Worker wages'):nameEn,
         descriptionAr:`استحقاق ${nameAr} لشهر ${payrollRun.periodMonth} - ${cc.nameAr}`,descriptionEn:`${nameEn} accrual for ${payrollRun.periodMonth} - ${cc.nameEn||cc.nameAr}`,
         debit:amount,credit:0,costCenterCode:cc.code,costCenterName:cc.nameAr,costCenterNameEn:cc.nameEn||cc.nameAr});}
   }
   const items=payrollRun.items||[];
+  const categoryDiagnostics:JournalBalanceDiagnostic[]=items.filter(item=>item.totalGrossSalary>0&&((item.payrollCategory==='ADMINISTRATIVE'&&!accounts.administrativeSalariesExpenseAccount?.trim())||(item.payrollCategory==='WORKER'&&!accounts.workerWagesExpenseAccount?.trim())))
+    .map(item=>({employeeId:item.employeeId,employeeNo:item.employeeNo,employeeName:item.employeeName,code:'SALARY_CATEGORY_ACCOUNT_MISSING',severity:'ERROR',recorded:item.totalGrossSalary,expected:0,difference:item.totalGrossSalary}));
   const salariesPayable=roundAmount(items.reduce((sum,item)=>sum+currentPeriodNet(item)+Number(item.gosiEmployeeShare||0),0));
   const loans=roundAmount(items.reduce((sum,item)=>sum+Number(item.loanDeduction||0),0));
   const leaveAdvancePaid=roundAmount(items.reduce((sum,item)=>sum+Number(item.leaveAdvancePaid||0),0));
@@ -98,7 +105,7 @@ export function generatePayrollJournalBatch(company:Company,payrollRun:PayrollRu
   if(loans>0)lines.push({id:'line-cred-loans',accountCode:accounts.employeeAdvancesAccount||'1105',accountNameAr:'ذمم وسلف الموظفين المستردة',accountNameEn:'Employee loans and advances recovered',descriptionAr:`استقطاع السلف لشهر ${payrollRun.periodMonth}`,descriptionEn:`Employee loan deductions for ${payrollRun.periodMonth}`,debit:0,credit:loans});
   if(leaveAdvancePaid>0)lines.push({id:'line-cred-leave-advance',accountCode:accounts.employeeAdvancesAccount||'1105',accountNameAr:'دفعات إجازات مقدمة للموظفين',accountNameEn:'Employee leave advances',descriptionAr:`تسوية دفعات الإجازات المقدمة لشهر ${payrollRun.periodMonth}`,descriptionEn:`Leave advances cleared in ${payrollRun.periodMonth}`,debit:0,credit:leaveAdvancePaid});
   if(otherDeductions>0)lines.push({id:'line-cred-penalties',accountCode:accounts.penaltiesPayableAccount||'2105',accountNameAr:'أمانات الجزاءات والخصومات الإدارية',accountNameEn:'Penalties and administrative deductions payable',descriptionAr:`خصومات غير التأمينات لشهر ${payrollRun.periodMonth}`,descriptionEn:`Non-GOSI deductions for ${payrollRun.periodMonth}`,debit:0,credit:otherDeductions});
-  return finishBatch({id:`batch-${payrollRun.id}`,companyId:company.id,payrollRunId:payrollRun.id,periodMonth:payrollRun.periodMonth,batchNumber:`JV-${payrollRun.periodMonth.replace('-','')}-${(company.crNumber||'').slice(-4)||'001'}`,date:monthEnd(payrollRun.periodMonth),description:`قيد استحقاق رواتب وأجور موظفي (${company.nameAr}) لشهر ${payrollRun.periodMonth}`,descriptionEn:`Payroll accrual for ${company.nameEn||company.nameAr} - ${payrollRun.periodMonth}`,journalType:'PAYROLL_ACCRUAL',affectedBranches:[],status:journalStatus(payrollRun),balanceDiagnostics:payrollJournalDiagnostics(items)},lines);
+  return finishBatch({id:`batch-${payrollRun.id}`,companyId:company.id,payrollRunId:payrollRun.id,periodMonth:payrollRun.periodMonth,batchNumber:`JV-${payrollRun.periodMonth.replace('-','')}-${(company.crNumber||'').slice(-4)||'001'}`,date:monthEnd(payrollRun.periodMonth),description:`قيد استحقاق رواتب وأجور موظفي (${company.nameAr}) لشهر ${payrollRun.periodMonth}`,descriptionEn:`Payroll accrual for ${company.nameEn||company.nameAr} - ${payrollRun.periodMonth}`,journalType:'PAYROLL_ACCRUAL',affectedBranches:[],status:journalStatus(payrollRun),balanceDiagnostics:[...payrollJournalDiagnostics(items),...categoryDiagnostics]},lines);
 }
 
 function collectGosiBranches(company:Company,payrollRun:PayrollRun):GosiBranchBucket[] {
@@ -144,13 +151,13 @@ export function buildJournalDraft(fresh:JournalBatch,editedLines:JournalLine[],r
   return {...fresh,...balanceJournalLines(editedLines,fresh.periodMonth),manualLineOverrides,customLines,removedLineIds,changeReason:reason};
 }
 
-export function generateEntitlementSettlementJournals(company:Company,runs:PayrollRun[]):JournalBatch[] {
+export function generateEntitlementSettlementJournals(company:Company,runs:PayrollRun[],settlements:any[]=[]):JournalBatch[] {
   const entries=runs.filter(run=>run.companyId===company.id && ['APPROVED','POSTED'].includes(run.status)).flatMap(run=>run.items
     .filter(item=>['SETTLED','CANCELLED_WITH_DOCUMENT'].includes(item.entitlementStatus || '') && item.entitlementSettlementAccount && item.entitlementSettlementDate && currentPeriodNet(item)>0)
     .map(item=>({run,item})));
   const manualJournals=entries.map(({run,item})=>{
     const periodMonth=item.entitlementSettlementDate!.slice(0,7);
-    const amount=currentPeriodNet(item);
+    const amount=roundAmount(salarySourceSummary(runs,run,item,settlements).offsets-salaryOffsetTotal(run,item));
     const description=`${item.employeeNo} | ${run.periodMonth} | ${item.entitlementReason || ''} | ${item.entitlementDocumentRef || ''}`;
     const lines:JournalLine[]=[{id:`settlement-payable-${item.id}`,accountCode:company.chartOfAccounts?.salariesPayableAccount||'2101',accountNameAr:'مستحقات الرواتب والأجور',accountNameEn:'Salaries payable',descriptionAr:description,descriptionEn:description,debit:amount,credit:0},
       {id:`settlement-counter-${item.id}`,accountCode:item.entitlementSettlementAccount!,accountNameAr:'الحساب المقابل للتسوية الموثقة',accountNameEn:'Documented settlement counter-account',descriptionAr:description,descriptionEn:description,debit:0,credit:amount}];
@@ -163,7 +170,7 @@ export function generateEntitlementSettlementJournals(company:Company,runs:Payro
     const counter={id:`offset-counter-${offset.id}`,accountCode:offset.counterAccount,accountNameAr:'الحساب المقابل للتسوية الموثقة',accountNameEn:'Documented settlement counter-account',descriptionAr:description,descriptionEn:description,debit:reversed?amount:0,credit:reversed?0:amount};
     return finishBatch({id:`batch-offset-${offset.id}`,companyId:company.id,payrollRunId:run.id,periodMonth:offset.date.slice(0,7),batchNumber:`JV-OFFSET-${offset.id}`,date:offset.date,description:`${reversed?'عكس تسوية':'تسوية'} ذمة راتب ${run.periodMonth} - ${offset.documentRef}`,descriptionEn:`${reversed?'Reversal of salary offset':'Salary liability offset'} ${run.periodMonth} - ${offset.documentRef}`,journalType:'PAYROLL_SETTLEMENT',status:'APPROVED'},[payable,counter]);
   }));
-  return [...manualJournals,...offsetJournals];
+  return [...manualJournals.filter(batch=>batch.totalDebit>0),...offsetJournals];
 }
 
 // Old payment journals were aggregated per run. Preserve their posted scope before
@@ -189,4 +196,34 @@ export function buildPayrollPaymentJournalPlan(company:Company,runs:PayrollRun[]
     batches.push(...paid.filter(batch=>!covered.has(batch.id)).map(batch=>generatePaymentJournalBatch(company,run,batch)));
   }
   return {batches,blockedRunIds};
+}
+
+// Preserve posted accruals and propose only the unposted difference as a new journal.
+export function buildAccrualJournalPlan(fresh:JournalBatch,journals:JournalBatch[],date=new Date().toISOString().slice(0,10)) {
+  const base=journals.find(row=>row.companyId===fresh.companyId&&row.id===fresh.id&&row.qoyodSyncStatus?.synced);
+  if(!base)return {batches:[fresh],blocked:false};
+  const posted=[base,...journals.filter(row=>row.companyId===fresh.companyId&&row.accrualBaseId===fresh.id&&row.payrollRunId===fresh.payrollRunId&&row.periodMonth===fresh.periodMonth&&row.journalType===fresh.journalType&&row.qoyodSyncStatus?.synced)]
+    .map(row=>mergeFreshJournalWithDraft(row,row));
+  const vector=new Map<string,{line:JournalLine;amount:number}>();
+  const add=(line:JournalLine,sign:number)=>{
+    const key=JSON.stringify([line.accountCode,line.costCenterCode||'',line.contactName||'']);
+    const old=vector.get(key);vector.set(key,{line:old?.line||line,amount:roundAmount((old?.amount||0)+sign*(Number(line.debit||0)-Number(line.credit||0)))});
+  };
+  for(const line of fresh.lines){
+    // Retain the original mapping for the source month's standard lines.
+    const original=posted[0].lines.find(row=>row.id===line.id);
+    add(original?{...line,accountCode:original.accountCode,costCenterCode:original.costCenterCode,contactName:original.contactName}:line,1);
+  }
+  for(const batch of posted)for(const line of batch.lines)add(line,-1);
+  const differences=[...vector.entries()].filter(([,row])=>row.amount!==0).sort(([a],[b])=>a.localeCompare(b));
+  if(!differences.length)return {batches:posted,blocked:false};
+  // A hand-edited historical journal has no reliable machine-readable salary basis.
+  const edited=posted.some(row=>Object.keys(row.manualLineOverrides||{}).length||(row.customLines||[]).length||(row.removedLineIds||[]).length);
+  if(edited)return {batches:posted,blocked:true};
+  const sequence=posted.length;
+  const lines=differences.map(([,row],index)=>({...row.line,id:`supplement-${index}`,descriptionAr:`فرق استحقاق لاحق لشهر ${fresh.periodMonth}`,descriptionEn:`Later accrual adjustment for ${fresh.periodMonth}`,debit:Math.max(0,row.amount),credit:Math.max(0,-row.amount)}));
+  const delta=finishBatch({...fresh,id:`${fresh.id}-supplement-${sequence}`,accrualBaseId:fresh.id,batchNumber:`${fresh.batchNumber}-SUP-${sequence}`,date,
+    description:`قيد تكميلي لاستحقاق شهر ${fresh.periodMonth}`,descriptionEn:`Supplemental accrual for ${fresh.periodMonth}`},lines);
+  if(delta.totalDebit!==delta.totalCredit)return {batches:posted,blocked:true};
+  return {batches:[...posted,delta],blocked:false};
 }

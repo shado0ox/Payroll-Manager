@@ -29,6 +29,7 @@ import {
 } from 'lucide-react';
 import { 
   Company, 
+  JournalBatch,
   Employee, 
   PayrollRun, 
   PayrollEntitlementOffset,
@@ -62,21 +63,22 @@ import {
   exportWpsBankCsv, 
   exportGosiReportCsv 
 } from '../utils/exportUtils';
-import { generatePayrollJournalBatch, generatePaymentJournalBatch } from '../utils/accountingEngine';
+import { generatePayrollJournalBatch, buildAccrualJournalPlan, generatePaymentJournalBatch } from '../utils/accountingEngine';
 import { exportBankPayrollXlsx } from '../utils/bankExcelExport';
 import { hasPermission } from '../utils/permissions';
 import { useLanguage } from '../i18n/LanguageContext';
 import { PayrollRunItemsTable } from './payroll/PayrollRunItemsTable';
 import { PayrollPaymentBatchModal } from './payroll/PayrollPaymentBatchModal';
-import { getCurrentPeriod } from '../utils/period';
+import { getCurrentPeriod, getCurrentDate } from '../utils/period';
 import { getPayrollPaymentCoverages } from '../utils/payrollPaymentCoverage';
-import { unpaidSalaryDetails, availableSalaryAllocations, allocateSalaryAmount, availableSalarySourceBalance, salaryOffsetTotal, effectiveEmployeeSalaryLoans, archivedSalaryBalanceEmployees, monthlySalaryNet } from '../../server/payroll-ledger.mjs';
+import { unpaidSalaryDetails, availableSalaryAllocations, allocateSalaryAmount, availableSalarySourceBalance, salaryOffsetTotal, effectiveEmployeeSalaryLoans, archivedSalaryBalanceEmployees, monthlySalaryNet, salaryAllocationsForPaymentScope } from '../../server/payroll-ledger.mjs';
 
 interface PayrollRunsViewProps {
   company: Company;
   employees: Employee[];
   archivedEmployees?: Employee[];
   payrollRuns: PayrollRun[];
+  journals?: JournalBatch[];
   attendance: AttendanceRecord[];
   loans: LoanSchedule[];
   penalties: PenaltyRecord[];
@@ -123,6 +125,7 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
   employees,
   archivedEmployees = [],
   payrollRuns,
+  journals = [],
   attendance,
   loans,
   penalties,
@@ -179,6 +182,7 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
   const [adjustmentForm, setAdjustmentForm] = useState({ addition: 0, deduction: 0, notes: '' });
   const [paymentBatchForm, setPaymentBatchForm] = useState({
     amounts: {} as Record<string, string>,
+    scope: 'ALL_AVAILABLE' as 'ALL_AVAILABLE'|'CURRENT_MONTH',
     method: 'WPS' as PaymentMethod,
     scheduledDate: new Date().toISOString().slice(0, 10),
     reference: '',
@@ -286,7 +290,10 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
     (item.entitlementStatus || 'PAYABLE') === 'PAYABLE' && remainingPaymentAmounts[item.employeeId] > 0
   ), [filteredItems, remainingPaymentAmounts]);
   const selectedPaymentItems = useMemo(() => currentRun?.items.filter(item => selectedPaymentEmployeeIds.includes(item.employeeId)) || [], [currentRun?.items, selectedPaymentEmployeeIds]);
-  const selectedPaymentTotal = roundAmount(selectedPaymentItems.reduce((sum,item) => sum + Number(paymentBatchForm.amounts[item.employeeId] ?? remainingPaymentAmounts[item.employeeId] ?? 0),0));
+  const scopedPaymentAllocations=useMemo(()=>new Map([...availableAllocationsByEmployee].map(([id,rows])=>[id,salaryAllocationsForPaymentScope(rows,selectedPeriod,paymentBatchForm.scope)])),[availableAllocationsByEmployee,selectedPeriod,paymentBatchForm.scope]);
+  const scopedPaymentMaximums=Object.fromEntries([...scopedPaymentAllocations].map(([id,rows])=>[id,roundAmount(rows.reduce((sum,row)=>sum+row.amount,0))]));
+  const scopedSelectedPaymentItems=selectedPaymentItems.filter(item=>scopedPaymentMaximums[item.employeeId]>0);
+  const selectedPaymentTotal = roundAmount(scopedSelectedPaymentItems.reduce((sum,item) => sum + Number(paymentBatchForm.amounts[item.employeeId] ?? scopedPaymentMaximums[item.employeeId] ?? 0),0));
 
   const offsetAvailableAmounts=Object.fromEntries((currentRun?.items || []).map(item=>[item.employeeId,Math.max(0,availableSalarySourceBalance(companyRuns,currentRun,item))]));
   const handleCreateOffset = async (item:PayrollRunItem) => {
@@ -330,11 +337,11 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
 
   const handleCreatePaymentBatch = async () => {
     if (!currentRun || !selectedPaymentItems.length || !['APPROVED', 'POSTED'].includes(currentRun.status)) return;
-    const stillEligible = selectedPaymentItems;
+    const stillEligible = scopedSelectedPaymentItems;
     if (!stillEligible.length) return;
     let allocations: NonNullable<PayrollPaymentBatch['allocations']>;
     try {
-      allocations = stillEligible.flatMap(item => allocateSalaryAmount(availableAllocationsByEmployee.get(item.employeeId) || [], Number(paymentBatchForm.amounts[item.employeeId] ?? remainingPaymentAmounts[item.employeeId] ?? 0)));
+      allocations = stillEligible.flatMap(item => allocateSalaryAmount(scopedPaymentAllocations.get(item.employeeId) || [], Number(paymentBatchForm.amounts[item.employeeId] ?? scopedPaymentMaximums[item.employeeId] ?? 0)));
     } catch {
       alert(tr('أدخل لكل موظف مبلغًا أكبر من صفر ولا يتجاوز المتبقي المتاح.', 'Enter a positive payment amount within each employee’s available balance.'));
       return;
@@ -905,35 +912,35 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
           </div>
 
           <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-xs">
-            <div className="text-[11px] font-semibold text-slate-500">{tr('إجمالي المستحق (Gross)', 'Total gross pay')}</div>
+            <div className="text-[11px] font-semibold text-slate-500">{tr('إجمالي استحقاق الشهر', 'This month’s gross pay')}</div>
             <div className="text-sm sm:text-base font-extrabold text-slate-900 mt-0.5">
-              {formatSAR(currentRun.totalGrossSalaries)}
+              {formatSAR(roundAmount(currentRun.items.reduce((sum,item)=>sum+Number(item.totalGrossSalary||0),0)))}
             </div>
             <div className="text-[10px] text-slate-400">{tr('قبل الاستقطاعات', 'Before deductions')}</div>
           </div>
 
           <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-xs">
-            <div className="text-[11px] font-semibold text-slate-500">{tr('إجمالي الاستقطاعات', 'Total deductions')}</div>
+            <div className="text-[11px] font-semibold text-slate-500">{tr('استقطاعات الشهر', 'This month’s deductions')}</div>
             <div className="text-sm sm:text-base font-extrabold text-rose-700 mt-0.5">
-              {formatSAR(currentRun.totalDeductions)}
+              {formatSAR(roundAmount(currentRun.items.reduce((sum,item)=>sum+Number(item.totalDeductions||0),0)))}
             </div>
             <div className="text-[10px] text-slate-400">{tr('تأمينات، سلف، غياب، تأخير', 'GOSI, loans, absence, lateness')}</div>
           </div>
 
           <div className="bg-emerald-50/70 p-3.5 rounded-2xl border border-emerald-200 shadow-xs">
-            <div className="text-[11px] font-bold text-emerald-900">{tr('صافي المستحق (Net)', 'Net pay')}</div>
+            <div className="text-[11px] font-bold text-emerald-900">{tr('إجمالي المستحق مع الأرصدة السابقة', 'Total entitlement including prior balances')}</div>
             <div className="text-sm sm:text-base font-black text-emerald-800 mt-0.5 font-mono">
               {formatSAR(currentRun.totalNetSalaries)}
             </div>
-            <div className="text-[10px] text-emerald-700">{tr('لتحويل البنك (WPS)', 'For bank transfer (WPS)')}</div>
+            <div className="text-[10px] text-emerald-700">{tr('الصرف حسب نطاق ومبلغ الدفعة المختارة', 'Payment follows the selected batch scope and amount')}</div>
           </div>
 
           <div className="bg-purple-50/70 p-3.5 rounded-2xl border border-purple-200 shadow-xs">
-            <div className="text-[11px] font-bold text-purple-900">{tr('إجمالي تكلفة المنشأة', 'Total company cost')}</div>
+            <div className="text-[11px] font-bold text-purple-900">{tr('تكلفة شهر المسير فقط', 'This month’s company cost')}</div>
             <div className="text-sm sm:text-base font-black text-purple-800 mt-0.5 font-mono">
-              {formatSAR(currentRun.totalCompanyCost)}
+              {formatSAR(roundAmount(currentRun.items.reduce((sum,item)=>sum+Number(item.totalGrossSalary||0)+Number(item.gosiEmployerShare||0),0)))}
             </div>
-            <div className="text-[10px] text-purple-700">{tr('تتضمن حصة التأمينات', 'Including employer GOSI')}</div>
+            <div className="text-[10px] text-purple-700">{tr('تشمل حصة التأمينات؛ تستبعد الأرصدة السابقة', 'Includes employer GOSI; excludes prior balances')}</div>
           </div>
 
         </div>
@@ -1031,7 +1038,9 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
 
             <button
               onClick={() => {
-                const batch = generatePayrollJournalBatch(company, currentRun);
+                const plan=buildAccrualJournalPlan(generatePayrollJournalBatch(company,currentRun),journals,getCurrentDate(company.timezone||'Asia/Riyadh'));
+                const batch=plan.batches.at(-1);
+                if(plan.blocked||!batch||batch.qoyodSyncStatus?.synced){alert(tr('راجع تبويب القيود؛ لا توجد إضافة غير مرحّلة قابلة للتصدير تلقائيًا أو يلزم تطابق القيد السابق.', 'Review Journals; there is no automatically exportable unposted accrual or the previous journal needs reconciliation.'));return;}
                 exportQoyodJournalCsv(batch, company);
               }}
               className="px-3 py-1.5 bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all"
@@ -1084,7 +1093,7 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
               </button>
               <button
                 type="button"
-                onClick={() => setIsPaymentBatchModalOpen(true)}
+                onClick={() => {setPaymentBatchForm(prev=>({...prev,scope:'ALL_AVAILABLE',amounts:{}}));setIsPaymentBatchModalOpen(true);}}
                 disabled={!selectedPaymentItems.length || !['APPROVED', 'POSTED'].includes(currentRun.status)}
                 className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-2 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
               >
@@ -1215,8 +1224,8 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
       {isPaymentBatchModalOpen && currentRun && (
         <PayrollPaymentBatchModal
           form={paymentBatchForm}
-          employees={selectedPaymentItems.map(item => ({ id:item.employeeId,name:item.employeeName,maximum:remainingPaymentAmounts[item.employeeId] || 0 }))}
-          selectedCount={selectedPaymentItems.length}
+          employees={scopedSelectedPaymentItems.map(item => ({ id:item.employeeId,name:item.employeeName,maximum:scopedPaymentMaximums[item.employeeId] || 0 }))}
+          selectedCount={scopedSelectedPaymentItems.length}
           total={selectedPaymentTotal}
           onChange={setPaymentBatchForm}
           onClose={() => setIsPaymentBatchModalOpen(false)}

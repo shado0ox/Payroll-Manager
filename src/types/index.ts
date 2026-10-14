@@ -152,6 +152,8 @@ export interface CompanyCalculationRules {
 }
 
 export interface ChartOfAccountsMap {
+  administrativeSalariesExpenseAccount?: string;
+  workerWagesExpenseAccount?: string;
   salariesExpenseAccount: string; // ح/ مصروف الرواتب
   housingAllowanceAccount: string; // ح/ بدل سكن
   transportAllowanceAccount: string; // ح/ بدل نقل
@@ -193,7 +195,10 @@ export interface EmployeeSalaryPackage {
   customDeductions: { componentId: string; name: string; amount: number }[];
 }
 
+export type PayrollCategory = 'UNCLASSIFIED'|'ADMINISTRATIVE'|'WORKER';
+
 export interface Employee {
+  payrollCategory?: PayrollCategory;
   id: string;
   companyId: string;
   employeeNo: string; // الرقم الوظيفي
@@ -355,6 +360,7 @@ export type PayrollRunStatus = 'DRAFT' | 'UNDER_REVIEW' | 'APPROVED' | 'POSTED';
 export type PayrollEntitlementStatus = 'PAYABLE' | 'HELD' | 'UNDER_SETTLEMENT' | 'SETTLED' | 'CANCELLED_WITH_DOCUMENT';
 
 export interface PayrollRunItem {
+  payrollCategory?: PayrollCategory;
   id: string;
   payrollRunId: string;
   employeeId: string;
@@ -564,7 +570,8 @@ export type JournalDiagnosticCode =
   | 'GROSS_COMPONENT_MISMATCH'
   | 'DEDUCTION_COMPONENT_MISMATCH'
   | 'CURRENT_NET_MISMATCH'
-  | 'DEDUCTIONS_EXCEED_GROSS';
+  | 'DEDUCTIONS_EXCEED_GROSS'
+  | 'SALARY_CATEGORY_ACCOUNT_MISSING';
 
 export interface JournalBalanceDiagnostic {
   code: JournalDiagnosticCode;
@@ -589,6 +596,7 @@ export interface JournalQoyodSnapshot {
   descriptionEn?: string;
   totalDebit: number;
   totalCredit: number;
+  accrualBaseId?: string;
   journalType?: 'PAYROLL_ACCRUAL' | 'GOSI_ACCRUAL' | 'PAYROLL_PAYMENT' | 'GOSI_PAYMENT' | 'PAYROLL_SETTLEMENT';
   gosiBranchId?: string;
   gosiBranchCode?: string;
@@ -608,6 +616,7 @@ export interface JournalBatch {
   descriptionEn?: string;
   totalDebit: number;
   totalCredit: number;
+  accrualBaseId?: string;
   journalType?: 'PAYROLL_ACCRUAL' | 'GOSI_ACCRUAL' | 'PAYROLL_PAYMENT' | 'GOSI_PAYMENT' | 'PAYROLL_SETTLEMENT';
   gosiBranchId?: string;
   gosiBranchCode?: string;

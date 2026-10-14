@@ -26,6 +26,7 @@ export function downloadCsvFile(filename: string, csvContent: string): void {
  * Date, Description, AccountCode, AccountName, Debit, Credit, CostCenter, ContactName, Reference
  */
 export function exportQoyodJournalCsv(batch: JournalBatch, company: Company): void {
+  if(batch.balanceDiagnostics?.some(row=>row.severity==='ERROR')){alert(isEnglish()?'Resolve journal diagnostics and expense account mapping before export.':'راجع أخطاء القيد وربط حسابات المصروف قبل التصدير.');return;}
   const en = isEnglish();
   const headers = en
     ? ['Date', 'Description', 'Account Code', 'Account Name', 'Debit', 'Credit', 'Cost Center', 'Contact Name', 'Reference']

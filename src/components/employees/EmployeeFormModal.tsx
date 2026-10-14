@@ -615,6 +615,7 @@ export const EmployeeFormModal = React.memo<EmployeeFormModalProps>(({
                 </div>
               </div>
 
+              <div><label htmlFor="employee-payroll-category" className="block text-xs font-semibold text-slate-700 mb-1">{language==='ar'?'تصنيف مصروف الراتب':'Salary expense category'}</label><select id="employee-payroll-category" value={formData.payrollCategory||'UNCLASSIFIED'} onChange={event=>setFormData({...formData,payrollCategory:event.target.value as Employee['payrollCategory']})} className="w-full rounded-xl border px-3 py-2 text-sm"><option value="UNCLASSIFIED">{language==='ar'?'غير مصنف — الحساب الحالي':'Unclassified — existing account'}</option><option value="ADMINISTRATIVE">{language==='ar'?'إداري — مصروف رواتب إدارية':'Administrative — salary expense'}</option><option value="WORKER">{language==='ar'?'عامل — مصروف أجور العاملين':'Worker — wages expense'}</option></select></div>
               {/* Section 4: Salary Package */}
               <div className="pt-3 border-t border-slate-100">
                 <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider mb-3 flex items-center gap-2">

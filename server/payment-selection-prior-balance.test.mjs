@@ -13,7 +13,8 @@ test('payment batch selection is limited to currently eligible selected employee
   assert.match(payroll, /selectedPaymentEmployeeIds\.includes\(item\.employeeId\)/);
   assert.match(payroll, /\(item\.entitlementStatus \|\| 'PAYABLE'\) === 'PAYABLE'/);
   assert.match(payroll, /remainingPaymentAmounts\[item\.employeeId\] > 0/);
-  assert.match(payroll, /const stillEligible = selectedPaymentItems/);
+  assert.match(payroll, /const stillEligible = scopedSelectedPaymentItems/);
+  assert.match(payroll, /const scopedSelectedPaymentItems=selectedPaymentItems\.filter/);
   assert.match(payroll, /\(\{selectedPaymentItems\.length\}\)/);
 });
 

@@ -273,6 +273,12 @@ await request(`/api/loans/${integerLoanId}`,{method:'PUT',body:JSON.stringify(in
 assert.equal(findLoan(await loadState(),integerLoanId).installmentRounding,'WHOLE_SAR_LAST','Whole-riyal policy must survive PostgreSQL save and reload');
 await assert.rejects(request(`/api/loans/${integerLoanId}`,{method:'PUT',body:JSON.stringify({...integerLoan,monthlyInstallment:166.67})}),/400.*INVALID_WHOLE_RIYAL_LOAN_PLAN/);
 
+const categoryEmployeeId=`category-employee-${key}`;
+const categoryEmployee={...activeEmployee,id:categoryEmployeeId,employeeNo:`CAT${key.slice(-12)}`,email:`category-${key}@example.test`,payrollCategory:'WORKER'};
+await request(`/api/employees/${categoryEmployeeId}`,{method:'PUT',body:JSON.stringify(categoryEmployee)});
+assert.equal((await loadState()).employees.find(row=>row.id===categoryEmployeeId).payrollCategory,'WORKER','Expense category must survive database save and reload');
+await assert.rejects(request(`/api/employees/${categoryEmployeeId}`,{method:'PUT',body:JSON.stringify({...categoryEmployee,payrollCategory:'UNKNOWN'})}),/400.*INVALID_PAYROLL_CATEGORY/);
+
 const db = new Pool({ connectionString:databaseUrl,ssl:false });
 try {
   const [runRow,batchRow,loanRow,auditRows] = await Promise.all([

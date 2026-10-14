@@ -1417,6 +1417,7 @@ export const App: React.FC = () => {
                 employees={state.employees}
                 archivedEmployees={state.archivedEmployees || []}
                 payrollRuns={state.payrollRuns}
+                journals={state.journals}
                 attendance={state.attendance}
                 loans={state.loans}
                 penalties={state.penalties}
@@ -1580,6 +1581,7 @@ export const App: React.FC = () => {
             company={activeCompany}
             latestRun={latestCompanyRun}
             journalBatch={qoyodJournalBatch}
+            journals={state.journals}
             existingJournal={qoyodJournalBatch ? state.journals.find(journal => journal.id === qoyodJournalBatch.id) : undefined}
             qoyodConfig={state.qoyodConfig}
             onSaveConfig={handleSaveQoyodConfig}

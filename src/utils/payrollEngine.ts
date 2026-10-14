@@ -318,6 +318,7 @@ export function calculateEmployeePayrollItem(input: EmployeeCalculationInput): P
     payrollRunId: '',
     employeeId: employee.id,
     employeeNo: employee.employeeNo,
+    payrollCategory: employee.payrollCategory || 'UNCLASSIFIED',
     employeeName: `${employee.firstNameAr} ${employee.lastNameAr}`,
     employeeNameEn: `${employee.firstNameEn || ''} ${employee.lastNameEn || ''}`.trim(),
     nationalIdOrIqama: employee.nationalIdOrIqama,
