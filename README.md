@@ -1,57 +1,236 @@
-# WAFR Payroll Manager — production deployment
+# وفر — WAFR Payroll Manager
 
-The application uses a server-side PostgreSQL connection. Browser storage is only a local cache; authentication and central state are handled by the Node server.
+نظام لإدارة الموظفين والرواتب والحضور والإجازات والسلف والقيود المحاسبية، مع بوابة موظف وتكامل مع قيود وملفات التحويل البنكي وحماية الأجور.
 
-## Prepare the existing PostgreSQL container
+يعمل النظام بخادم Node.js وقاعدة PostgreSQL. البيانات والحسابات والصلاحيات تُحفظ على الخادم؛ تخزين المتصفح ليس بديلًا لقاعدة البيانات.
 
-Find its Docker network:
+## الوظائف الرئيسية
+
+- تعدد المنشآت، مع عزل البيانات والصلاحيات حسب المنشأة.
+- ملفات الموظفين، الأرشفة، مراكز التكلفة، وحسابات وفروع التأمينات.
+- الحضور، التأخير، الإضافي، والإجازات السنوية وبدون راتب.
+- مسيرات قابلة للمراجعة والاعتماد والترحيل، مع دفعات كاملة أو جزئية وصرف متأخر.
+- سلف وأقساط وجزاءات ومكافآت، مع كشف وجدولة للأقساط.
+- كشف حساب شهري مجمع للرواتب المستحقة، وتقارير وتصدير CSV وملفات البنك وWPS.
+- قيود استحقاق وصرف وتأمينات وتسويات، وتصدير وترحيل يدوي إلى قيود.
+- تقويم ميلادي لاختيار الأيام والشهور والسنوات، مع حفظ التواريخ بصيغة ISO.
+- تسجيل حساب الموظف بعد التحقق من البريد وموافقة الإدارة، وسجل تدقيق للتغييرات.
+
+## قواعد الرواتب والمحاسبة
+
+### فصل استحقاق الشهر عن الصرف
+
+تُحسب الذمة من استحقاقات الشهور المعتمدة أو المرحلة المحفوظة. لا ينشئ النظام دينًا عن شهر غير محسوب لمجرد أن تاريخ تعيين الموظف أقدم.
+
+مثال: استحقاق سبتمبر **50,000 ريال**، والصرف **40,000 ريال**؛ يظل **10,000 ريال** مستحقًا من سبتمبر، ولو تم تحويله بعد خمسة أشهر. لا يُعاد إثباته كمصروف في أكتوبر.
+
+- قيد الاستحقاق يثبت تكلفة الشهر الأصلي فقط.
+- قيد الصرف يثبت مبلغ الدفعة المدفوعة بتاريخ التحويل الفعلي.
+- الدفعة المجدولة تحجز مبلغها؛ لا تُعامل كصرف فعلي قبل تأكيد الدفع.
+- يمكن اختيار سداد الشهر الحالي وحده أو الأرصدة المتاحة من الشهور السابقة.
+- التسويات وعكسها حركات مستقلة بمستند وسبب وحساب مقابل.
+- الأرصدة المعتمدة للموظفين المؤرشفين تظل ظاهرة حتى تسويتها؛ الأرشفة أو الهروب لا يلغي المستحق تلقائيًا.
+- إضافة موظف بأثر رجعي إلى شهر مغلق تخضع للصلاحيات. القيد المرحّل إلى قيود يبقى محفوظًا، ويُقترح قيد تكميلي للفارق عند إمكان اشتقاقه محاسبيًا. القيود القديمة المعدلة يدويًا قد تحتاج إلى مطابقة قبل إنشاء التكملة.
+
+### كشف حساب الرواتب المستحقة
+
+من مجموعة **الرواتب والمحاسبة** افتح **كشف حساب الرواتب المستحقة** بجوار التقارير. يُحدَّث تلقائيًا من الاستحقاقات والصرف والتسويات، ويشمل الموظفين المؤرشفين.
+
+لكل موظف وشهر يظهر رصيد أول الشهر، استحقاق الشهر، الصرف، التسويات وعكسها، إجمالي المدين والدائن، ورصيد آخر الشهر. يمكن التصفية بمركز التكلفة وتصدير الكشف إلى CSV.
+
+**رصيد آخر الشهر = رصيد أول الشهر + الدائن − المدين.** هذا الرصيد يصبح الرصيد المرحّل للشهر التالي.
+
+### ربط الحسابات وقيود الرواتب
+
+1. اضبط الحسابات العامة من **ملف المنشأة ← شجرة الحسابات**، ومنها مصروف الرواتب الإدارية وأجور العاملين والمستحقات والبنك والسلف والتأمينات.
+2. لربط مركز تكلفة بحساب واحد، افتح **ملف المنشأة ← مراكز التكلفة ← إضافة/تعديل المركز**، وأدخل **رقم حساب مصروف رواتب مركز التكلفة في قيود**.
+3. حساب المركز يجمع مصروف رواتب وبدلات موظفيه وله الأولوية على حسابات المصروف العامة. حساب مستحقات الرواتب يظل مشتركًا.
+4. التصنيف المحاسبي للموظف «إداري / عامل» يستخدم حسابات المنشأة عند عدم وجود ربط للمركز. الربط القديم للفئات داخل المركز يظل مقروءًا للتوافق إلى أن يُعدّل المركز ويُحفظ بالربط الواحد.
+
+يُمنع حفظ أو تصدير أو ترحيل القيد غير المتوازن أو ذي الأسطر غير الصالحة. لا يضيف النظام سطرًا وهميًا لتغطية الفرق. تُوزَّع كسور راتب الأيام الجزئية على المكونات بالهللات لتطابق إجمالي الاستحقاق المحفوظ دون تغيير صافي مستحق الموظف.
+
+### الأقساط والتقريب
+
+- الجدولة بالريال الصحيح تضع الباقي في القسط الأخير: **1,000 ÷ 6 = خمسة أقساط × 166 + قسط أخير 170 ريالًا**.
+- الجداول القديمة التي تحتوي على هللات لا تُعاد كتابتها تلقائيًا.
+- المبالغ المحاسبية تحفظ دقة الهللات. يوجد خيار رفع صافي الراتب إلى الريال التالي بإضافة تتحملها المنشأة؛ لا يوجد تقريب عام يخفض الأجور أو يغيّر كل مكونات القيد إلى أعداد صحيحة.
+
+### تكامل قيود
+
+احفظ مفتاح API من تبويب التكامل في ملف المنشأة، ثم راجع القيد الفعلي من **القيود** قبل ترحيله. المفتاح يُحفظ على الخادم، ويظهر الحقل فارغًا بعد الحفظ؛ تركه فارغًا عند تحديث الإعدادات يُبقي المفتاح المحفوظ.
+
+الترحيل **يدوي**؛ اعتماد المسير وحده لا يرحّل إلى قيود. أرقام معاينة JSON/CSV في تبويب إعدادات المنشأة نموذج توضيحي، وليست مسير المنشأة الفعلي. إذا أُنشئ القيد في قيود وتعذر تثبيت حالته محليًا، استخدم إعادة حفظ الحالة المحلية بدل تكرار الترحيل.
+
+## المتطلبات وبنية التشغيل
+
+| العنصر | الاستخدام |
+|---|---|
+| React + TypeScript + Vite | الواجهة |
+| Node.js + Express | الخادم والمصادقة والعمليات |
+| PostgreSQL | البيانات المركزية؛ فحوص CI تستخدم PostgreSQL 15 |
+| Docker وDocker Compose | تشغيل الإنتاج؛ صورة المشروع تستخدم Node.js 20.19 |
+| Node.js 22 | بيئة فحوص GitHub؛ مناسبة للتحقق المحلي |
+
+خدمة Compose هي `wafr-app`، واسم حاويتها `wafr_payroll_app`. لا يتضمن Compose حاوية PostgreSQL جديدة؛ يتصل بقاعدة موجودة عبر شبكة Docker خارجية.
+
+## إعداد تثبيت جديد
+
+**هذه الخطوات للتثبيت الجديد فقط. عند تحديث نظام موجود احتفظ بقاعدة البيانات والمخطط وملفات الإعدادات الحالية.**
+
+```bash
+git clone https://github.com/shado0ox/Payroll-Manager.git
+cd Payroll-Manager
+cp .env.example .env
+chmod 600 .env
+```
+
+أنشئ مستخدمًا وقاعدة ومخططًا مستقلين بواسطة مسؤول PostgreSQL. المثال التالي يُنفذ داخل `psql` بصلاحية المسؤول، بعد استبدال كلمة المرور:
+
+```sql
+CREATE ROLE wafr_payroll_user LOGIN PASSWORD 'REPLACE_WITH_A_LONG_RANDOM_PASSWORD'
+  NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT;
+CREATE DATABASE wafr_payroll_db OWNER wafr_payroll_user;
+\connect wafr_payroll_db
+CREATE SCHEMA wafr_payroll AUTHORIZATION wafr_payroll_user;
+REVOKE ALL ON SCHEMA wafr_payroll FROM PUBLIC;
+```
+
+اعرف اسم شبكة PostgreSQL الموجودة:
 
 ```bash
 docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Networks}}'
 ```
 
-Using the current PostgreSQL administrator, create an isolated login and schema. Never give the app the `postgres` superuser:
+اضبط `.env` بالاستناد إلى [.env.example](.env.example):
 
-```sql
-CREATE ROLE wafr_app LOGIN PASSWORD 'A_LONG_RANDOM_PASSWORD'
-  NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT;
-CREATE SCHEMA wafr_payroll AUTHORIZATION wafr_app;
-REVOKE ALL ON SCHEMA wafr_payroll FROM PUBLIC;
-GRANT CONNECT ON DATABASE your_database TO wafr_app;
-```
+| المتغير | القيمة أو الغرض |
+|---|---|
+| `DATABASE_URL` | اتصال PostgreSQL بمستخدم التطبيق؛ استخدم اسم حاوية/خدمة قاعدة البيانات وليس `localhost` داخل Docker |
+| `DB_SCHEMA` | المخطط الخاص بالتطبيق؛ المثال الافتراضي `wafr_payroll` |
+| `POSTGRES_DOCKER_NETWORK` | اسم الشبكة الخارجية التي توجد عليها حاوية PostgreSQL |
+| `PORT` | `3033` داخل الحاوية، ليتوافق مع Compose وفحص الصحة |
+| `APP_PORT` | منفذ المضيف؛ الافتراضي `3033` على `127.0.0.1` |
+| `ADMIN_USERNAME` / `ADMIN_PASSWORD` | حساب الإدارة الأولي؛ استبدل كلمة المرور التجريبية بكلمة قوية |
+| `COMPANY_CODE` | رمز المنشأة الأولية؛ الافتراضي `101` |
+| `COOKIE_SECURE` | `true` للإنتاج خلف HTTPS |
+| `TRUST_PROXY` | اضبطه وفق الوكيل العكسي؛ المثال `1` |
+| `APP_ORIGIN` / `PUBLIC_URL` / `PUBLIC_SITE_URL` | عنوان HTTPS الفعلي للموقع |
+| `RESEND_API_KEY` / `EMAIL_FROM` | البريد للتحقق واستعادة كلمة المرور؛ يلزم نطاق إرسال موثّق |
+| `ALLOW_PUBLIC_REGISTRATION` | التسجيل العام للمنشآت؛ الافتراضي `false` |
 
-A separate database is preferred. If other programs share the same database, the dedicated `wafr_payroll` schema and login isolate this app from their tables.
+لا ترفع `.env` أو كلمات المرور أو النسخ الاحتياطية إلى Git. لا تستخدم مستخدم `postgres` كحساب اتصال التطبيق، ولا تفتح منفذ قاعدة البيانات للإنترنت.
 
-## Configure and deploy
+بعد استكمال الإعدادات:
 
 ```bash
-cp .env.example .env
-chmod 600 .env
-docker compose config
-docker compose build --pull
-docker compose up -d
+docker compose build --pull wafr-app
+docker compose up -d --no-deps wafr-app
 docker compose ps
+curl --fail http://127.0.0.1:3033/api/health
 docker compose logs --tail=100 wafr-app
 ```
 
-Set `POSTGRES_DOCKER_NETWORK` to the existing network. In `DATABASE_URL`, use the PostgreSQL container/service name—not `localhost`. Set a unique `ADMIN_PASSWORD` of at least 12 characters. Keep `COOKIE_SECURE=true` behind HTTPS.
+المنفذ الافتراضي الصحيح هو **3033**، وليس منفذ Vite التطويري 3000. اضبط الوكيل العكسي على هذا المنفذ. إذا كان الوكيل نفسه داخل Docker، اربطه بالشبكة المناسبة واستخدم `wafr_payroll_app:3033`؛ `127.0.0.1` داخل حاوية الوكيل يشير إلى الوكيل نفسه.
 
-The web port is intentionally bound only to `127.0.0.1`. Forward the server's existing HTTPS reverse proxy to `http://127.0.0.1:3000`. Never publish PostgreSQL port 5432 to the internet.
+لمستخدمي Cloudflare Tunnel يوجد [مثال إعداد النفق](deploy/cloudflared-config.yml.example). استبدل اسم النطاق والخدمة بما يناسب بيئتك.
 
-### Cloudflare Tunnel
+## النسخ الاحتياطي والاسترجاع التجريبي
 
-Merge `deploy/cloudflared-config.yml.example` into the existing tunnel configuration, replace the example hostname, then route DNS and restart the tunnel:
+سكربت النسخ يأخذ نسخة PostgreSQL مضغوطة، يفحص فهرسها، وينشئ ملف SHA-256. المسار الافتراضي `backups/postgres` داخل المشروع، والاحتفاظ الافتراضي 30 يومًا.
 
-```bash
-cloudflared tunnel route dns YOUR_TUNNEL_NAME payroll.example.com
-sudo systemctl restart cloudflared
-sudo systemctl status cloudflared --no-pager
+الإعدادات التالية مثال لحاوية وقاعدة المشروع؛ عدّلها إذا كانت بيئتك مختلفة:
+
+```dotenv
+PAYROLL_DB_CONTAINER=labor_postgres_db
+PAYROLL_DB_NAME=wafr_payroll_db
+PAYROLL_DB_USER=wafr_payroll_user
+PAYROLL_DB_SCHEMA=wafr_payroll
+PAYROLL_BACKUP_RETENTION_DAYS=30
 ```
 
-## Backup
+يمكن حفظها في `.env.backup`. أوامر التشغيل اليدوي لا تقرأ هذا الملف تلقائيًا، لذلك حمّله قبل التنفيذ:
 
 ```bash
-docker exec YOUR_POSTGRES_CONTAINER pg_dump -U YOUR_ADMIN -d YOUR_DATABASE -n wafr_payroll -Fc > wafr-payroll.dump
+set -euo pipefail
+if [ -f .env.backup ]; then
+  set -a
+  source .env.backup
+  set +a
+fi
+bash scripts/postgres-backup.sh
 ```
 
-Test restoration periodically. The runtime container is non-root, read-only, capability-free, resource-limited, and protected with `no-new-privileges`. Sessions are random, hashed, HttpOnly, SameSite cookies with a 12-hour expiry. Login and write endpoints are rate-limited.
+نجاح النسخ يظهر برسالة `BACKUP_SUCCESS`. ملف النسخة وحده لا يثبت إمكانية الاسترجاع؛ اختبر الاسترجاع في قاعدة مؤقتة مستقلة. يحتاج `PAYROLL_DB_ADMIN_USER` إلى صلاحية إنشاء وحذف قاعدة الاختبار؛ لا تمنح هذه الصلاحية لحساب تشغيل التطبيق لمجرد إجراء الاختبار.
+
+```bash
+# شغّل بعد تحميل إعدادات النسخ وتحديد مستخدم إدارة مناسب.
+RESTORE_DRILL_CONFIRM=YES bash scripts/postgres-restore-drill.sh
+```
+
+تفاصيل مؤقتات systemd والتنبيهات والإعدادات في [دليل النسخ والاسترجاع](server/README-backup-restore.md). راجع مسار المشروع واسم مستخدم Linux في ملفات الخدمات قبل تركيبها على سيرفر آخر.
+
+## سحب تحديث موجود وإعادة البناء
+
+نفّذ بعد دمج طلب التعديل في `main`، ومن داخل مجلد المشروع على السيرفر. الأمر يتوقف عند وجود تغييرات محلية أو فشل النسخ أو البناء:
+
+```bash
+set -euo pipefail
+git status --short
+test -z "$(git status --porcelain)"
+if [ -f .env.backup ]; then
+  set -a
+  source .env.backup
+  set +a
+fi
+bash scripts/postgres-backup.sh
+git fetch origin
+git switch main
+git pull --ff-only origin main
+docker compose build --pull wafr-app
+docker compose up -d --no-deps wafr-app
+docker compose ps
+curl --fail http://127.0.0.1:3033/api/health
+docker compose logs --tail=100 wafr-app
+```
+
+إذا غيّرت `APP_PORT`، استبدل منفذ أمر `curl`. لا تستبدل `.env` عند التحديث، ولا تغيّر `DATABASE_URL` أو `DB_SCHEMA` إلى قاعدة فارغة، ولا تستخدم `git reset --hard` لمعالجة تغييرات محلية غير مفهومة.
+
+## التشغيل المحلي والفحوص
+
+بعد إعداد PostgreSQL وملف `.env` محلي مناسب:
+
+```bash
+npm ci
+npm run prepare:security
+npm run lint
+npm run test:security
+npm run build
+npm start
+```
+
+افتح `http://127.0.0.1:3033` إذا كنت تستخدم المنفذ الافتراضي. للتجربة عبر HTTP محلي فقط، استخدم `COOKIE_SECURE=false` و`APP_ORIGIN=http://127.0.0.1:3033` في ملف إعداد البيئة المحلية.
+
+`npm run dev` يشغّل واجهة Vite على 3000؛ إعداد Vite الحالي لا يحتوي على وكيل `/api`، لذلك تشغيل الواجهة وحدها ليس تشغيلًا كاملًا للنظام.
+
+| الفحص | الأمر والمتطلبات |
+|---|---|
+| TypeScript ومعرّفات الخادم | `npm run lint` |
+| اختبارات الوحدة والأمان والمنطق | `npm run test:security` |
+| بناء الإنتاج | `npm run build` |
+| القبول أثناء التشغيل | `npm run test:acceptance` على بيئة اختبار PostgreSQL مستقلة |
+| اختبارات المتصفح | `npm run test:e2e` بعد تشغيل بيئة الاختبار وChromium؛ الإعداد الكامل في workflow أدناه |
+| تدقيق حزم الإنتاج | `npm audit --omit=dev --audit-level=high` |
+
+اختبارات القبول والمتصفح تُنشئ بيانات اختبار؛ لا تشغّلها على الإنتاج. تغطي فحوص GitHub الرواتب الجزئية والمتأخرة، المؤرشفين، الأقساط، القيود، كشف الحساب، التقويم، المزامنة، الترحيل القديم، والنسخ والاسترجاع.
+
+## أدلة وإعدادات إضافية
+
+- [فحوص مسار الرواتب على GitHub](.github/workflows/payroll-workflow-ci.yml)
+- [فحوص الأمان على GitHub](.github/workflows/security-ci.yml)
+- [نموذج إعداد البيئة](.env.example)
+- [النسخ الاحتياطي والاسترجاع](server/README-backup-restore.md)
+- [بنية بيانات PostgreSQL](docs/postgresql-normalization.md)
+- [قيود التأمينات المنفصلة](docs/gosi-journals.md)
+- [نشر العلامة التجارية وفر](docs/wafr-rebrand-deployment.md)
+
+بعض ملفات الخطط القديمة توثق مراحل تطوير سابقة. اعتمد إعدادات Compose وملف البيئة والكود الحالي عند اختلافها مع خطة قديمة.
