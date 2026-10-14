@@ -44,7 +44,7 @@ export const CompanyCostCentersTab = React.memo<CompanyCostCentersTabProps>(({
     setCostCenterFormData({ ...costCenter });
     setIsCostCenterModalOpen(true);
   };
-  const handleSaveCostCenterSubmit = (e: React.FormEvent) => {
+  const handleSaveCostCenterSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!costCenterFormData.nameAr?.trim() || !costCenterFormData.code?.trim()) {
       alert(tr('يرجى إدخال رمز واسم مركز التكلفة', 'Enter the cost center code and name.'));
@@ -53,14 +53,16 @@ export const CompanyCostCentersTab = React.memo<CompanyCostCentersTabProps>(({
     const updatedCostCenters = editingCostCenter
       ? (company.costCenters || []).map(item => item.id === editingCostCenter.id ? ({ ...item, ...costCenterFormData } as CostCenter) : item)
       : [...(company.costCenters || []), {
+          ...costCenterFormData,
           id: `cc-${Date.now()}`,
           code: costCenterFormData.code.trim().toUpperCase(),
           nameAr: costCenterFormData.nameAr.trim(),
           nameEn: costCenterFormData.nameEn?.trim() || costCenterFormData.nameAr.trim(),
         }];
     const updatedCompany = { ...company, costCenters: updatedCostCenters };
+    const saved=await onUpdateCompany(updatedCompany);
+    if(saved!==true)return;
     setCompany(updatedCompany);
-    onUpdateCompany(updatedCompany);
     setIsCostCenterModalOpen(false);
   };
   const handleDeleteCostCenter = (costCenter: CostCenter) => {
@@ -163,10 +165,11 @@ export const CompanyCostCentersTab = React.memo<CompanyCostCentersTabProps>(({
 
       <form onSubmit={handleSaveCostCenterSubmit} className="space-y-3.5">
         <div>
-          <label className="block text-xs font-bold text-slate-700 mb-1">{tr('رمز مركز التكلفة (Code) *', 'Cost center code *')}</label>
+          <label htmlFor="cost-center-code" className="block text-xs font-bold text-slate-700 mb-1">{tr('رمز مركز التكلفة (Code) *', 'Cost center code *')}</label>
           <input
             type="text"
             required
+            id="cost-center-code"
             value={costCenterFormData.code || ''}
             onChange={(e) => setCostCenterFormData({ ...costCenterFormData, code: e.target.value.toUpperCase() })}
             className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white font-mono font-bold"
@@ -175,10 +178,11 @@ export const CompanyCostCentersTab = React.memo<CompanyCostCentersTabProps>(({
         </div>
 
         <div>
-          <label className="block text-xs font-bold text-slate-700 mb-1">{tr('اسم مركز التكلفة بالعربية *', 'Cost center name in Arabic *')}</label>
+          <label htmlFor="cost-center-nameAr" className="block text-xs font-bold text-slate-700 mb-1">{tr('اسم مركز التكلفة بالعربية *', 'Cost center name in Arabic *')}</label>
           <input
             type="text"
             required
+            id="cost-center-nameAr"
             value={costCenterFormData.nameAr || ''}
             onChange={(e) => setCostCenterFormData({ ...costCenterFormData, nameAr: e.target.value })}
             className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white font-semibold"
@@ -187,9 +191,10 @@ export const CompanyCostCentersTab = React.memo<CompanyCostCentersTabProps>(({
         </div>
 
         <div>
-          <label className="block text-xs font-bold text-slate-700 mb-1">{tr('الاسم بالإنجليزية', 'Name in English')}</label>
+          <label htmlFor="cost-center-nameEn" className="block text-xs font-bold text-slate-700 mb-1">{tr('الاسم بالإنجليزية', 'Name in English')}</label>
           <input
             type="text"
+            id="cost-center-nameEn"
             value={costCenterFormData.nameEn || ''}
             onChange={(e) => setCostCenterFormData({ ...costCenterFormData, nameEn: e.target.value })}
             className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white"
@@ -198,6 +203,10 @@ export const CompanyCostCentersTab = React.memo<CompanyCostCentersTabProps>(({
           />
         </div>
 
+        <fieldset className="space-y-3 rounded-xl border p-3"><legend className="text-xs font-bold">{tr('ربط حسابات مصروف الرواتب','Payroll expense account mapping')}</legend>
+          <p className="text-xs text-slate-500">{tr('حساب الفئة في المركز له الأولوية، ثم حساب المركز العام، ثم إعدادات المنشأة. اترك الحقول فارغة لاستخدام إعدادات المنشأة.','Center category account takes priority, then the center general account, then company mapping. Leave blank to inherit company accounts.')}</p>
+          {(['salariesExpenseAccount','administrativeSalariesExpenseAccount','workerWagesExpenseAccount'] as const).map(key=><label key={key} className="block text-xs">{key==='salariesExpenseAccount'?tr('مصروف رواتب المركز العام','General salary expense'):key==='administrativeSalariesExpenseAccount'?tr('مصروف الرواتب الإدارية','Administrative salaries'):tr('مصروف أجور العاملين','Worker wages')}<input value={costCenterFormData[key]||''} onChange={event=>setCostCenterFormData({...costCenterFormData,[key]:event.target.value})} className="mt-1 block w-full rounded-xl border px-3 py-2 font-mono"/></label>)}
+        </fieldset>
         <div className="pt-4 border-t border-slate-100 flex items-center justify-end gap-2.5">
           <button
             type="button"

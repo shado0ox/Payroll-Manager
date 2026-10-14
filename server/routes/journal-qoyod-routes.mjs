@@ -1,4 +1,12 @@
 import express from 'express';
+import { validateBalancedJournal } from '../journal-validation.mjs';
+
+export function journalMatchesPayrollPeriod(record, sourcePeriod) {
+  if (['PAYROLL_PAYMENT','PAYROLL_SETTLEMENT'].includes(record.journalType)) {
+    return record.periodMonth === record.date?.slice(0,7);
+  }
+  return record.periodMonth === sourcePeriod;
+}
 
 export function createJournalQoyodRouter({
   auth,
@@ -56,6 +64,8 @@ function validateJournalRecord(record, user) {
     || !Number.isFinite(Number(record.totalDebit)) || !Number.isFinite(Number(record.totalCredit))) {
     throw workflowError(400,'INVALID_JOURNAL_RECORD');
   }
+  const financialValidation=validateBalancedJournal(record);
+  if(!financialValidation.valid)throw workflowError(400,financialValidation.error);
   const lineIds = new Set();
   let debit = 0;
   let credit = 0;
@@ -98,7 +108,7 @@ async function upsertJournalAggregate(client, record) {
     previousSnapshot = { ...existing.rows[0].payload,lines:previousLines.rows.map(row=>row.payload) };
   }
   const run = await client.query(`SELECT company_id,period_month FROM ${q('payroll_runs')} WHERE id=$1`, [record.payrollRunId]);
-  if (!run.rowCount || run.rows[0].company_id !== record.companyId || run.rows[0].period_month !== record.periodMonth) {
+  if (!run.rowCount || run.rows[0].company_id !== record.companyId || !journalMatchesPayrollPeriod(record,run.rows[0].period_month)) {
     throw workflowError(400,'INVALID_JOURNAL_PAYROLL_RUN');
   }
   const sortOrder = existing.rowCount ? existing.rows[0].sort_order : Number((await client.query(
@@ -232,6 +242,9 @@ router.post('/integrations/qoyod/journal', auth, writeLimiter, async (req, res, 
     if (!payload?.journal_entry || !Array.isArray(payload.journal_entry.debit_amounts) || !Array.isArray(payload.journal_entry.credit_amounts)) {
       return res.status(400).json({ error:'INVALID_QOYOD_PAYLOAD' });
     }
+    const entry=payload.journal_entry;
+    const validation=validateBalancedJournal({lines:[...entry.debit_amounts.map((line,index)=>({id:`d-${index}`,accountCode:line.account_id,debit:line.amount,credit:0})),...entry.credit_amounts.map((line,index)=>({id:`c-${index}`,accountCode:line.account_id,debit:0,credit:line.amount}))],totalDebit:entry.debit_amounts.reduce((sum,line)=>sum+Number(line?.amount||0),0),totalCredit:entry.credit_amounts.reduce((sum,line)=>sum+Number(line?.amount||0),0)});
+    if(!validation.valid)return res.status(400).json({error:validation.error});
     const debitTotal=payload.journal_entry.debit_amounts.reduce((sum,line)=>sum+Number(line?.amount||0),0);
     const creditTotal=payload.journal_entry.credit_amounts.reduce((sum,line)=>sum+Number(line?.amount||0),0);
     if(!Number.isFinite(debitTotal)||!Number.isFinite(creditTotal)||Math.abs(debitTotal-creditTotal)>=0.01){
@@ -249,7 +262,7 @@ router.post('/integrations/qoyod/journal', auth, writeLimiter, async (req, res, 
     await pool.query(`INSERT INTO ${q('audit_log')} (user_id,action,ip) VALUES ($1,$2,$3)`, [
       req.user.id, response.ok ? `QOYOD_JOURNAL_SYNC:${companyId}` : `QOYOD_JOURNAL_FAILED:${companyId}:${response.status}`, req.ip,
     ]);
-    if (!response.ok) return res.status(502).json({ error:'QOYOD_REQUEST_FAILED', upstreamStatus:response.status, message:data?.message || data?.error || 'Qoyod rejected the request' });
+    if (!response.ok) return res.status(502).json({ error:'QOYOD_REQUEST_FAILED', upstreamStatus:response.status, message:data?.message || data?.error || (data?.errors ? JSON.stringify(data.errors).slice(0,2000) : 'Qoyod rejected the request') });
     res.json(data);
   } catch (e) { next(e); }
 });

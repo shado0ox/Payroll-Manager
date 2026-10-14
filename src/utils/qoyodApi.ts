@@ -1,3 +1,4 @@
+import { validateBalancedJournal } from '../../server/journal-validation.mjs';
 import { Company, JournalBatch, QoyodApiConfig, QoyodJournalEntryPayload, QoyodJournalEntryResponse, QoyodAmountItem } from '../types';
 
 /**
@@ -11,33 +12,33 @@ export function buildQoyodJournalPayload(batch: JournalBatch, company: Company):
   const lines = batch?.lines || [];
   lines.forEach((line) => {
     // Determine account identifier (numeric ID or code)
-    const rawAccountId = (line.accountCode || '1000').toString().trim();
+    const rawAccountId = (line.accountCode || '').toString().trim();
     const accountId = !isNaN(Number(rawAccountId)) ? Number(rawAccountId) : rawAccountId;
 
     if (line.debit > 0) {
       debitAmounts.push({
         account_id: accountId,
-        amount: Number(line.debit.toFixed(2)),
+        amount: Number(Number(line.debit).toFixed(2)),
         comment: line.descriptionAr 
-          ? `${line.descriptionAr} (${line.debit.toFixed(2)} SR)`
-          : `مدين ${line.debit.toFixed(2)} SR - ${line.accountNameAr || ''}`,
+          ? `${line.descriptionAr} (${Number(line.debit).toFixed(2)} SR)`
+          : `مدين ${Number(line.debit).toFixed(2)} SR - ${line.accountNameAr || ''}`,
       });
     }
 
     if (line.credit > 0) {
       creditAmounts.push({
         account_id: accountId,
-        amount: Number(line.credit.toFixed(2)),
+        amount: Number(Number(line.credit).toFixed(2)),
         comment: line.descriptionAr 
-          ? `${line.descriptionAr} (${line.credit.toFixed(2)} SR)`
-          : `دائن ${line.credit.toFixed(2)} SR - ${line.accountNameAr || ''}`,
+          ? `${line.descriptionAr} (${Number(line.credit).toFixed(2)} SR)`
+          : `دائن ${Number(line.credit).toFixed(2)} SR - ${line.accountNameAr || ''}`,
       });
     }
   });
 
   return {
     journal_entry: {
-      description: `قيد مسير رواتب شهر ${batch?.periodMonth || ''} - ${company?.nameAr || ''} (${batch?.batchNumber || ''})`,
+      description: batch.description || `قيد مسير رواتب شهر ${batch?.periodMonth || ''} - ${company?.nameAr || ''} (${batch?.batchNumber || ''})`,
       date: batch?.date || new Date().toISOString().split('T')[0],
       debit_amounts: debitAmounts,
       credit_amounts: creditAmounts,
@@ -77,6 +78,7 @@ export async function sendJournalEntryToQoyod(
   responseData?: QoyodJournalEntryResponse;
   curlCommand: string;
 }> {
+  if(!validateBalancedJournal(batch).valid||batch.balanceDiagnostics?.some(row=>row.severity==='ERROR'))return {success:false,message:'لا يمكن ترحيل قيد غير متوازن أو يحتوي على أخطاء.',curlCommand:''};
   const payload = buildQoyodJournalPayload(batch, company);
   const baseUrl = (config.baseUrl || 'https://api.qoyod.com/2.0').replace(/\/+$/, '');
   const curlCommand = generateQoyodCurlCommand(payload, '[محفوظ بأمان على الخادم]', baseUrl);
@@ -92,7 +94,9 @@ export async function sendJournalEntryToQoyod(
     });
 
     if (response.ok) {
-      const data: QoyodJournalEntryResponse = await response.json();
+      const raw = await response.json();
+      const data: QoyodJournalEntryResponse = raw.journal_entry || raw;
+      if(!String(data?.id||'').trim())return {success:false,message:'استجابة قيود لم تتضمن رقم القيد؛ راجع قيود قبل إعادة المحاولة.',curlCommand};
       return {
         success: true,
         message: `تم إنشاء وترحيل قيد اليومية بنجاح في برنامج قيود برقم مرجعي: (ID: ${data.id}) بقيمة إجمالية ${data.total_debit || batch.totalDebit} SR`,
@@ -101,11 +105,12 @@ export async function sendJournalEntryToQoyod(
       };
     } else {
       const errJson = await response.json().catch(() => ({}));
-      const parsedErr = errJson.message || errJson.error;
+      const errorDetail = errJson.message || errJson.errors || errJson.error;
+      const parsedErr = typeof errorDetail==='string'?errorDetail:JSON.stringify(errorDetail||{});
 
       return {
         success: false,
-        message: `استجابة خادم قيود (${response.status}): ${parsedErr || 'تعذر معالجة الطلب'}`,
+        message: `استجابة خادم قيود (${errJson.upstreamStatus || response.status}): ${parsedErr || 'تعذر معالجة الطلب'}`,
         curlCommand,
       };
     }

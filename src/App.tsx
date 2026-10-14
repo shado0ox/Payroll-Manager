@@ -66,6 +66,7 @@ const ReportsView = lazy(() => import('./components/ReportsView').then(module =>
 const SettingsView = lazy(() => import('./components/SettingsView').then(module => ({ default:module.SettingsView })));
 const CompanyProfileView = lazy(() => import('./components/CompanyProfileView').then(module => ({ default:module.CompanyProfileView })));
 const AuditLogsView = lazy(() => import('./components/AuditLogsView').then(module => ({ default:module.AuditLogsView })));
+const SalaryAccountsView = lazy(() => import('./components/SalaryAccountsView').then(module => ({ default:module.SalaryAccountsView })));
 const EmployeeStatementModal = lazy(() => import('./components/EmployeeStatementModal').then(module => ({ default:module.EmployeeStatementModal })));
 const QoyodIntegrationModal = lazy(() => import('./components/QoyodIntegrationModal').then(module => ({ default:module.QoyodIntegrationModal })));
 const DatabaseStatusModal = lazy(() => import('./components/DatabaseStatusModal').then(module => ({ default:module.DatabaseStatusModal })));
@@ -89,6 +90,7 @@ const TAB_PATHS: Record<NavigationTab, string> = {
   loans_penalties: '/loans-penalties',
   journals: '/journals',
   reports: '/reports',
+  salary_accounts: '/salary-accounts',
   users: '/users',
   settings: '/settings',
   audit_logs: '/audit-logs',
@@ -1200,7 +1202,7 @@ export const App: React.FC = () => {
   };
 
   const latestCompanyRun = useMemo(() => {
-    return state.payrollRuns.find(r => r.companyId === activeCompany?.id);
+    return state.payrollRuns.filter(r => r.companyId === activeCompany?.id&&['APPROVED','POSTED'].includes(r.status)).sort((a,b)=>b.periodMonth.localeCompare(a.periodMonth))[0];
   }, [state.payrollRuns, activeCompany]);
 
   const handleRestoreState = async (restoredState: typeof state) => {
@@ -1510,6 +1512,10 @@ export const App: React.FC = () => {
                   setIsQoyodModalOpen(true);
                 }}
               />
+            )}
+
+            {activeTab === 'salary_accounts' && hasPermission(state.currentUser, 'VIEW_REPORTS') && (
+              <SalaryAccountsView key={activeCompany.id} company={activeCompany} payrollRuns={state.payrollRuns} settlements={state.payrollSettlements}/>
             )}
 
             {activeTab === 'reports' && hasPermission(state.currentUser, 'VIEW_REPORTS') && (

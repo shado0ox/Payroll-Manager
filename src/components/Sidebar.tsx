@@ -60,6 +60,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { id: 'loans_penalties', label: t('loans'), icon: Receipt },
     { id: 'company_profile', label: t('companyProfile'), icon: Building2, managementOnly: true },
     { id: 'journals', label: t('journals'), icon: Layers, managementOnly: true },
+    { id: 'salary_accounts', label: language==='ar'?'كشف حساب الرواتب المستحقة':'Salary payable account', icon: Receipt },
     { id: 'reports', label: t('reports'), icon: BarChart3 },
     { id: 'users', label: t('users'), icon: UserCheck, adminOnly: true },
     { id: 'settings', label: t('settings'), icon: Settings, adminOnly: true },
@@ -69,7 +70,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const visibleNavItems = navItems.filter(item => hasPermission(currentUser, TAB_PERMISSION[item.id]));
   const groups=[
     {id:'people',label:language==='ar'?'الموظفون والدوام':'People and attendance',icon:Users,tabs:['employees','attendance','annual_leave']},
-    {id:'payroll',label:language==='ar'?'الرواتب والمحاسبة':'Payroll and accounting',icon:Banknote,tabs:['payroll_runs','loans_penalties','gosi','journals','reports']},
+    {id:'payroll',label:language==='ar'?'الرواتب والمحاسبة':'Payroll and accounting',icon:Banknote,tabs:['payroll_runs','loans_penalties','gosi','journals','salary_accounts','reports']},
     {id:'company',label:language==='ar'?'المنشأة والإعدادات':'Company and settings',icon:Building2,tabs:['company_profile','settings']},
     {id:'access',label:language==='ar'?'المستخدمون والرقابة':'Users and audit',icon:ShieldCheck,tabs:['users','audit_logs']},
   ];
