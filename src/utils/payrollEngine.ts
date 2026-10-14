@@ -419,3 +419,11 @@ export function formatNumber(val: number, decimals: number = 2): string {
     maximumFractionDigits: decimals,
   }).format(val || 0);
 }
+
+// A carried liability has no current salary, GOSI, attendance, loan or benefit expense.
+export function calculateArchivedSalaryBalanceItem(employee:Employee,company:Company,periodMonth:string):PayrollRunItem {
+ const item=calculateEmployeePayrollItem({employee:{...employee,status:employee.status==='ABSCONDED'?'SUSPENDED':'ACTIVE',gosiEnabled:false,
+   salaryPackage:{baseSalary:0,housingAllowance:0,transportAllowance:0,otherFixedAllowances:0,customAllowances:[],customDeductions:[]}},company,
+   periodMonth,attendanceRecords:[],activeLoans:[],penalties:[],temporaryEarnings:[],leaveRequests:[]});
+ return {...item,warningFlags:['رصيد مستحقات سابقة لموظف مؤرشف؛ لا يشمل راتبًا جديدًا']};
+}

@@ -146,3 +146,10 @@ export function salarySourceSummary(runs,run,item,settlements=[]){
   const offsets=salaryMoney(salaryOffsetTotal(run,item)+terminalOffset);
   return {entitlement,paid,reserved:salaryMoney(reserved),offsets,outstanding:salaryMoney(Math.max(0,entitlement-paid-offsets))};
 }
+
+// Archived profiles remain discoverable when an approved source month still owes money.
+export function archivedSalaryBalanceEmployees(archived,runs,targetRun){
+ return rows(archived).filter(employee=>employee.companyId===targetRun.companyId
+   && ['ABSCONDED','TERMINATED'].includes(employee.status)
+   && unpaidSalaryDetails(runs,targetRun,employee.id).some(detail=>detail.net>0));
+}

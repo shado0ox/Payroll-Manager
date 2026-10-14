@@ -49,6 +49,7 @@ import {
 } from '../types';
 import { 
   calculateEmployeePayrollItem,
+  calculateArchivedSalaryBalanceItem,
   applyPayrollNetRounding,
   formatSAR, 
   formatNumber, 
@@ -69,7 +70,7 @@ import { PayrollRunItemsTable } from './payroll/PayrollRunItemsTable';
 import { PayrollPaymentBatchModal } from './payroll/PayrollPaymentBatchModal';
 import { getCurrentPeriod } from '../utils/period';
 import { getPayrollPaymentCoverages } from '../utils/payrollPaymentCoverage';
-import { unpaidSalaryDetails, availableSalaryAllocations, allocateSalaryAmount, availableSalarySourceBalance, salaryOffsetTotal, effectiveEmployeeSalaryLoans } from '../../server/payroll-ledger.mjs';
+import { unpaidSalaryDetails, availableSalaryAllocations, allocateSalaryAmount, availableSalarySourceBalance, salaryOffsetTotal, effectiveEmployeeSalaryLoans, archivedSalaryBalanceEmployees, monthlySalaryNet } from '../../server/payroll-ledger.mjs';
 
 interface PayrollRunsViewProps {
   company: Company;
@@ -200,8 +201,14 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
       && e.terminationDate?.slice(0,7) === selectedPeriod
     );
     const known = new Set(active.map(employee => employee.id));
-    return [...active,...archivedFinalPeriod.filter(employee => !known.has(employee.id))];
-  }, [employees, archivedEmployees, company.id, selectedPeriod]);
+    const additions=[...archivedFinalPeriod,...archivedSalaryBalanceEmployees(archivedEmployees,companyRuns,{companyId:company.id,periodMonth:selectedPeriod})];
+    return [...active,...additions.filter(employee=>{if(known.has(employee.id))return false;known.add(employee.id);return true;})];
+  }, [employees, archivedEmployees, companyRuns, company.id, selectedPeriod]);
+
+  const archivedCarryEmployeeIds=new Set(companyEmployees.filter(employee=>employee.isArchived
+    && !(employee.status==='TERMINATED'&&employee.terminationDate?.slice(0,7)===selectedPeriod
+      && ['SPONSOR_TRANSFER','FINAL_EXIT'].includes(String(employee.employmentEndReason||employee.archiveReason||''))))
+    .map(employee=>employee.id));
 
   // Departments for filtering
   const departments = useMemo(() => {
@@ -547,12 +554,15 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
           // Preserve transferred employees before applying current lifecycle or salary-start
           // filters. A later profile change must never remove a historical paid payroll item.
           if (committedEmployeeIds.has(emp.id) && previousItemsByEmployeeId.has(emp.id)) return true;
+          if (archivedCarryEmployeeIds.has(emp.id)) return true;
           if (emp.status === 'ABSCONDED') return false;
           if (emp.salaryStartDate && emp.salaryStartDate.slice(0, 7) > selectedPeriod) return false;
           if (emp.status === 'TERMINATED') return Boolean(emp.terminationDate && selectedPeriod <= emp.terminationDate.slice(0, 7));
           return true;
         })
         .map(emp => {
+        const archivedSavedItem=previousItemsByEmployeeId.get(emp.id);
+        if(emp.isArchived&&archivedSavedItem&&monthlySalaryNet(archivedSavedItem)>0)return archivedSavedItem;
         const monthStart = `${selectedPeriod}-01`;
         const [year, month] = selectedPeriod.split('-').map(Number);
         const monthEnd = `${selectedPeriod}-${String(new Date(Date.UTC(year, month, 0)).getUTCDate()).padStart(2, '0')}`;
@@ -592,7 +602,8 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
         const empEarnings = temporaryEarnings.filter(e => e.employeeId === emp.id && e.periodMonth === selectedPeriod && e.appliedInPayroll !== false);
         const empLeavePayments=leaves.filter(leave=>leave.employeeId===emp.id&&leave.status==='APPROVED'&&leave.startDate.slice(0,7)===selectedPeriod);
 
-        let calculated = calculateEmployeePayrollItem({
+        const carryOnly=archivedCarryEmployeeIds.has(emp.id);
+        let calculated = carryOnly?calculateArchivedSalaryBalanceItem(emp,company,selectedPeriod):calculateEmployeePayrollItem({
           employee: emp,
           company,
           periodMonth: selectedPeriod,
@@ -632,8 +643,8 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
         // A manual per-employee adjustment (bonus/deduction added via the adjustment modal) must
         // survive a fresh recalculation for any employee not yet locked in a transfer batch.
         // Re-apply the stored delta on top of the newly calculated base instead of dropping it.
-        const previousManualAddition = previousItem?.manualAddition || 0;
-        const previousManualDeduction = previousItem?.manualDeduction || 0;
+        const previousManualAddition = carryOnly?0:previousItem?.manualAddition || 0;
+        const previousManualDeduction = carryOnly?0:previousItem?.manualDeduction || 0;
         const calculatedWithManualAdjustment = applyPayrollNetRounding((previousManualAddition || previousManualDeduction) ? {
           ...calculated,
           bonuses: roundAmount(calculated.bonuses + previousManualAddition),
@@ -645,7 +656,7 @@ export const PayrollRunsView: React.FC<PayrollRunsViewProps> = ({
           totalDeductions: roundAmount(calculated.totalDeductions + previousManualDeduction),
           netSalary: roundAmount(Math.max(0, calculated.netSalary + previousManualAddition - previousManualDeduction)),
           totalCompanyBurden: roundAmount(calculated.totalCompanyBurden + previousManualAddition - previousManualDeduction),
-        } : calculated, company.calculationRules?.netSalaryRounding);
+        } : calculated, carryOnly?'NONE':company.calculationRules?.netSalaryRounding);
         const previousEntitlementStatus = previousItem?.entitlementStatus || 'PAYABLE';
         const normalizedIban = String(emp.bankIban || '').replace(/\s/g, '').toUpperCase();
         const hasReadyBankAccount = /^SA\d{22}$/.test(normalizedIban) && emp.bankAccountStatus !== 'PENDING';
