@@ -72,7 +72,7 @@ export const QoyodIntegrationModal: React.FC<QoyodIntegrationModalProps> = ({
 
   const defaultPlan=latestRun?buildAccrualJournalPlan(generatePayrollJournalBatch(company,latestRun),journals,getCurrentDate(company.timezone||'Asia/Riyadh')):{batches:[],blocked:false};
   const candidateBatch = journalBatch || defaultPlan.batches.at(-1) || null;
-  const activeBatch: JournalBatch | null = candidateBatch ? mergeFreshJournalWithDraft(candidateBatch, existingJournal || journals.find(row=>row.id===candidateBatch.id)) : null;
+  const activeBatch: JournalBatch | null = journalBatch || (candidateBatch ? mergeFreshJournalWithDraft(candidateBatch, journals.find(row=>row.id===candidateBatch.id)) : null);
   const postedExisting=existingJournal || journals.find(row=>row.id===activeBatch?.id);
   const isAlreadyPosted=Boolean(pendingPostedJournal || postedExisting?.qoyodSyncStatus?.synced||activeBatch?.qoyodSyncStatus?.synced);
   const hasDiagnosticErrors=Boolean(activeBatch?.balanceDiagnostics?.some(row=>row.severity==='ERROR'));
