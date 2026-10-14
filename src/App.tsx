@@ -1557,7 +1557,7 @@ export const App: React.FC = () => {
             )}
 
             {activeTab === 'audit_logs' && hasPermission(state.currentUser, 'VIEW_AUDIT_LOGS') && (
-              <AuditLogsView logs={state.auditLogs} />
+              <AuditLogsView key={activeCompany.id} company={activeCompany} />
             )}
             </Suspense>
           </div>

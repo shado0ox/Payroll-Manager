@@ -36,3 +36,8 @@ test('appendStateAudit ignores empty company scope and normalizes action', async
   });
   assert.equal(calls[0][1][5], 'STATE_REPLACE');
 });
+test('specific server operations preserve action, target and stored before/after without rewriting historic entries',async()=>{
+ const calls=[];const client={query:async(text,params)=>{calls.push({text,params});return {rows:[]};}};
+ await appendStateAudit(client,q,{companyIds:['c'],user:{id:'u',name:'مدير',role:'COMPANY_MANAGER'},action:'UPDATE_LOAN',version:1,entityType:'LOAN',entityId:'l',details:'تسوية',diff:{before:{remainingAmount:100},after:{remainingAmount:0}}});
+ const payload=JSON.parse(calls[0].params[8]);assert.equal(payload.action,'UPDATE_LOAN');assert.equal(payload.entityId,'l');assert.equal(payload.details,'تسوية');assert.equal(payload.diff.before.remainingAmount,100);assert.equal(calls[0].params[9],'LOAN');assert.equal(calls[0].params[10],'l');
+});

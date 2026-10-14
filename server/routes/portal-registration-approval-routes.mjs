@@ -32,7 +32,7 @@ export function createPortalRegistrationApprovalRouter({auth,writeLimiter,pool,q
       await client.query(`DELETE FROM ${q('sessions')} WHERE portal_account_id=$1`,[row.id]);
       await client.query(`INSERT INTO ${q('audit_log')}(user_id,action,ip) VALUES($1,$2,$3)`,[req.user.id,`EMPLOYEE_REGISTRATION_${decision}:${row.id}:${reason}`,req.ip||null]);
       const updated=await bumpStateVersion(client,req.user.id);
-      await appendStateAudit(client,q,{companyIds:[row.company_id],user:req.user,action:`EMPLOYEE_REGISTRATION_${decision}`,version:updated.rows[0].version});
+      await appendStateAudit(client,q,{companyIds:[row.company_id],entityType:'EMPLOYEE_REGISTRATION',entityId:row.id,details:reason||decision,user:req.user,action:`EMPLOYEE_REGISTRATION_${decision}`,version:updated.rows[0].version});
       await client.query('COMMIT');
       broadcastStateUpdate({version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at,companyIds:[row.company_id]});
       res.json({reviewed:true,approvalStatus:decision});

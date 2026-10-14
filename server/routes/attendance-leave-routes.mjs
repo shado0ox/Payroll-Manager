@@ -192,7 +192,7 @@ router.put('/attendance/:id', auth, writeLimiter, async (req, res, next) => {
       record.overtimeType || 'STANDARD',record.notes || null,JSON.stringify(record),sortOrder
     ]);
     const updated = await bumpStateVersion(client,req.user.id);
-    await appendStateAudit(client,q,{ companyIds:req.user.company_ids,user:req.user,action:existing.rowCount ? 'UPDATE_ATTENDANCE' : 'CREATE_ATTENDANCE',version:updated.rows[0].version });
+    await appendStateAudit(client,q,{ companyIds:[record.companyId],entityType:'ATTENDANCE',entityId:record.id,user:req.user,action:existing.rowCount ? 'UPDATE_ATTENDANCE' : 'CREATE_ATTENDANCE',version:updated.rows[0].version });
     await client.query('COMMIT');
     broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at,
       companyIds:[record.companyId],changes:[{ collection:'attendance',operation:'upsert',records:[record] }] });
@@ -268,7 +268,7 @@ router.delete('/attendance/:id', auth, writeLimiter, async (req, res, next) => {
     if (payrollSourceLocked(stored,'attendance',row.rows[0].payload)) throw workflowError(409, 'PAYROLL_SOURCE_ENTRY_LOCKED');
     await client.query(`DELETE FROM ${q('attendance_records')} WHERE id=$1`, [req.params.id]);
     const updated = await bumpStateVersion(client,req.user.id);
-    await appendStateAudit(client,q,{ companyIds:req.user.company_ids,user:req.user,action:'DELETE_ATTENDANCE',version:updated.rows[0].version });
+    await appendStateAudit(client,q,{ companyIds:[row.rows[0].company_id],entityType:'ATTENDANCE',entityId:req.params.id,user:req.user,action:'DELETE_ATTENDANCE',version:updated.rows[0].version });
     await client.query('COMMIT');
     broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at,
       companyIds:[row.rows[0].company_id],changes:[{ collection:'attendance',operation:'delete',ids:[req.params.id] }] });
@@ -326,7 +326,7 @@ router.put('/leaves/:id', auth, writeLimiter, async (req, res, next) => {
       record.status,record.isPaid,record.reason || null,JSON.stringify(record),sortOrder
     ]);
     const updated = await bumpStateVersion(client,req.user.id);
-    await appendStateAudit(client,q,{ companyIds:req.user.company_ids,user:req.user,action:existing.rowCount ? 'UPDATE_LEAVE' : 'CREATE_LEAVE',version:updated.rows[0].version });
+    await appendStateAudit(client,q,{ companyIds:[record.companyId],entityType:'LEAVE',entityId:record.id,user:req.user,action:existing.rowCount ? 'UPDATE_LEAVE' : 'CREATE_LEAVE',version:updated.rows[0].version });
     await client.query('COMMIT');
     broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at,
       companyIds:[record.companyId],changes:[{ collection:'leaves',operation:'upsert',records:[record] }] });
@@ -359,7 +359,7 @@ router.patch('/leaves/:id/status', auth, writeLimiter, async (req, res, next) =>
     }
     await client.query(`UPDATE ${q('leave_requests')} SET status=$2,payload=$3::jsonb,updated_at=now() WHERE id=$1`, [record.id,status,JSON.stringify(record)]);
     const updated = await bumpStateVersion(client,req.user.id);
-    await appendStateAudit(client,q,{ companyIds:req.user.company_ids,user:req.user,action:'LEAVE_STATUS_TRANSITION',version:updated.rows[0].version });
+    await appendStateAudit(client,q,{ companyIds:[record.companyId],entityType:'LEAVE',entityId:record.id,user:req.user,action:'LEAVE_STATUS_TRANSITION',version:updated.rows[0].version });
     await client.query('COMMIT');
     broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at,
       companyIds:[record.companyId],changes:[{ collection:'leaves',operation:'upsert',records:[record] }] });

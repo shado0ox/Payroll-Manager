@@ -1,11 +1,14 @@
 import {test,expect} from '@playwright/test';
-test('related sidebar tabs stay together and can collapse without losing navigation or mobile access',async({page})=>{
+import {navigate} from '../support/navigation';
+test('sidebar defaults closed and only arrows expand it; audit filters read current tenant server records',async({page})=>{
  await page.goto('/login');const form=page.locator('form').first();await form.locator('input[autocomplete="organization"]').fill('101');await form.locator('input[autocomplete="username"]').fill('admin');await form.locator('input[autocomplete="current-password"]').fill('TestAdmin1!');
  await Promise.all([page.waitForResponse(r=>r.url().endsWith('/api/state')&&r.ok()),form.locator('button[type="submit"]').click()]);
- const group=page.getByTestId('nav-group-company');await expect(group).toHaveAttribute('aria-expanded','true');
- await expect(page.locator('#nav-group-content-company').getByTestId('nav-company_profile')).toBeVisible();await expect(page.locator('#nav-group-content-company').getByTestId('nav-settings')).toBeVisible();
- await group.click();await expect(group).toHaveAttribute('aria-expanded','false');await expect(page.getByTestId('nav-settings')).toBeHidden();
- await group.click();await page.getByTestId('nav-settings').click();await expect(page.getByTestId('nav-settings')).toHaveAttribute('aria-current','page');
- await page.getByTestId('nav-group-payroll').click();await expect(page.getByTestId('nav-payroll_runs')).toBeHidden();
- await page.setViewportSize({width:390,height:844});await expect(page.getByTestId('nav-payroll_runs')).toBeVisible();await expect(group).toBeHidden();
+ for(const group of ['people','payroll','company','access'])await expect(page.getByTestId(`nav-group-${group}`)).toHaveAttribute('aria-expanded','false');
+ const group=page.getByTestId('nav-group-company');await page.getByTestId('nav-group-label-company').click();await expect(group).toHaveAttribute('aria-expanded','false');await expect(page.getByTestId('nav-settings')).toBeHidden();
+ await group.click();await page.getByTestId('nav-settings').click();await expect(group).toHaveAttribute('aria-expanded','true');await group.click();await expect(page.getByTestId('nav-settings')).toBeHidden();
+ await page.setViewportSize({width:390,height:844});await expect(page.getByTestId('nav-payroll_runs')).toBeHidden();await page.getByTestId('nav-group-payroll').click();await expect(page.getByTestId('nav-payroll_runs')).toBeVisible();await page.getByTestId('nav-group-payroll').click();await expect(page.getByTestId('nav-payroll_runs')).toBeHidden();
+ await page.setViewportSize({width:1280,height:800});const read=page.waitForResponse(r=>r.url().includes('/api/audit-logs?')&&r.ok());await navigate(page,'audit_logs');const data=await(await read).json();expect(data.total).toBeGreaterThan(0);await expect(page.getByTestId('audit-view')).toBeVisible();
+ const companyId=new URL((await read).url()).searchParams.get('companyId');expect(data.logs.every((log:any)=>log.companyId===companyId)).toBe(true);
+ const action=data.facets.actions.find((code:string)=>!['STATE_PATCH','STATE_REPLACE'].includes(code));expect(action).toBeTruthy();const filtered=page.waitForResponse(r=>r.url().includes('/api/audit-logs?')&&new URL(r.url()).searchParams.get('action')===action&&r.ok());await page.getByLabel(/نوع العملية|Action type/).selectOption(action);const result=await(await filtered).json();expect(result.logs.length).toBeGreaterThan(0);expect(result.logs.every((log:any)=>log.action===action)).toBe(true);await page.getByRole('button',{name:/عرض تفاصيل الحركة|View event details/}).first().click();await expect(page.getByText(/معرّف الحركة|Event ID/)).toBeVisible();
+ const forbidden=await page.evaluate(async()=>{const response=await fetch('/api/audit-logs?companyId=unassigned-company');return response.status;});expect(forbidden).toBe(403);
 });

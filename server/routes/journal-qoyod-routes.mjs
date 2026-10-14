@@ -154,7 +154,7 @@ router.put('/journals/:id', auth, writeLimiter, async (req, res, next) => {
       JSON.stringify(record),JSON.stringify(record.affectedBranches || (record.gosiBranchId ? [record.gosiBranchId] : [])),
     ]);
     const updated = await bumpStateVersion(client,req.user.id);
-    await appendStateAudit(client,q,{ companyIds:req.user.company_ids,user:req.user,action:existed ? 'UPDATE_JOURNAL' : 'CREATE_JOURNAL',version:updated.rows[0].version });
+    await appendStateAudit(client,q,{ companyIds:[record.companyId],entityType:'JOURNAL',entityId:record.id,user:req.user,action:existed ? 'UPDATE_JOURNAL' : 'CREATE_JOURNAL',version:updated.rows[0].version });
     await client.query('COMMIT');
     broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at,
       companyIds:[record.companyId],changes:[{ collection:'journals',operation:'upsert',records:[record] }] });
@@ -184,7 +184,7 @@ router.delete('/journals/:id', auth, writeLimiter, async (req, res, next) => {
       VALUES ($1,$2,'DELETE',$3,$4,$5::jsonb,'{}'::jsonb,$6::jsonb)`,[req.params.id,row.rows[0].company_id,req.user.id,reason,JSON.stringify(previousSnapshot),JSON.stringify(previousSnapshot.affectedBranches||[])]);
     await client.query(`DELETE FROM ${q('journal_batches')} WHERE id=$1`, [req.params.id]);
     const updated = await bumpStateVersion(client,req.user.id);
-    await appendStateAudit(client,q,{ companyIds:req.user.company_ids,user:req.user,action:'DELETE_JOURNAL',version:updated.rows[0].version });
+    await appendStateAudit(client,q,{ companyIds:[row.rows[0].company_id],entityType:'JOURNAL',entityId:req.params.id,user:req.user,action:'DELETE_JOURNAL',version:updated.rows[0].version });
     await client.query('COMMIT');
     broadcastStateUpdate({ version:updated.rows[0].version,updatedBy:req.user.id,updatedAt:updated.rows[0].updated_at,
       companyIds:[row.rows[0].company_id],changes:[{ collection:'journals',operation:'delete',ids:[req.params.id] }] });

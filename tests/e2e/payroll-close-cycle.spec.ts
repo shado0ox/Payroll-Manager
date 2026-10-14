@@ -1,3 +1,4 @@
+import {navigate} from '../support/navigation';
 import { expect, test } from '@playwright/test';
 
 const login = async (page:any) => {
@@ -10,7 +11,7 @@ const login = async (page:any) => {
     page.waitForResponse((response:any) => response.url().endsWith('/api/state') && response.ok()),
     form.locator('button[type="submit"]').click(),
   ]);
-  await expect(page.getByTestId('nav-payroll_runs')).toBeVisible();
+  await expect(page.getByTestId('nav-group-payroll')).toBeVisible();
 };
 
 const waitForPayrollWrite = (page:any, method:string, path:RegExp) => page.waitForResponse((response:any) =>
@@ -60,8 +61,7 @@ test('payroll reversal restores next-month loan deduction with an audit trail', 
 
   expect(seed.ok,JSON.stringify(seed)).toBe(true);
   await page.waitForTimeout(300);
-  await page.getByTestId('nav-payroll_runs').click();
-  await page.getByLabel(/السنة|Year/i).and(page.locator("input")).fill(seed.payrollPeriod!.slice(0,4));
+  await navigate(page,'payroll_runs');
   await page.getByLabel(/شهر المسير|Payroll month/i).and(page.locator("input")).fill(seed.payrollPeriod!);
 
   const initialCalculation = waitForPayrollWrite(page,'PUT',/\/api\/payroll-runs\/[^/]+$/);
@@ -122,8 +122,6 @@ test('payroll reversal restores next-month loan deduction with an audit trail', 
   const reopenPayroll = waitForPayrollWrite(page,'POST',/\/api\/payroll-runs\/[^/]+\/status$/);
   await page.getByRole('button',{ name:/التراجع عن الاعتماد والتعديل|Reverse approval and edit/i }).click();
   expect((await (await reopenPayroll).json()).record.status).toBe('UNDER_REVIEW');
-
-  await page.getByLabel(/السنة|Year/i).and(page.locator("input")).fill(seed.nextPeriod!.slice(0,4));
   await page.getByLabel(/شهر المسير|Payroll month/i).and(page.locator("input")).fill(seed.nextPeriod!);
   const recalculationAfterReversal = waitForPayrollWrite(page,'PUT',/\/api\/payroll-runs\/[^/]+$/);
   await page.getByRole('button',{ name:/إعادة احتساب المسير آلياً|Recalculate payroll/i }).click();
@@ -165,12 +163,11 @@ test('partial employee payment keeps 10000 available after a 40000 payment and r
     return {period,runId,employeeId};
   });
   const openPeriod = async () => {
-    await page.getByTestId('nav-payroll_runs').click();
-    await page.getByLabel(/السنة|Year/i).and(page.locator("input")).fill(seed.period.slice(0,4));
+    await navigate(page,'payroll_runs');
     await page.getByLabel(/شهر المسير|Payroll month/i).and(page.locator("input")).fill(seed.period);
   };
   await page.reload();
-  await expect(page.getByTestId('nav-payroll_runs')).toBeVisible();
+  await expect(page.getByTestId('nav-group-payroll')).toBeVisible();
   await openPeriod();
   const createPartial = async (amount?:string) => {
     await page.getByRole('button',{name:/تحديد المتاح|Select eligible/i}).click();
@@ -186,7 +183,7 @@ test('partial employee payment keeps 10000 available after a 40000 payment and r
   const markPaid=waitForPayrollWrite(page,'PATCH',/\/api\/payroll-runs\/[^/]+\/payment-batches\/[^/]+\/status$/);
   await page.getByRole('button',{name:/تم التحويل|Mark paid/i}).click();
   await markPaid;
-  await page.reload();await expect(page.getByTestId('nav-payroll_runs')).toBeVisible();await openPeriod();
+  await page.reload();await expect(page.getByTestId('nav-group-payroll')).toBeVisible();await openPeriod();
   await page.getByRole('button',{name:/تحديد المتاح|Select eligible/i}).click();
   await page.getByRole('button',{name:/إنشاء دفعة للمحددين|Create selected batch/i}).click();
   await expect(page.getByLabel(/مبلغ سداد|Payment amount/i)).toHaveValue('10000');
